@@ -13,7 +13,9 @@ if ! git -C "$CONSUMER" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-rsync -a --delete "$ORCHESTRA_DIR/claude/skills/" "$CONSUMER/.claude/skills/"
+# provider-* skills (artifact providers) are consumer-owned — never mirrored,
+# never deleted. See references/artifact-provider.md.
+rsync -a --delete --exclude 'provider-*' "$ORCHESTRA_DIR/claude/skills/" "$CONSUMER/.claude/skills/"
 rsync -a --delete "$ORCHESTRA_DIR/claude/agents/" "$CONSUMER/.claude/agents/"
 rsync -a --delete "$ORCHESTRA_DIR/codex/skills/"  "$CONSUMER/.codex/skills/"
 rsync -a --delete "$ORCHESTRA_DIR/references/"    "$CONSUMER/.references/"

@@ -22,9 +22,12 @@ The flow separates *clarity*, *capture*, and *execution*:
    capture skills. Each turns what the conversation established into a lean
    work item at `./tmp/<id>/item.md` (Feature Ticket, Epic Spec, or Bug
    Report, raw sources in `./tmp/<id>/refs/`) with verification criteria,
-   then **publishes** it: a GitHub issue in the project repo
-   plus a Notion work item (via the `notion` skill) holding `item.md` and
-   every artifact, cross-linked both ways. `/create-issue` runs the
+   then **publishes** it: a GitHub issue in the project repo, self-contained
+   by default (artifacts ride as marker-delimited issue comments; the local
+   `./tmp/<id>/` copy is the working truth). A repo may configure an
+   artifact **provider** (`references/artifact-provider.md`) whose
+   `provider-<name>` skill hosts `item.md` and every artifact instead,
+   cross-linked both ways. `/create-issue` runs the
    investigator itself if the root cause isn't already established. Before
    publish, every draft passes the **Socratic gate**: the `socrates`
    sub-agent takes an adversarial position on the item's premise (needed at
@@ -34,12 +37,13 @@ The flow separates *clarity*, *capture*, and *execution*:
    straightforward drafts fast-pass with 0–2 questions; epics always get the
    full challenge.
 3. **`/do <issue # or item path>`** — the autonomous pipeline: pull the work
-   item's artifacts from Notion into `./tmp/<id>/` (when given a GitHub
-   issue) → lane call (light/full) → plan + review loop (full lane backed by
+   item's artifacts into `./tmp/<id>/` (when given a GitHub issue: from the
+   configured provider, or harvested from the issue's artifact comments) →
+   lane call (light/full) → plan + review loop (full lane backed by
    a research dossier, every plan under the evidence contract) → implement →
    verify → build gate + deploy-notes scan + PR → post-PR review loop + QA
    pass over the PR's manual tests → wrap-up, with `plan.md`/`wrapup.md`
-   uploaded back to the Notion work item at the end. Deliberately high-level:
+   published back to the work item at the end. Deliberately high-level:
    the Overseer judges the lane, how much research a plan needs, and when
    each review loop has converged.
 4. **`/postmortem`** — when a result falls short, root-cause it in *our
@@ -101,10 +105,13 @@ them on its own.
   exactly one skill (feature-ticket, epic-spec, bug-report,
   implementation-plan, wrap-up-report, postmortem).
 
-The six workflow skills above, plus three infrastructure skills the others
-invoke — `codex` (dispatches Codex roles), `notion` (the GitHub ↔ Notion
-artifact bridge), and `excalidraw-pr-diagrams` (the PR visual-overview
-standard `/do`'s PR step uses) — are the whole surface. Web research is the
+The six workflow skills above, plus two infrastructure skills the others
+invoke — `codex` (dispatches Codex roles) and `excalidraw-pr-diagrams` (the
+PR visual-overview standard `/do`'s PR step uses) — are the whole surface.
+A consumer repo that opts into an artifact provider adds its own
+consumer-owned `provider-<name>` skill (contract:
+`references/artifact-provider.md`; examples in `templates/providers/`),
+which the sync never touches. Web research is the
 `web-researcher` sub-agent, review lives inside `/do` (plan review before
 implement, code review + QA after the PR opens), and all commit/PR prep
 lives in `/do`'s PR step.

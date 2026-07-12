@@ -11,19 +11,20 @@ and boundaries. Everything there applies here — do not duplicate it.
 ## Work-item tracking
 
 The workflow skills (`/create-feature`, `/create-epic`, `/create-issue`,
-`/do`) publish every work item as a GitHub issue. By default the issue is
-self-contained (artifacts ride as marker-delimited comments). Naming a
-`provider` here opts this repo into a richer artifact host — its skill hosts
-`item.md` + `refs/` and gets cross-linked from the issue.
+`/do`) create work-item artifacts locally under `./tmp/<id>/` and publish
+every work item as a GitHub issue. By default the issue is self-contained
+(artifacts ride as marker-delimited comments). Naming a `provider` here opts
+this repo into a richer artifact host — its `provider-<name>` skill (in this
+repo's `.claude/skills/`; contract in `.references/artifact-provider.md`)
+hosts `item.md` + `refs/` and gets cross-linked from the issue.
 
 ```yaml
 github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the current repo
-# provider: notion            # OPT-IN — artifact host for this repo; omit for GitHub-only
-# notion_data_source: <ID or URL>   # OVERRIDE only — the default lives in the
-#                                   # notion skill's config.yaml; set this only
-#                                   # if this repo publishes to a different database
-# properties: <only if they differ from the defaults in the notion skill's
-#              config.yaml — list the property names/schema to use>
+# provider: <name>            # OPT-IN — artifact host for this repo; omit for GitHub-only.
+#                             # Names the .claude/skills/provider-<name> skill; example
+#                             # implementations live in orchestra's templates/providers/.
+# <provider-specific keys>:   # OVERRIDE only — whatever per-repo config that provider
+#                             # skill documents (target database/board, property names, …)
 ```
 
 Work-item artifacts (item.md, refs/ including explainer.html, plan.md,

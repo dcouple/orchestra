@@ -4,22 +4,24 @@ Used by `/create-feature`, `/create-epic`, and `/create-issue` after
 `item.md` is written. The caller supplies the issue title prefix (`feat:` or
 `fix:`) and the issue body summary.
 
-GitHub is the only assumed platform. A richer artifact host (Notion today,
-anything else tomorrow) is a **provider** — used only when the project's
-`CLAUDE.md` `Work-item tracking` section names one (`provider: notion`, plus
-whatever config that provider skill needs). The orchestra skills themselves
-stay provider-agnostic.
+GitHub is the only assumed platform; artifacts are created and kept locally
+under `./tmp/<id>/`. A richer artifact host is a **provider** — used only
+when the project's `CLAUDE.md` `Work-item tracking` section names one
+(`provider: <name>`, plus whatever config that provider skill needs; the
+contract is `artifact-provider.md`). The orchestra skills themselves stay
+provider-agnostic and never name a specific product.
 
 1. Set `status: ready` in `item.md`.
 2. Create the GitHub issue: `gh issue create` in the project's repo (from the
    `Work-item tracking` section of the project's `CLAUDE.md`, or the current
    repo) — title `<prefix> <item title>`, body per the caller.
-3. **Provider configured** → invoke that provider's skill, operation
+3. **Provider configured** → invoke the `provider-<name>` skill, operation
    `publish`, with `./tmp/<id>/` and the issue URL — it hosts the artifacts
    (`item.md` + every `refs/` file, including `explainer.html`) and returns a
-   page URL. Cross-link: add the page URL to the GitHub issue body
-   (`gh issue edit`), and record both in `item.md` frontmatter (`github:` and
-   the provider's key, e.g. `notion:`).
+   page URL. Cross-link per `artifact-provider.md`: append the canonical
+   `**Artifacts:** <page URL>` line to the GitHub issue body
+   (`gh issue edit`), and record both in `item.md` frontmatter (`github:`
+   and `artifacts:`).
 4. **No provider configured, or the provider returns UNAVAILABLE** → the
    issue itself must carry everything a remote `/do` needs. GitHub issue
    attachments are web-UI-only (no API/CLI path), so post each artifact as

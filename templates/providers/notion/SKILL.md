@@ -1,42 +1,50 @@
 ---
-name: notion
-description: The Notion bridge for work items — creates a Notion work item mirroring a GitHub issue, uploads artifacts (item.md, refs/, plan.md, wrapup.md) to it, and pulls a work item's artifacts down to ./tmp/<id>/. Used by /create-feature, /create-epic, /create-issue (publish) and /do (pull before work, upload after). Use when a work item needs to be published to, updated in, or fetched from Notion.
-argument-hint: "[publish|upload|pull] [work-item id, GitHub issue #/URL, or Notion page URL]"
+name: provider-notion
+description: Example artifact-provider implementation (Notion) — creates a provider work item mirroring a GitHub issue, uploads artifacts (item.md, refs/, plan.md, wrapup.md) to it, and pulls a work item's artifacts down to ./tmp/<id>/. Implements the publish/upload/pull contract in .references/artifact-provider.md; invoked by the workflow skills when the repo's CLAUDE.md sets `provider: notion`.
+argument-hint: "[publish|upload|pull] [work-item id, GitHub issue #/URL, or provider page URL]"
 ---
 
-# Notion bridge
+# Notion artifact provider (example implementation)
+
+> **Not synced.** This is an example provider from orchestra's
+> `templates/providers/` directory. To use it, copy this directory into a
+> consumer repo as `.claude/skills/provider-notion/` and set
+> `provider: notion` in that repo's `CLAUDE.md` `Work-item tracking`
+> section. Provider skills are consumer-owned — the orchestra sync leaves
+> `provider-*` directories alone. To target a different platform, copy this
+> skill and swap the platform mechanics; the contract it implements is
+> `.references/artifact-provider.md`.
 
 ## Request: $ARGUMENTS
 
-Notion is the durable home for work-item artifacts; GitHub carries the issue
-and the PR; `./tmp/<id>/` is the local working copy. This skill is the one
-place that knows how to move material between the three. One invocation = one
-operation: `publish`, `upload`, or `pull`.
+The provider is the durable home for work-item artifacts; GitHub carries the
+issue and the PR; `./tmp/<id>/` is the local working copy. This skill is the
+one place that knows how to move material between the three. One invocation
+= one operation: `publish`, `upload`, or `pull`.
 
 ## Setup (every invocation)
 
-1. **Load the Notion tools**: use ToolSearch with a query like
+1. **Load the platform tools**: use ToolSearch with a query like
    `+notion search create fetch update attachment` and load what the
    operation needs (search, fetch, create-pages, update-page,
    create-attachment). Tool names vary by connector — match on the `notion`
-   prefix. If no Notion tools resolve and no `notion` CLI is on PATH, return
-   `NOTION UNAVAILABLE: <what was tried>` — the caller proceeds
+   prefix. If no MCP tools resolve and no `notion` CLI is on PATH, return
+   `PROVIDER UNAVAILABLE: <what was tried>` — the caller proceeds
    GitHub + local only and says so.
 2. **Find the target database** — resolution order, most specific wins:
    1. The project `CLAUDE.md`'s `Work-item tracking` section
       (`notion_data_source`, optional `properties`) — per-repo override.
-   2. `config.yaml` in this skill's directory — the shipped org-wide
-      default. Read-only: this skill is synced from `dcouple/orchestra`,
-      so never write discoveries here (the next sync would erase them).
-   3. Neither set → search Notion for the work-items database once, confirm
-      the match with the user, and offer to save it into the project
+   2. `config.yaml` in this skill's directory — the default this copy was
+      set up with.
+   3. Neither set → search the workspace for the work-items database once,
+      confirm the match with the user, and offer to save it into the project
       `CLAUDE.md`'s `Work-item tracking` section so the search never
       repeats.
 
 **Success criteria**: tools loaded and a data source resolved (or an explicit
-`NOTION UNAVAILABLE`).
+`PROVIDER UNAVAILABLE`).
 
-## Operation: publish  (called by /create-feature, /create-epic, /create-issue)
+## Operation: publish  (called by the shared publish procedure)
 
 Inputs: `./tmp/<id>/` with a ready `item.md`, plus the GitHub issue URL the
 caller just created.
@@ -57,25 +65,27 @@ caller just created.
    (`properties.files`, default `Files`), named as on disk; if the schema
    has no files property, attach them to the page body instead. Also write
    the RAW bytes of `item.md` and each markdown ref to a sub-page named
-   `raw/<name>` whose entire content is one fenced code block: Notion
+   `raw/<name>` whose entire content is one fenced code block: the platform
    re-renders rendered content but never touches code-block contents, and
    file attachments are served as expiring, integration-scoped URLs that
    another session's pull may 404 on — the `raw/` sub-pages are what make
    pull reliable.
 4. Return the new page URL to the caller — the caller cross-links it in both
-   directions: append the canonical line `**Notion:** <page URL>` to the end
-   of the GitHub issue body (`gh issue edit --body-file`), and write the URL
-   into `item.md`'s frontmatter as `notion:`. When publish runs ad hoc (no
-   calling skill), do both edits as part of this operation. The exact
-   `**Notion:**` line format matters — `pull` looks for it.
+   directions per the contract: append the canonical line
+   `**Artifacts:** <page URL>` to the end of the GitHub issue body
+   (`gh issue edit --body-file`), and write the URL into `item.md`'s
+   frontmatter as `artifacts:`. When publish runs ad hoc (no calling skill),
+   do both edits as part of this operation. The exact `**Artifacts:**` line
+   format matters — `pull` looks for it.
 
-**Success criteria**: page exists with the item body and every `refs/` file;
-page URL returned.
+**Success criteria**: page exists with the item summary and every `refs/`
+file; page URL returned.
 
 ## Operation: upload  (called by /do at wrap-up, or ad hoc)
 
-Inputs: the work item's Notion page URL (from `item.md` frontmatter or the
-GitHub issue body) and the files to add (`plan.md`, `wrapup.md`, new refs).
+Inputs: the work item's provider page URL (from `item.md` frontmatter
+`artifacts:` or the GitHub issue body) and the files to add (`plan.md`,
+`wrapup.md`, new refs).
 
 1. Add each file as in publish step 3 (files property + `raw/` sub-page for
    markdown) — update in place if one with the same name exists (a re-run
@@ -87,13 +97,13 @@ GitHub issue body) and the files to add (`plan.md`, `wrapup.md`, new refs).
 
 ## Operation: pull  (called by /do before work)
 
-Inputs: a GitHub issue number/URL or a Notion page URL.
+Inputs: a GitHub issue number/URL or a provider page URL.
 
 1. If given a GitHub issue: `gh issue view` and find the canonical
-   `**Notion:** <url>` line in its body (fall back to any Notion page URL
-   found anywhere in the body). No Notion link → return `NO NOTION ITEM`
-   (the caller falls back to treating the issue body itself as the work
-   item).
+   `**Artifacts:** <url>` line in its body (fall back to any workspace page
+   URL found anywhere in the body). No provider link → return
+   `NO PROVIDER ITEM` (the caller falls back to treating the issue body
+   itself as the work item).
 2. Fetch the page. Derive `<id>` from the item's frontmatter `id:` (or slug
    the title). Prefer the `raw/item.md` code-block sub-page when present —
    its contents are byte-identical to what was published. Only legacy pages
@@ -115,7 +125,7 @@ on the page has a local copy under `./tmp/<id>/`.
 
 ## ntn CLI notes
 
-When Notion is reached via the `ntn` CLI (no MCP tools resolve):
+When the platform is reached via the `ntn` CLI (no MCP tools resolve):
 - `ntn pages create` hangs — create pages with `ntn api /v1/pages -d '<json>'`
   instead, then set the body with `ntn pages edit <id> --content="$(cat file.md)"`.
 - Always use the `--content=` equals form: with a space, markdown starting with
@@ -123,9 +133,10 @@ When Notion is reached via the `ntn` CLI (no MCP tools resolve):
 
 ## Rules
 
-- Notion is the mirror, `item.md` on disk is the working truth during a run —
-  push at milestones (publish, wrap-up), don't sync continuously.
-- Never store secrets in Notion pages; artifacts only.
+- The provider page is the mirror, `item.md` on disk is the working truth
+  during a run — push at milestones (publish, wrap-up), don't sync
+  continuously.
+- Never store secrets in provider pages; artifacts only.
 - One work item = one page. Dedup by exact GitHub-issue-URL property query
   against the data source (workspace full-text search only as a fallback) —
   re-publishing must update, not duplicate.
