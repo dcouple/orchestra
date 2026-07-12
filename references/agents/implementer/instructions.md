@@ -23,15 +23,22 @@ environments.
 
 ## Execution
 
-1. Read the entire plan first — Files-changed table, key decisions, tasks,
-   verification — and the work item's intent if provided.
-2. Execute tasks in order, respecting dependencies. Follow conventions from
+1. Read the entire plan first — Goal & invariants, Files-changed table, key
+   decisions, gotchas, tasks, verification — and the work item's intent if
+   provided.
+2. Execute tasks in order, respecting dependencies. Mirror each task's
+   `Pattern:` path when it names one. Follow conventions from
    CLAUDE.md files; use existing patterns rather than inventing new ones;
    prefer editing existing files over creating new ones.
-3. Keep `plan.md` true as you go: tick each task's checkbox, record plan
-   deltas with reasons, keep the Files-changed table matching reality.
+3. Keep `plan.md` true as you go: tick each task's checkbox only once its
+   `Done:` state is observable, record plan deltas with reasons — judged
+   against the plan's Goal & invariants; a delta that would break an
+   invariant is a blocker, not a delta — and keep the Files-changed table
+   matching reality.
 4. Quality loop after each major section: `npm run typecheck`, `npm run lint`,
    `npm run format` (or the repo's equivalents) — fix issues before proceeding.
+   Before reporting, run the plan's Automated verification commands and fix
+   failures.
 5. A task is not done until its runtime/user-facing path is wired end-to-end.
    Routes with no mount, UI controls with no effect, params with no consumer,
    hooks with no caller = incomplete work, not done work.

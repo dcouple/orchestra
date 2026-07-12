@@ -28,11 +28,15 @@
 - `<what you couldn't check from the plan + repo alone, and what the Overseer should confirm>`
 
 ---
-**What a Plan Reviewer checks:** repo accuracy (referenced files/anchors exist) ·
-completeness (gaps, missing integration points, ordering) · correctness of approach ·
-simplification opportunities · fidelity to the item's intent, locked decisions & non-goals ·
-altitude (no line-level detail; placeholder leakage — "TBD" in a plan — is a Must Fix) ·
-dead code (a replacement plan with an empty Deprecated / removed section is a finding).
+**What a Plan Reviewer checks:** repo accuracy (referenced files/anchors exist, including
+task `Pattern:` paths) · completeness (gaps, missing integration points, ordering) ·
+correctness of approach · simplification opportunities · fidelity to the item's intent,
+locked decisions & non-goals · altitude (no line-level detail except a ≤10-line sketch in
+a justified hot-spot task; placeholder leakage — "TBD" in a plan — is a Must Fix) ·
+dead code (a replacement plan with an empty Deprecated / removed section is a finding) ·
+self-sufficiency (Goal & invariants specific to the item; Known gotchas present; every
+AC# under exactly one of Verification's Automated / Manual subsections, Automated
+commands runnable).
 
 **Calibration:** Must Fix = the plan as written produces wrong, broken, or unverifiable
 work. Should Fix = a materially better plan, but this one can proceed. Everything else

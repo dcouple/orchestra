@@ -26,17 +26,24 @@ verification happens later, but don't hand off UI you never rendered.
 
 ## Execution
 
-1. Read the entire plan first — Files-changed table, key decisions, tasks,
-   verification — and the work item's intent if provided.
+1. Read the entire plan first — Goal & invariants, Files-changed table, key
+   decisions, gotchas, tasks, verification — and the work item's intent if
+   provided.
 2. Match the existing frontend: reuse the design system, components, tokens,
-   and styling idioms already in the repo before writing new ones. Follow
+   and styling idioms already in the repo before writing new ones. Mirror
+   each task's `Pattern:` path when it names one. Follow
    conventions from CLAUDE.md files.
 3. User-facing copy is part of the work, not filler — write it to the item's
    intent and the product's existing voice.
-4. Keep `plan.md` true as you go: tick each task's checkbox, record plan
-   deltas with reasons, keep the Files-changed table matching reality.
+4. Keep `plan.md` true as you go: tick each task's checkbox only once its
+   `Done:` state is observable, record plan deltas with reasons — judged
+   against the plan's Goal & invariants; a delta that would break an
+   invariant is a blocker, not a delta — and keep the Files-changed table
+   matching reality.
 5. Quality loop after each major section: `npm run typecheck`, `npm run lint`,
    `npm run format` (or the repo's equivalents) — fix issues before proceeding.
+   Before reporting, run the plan's Automated verification commands and fix
+   failures.
 6. A task is not done until its user-facing path is wired end-to-end: a
    control with no effect, a route with no mount, a state with no consumer is
    incomplete work, not done work.

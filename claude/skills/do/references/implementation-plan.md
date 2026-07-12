@@ -4,12 +4,14 @@
 > (per issue; one per phase for epics). Reviewed by Plan Reviewer, then updated with
 > progress and plan-deltas during implement.
 > **Calibrated for a frontier implementer: what to build & why, at file/module**
-> **granularity — not line-level code.** No placeholder content: "TBD" or "add
+> **granularity — not line-level code**, except a short pseudocode sketch inside
+> a task marked *hot spot* (see Tasks). No placeholder content: "TBD" or "add
 > appropriate error handling" in a plan is a plan failure, not a plan.
 > Pre-save check: every `modify` path exists in the repo, every `new` path fits
 > the repo's current conventions, no template/placeholder paths, no line number
 > that wasn't verified in this checkout. Cheap mechanical catch: grep the plan
-> for `<feature>`, `path/to/`, `TBD`, and fact bullets missing `Evidence:`.
+> for `<feature>`, `path/to/`, `TBD`, fact bullets missing `Evidence:`, and a
+> Goal & invariants section still carrying template wording.
 
 ---
 ```yaml
@@ -23,6 +25,12 @@ confidence: <1-10 — one-pass implementation confidence, scored after review>
 ```
 
 # Implementation Plan — `<item / phase>`
+
+## Goal & invariants
+`<3–5 lines from the item's intent: what ships, why, and what must remain true`
+`even if implementation details change. This is what the implementer steers by`
+`when a plan delta is needed — a delta that breaks an invariant isn't a delta,`
+`it's a blocker.>`
 
 ## Files changed
 `<every file this plan touches — lets a reviewer gauge blast radius at a glance.`
@@ -53,18 +61,41 @@ confidence: <1-10 — one-pass implementation confidence, scored after review>
 `plan resolves it — plus any assumption the plan stands on. Or "none". A false`
 `premise surfaced here is caught at plan review; buried, it ships to the PR.>`
 
+## Known gotchas
+`<concrete repo/library/runtime footguns near the change site — each with why`
+`it bites — or "none". Full lane: dossier gotchas land here; light lane fills`
+`it from direct research. Empty is a claim, not a default.>`
+
 ## Reconciliation notes
 `<full lane: anchors/gotchas/docs imported from refs/research-dossier.md, conflicts`
 `re-checked against the repo and how they resolved, dossier content intentionally`
 `dropped as low-value. Light lane: "light lane — no dossier".>`
 
+## External references
+`<only when the change leans on a library/framework/API the repo can't answer:`
+`URL + section + the critical insight, imported from the web-researcher's`
+`dossier findings — or omit the section.>`
+
 ## Tasks (ordered, file/module granularity)
-- [ ] 1. `<task — what & why, where>`
-- [ ] 2. `<task>`
+- [ ] 1. `<task — what & why, where>` · Pattern: `<existing repo path to mirror, or —>` · Done: `<observable state>`
+- [ ] 2. `<task>` · Pattern: `—` · Done: `<observable state>`
+
+`<Hot spots: a task may carry an indented pseudocode sketch (≤10 lines, marked`
+`"(hot spot)") ONLY where a wrong approach is likely and expensive — a subtle`
+`algorithm, a fiddly integration handshake. Never for CRUD or boilerplate;`
+`an unjustified hot spot is a review finding.>`
 
 ## Verification / acceptance
-`<restate the item's numbered EARS criteria VERBATIM, plus the exact commands/flows`
-`that prove each — the plan is self-sufficient; the implementer never opens the item.>`
+`<restate the item's numbered EARS criteria VERBATIM — the plan is`
+`self-sufficient; the implementer never opens the item. Each AC lands under`
+`exactly one subsection below.>`
+
+### Automated
+`<exact commands the implementer runs and self-fixes — build/typecheck/lint/`
+`tests/curl — each mapped to the AC# it proves.>`
+
+### Manual
+`<flows only a human or the QA pass can exercise, each mapped to its AC#.>`
 
 ## Out of scope
 `<carried from the item + anything explicitly deferred>`

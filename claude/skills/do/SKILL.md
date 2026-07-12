@@ -75,10 +75,13 @@ the gap. Then write
 `./tmp/<id>/plan.md` following this skill's `references/implementation-plan.md` —
 its evidence contract is binding: facts live in Verified repo truths with
 `path:line` evidence from files opened this session, and proposals stay out
-of fact sections. When genuinely uncertain about a requirement or design
+of fact sections. Write Goal & invariants from the item's intent; reconcile
+dossier gotchas into Known gotchas and web-researcher citations into
+External references. When genuinely uncertain about a requirement or design
 detail, never decide by silent assumption — name it in the plan's Open
 questions and proceed on the least-committal reading. Restate the item's
-`AC#` criteria verbatim. Run the review
+`AC#` criteria verbatim, each under Verification's Automated or Manual
+subsection. Run the review
 loop — both reviewers, findings fixed into the plan — until you're satisfied
 the plan is ready, cap 3 passes (light lane: 1); carry anything unresolved
 at the cap into the plan's open questions. Score the plan's `confidence:`
@@ -100,7 +103,9 @@ only a blocker that genuinely needs the human stops the run.
 
 Prove every verification criterion — the `frontend-verifier` sub-agent for
 computer-use flows in the running app, the `codex` skill role
-`backend-verifier` for tests/scripts. Include the change type's rubric from
+`backend-verifier` for tests/scripts. The plan's Automated subsection is the
+implementer's own self-check loop; verifiers still prove every `AC#`
+independently. Include the change type's rubric from
 `.references/rubrics/` in each verifier dispatch (see
 `.references/verification-methods.md`); its blocker items gate alongside
 the ACs. Quoted evidence on every pass; nothing is assumed. Feed failures
