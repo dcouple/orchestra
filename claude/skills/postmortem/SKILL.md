@@ -12,8 +12,9 @@ Compound learning: when a `/do` run fell short of intent — or another workflow
 skill produced the wrong outcome (a ticket the gate should have killed, a skill
 that fired at the wrong moment) — find the root cause in **our system** — the
 skills, agents, templates, and criteria — not just the code. The completion
-artifact is `./tmp/<id>/postmortem.md`, published as a GitHub issue in the
-current repo (postmortems live as issues in the repo where the run happened),
+artifact is `./tmp/<id>/postmortem.md`, published to the tracker the current
+repo's `AGENTS.md` `Work-item tracking` section configures (postmortems live
+with the repo the run happened in; no tracker configured → local-only),
 plus one proposed (not applied) system change.
 
 This skill changes nothing: no code fixes, no skill edits. If the code itself needs
@@ -61,27 +62,33 @@ Write `./tmp/<id>/postmortem.md` following this skill's `references/postmortem.m
 emit the filled-in frontmatter and body only; the template's "— format" header and
 guidance quotes are authoring notes, not output.
 
-Then publish it as a GitHub issue — postmortems are kept as issues in the
-repo the run happened in (the current repo), with this metadata:
-- **Repo**: the current repo · **Label**: `postmortem` (create it if missing)
+Then publish it to the tracker the current repo's `AGENTS.md` `Work-item
+tracking` section configures — postmortems are kept with the repo the run
+happened in. If no tracker is configured, skip publishing: the postmortem
+stays in `./tmp/<id>/postmortem.md` and you tell the user so. When
+publishing, use this metadata:
+- **Label/tag**: `postmortem` (create it if the tracker supports labels and
+  it's missing)
 - **Anchor**: the artifact the postmortem is about — the `/do` PR if one
-  exists, else the work item's GitHub issue, else none (e.g. a failure inside
+  exists, else the published work item, else none (e.g. a failure inside
   a `/create-*` run before anything was published)
 - **Title**: `Postmortem: <repo>#<anchor#> — <one-line gap>` (drop the
   `<repo>#<anchor#>` part only when there is no anchor)
 - **Body**: the postmortem body (frontmatter stripped), ending with links to
   the work item and the anchor PR/issue
 
-Record the issue URL in postmortem.md's "System change" section. Then
+Record the published postmortem's URL in postmortem.md's "System change"
+section. Then
 **connect it back**: comment on the anchor PR/issue with a one-liner linking
 the postmortem issue, so the connection is visible from both sides — someone
 reading the PR/issue later must be able to find the postmortem without
 searching the issue list.
 
 **Success criteria**: `postmortem.md` exists, the "why the gap happened" section names
-the system cause (not just the code defect), the `postmortem`-labeled issue is filed
-with its URL recorded, and the anchor PR/issue (when one exists) carries a comment
-linking back to it.
+the system cause (not just the code defect), the postmortem is published per the
+repo's tracker instructions with its URL recorded (or kept local and the user told,
+when no tracker is configured), and the anchor PR/issue (when one exists) carries a
+comment linking back to it.
 
 ### 5. Propose ONE system change [human checkpoint]
 Propose exactly one concrete change to one specific file — a skill, sub-agent, template,

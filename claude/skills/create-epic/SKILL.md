@@ -75,14 +75,16 @@ the cap was reached, or the user waived); `## Justification` written into
 
 ### 6. Mark ready and publish
 If the gate changed the item, regenerate the explainer first so the attached
-copy matches. Publish per `.references/publish-work-item.md` — issue title
-`feat: <epic title>`, issue body = the epic's problem, end state, the
+copy matches. Publish per `.references/publish-work-item.md` — title
+`feat: <epic title>`, body = the epic's problem, end state, the
 phases table, and the Justification section.
 
-**Success criteria**: published and cross-linked per the shared procedure.
+**Success criteria**: published and cross-linked per the shared procedure —
+or, when the repo configures no destination, the item is complete in
+`./tmp/<id>/` and the user was told nothing was published.
 
 ```
 Suggested next steps:
-- `/do <issue # or ./tmp/<id>/item.md>` — run the pipeline; phases execute sequentially, one PR
+- `/do <item ref or ./tmp/<id>/item.md>` — run the pipeline; phases execute sequentially, one PR
 - `/discussion [follow-up]` — if a phase boundary needs more thinking first
 ```

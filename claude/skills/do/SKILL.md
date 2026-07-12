@@ -1,7 +1,7 @@
 ---
 name: do
-description: Run the full autonomous pipeline against a work item — plan, implement, verify, PR, post-PR review + QA, wrap-up. Takes a GitHub issue #/URL or a local ./tmp/<id>/item.md produced by the /create-* skills.
-argument-hint: "[GitHub issue # / URL, or path to ./tmp/<id>/item.md]"
+description: Run the full autonomous pipeline against a work item — plan, implement, verify, PR, post-PR review + QA, wrap-up. Takes a work-item reference (issue #/URL in whatever tracker the repo's AGENTS.md configures) or a local ./tmp/<id>/item.md produced by the /create-* skills.
+argument-hint: "[work-item # / URL, or path to ./tmp/<id>/item.md]"
 disable-model-invocation: true
 ---
 
@@ -26,14 +26,16 @@ web-researcher is a Claude sub-agent.
 
 ## Step 0: Load
 
-Get everything about the work item into `./tmp/<id>/` before starting: for
-a GitHub issue, the issue body is the item, and the issue's comments carry
-the refs — harvest every `<!-- ORCHESTRA-ARTIFACT path="..." -->` block
-back to its path under `./tmp/<id>/` (joining `part=n` splits) before
-planning; an issue with no artifact comments gives you the body alone, so
-say so in the plan's Known mismatches. If the project's `AGENTS.md`
-`Work-item tracking` section specifies a different location for work-item
-artifacts, fetch them per its instructions. A local `./tmp/<id>/` that
+Get everything about the work item into `./tmp/<id>/` before starting.
+This mirrors the publish rule: the project's `AGENTS.md` `Work-item
+tracking` section says where work items and their artifacts live — fetch
+them per its instructions; with no instructions, the item exists only
+locally, so expect it in `./tmp/<id>/`. When the tracker is GitHub issues,
+the issue body is the item and the issue's comments carry the refs —
+harvest every `<!-- ORCHESTRA-ARTIFACT path="..." -->` block back to its
+path under `./tmp/<id>/` (joining `part=n` splits) before planning; an
+issue with no artifact comments gives you the body alone, so say so in the
+plan's Known mismatches. A local `./tmp/<id>/` that
 already exists wins over anything fetched — disk is the working truth;
 only fill gaps. A local path is read directly. Invoked with no argument: list
 the local items with `status: ready` (`./tmp/*/item.md`) and ask the user
@@ -152,7 +154,8 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   Step 5's QA pass executes it), **Deploy notes** (each finding: what changed + the
   action the human takes before/at deploy — name env vars/secrets, never
   their values; omit when the scan finds nothing), **Residual risks** (omit
-  if none); `Closes #<n>` when the item has a `github:` issue.
+  if none); when the item has a tracker URL in its frontmatter, link it
+  per that tracker's convention (e.g. `Closes #<n>` for a GitHub issue).
 
 ## Step 5: Post-PR review + QA
 

@@ -22,22 +22,24 @@ The flow separates *clarity*, *capture*, and *execution*:
    capture skills. Each turns what the conversation established into a lean
    work item at `./tmp/<id>/item.md` (Feature Ticket, Epic Spec, or Bug
    Report, raw sources in `./tmp/<id>/refs/`) with verification criteria,
-   then **publishes** it: a self-contained GitHub issue in the project repo
-   (artifacts ride as marker-delimited issue comments; the local
-   `./tmp/<id>/` copy is the working truth), or wherever the project's
-   `AGENTS.md` `Work-item tracking` section says artifacts go. `/create-issue` runs the
+   then **publishes** it wherever the project's `AGENTS.md` `Work-item
+   tracking` section says (GitHub issues, Linear, anything the repo
+   documents; the local `./tmp/<id>/` copy is the working truth). A repo
+   with no publishing instructions stays local-only — the item lives in
+   `./tmp/<id>/` and the skill says so. `/create-issue` runs the
    investigator itself if the root cause isn't already established. Before
    publish, every draft passes the **Socratic gate**: the `socrates`
    sub-agent takes an adversarial position on the item's premise (needed at
    all? root cause or symptom? simpler path? right shape? the whole of it?)
    and the user's answers — distilled into the item's `## Justification`
-   section — travel with the GitHub issue. Intensity scales with the item:
+   section — travel with the published item. Intensity scales with the item:
    straightforward drafts fast-pass with 0–2 questions; epics always get the
    full challenge.
-3. **`/do <issue # or item path>`** — the autonomous pipeline: pull the work
-   item's artifacts into `./tmp/<id>/` (when given a GitHub issue: harvested
-   from the issue's artifact comments, or fetched per the project
-   `AGENTS.md`'s `Work-item tracking` instructions) →
+3. **`/do <item ref or path>`** — the autonomous pipeline: pull the work
+   item's artifacts into `./tmp/<id>/` (fetched per the project
+   `AGENTS.md`'s `Work-item tracking` instructions — e.g. harvested from a
+   GitHub issue's artifact comments — or read from `./tmp/<id>/` when the
+   repo configures no tracker) →
    lane call (light/full) → plan + review loop (full lane backed by
    a research dossier, every plan under the evidence contract) → implement →
    verify → build gate + deploy-notes scan + PR → post-PR review loop + QA

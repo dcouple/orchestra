@@ -70,14 +70,16 @@ the cap was reached, or the user waived); `## Justification` written into
 
 ### 6. Mark ready and publish
 If the gate changed the item, regenerate the explainer first so the attached
-copy matches. Publish per `.references/publish-work-item.md` — issue title
-`feat: <item title>`, issue body = the item's intent, desired end state,
+copy matches. Publish per `.references/publish-work-item.md` — title
+`feat: <item title>`, body = the item's intent, desired end state,
 verification criteria summary, and the Justification section.
 
-**Success criteria**: published and cross-linked per the shared procedure.
+**Success criteria**: published and cross-linked per the shared procedure —
+or, when the repo configures no destination, the item is complete in
+`./tmp/<id>/` and the user was told nothing was published.
 
 ```
 Suggested next steps:
-- `/do <issue # or ./tmp/<id>/item.md>` — run the autonomous pipeline against this item
+- `/do <item ref or ./tmp/<id>/item.md>` — run the autonomous pipeline against this item
 - `/discussion [follow-up]` — if a gap surfaced that needs more thinking first
 ```

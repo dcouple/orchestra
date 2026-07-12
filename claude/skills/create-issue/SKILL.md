@@ -87,17 +87,19 @@ the cap was reached, or the user waived); `## Justification` written into
 
 ### 6. Mark ready and publish
 If the gate changed the item, regenerate the explainer first so the attached
-copy matches. Publish per `.references/publish-work-item.md` — issue title
-`fix: <bug title>`, issue body = summary, severity, reproduction steps, root
+copy matches. Publish per `.references/publish-work-item.md` — title
+`fix: <bug title>`, body = summary, severity, reproduction steps, root
 cause + confidence, and the Justification section. Exception: leave
 `status: draft` if the cause is still a hypothesis and the user wants more
 evidence first — publish happens either way, so the evidence trail lives
-with the issue.
+with the published item.
 
-**Success criteria**: published and cross-linked per the shared procedure.
+**Success criteria**: published and cross-linked per the shared procedure —
+or, when the repo configures no destination, the item is complete in
+`./tmp/<id>/` and the user was told nothing was published.
 
 ```
 Suggested next steps:
-- `/do <issue # or ./tmp/<id>/item.md>` — run the autonomous pipeline to fix and verify
+- `/do <item ref or ./tmp/<id>/item.md>` — run the autonomous pipeline to fix and verify
 - `/discussion [topic]` — if the bug exposed a design question bigger than the fix
 ```

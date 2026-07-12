@@ -46,17 +46,23 @@ Only rules an agent would otherwise get wrong — not a style guide:
 
 The workflow skills (`/create-feature`, `/create-epic`, `/create-issue`,
 `/do`) create work-item artifacts (item.md, refs/ including explainer.html,
-plan.md, wrapup.md) locally under `./tmp/<id>/` and publish every work item
-as a self-contained GitHub issue (artifacts ride as marker-delimited
-comments). `./tmp/` is scratch — never commit it.
+plan.md, wrapup.md) locally under `./tmp/<id>/`. `./tmp/` is scratch —
+never commit it.
+
+This section decides where work items get published. Describe the
+destination and the exact steps — the skills follow these instructions at
+publish, pull, and wrap-up. If this section gives no instructions, nothing
+is published: work items stay local under `./tmp/<id>/`.
+
+Example — publish to GitHub issues (replace or delete):
 
 ```yaml
+tracker: github
 github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the current repo
 ```
 
-To store work-item artifacts somewhere other than the defaults above,
-describe the destination and the exact steps here — the skills follow these
-instructions at publish, pull, and wrap-up.
+> Publish every work item as a self-contained GitHub issue: `item.md` is
+> the issue body; `refs/` files ride as marker-delimited issue comments.
 
 ## Boundaries
 
