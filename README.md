@@ -26,11 +26,11 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 
 | Directory | Contents | Synced to (in each consumer) |
 |---|---|---|
-| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-*`, `/discussion`, `postmortem`, `codex`, `excalidraw-pr-diagrams`) | `.claude/skills/` (consumer-owned `provider-*` dirs are left alone) |
+| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-*`, `/discussion`, `postmortem`, `codex`, `excalidraw-pr-diagrams`) | `.claude/skills/` |
 | `claude/agents/` | Claude sub-agent definitions (reviewers, researchers, verifiers, socrates) | `.claude/agents/` |
 | `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator) — thin pointers into `references/` | `.codex/skills/` |
 | `references/` | Shared skill-system documents: work-item formats, verification methods, rubrics, sub-agent role instructions and output formats | `.references/` |
-| `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) and example artifact-provider skills (`providers/`) to copy into a new consumer repo and fill in | not synced — copied once by hand |
+| `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) to copy into a new consumer repo and fill in | not synced — copied once by hand |
 | `scripts/sync.sh` | The mirror logic (four `rsync --delete` targets) | — |
 
 ## The rules that keep this sane
@@ -44,13 +44,12 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 2. **Repo-agnostic skills.** Nothing in the synced directories may name a
    specific codebase, database ID, or machine path. All paths are
    consumer-repo-relative (`.references/…`, `.claude/agents/…`).
-3. **Repo-specific knowledge lives in the consumer repo** — its `CLAUDE.md` /
-   `AGENTS.md` (e.g. the `Work-item tracking` section, including any
-   artifact-provider choice and its config) or its docs. Skills know to look
-   there. Platform-specific `provider-*` skills are consumer-owned too — the
-   synced skills speak only the generic provider contract
-   (`references/artifact-provider.md`) and default to local `./tmp/<id>/`
-   artifacts plus self-contained GitHub issues.
+3. **Repo-specific knowledge lives in the consumer repo** — its `AGENTS.md` /
+   `CLAUDE.md` (e.g. the `Work-item tracking` section, including any
+   custom artifact destination) or its docs. Skills know to look there.
+   The skills themselves are platform-agnostic: work-item artifacts default
+   to local `./tmp/<id>/` plus self-contained GitHub issues, unless the
+   consumer's `AGENTS.md` says otherwise.
 4. **Idempotent.** The sync is a full mirror (`rsync --delete`); running it
    twice produces zero diff. Nothing in the synced dirs is written to at
    runtime.
@@ -60,9 +59,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 ## Adding a consumer repo
 
 1. Copy `templates/AGENTS.md` and `templates/CLAUDE.md` into the repo root and
-   fill in the sections (including `Work-item tracking`). To use a richer
-   artifact host, copy a provider from `templates/providers/` into the
-   repo's `.claude/skills/provider-<name>/` and set `provider: <name>` there.
+   fill in the sections (including `Work-item tracking`).
 2. Add an `update-skills` script to the repo that clones this repo and runs
    `scripts/sync.sh` in a temp worktree, then opens the sync PR —
    bloomapi/bloom-mono's `scripts/update-skills.sh` is the reference

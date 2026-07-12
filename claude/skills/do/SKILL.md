@@ -27,16 +27,15 @@ web-researcher is a Claude sub-agent.
 ## Step 0: Load
 
 Get everything about the work item into `./tmp/<id>/` before starting: for
-a GitHub issue whose body carries the canonical `**Artifacts:** <url>` line
-and whose project `CLAUDE.md` names a provider (`Work-item tracking`
-section), the `provider-<name>` skill (operation `pull`, contract in
-`.references/artifact-provider.md`) fetches the work item and all its
-artifacts. No provider link? The issue body is the item, and the issue's
-comments carry the refs — harvest every
-`<!-- ORCHESTRA-ARTIFACT path="..." -->` block back to its path under
-`./tmp/<id>/` (joining `part=n` splits) before planning; an issue with
-neither provider page nor artifact comments gives you the body alone, so
-say so in the plan's Known mismatches. A local path is read directly. Invoked with no argument: list
+a GitHub issue, the issue body is the item, and the issue's comments carry
+the refs — harvest every `<!-- ORCHESTRA-ARTIFACT path="..." -->` block
+back to its path under `./tmp/<id>/` (joining `part=n` splits) before
+planning; an issue with no artifact comments gives you the body alone, so
+say so in the plan's Known mismatches. If the project's `AGENTS.md`
+`Work-item tracking` section specifies a different location for work-item
+artifacts, fetch them per its instructions. A local `./tmp/<id>/` that
+already exists wins over anything fetched — disk is the working truth;
+only fill gaps. A local path is read directly. Invoked with no argument: list
 the local items with `status: ready` (`./tmp/*/item.md`) and ask the user
 which to run — never pick one silently. Skim `refs/`; read individual refs
 as the work calls for them.
@@ -72,9 +71,8 @@ Known mismatches with how the plan resolves it — and record what you
 imported or dropped in the plan's Reconciliation notes.
 
 Research beyond that as the item actually needs — you judge. If the item
-links provider-hosted pages beyond what Step 0 pulled and the configured
-provider is reachable, fetch them via its `provider-<name>` skill rather
-than planning around the gap. Then write
+links external documents beyond what Step 0 pulled and they're reachable,
+fetch them rather than planning around the gap. Then write
 `./tmp/<id>/plan.md` following this skill's `references/implementation-plan.md` —
 its evidence contract is binding: facts live in Verified repo truths with
 `path:line` evidence from files opened this session, and proposals stay out
@@ -188,9 +186,10 @@ happens on the artifact, not before it exists.
 
 - Write `./tmp/<id>/wrapup.md` following this skill's
   `references/wrap-up-report.md`; post
-  it as a PR comment. If the item has an `artifacts:` reference and a
-  provider is configured, `provider-<name>` skill operation `upload`:
-  plan.md + wrapup.md, PR URL, status `done`.
+  it as a PR comment. `plan.md` and `wrapup.md` stay in `./tmp/<id>/` —
+  unless the project's `AGENTS.md` `Work-item tracking` section specifies
+  where work-item artifacts go, in which case save them there per its
+  instructions.
 - Report to the user: PR link + wrap-up summary + QA items left to the
   human + anything unresolved.
 

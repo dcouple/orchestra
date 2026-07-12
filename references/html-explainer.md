@@ -19,8 +19,8 @@ executes against — the explainer never replaces or extends it, it projects it.
    regenerate before publish so the attached explainer matches what ships.
 
 The file lives in `refs/`, so publish carries it along with every other
-artifact — attached to the work-item provider's page when one is configured,
-inlined in issue comments otherwise. No extra publishing step.
+artifact — inlined in issue comments, or wherever the project's `AGENTS.md`
+sends work-item artifacts. No extra publishing step.
 
 ## Section map
 
@@ -48,8 +48,8 @@ system.
 - **Altitude**: general direction, not design — no file lists, pseudo-code,
   or task sequences. If it isn't in `item.md`, it doesn't belong here.
 - **Self-contained**: no external requests (fonts, scripts, images) — it must
-  render from disk and from a file downloaded off whatever provider hosts the
-  work item. Inline everything.
+  render from disk and from a file downloaded off wherever the work item is
+  published. Inline everything.
 - **Both themes**: the template's tokens already handle light/dark; keep any
   additions on the tokens.
 - **Lean**: a one-pager the user reads in two minutes. Structure only earns
