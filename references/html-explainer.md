@@ -37,6 +37,12 @@ then numbered sections, then the footer. Per type:
 
 An epic is one page with the phase timeline — not a page per phase.
 
+One template serves all three types — the differences live in this section
+map, not in forked templates. Don't create per-type template files; if a
+type's explainer genuinely outgrows the shared skeleton, split into shared
+`<style>` + per-type body skeletons rather than duplicating the visual
+system.
+
 ## Rules
 
 - **Altitude**: general direction, not design — no file lists, pseudo-code,
