@@ -1,9 +1,10 @@
 # Postmortem — format
 
 > Produced by `/postmortem` after `/do` finishes and the human reviews the PR, when the
-> result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and published as a
-> GitHub issue in the current repo labeled `postmortem` (see SKILL.md step 4 for the
-> issue metadata). The point is **compound learning**: fix the root cause in *our system*
+> result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and published to the
+> tracker the repo's `AGENTS.md` `Work-item tracking` section configures, tagged
+> `postmortem` (see SKILL.md step 4 for the metadata; no tracker → stays local).
+> The point is **compound learning**: fix the root cause in *our system*
 > (skill / agent / template / criteria), so the same gap can't recur.
 
 ---
@@ -32,5 +33,5 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `<a concrete improvement to a specific skill / sub-agent / template / verification block>`
 
 ## System change
-`<URL of this postmortem's GitHub issue in the current repo, plus the approval verdict`
+`<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval verdict`
 `on the proposed change once the human gives it>`

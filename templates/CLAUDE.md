@@ -8,8 +8,8 @@
 See @AGENTS.md for the project overview, commands, architecture, conventions,
 and boundaries. Everything there applies here — do not duplicate it.
 
-Work-item tracking (where issues are filed and where work-item artifacts
-go) is defined in `AGENTS.md` — the skills read it from there.
+Work-item tracking (where work items are published and where their
+artifacts go) is defined in `AGENTS.md` — the skills read it from there.
 
 ## Claude-specific notes
 

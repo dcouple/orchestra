@@ -47,14 +47,16 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 3. **Repo-specific knowledge lives in the consumer repo** — its `AGENTS.md` /
    `CLAUDE.md` (e.g. the `Work-item tracking` section, including any
    custom artifact destination) or its docs. Skills know to look there.
-   The skills themselves are platform-agnostic: work-item artifacts default
-   to local `./tmp/<id>/` plus self-contained GitHub issues, unless the
-   consumer's `AGENTS.md` says otherwise.
+   The skills themselves are platform-agnostic: they publish work items
+   wherever the consumer's `AGENTS.md` `Work-item tracking` section says
+   (GitHub issues, Linear, anything the repo documents), and with no
+   instructions there they stay local-only in `./tmp/<id>/`.
 4. **Idempotent.** The sync is a full mirror (`rsync --delete`); running it
    twice produces zero diff. Nothing in the synced dirs is written to at
    runtime.
-5. **Postmortems** are filed as `postmortem`-labeled issues in the repo where
-   the run happened; proposed system changes are applied here in orchestra.
+5. **Postmortems** are filed, tagged `postmortem`, in the tracker configured
+   by the repo where the run happened (local-only when none is configured);
+   proposed system changes are applied here in orchestra.
 
 ## Adding a consumer repo
 
