@@ -21,10 +21,12 @@ What the workflow is and how models are routed: [WORKFLOW.md](WORKFLOW.md).
 
 ## The rules that keep this sane
 
-1. **One direction.** orchestra → consumer, via PR. A push to `main` touching
-   `claude/**`, `codex/**`, or `references/**` triggers
-   `.github/workflows/sync-consumers.yml`, which mirrors the four targets into
-   each consumer and opens (or force-updates) a `chore/orchestra-sync` PR there.
+1. **One direction.** orchestra → consumer, via PR. Each consumer repo
+   carries an `update-skills` script (e.g. `pnpm update-skills` in
+   bloomapi/bloom-mono) that fetches this repo's `main`, runs
+   `scripts/sync.sh` against a temp worktree, and opens (or force-updates)
+   the consumer's `chore/orchestra-sync` PR. Run it after pushing a skill
+   change here.
 2. **Repo-agnostic skills.** Nothing in the synced directories may name a
    specific codebase, database ID, or machine path. All paths are
    consumer-repo-relative (`.references/…`, `.claude/agents/…`).
@@ -41,12 +43,11 @@ What the workflow is and how models are routed: [WORKFLOW.md](WORKFLOW.md).
 
 1. Copy `templates/AGENTS.md` and `templates/CLAUDE.md` into the repo root and
    fill in the sections (including `Work-item tracking`).
-2. Add the repo to the `matrix.consumer` list in
-   `.github/workflows/sync-consumers.yml`.
-3. Ensure the `ORCHESTRA_SYNC_TOKEN` secret (fine-grained PAT) has Contents +
-   Pull-requests write access to the new repo.
-4. Run the workflow (`gh workflow run sync-consumers.yml`) and merge the sync
-   PR it opens.
+2. Add an `update-skills` script to the repo that clones this repo and runs
+   `scripts/sync.sh` in a temp worktree, then opens the sync PR —
+   bloomapi/bloom-mono's `scripts/update-skills.sh` is the reference
+   implementation.
+3. Run it and merge the first sync PR.
 
 ## Manual sync
 
@@ -54,7 +55,9 @@ What the workflow is and how models are routed: [WORKFLOW.md](WORKFLOW.md).
 scripts/sync.sh /path/to/consumer-repo
 ```
 
-Same mirror the workflow runs; useful for a first-time sync or local testing.
+The mirror primitive the consumer scripts wrap; useful for a first-time sync
+or local testing. It mutates the target working tree and prints the diff —
+committing and PR-ing is the caller's job.
 
 ## History
 

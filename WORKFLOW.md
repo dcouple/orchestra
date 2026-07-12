@@ -112,6 +112,7 @@ lives in `/do`'s PR step.
 ## Keeping in sync
 
 See [README.md](README.md): skills are edited only in this repo and mirrored
-one-way into each consumer repo by `.github/workflows/sync-consumers.yml`
-(or `scripts/sync.sh` by hand). The old per-machine rsync to `~/.claude`,
-`~/.codex`, and `~/.references` is retired.
+one-way into each consumer repo by that repo's `update-skills` script
+(`pnpm update-skills` in bloomapi/bloom-mono), which wraps `scripts/sync.sh`.
+The old per-machine rsync to `~/.claude`, `~/.codex`, and `~/.references` is
+retired.

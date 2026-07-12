@@ -8,8 +8,8 @@ ORCHESTRA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONSUMER="${1:?usage: sync.sh <path-to-consumer-repo>}"
 CONSUMER="$(cd "$CONSUMER" && pwd)"
 
-if [[ ! -d "$CONSUMER/.git" ]]; then
-  echo "error: $CONSUMER is not a git repo" >&2
+if ! git -C "$CONSUMER" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "error: $CONSUMER is not a git repo (or worktree)" >&2
   exit 1
 fi
 
