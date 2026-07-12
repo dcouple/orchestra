@@ -16,9 +16,11 @@ a Notion work item (see the `notion` skill).
 
 ```yaml
 github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the current repo
-notion_data_source: <ID or URL>   # the work-items database this repo publishes to
-# properties: <only if they differ from the database defaults — list the
-#              property names/schema the notion skill should use>
+# notion_data_source: <ID or URL>   # OVERRIDE only — the default lives in the
+#                                   # notion skill's config.yaml; set this only
+#                                   # if this repo publishes to a different database
+# properties: <only if they differ from the defaults in the notion skill's
+#              config.yaml — list the property names/schema to use>
 ```
 
 Work-item artifacts (item.md, refs/, plan.md, wrapup.md) live locally under

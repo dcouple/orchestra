@@ -6,11 +6,13 @@ Skills are edited **only here** and synced one-way into each repo that uses
 them ("consumer repos"). Never edit the synced copies in a consumer repo —
 the next sync overwrites them.
 
+What the workflow is and how models are routed: [WORKFLOW.md](WORKFLOW.md).
+
 ## Layout
 
 | Directory | Contents | Synced to (in each consumer) |
 |---|---|---|
-| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-*`, `/discussion`, `notion`, `postmortem`, `codex`) | `.claude/skills/` |
+| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-*`, `/discussion`, `notion`, `postmortem`, `codex`, `excalidraw-pr-diagrams`) | `.claude/skills/` |
 | `claude/agents/` | Claude sub-agent definitions (reviewers, researchers, verifiers, socrates) | `.claude/agents/` |
 | `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator) — thin pointers into `references/` | `.codex/skills/` |
 | `references/` | Shared skill-system documents: work-item formats, verification methods, rubrics, sub-agent role instructions and output formats | `.references/` |

@@ -22,14 +22,16 @@ operation: `publish`, `upload`, or `pull`.
    prefix. If no Notion tools resolve and no `notion` CLI is on PATH, return
    `NOTION UNAVAILABLE: <what was tried>` — the caller proceeds
    GitHub + local only and says so.
-2. **Find the target database**: read the project `CLAUDE.md`'s
-   `Work-item tracking` section — it sets `notion_data_source` (ID or URL)
-   and the database's property names/schema. This is the only place the
-   target lives; this skill carries no per-repo config (it is synced from
-   `dcouple/orchestra` and must stay repo-agnostic). If the section is
-   missing → search Notion for the work-items database once, confirm the
-   match with the user, and offer to save it into the project `CLAUDE.md`'s
-   `Work-item tracking` section so the search never repeats.
+2. **Find the target database** — resolution order, most specific wins:
+   1. The project `CLAUDE.md`'s `Work-item tracking` section
+      (`notion_data_source`, optional `properties`) — per-repo override.
+   2. `config.yaml` in this skill's directory — the shipped org-wide
+      default. Read-only: this skill is synced from `dcouple/orchestra`,
+      so never write discoveries here (the next sync would erase them).
+   3. Neither set → search Notion for the work-items database once, confirm
+      the match with the user, and offer to save it into the project
+      `CLAUDE.md`'s `Work-item tracking` section so the search never
+      repeats.
 
 **Success criteria**: tools loaded and a data source resolved (or an explicit
 `NOTION UNAVAILABLE`).
@@ -39,15 +41,28 @@ operation: `publish`, `upload`, or `pull`.
 Inputs: `./tmp/<id>/` with a ready `item.md`, plus the GitHub issue URL the
 caller just created.
 
-1. Create one page in the work-items data source:
+1. Dedup first: query the data source for a page whose GitHub-issue-URL
+   property equals this issue — an exact property query, not workspace
+   full-text search. Found → this publish updates that page in place.
+2. Create (or update) one page in the work-items data source:
    - Title: the item's title (same as the GitHub issue title).
    - Properties (as the database schema allows): GitHub issue URL, work-item
      type (`feature-ticket | epic-spec | bug-report`), status `ready`.
-   - Page body: the full `item.md` content.
-2. Upload every file in `./tmp/<id>/refs/` to the page (attachments for
-   binaries, sub-pages for markdown), named as on disk.
-3. Return the new page URL to the caller — the caller writes it into the
-   GitHub issue body and into `item.md`'s frontmatter as `notion:`.
+   - Page body: the full `item.md` content — the human-readable mirror.
+3. Upload every file in `./tmp/<id>/refs/` to the page (attachments for
+   binaries, sub-pages for markdown), named as on disk. Also write the RAW
+   bytes of `item.md` and each markdown ref to a sub-page named
+   `raw/<name>` whose entire content is one fenced code block: Notion
+   re-renders page bodies (tables, checkboxes, frontmatter fences all
+   mutate) but never touches code-block contents. Don't rely on file
+   attachments for this — Notion serves them as expiring, integration-scoped
+   URLs, so another session's pull 404s on them.
+4. Return the new page URL to the caller — the caller cross-links it in both
+   directions: append the canonical line `**Notion:** <page URL>` to the end
+   of the GitHub issue body (`gh issue edit --body-file`), and write the URL
+   into `item.md`'s frontmatter as `notion:`. When publish runs ad hoc (no
+   calling skill), do both edits as part of this operation. The exact
+   `**Notion:**` line format matters — `pull` looks for it.
 
 **Success criteria**: page exists with the item body and every `refs/` file;
 page URL returned.
@@ -68,14 +83,25 @@ GitHub issue body) and the files to add (`plan.md`, `wrapup.md`, new refs).
 
 Inputs: a GitHub issue number/URL or a Notion page URL.
 
-1. If given a GitHub issue: `gh issue view` and find the Notion page URL in
-   its body. No Notion link → return `NO NOTION ITEM` (the caller falls back
-   to treating the issue body itself as the work item).
+1. If given a GitHub issue: `gh issue view` and find the canonical
+   `**Notion:** <url>` line in its body (fall back to any Notion page URL
+   found anywhere in the body). No Notion link → return `NO NOTION ITEM`
+   (the caller falls back to treating the issue body itself as the work
+   item).
 2. Fetch the page. Derive `<id>` from the item's frontmatter `id:` (or slug
-   the title). Write the page body to `./tmp/<id>/item.md`.
-3. Fetch every sub-page and attachment; save each to `./tmp/<id>/refs/<name>`.
-   If a plan from a prior run exists, save it as `./tmp/<id>/plan.md`.
-4. Return the local paths written.
+   the title). Prefer the `raw/item.md` code-block sub-page when present —
+   its contents are byte-identical to what was published; reconstruct from
+   the rendered page body only when no raw sub-page exists. Treat file-
+   attachment 404s as normal (expiring, integration-scoped URLs), never as
+   an error worth stopping for.
+3. Fetch every sub-page and attachment; save each to `./tmp/<id>/refs/<name>`
+   (same preference: `raw/<name>` code block over rendered sub-page). If a
+   plan from a prior run exists, save it as `./tmp/<id>/plan.md`. A local
+   `./tmp/<id>/` that already exists wins over anything fetched — disk is
+   the working truth; only fill gaps.
+4. Set the page's status property to `in-progress` — the database stays an
+   honest at-a-glance board while `/do` runs (`upload` flips it to `done`).
+5. Return the local paths written.
 
 **Success criteria**: `./tmp/<id>/item.md` exists locally and every artifact
 on the page has a local copy under `./tmp/<id>/`.
@@ -93,5 +119,6 @@ When Notion is reached via the `ntn` CLI (no MCP tools resolve):
 - Notion is the mirror, `item.md` on disk is the working truth during a run —
   push at milestones (publish, wrap-up), don't sync continuously.
 - Never store secrets in Notion pages; artifacts only.
-- One work item = one page. Search for an existing page (by GitHub issue URL)
-  before creating — re-publishing must update, not duplicate.
+- One work item = one page. Dedup by exact GitHub-issue-URL property query
+  against the data source (workspace full-text search only as a fallback) —
+  re-publishing must update, not duplicate.
