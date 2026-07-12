@@ -9,3 +9,4 @@ properties:
   type: "Type"
   status: "Status"
   pr: "PR"
+  files: "Files"

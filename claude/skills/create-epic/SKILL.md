@@ -52,7 +52,17 @@ skill's `references/epic-spec.md` as the template. Epic specifics:
 **Success criteria**: `item.md` exists; phases are sequential and independently
 verifiable; every AC is numbered, observable, and mapped; spec altitude respected.
 
-### 4. Socratic gate
+### 4. Render the explainer and align
+Generate `./tmp/<id>/refs/explainer.html` per `.references/html-explainer.md`
+(one page for the whole epic, with the phase timeline) and open it in the
+user's browser. This page is what the user aligns on: the problem, the phase
+cut, and the cross-cutting directions. Fold corrections back into `item.md`
+and regenerate.
+
+**Success criteria**: explainer opened in the browser; user has confirmed
+problem, phases, and directions against it; `item.md` and explainer agree.
+
+### 5. Socratic gate
 Run the gate per `.references/socratic-gate.md`. A multi-phase commitment
 is never "straightforward" — expect the full challenge. For an epic it bears
 down on shape (are the phases real?), appetite, consequences, and
@@ -63,8 +73,9 @@ the epic to one phase, hand off to `/create-feature`.
 the cap was reached, or the user waived); `## Justification` written into
 `item.md`.
 
-### 5. Mark ready and publish
-Publish per `.references/publish-work-item.md` — issue title
+### 6. Mark ready and publish
+If the gate changed the item, regenerate the explainer first so the attached
+copy matches. Publish per `.references/publish-work-item.md` — issue title
 `feat: <epic title>`, issue body = the epic's problem, end state, the
 phases table, and the Justification section.
 

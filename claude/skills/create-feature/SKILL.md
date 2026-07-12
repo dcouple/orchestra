@@ -49,7 +49,16 @@ the running app (frontend/mobile).
 **Success criteria**: `item.md` exists; every AC is numbered, observable, and mapped;
 nothing in the item restates what refs/ or the model already covers.
 
-### 4. Socratic gate
+### 4. Render the explainer and align
+Generate `./tmp/<id>/refs/explainer.html` per `.references/html-explainer.md`
+and open it in the user's browser. This page — not raw `item.md` — is what the
+user aligns on: the change, the before/after, and the proposed implementation
+direction. Fold any corrections back into `item.md` and regenerate.
+
+**Success criteria**: explainer opened in the browser; user has confirmed the
+change and direction against it; `item.md` and explainer agree.
+
+### 5. Socratic gate
 Run the gate per `.references/socratic-gate.md`. For a feature it bears
 down on necessity, root cause, simpler alternatives, and shape; a
 straightforward, well-justified draft fast-passes with zero to two questions.
@@ -59,8 +68,9 @@ If the dialogue reveals a multi-phase shape, hand off to `/create-epic`.
 the cap was reached, or the user waived); `## Justification` written into
 `item.md`.
 
-### 5. Mark ready and publish
-Publish per `.references/publish-work-item.md` — issue title
+### 6. Mark ready and publish
+If the gate changed the item, regenerate the explainer first so the attached
+copy matches. Publish per `.references/publish-work-item.md` — issue title
 `feat: <item title>`, issue body = the item's intent, desired end state,
 verification criteria summary, and the Justification section.
 

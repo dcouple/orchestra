@@ -62,7 +62,17 @@ skill's `references/bug-report.md` as the template. Bug specifics:
 **Success criteria**: `item.md` exists; repro is re-runnable; AC1 maps to the repro;
 prevention criteria present; raw material linked from `refs/`.
 
-### 4. Socratic gate
+### 4. Render the explainer and align
+Generate `./tmp/<id>/refs/explainer.html` per `.references/html-explainer.md`
+and open it in the user's browser. This page is what the user aligns on:
+expected vs actual, the root cause (with its confidence level stated
+honestly), and the suggested resolution path. Fold corrections back into
+`item.md` and regenerate.
+
+**Success criteria**: explainer opened in the browser; user has confirmed
+cause, impact, and resolution path against it; `item.md` and explainer agree.
+
+### 5. Socratic gate
 Run the gate per `.references/socratic-gate.md`. For a bug report it bears
 down on root cause vs symptom (does the cause survive another "why"?),
 evidence, whether the fix prevents the class or just this instance, and
@@ -75,8 +85,9 @@ cause to chase, re-dispatch the investigator before proceeding.
 the cap was reached, or the user waived); `## Justification` written into
 `item.md`.
 
-### 5. Mark ready and publish
-Publish per `.references/publish-work-item.md` — issue title
+### 6. Mark ready and publish
+If the gate changed the item, regenerate the explainer first so the attached
+copy matches. Publish per `.references/publish-work-item.md` — issue title
 `fix: <bug title>`, issue body = summary, severity, reproduction steps, root
 cause + confidence, and the Justification section. Exception: leave
 `status: draft` if the cause is still a hypothesis and the user wants more
