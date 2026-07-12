@@ -8,6 +8,20 @@ the next sync overwrites them.
 
 What the workflow is and how models are routed: [WORKFLOW.md](WORKFLOW.md).
 
+The system at a glance:
+
+![Orchestra workflow map](docs/workflow-map.png)
+
+_Source: [docs/workflow-map.excalidraw](docs/workflow-map.excalidraw)_
+
+And the story of how it got here — conducted by hand, then Orchestra running
+itself, next the factory that feeds itself:
+
+![From workflow to software factory](docs/software-factory-story.png)
+
+_Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.excalidraw)
+· longer version in [this blog post](https://runpane.com/blog/from-workflow-to-software-factory)_
+
 ## Layout
 
 | Directory | Contents | Synced to (in each consumer) |
@@ -48,6 +62,25 @@ What the workflow is and how models are routed: [WORKFLOW.md](WORKFLOW.md).
    bloomapi/bloom-mono's `scripts/update-skills.sh` is the reference
    implementation.
 3. Run it and merge the first sync PR.
+
+## User-level install (optional)
+
+The consumer-repo sync above is the canonical path. If you also want the
+skills available in **every** repo on a machine (not just consumer repos),
+mirror them into the user-level dirs:
+
+```bash
+scripts/sync-user.sh
+```
+
+It rsyncs `claude/ → ~/.claude`, `codex/ → ~/.codex`,
+`references/ → ~/.references`, and rewrites the installed copies'
+repo-relative `.references/` paths to `~/.references/` (the repo itself is
+never touched). No `--delete`: user-level dirs are a union space — personal
+skills and `p-*` preserves from other sets live alongside. To keep it fresh,
+point a LaunchAgent or cron at a wrapper that fetches `origin/main`, exports
+it (`git archive`), and runs the script from the export — invoke it with
+`bash`, and never schedule a plain one-set rsync over these dirs.
 
 ## Manual sync
 
