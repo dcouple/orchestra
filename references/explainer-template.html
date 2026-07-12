@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- <item title> — Explainer --></title>
+<style>
+  :root {
+    --paper: #FAF8F5;
+    --ink: #1F2328;
+    --ink-soft: #5A5F66;
+    --line: #E4DFD7;
+    --panel: #FFFFFF;
+    --accent: #0E7569;
+    --accent-soft: #E3F0EE;
+    --warn: #B45309;
+    --warn-soft: #F7EBDD;
+    --out: #9F3A38;
+    --out-soft: #F6E8E7;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #15191D; --ink: #E8E6E1; --ink-soft: #9BA1A8;
+      --line: #2C3237; --panel: #1C2126;
+      --accent: #2FA79A; --accent-soft: #16302D;
+      --warn: #D98E3D; --warn-soft: #32271A;
+      --out: #CF6F6C; --out-soft: #33211F;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--paper); color: var(--ink); font-family: var(--sans); line-height: 1.6; font-size: 16px; }
+  .page { max-width: 720px; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+
+  header.masthead { border-bottom: 1px solid var(--line); padding-bottom: 1.75rem; margin-bottom: 2.5rem; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: center; margin-bottom: 1rem; }
+  .badge { font-family: var(--mono); font-size: .72rem; letter-spacing: .06em; padding: .2rem .55rem; border-radius: 3px; text-transform: uppercase; }
+  .badge.type { background: var(--accent-soft); color: var(--accent); }
+  .badge.status { border: 1px solid var(--line); color: var(--ink-soft); }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: 2.1rem; line-height: 1.2; letter-spacing: -.01em; text-wrap: balance; margin-bottom: .75rem; }
+  .standfirst { color: var(--ink-soft); font-size: 1.05rem; max-width: 60ch; }
+  .links { margin-top: 1rem; font-size: .85rem; display: flex; gap: 1.25rem; flex-wrap: wrap; }
+  .links a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+
+  section { margin-bottom: 2.75rem; }
+  .eyebrow { font-family: var(--mono); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: .6rem; }
+  h2 { font-size: 1.25rem; margin-bottom: .75rem; letter-spacing: -.01em; }
+  p { margin-bottom: .9rem; max-width: 65ch; }
+  code { font-family: var(--mono); font-size: .85em; background: var(--panel); border: 1px solid var(--line); padding: .08em .35em; border-radius: 3px; }
+
+  /* Before/after (or expected/actual) panel pair */
+  .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.25rem 0; }
+  @media (max-width: 560px) { .before-after { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1.1rem 1.2rem; }
+  .panel h3 { margin-bottom: .6rem; font-size: .78rem; font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+  .panel.after { border-color: var(--accent); }
+  .panel.after h3 { color: var(--accent); }
+  .panel ul { padding-left: 1.1rem; font-size: .92rem; }
+  .panel li { margin-bottom: .4rem; }
+
+  /* Horizontal flow of stages/components — reuse for epic phase timelines */
+  .pipeline { display: flex; align-items: stretch; margin: 1.5rem 0; overflow-x: auto; padding-bottom: .5rem; }
+  .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: .75rem .9rem; min-width: 130px; flex: 1; }
+  .stage.hot { border-color: var(--accent); background: var(--accent-soft); }
+  .stage .name { font-family: var(--mono); font-size: .78rem; font-weight: 600; margin-bottom: .25rem; }
+  .stage .desc { font-size: .78rem; color: var(--ink-soft); line-height: 1.45; }
+  .arrow { align-self: center; padding: 0 .5rem; color: var(--ink-soft); flex: none; }
+
+  /* Locked directions — one card per D-number */
+  .decision { border-left: 3px solid var(--accent); padding: .2rem 0 .2rem 1.1rem; margin-bottom: 1.25rem; }
+  .decision .tag { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: var(--accent); }
+  .decision p { margin: .3rem 0 0; font-size: .95rem; }
+  .decision .rejected { color: var(--ink-soft); font-size: .85rem; }
+  .decision .rejected::before { content: "rejected — "; font-style: italic; }
+
+  /* In / out of scope */
+  .scope { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 560px) { .scope { grid-template-columns: 1fr; } }
+  .scope .panel.in { border-top: 3px solid var(--accent); }
+  .scope .panel.outof { border-top: 3px solid var(--out); }
+  .scope .panel.outof h3 { color: var(--out); }
+
+  /* Acceptance criteria — auto-numbered AC1, AC2… */
+  ol.acs { padding-left: 0; list-style: none; counter-reset: ac; }
+  ol.acs li { counter-increment: ac; position: relative; padding-left: 3.2rem; margin-bottom: .8rem; font-size: .95rem; max-width: 62ch; }
+  ol.acs li::before {
+    content: "AC" counter(ac); position: absolute; left: 0; top: .1em;
+    font-family: var(--mono); font-size: .72rem; font-weight: 700;
+    color: var(--accent); background: var(--accent-soft); padding: .15rem .4rem; border-radius: 3px;
+  }
+
+  /* Open questions */
+  .question { background: var(--warn-soft); border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: .8rem 1.1rem; margin-bottom: .75rem; font-size: .95rem; }
+  .question strong { color: var(--warn); font-family: var(--mono); font-size: .78rem; letter-spacing: .05em; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 3rem; padding-top: 1.25rem; font-size: .8rem; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <div class="meta-row">
+      <span class="badge type"><!-- feature | epic | bug --></span>
+      <span class="badge status"><!-- draft — for alignment | ready --></span>
+    </div>
+    <h1><!-- item title --></h1>
+    <p class="standfirst"><!-- one-sentence intent, in the user's language --></p>
+    <div class="links"><!-- GitHub issue / Notion page links once they exist; omit before publish --></div>
+  </header>
+
+  <!-- Sections per item type — see html-explainer.md for the section map.
+       Each section follows this shape: -->
+  <section>
+    <p class="eyebrow">01 · <!-- Why / Direction / Scope / Done means / Unresolved --></p>
+    <h2><!-- section heading --></h2>
+    <!-- prose, .before-after, .pipeline, .decision cards, .scope, ol.acs, .question — pick what fits -->
+  </section>
+
+  <footer>
+    Generated by <code><!-- /create-feature | /create-epic | /create-issue --></code> ·
+    This page is the alignment surface; <code>item.md</code> remains the contract <code>/do</code> executes against.
+  </footer>
+</div>
+</body>
+</html>

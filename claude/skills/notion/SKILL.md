@@ -48,15 +48,20 @@ caller just created.
    - Title: the item's title (same as the GitHub issue title).
    - Properties (as the database schema allows): GitHub issue URL, work-item
      type (`feature-ticket | epic-spec | bug-report`), status `ready`.
-   - Page body: the full `item.md` content — the human-readable mirror.
-3. Upload every file in `./tmp/<id>/refs/` to the page (attachments for
-   binaries, sub-pages for markdown), named as on disk. Also write the RAW
-   bytes of `item.md` and each markdown ref to a sub-page named
+   - Page body: a **high-level summary only** — intent / desired end state
+     (a few sentences), a one-line verification summary, and links to the
+     GitHub issue and attached files. The page is a board card, not a
+     mirror; the full item travels as files.
+3. Attach every file — `item.md`, `refs/explainer.html`, and everything
+   else in `./tmp/<id>/refs/` — to the database's files property
+   (`properties.files`, default `Files`), named as on disk; if the schema
+   has no files property, attach them to the page body instead. Also write
+   the RAW bytes of `item.md` and each markdown ref to a sub-page named
    `raw/<name>` whose entire content is one fenced code block: Notion
-   re-renders page bodies (tables, checkboxes, frontmatter fences all
-   mutate) but never touches code-block contents. Don't rely on file
-   attachments for this — Notion serves them as expiring, integration-scoped
-   URLs, so another session's pull 404s on them.
+   re-renders rendered content but never touches code-block contents, and
+   file attachments are served as expiring, integration-scoped URLs that
+   another session's pull may 404 on — the `raw/` sub-pages are what make
+   pull reliable.
 4. Return the new page URL to the caller — the caller cross-links it in both
    directions: append the canonical line `**Notion:** <page URL>` to the end
    of the GitHub issue body (`gh issue edit --body-file`), and write the URL
@@ -72,8 +77,9 @@ page URL returned.
 Inputs: the work item's Notion page URL (from `item.md` frontmatter or the
 GitHub issue body) and the files to add (`plan.md`, `wrapup.md`, new refs).
 
-1. Add each file to the page as in publish step 2 — update in place if a
-   sub-page with the same name exists (a re-run replaces, never duplicates).
+1. Add each file as in publish step 3 (files property + `raw/` sub-page for
+   markdown) — update in place if one with the same name exists (a re-run
+   replaces, never duplicates).
 2. Update the page's status property to match `item.md` (`done` after a
    successful `/do`), and add the PR URL if provided.
 
@@ -90,8 +96,9 @@ Inputs: a GitHub issue number/URL or a Notion page URL.
    item).
 2. Fetch the page. Derive `<id>` from the item's frontmatter `id:` (or slug
    the title). Prefer the `raw/item.md` code-block sub-page when present —
-   its contents are byte-identical to what was published; reconstruct from
-   the rendered page body only when no raw sub-page exists. Treat file-
+   its contents are byte-identical to what was published. Only legacy pages
+   carry a full mirror in the body; on current pages the body is just a
+   summary, so reconstructing `item.md` from it is a last resort. Treat file-
    attachment 404s as normal (expiring, integration-scoped URLs), never as
    an error worth stopping for.
 3. Fetch every sub-page and attachment; save each to `./tmp/<id>/refs/<name>`
