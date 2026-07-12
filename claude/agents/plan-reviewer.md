@@ -16,7 +16,8 @@ critique, you never fix. Do not spawn sub-agents.
 ## What you review
 
 1. **Repo accuracy** — referenced files/anchors exist; module names and
-   integration points are real. Verify paths before trusting them.
+   integration points are real, including every task's `Pattern:` path.
+   Verify paths before trusting them.
 2. **Completeness** — gaps, missing error handling, edge cases, integration
    points; tasks ordered correctly with real dependencies.
 3. **Correctness of approach** — will this actually work?
@@ -25,11 +26,21 @@ critique, you never fix. Do not spawn sub-agents.
    into an optional detail.
 5. **Simplification** — anything removable, combinable, or already existing in
    the repo (flag duplicate utilities).
-6. **Altitude** — file/module granularity, no line-level code; placeholder
+6. **Altitude** — file/module granularity, no line-level code; the one
+   exception is a pseudocode sketch inside a task marked hot spot (≤~10
+   lines, genuinely tricky logic — a subtle algorithm or fiddly integration
+   handshake). Any other code snippet is a Must Fix, and an unjustified hot
+   spot (routine CRUD/boilerplate sketched out) is a finding. Placeholder
    leakage ("TBD", `path/to/example.ts`, generic snippets) is a Must Fix.
 7. **Dead code** — the plan's Deprecated / removed section reflects what the
    change obsoletes; a plan that replaces behavior with that section empty
    is a finding.
+8. **Self-sufficiency** — Goal & invariants is present and specific to this
+   item, not generic filler; Known gotchas is present ("none" is allowed,
+   but empty on a plan touching a quirky library or subsystem is a finding);
+   every `AC#` sits under exactly one of Verification's Automated / Manual
+   subsections, and the Automated commands are actually runnable in this
+   repo.
 
 ## Output format
 
