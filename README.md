@@ -26,7 +26,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 
 | Directory | Contents | Synced to (in each consumer) |
 |---|---|---|
-| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-*`, `/discussion`, `notion`, `postmortem`, `codex`, `excalidraw-pr-diagrams`) | `.claude/skills/` |
+| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-*`, `/discussion`, `postmortem`, `codex`, `excalidraw-pr-diagrams`) | `.claude/skills/` |
 | `claude/agents/` | Claude sub-agent definitions (reviewers, researchers, verifiers, socrates) | `.claude/agents/` |
 | `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator) — thin pointers into `references/` | `.codex/skills/` |
 | `references/` | Shared skill-system documents: work-item formats, verification methods, rubrics, sub-agent role instructions and output formats | `.references/` |
@@ -44,9 +44,12 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 2. **Repo-agnostic skills.** Nothing in the synced directories may name a
    specific codebase, database ID, or machine path. All paths are
    consumer-repo-relative (`.references/…`, `.claude/agents/…`).
-3. **Repo-specific knowledge lives in the consumer repo** — its `CLAUDE.md` /
-   `AGENTS.md` (e.g. the `Work-item tracking` section with the Notion
-   database) or its docs. Skills know to look there.
+3. **Repo-specific knowledge lives in the consumer repo** — its `AGENTS.md` /
+   `CLAUDE.md` (e.g. the `Work-item tracking` section, including any
+   custom artifact destination) or its docs. Skills know to look there.
+   The skills themselves are platform-agnostic: work-item artifacts default
+   to local `./tmp/<id>/` plus self-contained GitHub issues, unless the
+   consumer's `AGENTS.md` says otherwise.
 4. **Idempotent.** The sync is a full mirror (`rsync --delete`); running it
    twice produces zero diff. Nothing in the synced dirs is written to at
    runtime.
