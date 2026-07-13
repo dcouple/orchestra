@@ -26,7 +26,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 
 | Directory | Contents | Synced to (in each consumer) |
 |---|---|---|
-| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-*`, `/discussion`, `postmortem`, `codex`, `excalidraw-pr-diagrams`) | `.claude/skills/` |
+| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-*`, `/discussion`, `/prepare-pull-request`, `postmortem`, `codex`, `excalidraw-pr-diagrams`) | `.claude/skills/` |
 | `claude/agents/` | Claude sub-agent definitions (reviewers, researchers, verifiers, socrates) | `.claude/agents/` |
 | `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator) — thin pointers into `references/` | `.codex/skills/` |
 | `references/` | Shared skill-system documents: work-item formats, verification methods, rubrics, sub-agent role instructions and output formats | `.references/` |
