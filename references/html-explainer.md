@@ -22,10 +22,31 @@ The file lives in `refs/`, so publish carries it along with every other
 artifact — inlined in issue comments, or wherever the project's `AGENTS.md`
 sends work-item artifacts. No extra publishing step.
 
+## Opening diagram
+
+Every explainer opens with a diagram, directly after the masthead and before
+section 01. It gives the reader the architecture or the shape of what's
+happening at a glance, before any prose — the "whiteboard sketch" the rest
+of the page elaborates on.
+
+- **Always present** — a simple item gets a simple diagram (three boxes and
+  an arrow is fine), never a skipped one.
+- **Content**: whatever best orients this item — the touched components and
+  how they connect, the before/after flow, the failure path for a bug, the
+  phase sequence for an epic. Show relationships and flow, not a list of
+  labels.
+- **Form is at the agent's discretion**: inline SVG, the template's
+  `.pipeline`/`.stage` strip, an HTML/CSS box-and-arrow layout, or a
+  rendered image inlined as a `data:` URI (e.g. via the excalidraw skill
+  when it's available and the item warrants it). Whatever form, it must obey
+  the self-contained and both-themes rules below — inline SVG on the
+  template's tokens is the safest default.
+- **Legible at page width**: if the reader must zoom to follow it, simplify.
+
 ## Section map
 
 Every explainer: masthead (type badge, status, title, one-sentence intent),
-then numbered sections, then the footer. Per type:
+then the opening diagram, then numbered sections, then the footer. Per type:
 
 | # | feature-ticket | epic-spec | bug-report |
 |---|----------------|-----------|------------|
