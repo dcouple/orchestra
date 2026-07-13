@@ -167,6 +167,21 @@ apply the Autonomy & safety tiers — a red-tier action gets captured, noted,
 and notified, and the run continues; only a red gate that blocks everything
 stops it.
 
+**Bulk fan-outs** (many similar sub-agent dispatches — translations,
+codemods, per-file transforms):
+
+- Give every dispatch a machine-verifiable completion contract and audit
+  the whole batch with a script after each wave — a dispatch's exit status
+  or "DONE" claim is never evidence. Expect a silent-failure tail on large
+  inputs; plan one repair wave.
+- Each dispatch commits its own output the moment it succeeds. Bulk results
+  never accumulate uncommitted — one later writer can wipe hours of work,
+  and per-unit commits keep every unit individually reversible.
+- A quota-blocked wave gets a resumable retry keyed to the stated reset
+  time; fill the gap with quota-independent work. Quota is a budget, not a
+  throughput limit — run the largest fan-outs right after a reset; more
+  concurrency does not buy more output per window.
+
 ## Step 3: Verify
 
 Prove every verification criterion — the `frontend-verifier` sub-agent for
