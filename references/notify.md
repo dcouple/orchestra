@@ -20,8 +20,12 @@ section (fall back to `CLAUDE.md`/`README`):
 notify: https://ntfy.sh/<your-topic>
 ```
 
-If none is set, default to `https://ntfy.sh/dcouple-orchestra`. `ntfy.sh` needs
-no account and has a mobile app (subscribe to the topic there). The topic is a
+If none is set, default to `https://ntfy.sh/<gh-username>-dcouple-orchestra` —
+resolve `<gh-username>` from `gh api user --jq .login`. The per-operator prefix
+keeps operators who share an org from cross-notifying each other (a shared
+`dcouple-orchestra` topic delivers everyone's gates to everyone). `ntfy.sh`
+needs no account and has a mobile app (subscribe to the topic there). The topic
+is a
 low-sensitivity channel name, **but a public topic is readable by anyone who
 knows it** — so a project that wants its gate messages private sets its own
 topic in `AGENTS.md`, and **no message ever carries a secret, token, or PHI**
@@ -52,12 +56,20 @@ fails the run. Use `--data-binary` so newlines survive (`--data`/`-d` strips
 them):
 
 ```bash
-NOTIFY="${NOTIFY:-https://ntfy.sh/dcouple-orchestra}"
+NOTIFY="${NOTIFY:-https://ntfy.sh/$(gh api user --jq .login)-dcouple-orchestra}"
 printf '%s' "$BODY" | curl -fsS -m 10 \
   -H "Title: [$ID] $STAGE — $WHAT" \
   -H "Priority: urgent" -H "Tags: warning" \
   --data-binary @- "$NOTIFY" >/dev/null 2>&1 || true
 ```
+
+**After every send, say so in chat** — a one-line utility note so the operator
+knows where to look:
+
+> ntfy sent to `<channel>` — check at https://ntfy.sh/`<channel>` (browser) or
+> subscribe to `<channel>` in the ntfy app.
+
+(where `<channel>` is the topic name, e.g. `parsakhaz-dcouple-orchestra`.)
 
 where `$BODY` is plain text with real newlines, e.g.
 
