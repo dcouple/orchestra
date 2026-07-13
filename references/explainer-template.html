@@ -61,6 +61,11 @@
   .panel ul { padding-left: 1.1rem; font-size: .92rem; }
   .panel li { margin-bottom: .4rem; }
 
+  /* Opening diagram — required slot right after the masthead */
+  .diagram { margin: 1.5rem 0 2.5rem; }
+  .diagram svg, .diagram img { display: block; max-width: 100%; height: auto; }
+  .diagram figcaption { margin-top: .5rem; font-size: .8rem; color: var(--ink-soft); }
+
   /* Horizontal flow of stages/components — reuse for epic phase timelines */
   .pipeline { display: flex; align-items: stretch; margin: 1.5rem 0; overflow-x: auto; padding-bottom: .5rem; }
   .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: .75rem .9rem; min-width: 130px; flex: 1; }
@@ -110,6 +115,13 @@
     <p class="standfirst"><!-- one-sentence intent, in the user's language --></p>
     <div class="links"><!-- GitHub issue link once it exists; omit before publish --></div>
   </header>
+
+  <figure class="diagram">
+    <!-- Opening diagram — required, see html-explainer.md. Architecture /
+         flow of what's happening: inline SVG on the tokens, the .pipeline
+         strip, or an inlined data: URI image. Never skipped. -->
+    <figcaption><!-- one line: what the diagram shows --></figcaption>
+  </figure>
 
   <!-- Sections per item type — see html-explainer.md for the section map.
        Each section follows this shape: -->
