@@ -157,10 +157,21 @@ Omit the section only when there was genuinely nothing human-runnable to QA.
 ### Deploy notes
 Every finding from the deploy-notes scan (schema/migrations, env vars/secrets,
 infra/CI, new dependencies, one-time scripts/backfills): **what changed** and
-**the action the human takes before/at deploy**. Name env vars and secrets by
-name, never print their values. Order by "must happen before the code ships"
-first. **Omit the whole section when the scan finds nothing** — an empty
-Deploy notes reads as "nothing to do," which is a lie if you skipped the scan.
+**the action the human takes before/at deploy**, ordered "must happen before
+the code ships" first.
+
+Carry the **concrete artifact, not a command to run**: paste the actual
+migration/DDL SQL the deployer will apply (wrapped in a transaction where the
+engine supports it), name env vars and secrets by name (never their values),
+name the exact dashboard toggle. A deployer should not have to run a tool to
+learn what is about to change. For schema changes, put **only additive DDL
+(CREATE / ADD)** in the run-this block and **flag any destructive DDL (DROP,
+type-changing ALTER) separately for explicit human confirmation** rather than
+pasting it as routine. Where the repo has distinct environments, note
+per-environment state (e.g. "staging already has these; production does not").
+
+**Omit the whole section when the scan finds nothing** — an empty Deploy notes
+reads as "nothing to do," which is a lie if you skipped the scan.
 
 ### Residual risks
 Known limitations shipping *by choice* — narrowed-but-not-closed windows,
@@ -187,6 +198,9 @@ Run before opening, and again after any body edit in Step 5:
 - [ ] Branching flow ⇒ both journey lenses present; flow map's `J#` ids
       cross-tagged into Manual tests; gaps flagged, not hidden.
 - [ ] Every AC has a Verification line; every Manual test traces to a change.
-- [ ] Deploy notes: scan actually run; section present iff findings exist.
+- [ ] Build / typecheck / lint gate passed before opening (Step 4's gate).
+- [ ] Deploy notes: scan actually run; section present iff findings exist;
+      migrations pasted as concrete SQL (additive in the run block, destructive
+      flagged), not a command to run.
 - [ ] No secret values anywhere in the body or a comment.
 - [ ] Closing keyword present and correct.
