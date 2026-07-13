@@ -53,22 +53,23 @@ morning. Three rules make that safe:
     action, capture the exact change to a file under `./tmp/<id>/` (migration,
     script, deploy note), record it in Deploy notes, and hand the human the
     exact command — you never run it.
-- **A red gate that only needs a *decision* → ask and wait** (two-way, per
-  `.references/notify.md`): notify with the question and block on the reply
-  from the human's phone, then act on it — but a production *mutation* is never
-  executed by you regardless of the answer (prepare it, hand it back). Schedule
-  a self-wakeup so independent work continues while the gate waits. No two-way
-  configured / no reply in time → fall back to capture-note-and-continue.
+- **A red action that blocks *downstream work in this run* is a review gate.**
+  Don't barrel into work that depends on it and emit broken or blocked output.
+  Notify with full context, stop that dependent line of work, and carry on with
+  anything independent — the human reviews and clears it at the machine. A red
+  action that blocks *only itself* is captured, noted, and the run continues
+  past it.
 - **Only fully stop for a red gate that blocks *everything*** (access the run
   can't proceed without, a genuine ambiguity in intent). Notify, say exactly
-  what you need, and wait. Everything else is deferred or asked — never a
-  whole-run freeze.
+  what you need, and wait.
 
-**Notify** per `.references/notify.md` (repo-config targets; silent no-op if
-unset). Because several runs may ping the same phone, every message names the
-**item, stage, and why** with clear visual hierarchy. Fire at: a red gate
-(ask-and-wait, or deferred), a hard stop, and run completion — never on
-green-tier progress.
+**Notify** per `.references/notify.md` — **one-way for now**: inform the human,
+don't wait for a phone reply (authenticated two-way approve/deny is future
+work). Target comes from repo config (default `ntfy.sh/dcouple-orchestra`;
+silent no-op if unreachable). Messages are plain text — the app doesn't render
+Markdown — titled `[item] stage — why` so concurrent runs stay legible. Fire
+at: a red gate (deferred or blocking), a hard stop, and run completion — never
+on green-tier progress.
 
 ## Step 0: Preflight, then Load
 

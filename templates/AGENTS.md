@@ -66,17 +66,17 @@ github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the c
 
 ## Run notifications
 
-Optional. Lets a long autonomous run (`/do`) reach you on your phone at a
-human gate or on completion, and — with a reply target — wait for your answer
-from the phone. Unset → silent no-op. See `.references/notify.md`.
+Optional. Lets a long autonomous run (`/do`) push a notification to your phone
+at a human gate, a hard stop, or on completion. One-way for now (inform only;
+authenticated two-way approve/deny is future work). Unset → default topic; see
+`.references/notify.md`.
 
 ```yaml
-notify:       https://ntfy.sh/<publish-topic>   # push → your phone (subscribe to it in the ntfy app)
-notify_reply: https://ntfy.sh/<reply-topic>     # your phone → the run (optional; enables two-way approve/deny/direction)
+notify: https://ntfy.sh/<your-topic>   # subscribe to it in the ntfy mobile app
 ```
 
-Topics are low-sensitivity channel names, not secrets. Nothing secret or PHI
-goes in message bodies.
+A public topic is readable by anyone who knows it — set your own here for
+privacy, and never put a secret, token, or PHI in a message body.
 
 ## Boundaries
 
