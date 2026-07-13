@@ -170,22 +170,17 @@ stops it.
 **Bulk fan-outs** (many similar sub-agent dispatches — translations,
 codemods, per-file transforms):
 
-- Every dispatch's prompt carries a machine-verifiable completion contract
-  (e.g. "count leaves identical to source; must be under N — include the
-  audit output in your final message"), and the Overseer runs an independent
-  scripted audit over the WHOLE batch after each wave. A dispatch's exit
-  status or "DONE" claim is never evidence — expect a silent-under-delivery
-  tail on large inputs and budget a repair-wave pass into the schedule.
-- Each dispatch commits its own output immediately on success (one commit
-  per unit: `<kind>: <unit> (<shard>)`). Bulk results must never accumulate
-  uncommitted across waves — one later writer can silently destroy hours of
-  work, and per-unit commits make any bad unit trivially reversible.
-- When a provider quota blocks a wave, arm a resumable retry keyed to the
-  stated reset time (skips already-completed dispatches; detached from the
-  harness's task timeout) and reorder quota-independent work into the gap.
-  Quota is a budget, not a throughput limit: schedule the LARGEST fan-outs
-  as early after a reset as dependencies allow — widening concurrency does
-  not buy more output per window.
+- Give every dispatch a machine-verifiable completion contract and audit
+  the whole batch with a script after each wave — a dispatch's exit status
+  or "DONE" claim is never evidence. Expect a silent-failure tail on large
+  inputs; plan one repair wave.
+- Each dispatch commits its own output the moment it succeeds. Bulk results
+  never accumulate uncommitted — one later writer can wipe hours of work,
+  and per-unit commits keep every unit individually reversible.
+- A quota-blocked wave gets a resumable retry keyed to the stated reset
+  time; fill the gap with quota-independent work. Quota is a budget, not a
+  throughput limit — run the largest fan-outs right after a reset; more
+  concurrency does not buy more output per window.
 
 ## Step 3: Verify
 
