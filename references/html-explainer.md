@@ -43,6 +43,28 @@ of the page elaborates on.
   template's tokens is the safest default.
 - **Legible at page width**: if the reader must zoom to follow it, simplify.
 
+## UI before/after mockups
+
+When the item touches anything user-facing, the diagram and prose are not
+enough — the explainer must show every touched surface pixel-accurately,
+or the visualization has missed the change:
+
+- **One figure pair per touched surface.** "Before" is a screenshot of the
+  real app. "After" is the proposed change rendered *inside* the real app:
+  drive it with whatever UI harness the repo already has (a Playwright +
+  mocked-API setup, a dev server, Storybook), DOM-inject the proposed
+  element next to its real siblings so it inherits the true design system,
+  and screenshot. Only when the app genuinely can't be driven, fall back
+  to an HTML/CSS replica on the app's own tokens — and say so in the
+  caption. Captions always state which side is real and which is mocked.
+- **Name the journey.** One line stating which user journeys change — or
+  explicitly that the shown surface is the only thing touched. If the
+  item's UI delta is genuinely none (backend-only), state that in section
+  01 and skip the mockups; the opening diagram carries the page.
+- **Stay self-contained.** Inline the images as `data:` URIs; keep the raw
+  PNGs in `refs/` next to the explainer. Use the template's `.shots`
+  component.
+
 ## Section map
 
 Every explainer: masthead (type badge, status, title, one-sentence intent),
@@ -50,7 +72,7 @@ then the opening diagram, then numbered sections, then the footer. Per type:
 
 | # | feature-ticket | epic-spec | bug-report |
 |---|----------------|-----------|------------|
-| 01 · Why | intent + before/after panels | problem/context + before/after | summary + expected-vs-actual panels |
+| 01 · Why | intent + before/after panels; UI mockup pair when UI is touched | problem/context + before/after; UI mockup pair when UI is touched | summary + expected-vs-actual panels; screenshot of the defect when visible |
 | 02 · Direction | proposed approach: pipeline/flow of touched components + `D1…` decision cards (each with its rejected alternative) | cross-cutting decisions as cards + **phase timeline** (the `.pipeline` strip, one `.stage` per phase, sequential) | root cause (state confidence: confirmed/likely/hypothesis) + suggested resolution path |
 | 03 · Scope | in / out-of-scope panels | per-epic goals vs non-goals panels | business impact + severity; out-of-scope if any |
 | 04 · Done means | ACs as the auto-numbered `ol.acs` list | ACs per phase (subheading per phase) | AC1 = repro flips to pass, plus prevention criteria |

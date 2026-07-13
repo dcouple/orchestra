@@ -97,6 +97,14 @@
     color: var(--accent); background: var(--accent-soft); padding: .15rem .4rem; border-radius: 3px;
   }
 
+  /* UI before/after mockup pair — see html-explainer.md · UI before/after mockups */
+  .shots { display: grid; gap: 1.25rem; margin: 1.25rem 0; }
+  .shot { margin: 0; }
+  .shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .shot.after img { border-color: var(--accent); }
+  .shot figcaption { margin-top: .45rem; font-size: .8rem; color: var(--ink-soft); }
+  .shot.after figcaption { color: var(--accent); }
+
   /* Open questions */
   .question { background: var(--warn-soft); border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: .8rem 1.1rem; margin-bottom: .75rem; font-size: .95rem; }
   .question strong { color: var(--warn); font-family: var(--mono); font-size: .78rem; letter-spacing: .05em; }
@@ -129,6 +137,13 @@
     <p class="eyebrow">01 · <!-- Why / Direction / Scope / Done means / Unresolved --></p>
     <h2><!-- section heading --></h2>
     <!-- prose, .before-after, .pipeline, .decision cards, .scope, ol.acs, .question — pick what fits -->
+    <!-- UI-touching items: one .shots pair per touched surface (required — see
+         html-explainer.md). Images inline as data: URIs; captions say which
+         side is the real app and which is the injected mockup/replica.
+    <div class="shots">
+      <figure class="shot"><img src="data:image/png;base64,..." alt=""><figcaption>Before — real app</figcaption></figure>
+      <figure class="shot after"><img src="data:image/png;base64,..." alt=""><figcaption>After — proposed change rendered in the real app</figcaption></figure>
+    </div> -->
   </section>
 
   <footer>
