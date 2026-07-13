@@ -147,7 +147,10 @@ Areas not affected: <surfaces the reviewer can skip>.
 ```
 
 ### QA results
-The outcome of Step 5's QA pass, at two altitudes:
+The QA/verify pass **maintains this section and the Manual-tests checkboxes in
+the body** — the body is the system of record; a comment is never the sole
+place a result lands when the body has a checklist and a QA-results line to
+update. Reported at two altitudes:
 - **In the body** — a short summary line: how many Manual-test items were
   executed vs left to the human, and the headline result (incl. any bug the
   QA pass found and its fix). The ticked checkboxes above are the live

@@ -245,13 +245,16 @@ happens on the artifact, not before it exists.
   `codex` skill role `backend-verifier` runs the command-shaped items. Both
   dispatches follow `.references/qa-verification.md` — external-system
   confirmation by unique marker, preflight, test-mode safety, cleanup.
-  Report at two altitudes: tick the passed items directly in the PR body's
-  Manual tests checklist (`gh pr edit --body-file` — flip `[ ]` to `[x]`,
-  append `— left to human: <reason>` on skipped items, change nothing
-  else), so the description stays the live dashboard GitHub renders; then
-  post the evidence as a PR comment — each item with its quoted output or
-  hosted-image screenshot URLs (never committed files). Body carries state,
-  comments carry proof.
+  Report at two altitudes, into the PR body first per `references/pr-body.md`
+  (the body is the live dashboard, not a comment): with `gh pr edit
+  --body-file`, flip the Manual-tests `[ ]`→`[x]` on passed items (append
+  `— left to human: <reason>` on skipped ones) **and** fill the **QA results**
+  summary line — items executed vs left to the human, plus any bug the pass
+  found and its fix — changing nothing else. Then post the evidence as a PR
+  comment: each item with its quoted output or hosted-image screenshot URLs
+  (never committed files). Body carries state, comment carries proof — never
+  leave the results only in a comment when the body has a checklist and a QA
+  results line to update.
 - **Hosting evidence media**: when the repo is on GitHub, host screenshots,
   GIFs, and videos as assets on a rolling `qa-assets` **prerelease**
   (once per repo: `gh release create qa-assets --prerelease
