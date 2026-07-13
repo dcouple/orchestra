@@ -47,7 +47,15 @@ The flow separates *clarity*, *capture*, and *execution*:
    PR comment at the end. Deliberately high-level:
    the Overseer judges the lane, how much research a plan needs, and when
    each review loop has converged.
-4. **`/postmortem`** — when a result falls short, root-cause it in *our
+4. **`/prepare-pull-request`** — the exit ramp for ad-hoc changes made in a
+   session *outside* `/do` (which handles its own PR prep). It retrofits
+   the pipeline's gates before anything goes up: the Overseer materializes
+   an `intent.md` + diff under `./tmp/pr-<branch>/`, Socrates challenges
+   the approach in PR mode (sunk cost is not a defense; diff-vs-intent
+   fidelity joins the attack lines), both code reviewers gate correctness
+   (union Must-Fix, cap 3 passes), then build gate → commit → PR in the
+   repo's documented format.
+5. **`/postmortem`** — when a result falls short, root-cause it in *our
    system* (skill/agent/template), not just the code.
 
 ## Model routing
