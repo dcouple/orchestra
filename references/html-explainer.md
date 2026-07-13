@@ -49,21 +49,33 @@ When the item touches anything user-facing, the diagram and prose are not
 enough — the explainer must show every touched surface pixel-accurately,
 or the visualization has missed the change:
 
-- **One figure pair per touched surface.** "Before" is a screenshot of the
+- **One `.pair` per touched surface.** "Before" is a screenshot of the
   real app. "After" is the proposed change rendered *inside* the real app:
   drive it with whatever UI harness the repo already has (a Playwright +
   mocked-API setup, a dev server, Storybook), DOM-inject the proposed
   element next to its real siblings so it inherits the true design system,
   and screenshot. Only when the app genuinely can't be driven, fall back
-  to an HTML/CSS replica on the app's own tokens — and say so in the
-  caption. Captions always state which side is real and which is mocked.
+  to a schematic replica **built from the template's `.mock` parts**
+  (`.mock-eyebrow` / `.mock-q` / `.mock-opt` / `.mock-field` / `.mock-doc`
+  / `.mock-actions` / `.mock-note`) on the template tokens — and say so in
+  the caption. Captions always state which side is real and which is mocked.
+- **Compose the mock, never hand-roll it.** Use the `.mock` component parts
+  as-is; do not invent one-off classes or set a fixed `height` on a mock.
+  The whole point of `.pair` + content-sized `.mock` is that cards can't
+  stretch and captions can't overflow into the next pair — the moment you
+  add a height or a bespoke grid, overlap comes back.
+- **Let it breathe.** One before|after `.pair` per row, full pairs stacked
+  with clear vertical space between them; a mock sizes to its content, so
+  short cards stay short. If a mock feels cramped it's carrying too much —
+  cut detail, don't shrink padding. After rendering, eyeball it at page
+  width: no card overlaps a caption, no caption overlaps the next pair, no
+  horizontal scroll.
 - **Name the journey.** One line stating which user journeys change — or
   explicitly that the shown surface is the only thing touched. If the
   item's UI delta is genuinely none (backend-only), state that in section
   01 and skip the mockups; the opening diagram carries the page.
-- **Stay self-contained.** Inline the images as `data:` URIs; keep the raw
-  PNGs in `refs/` next to the explainer. Use the template's `.shots`
-  component.
+- **Stay self-contained.** Inline any real images as `data:` URIs; keep the
+  raw PNGs in `refs/` next to the explainer.
 
 ## Work sequence
 
