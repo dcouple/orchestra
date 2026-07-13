@@ -73,6 +73,7 @@
   .stage .name { font-family: var(--mono); font-size: .78rem; font-weight: 600; margin-bottom: .25rem; }
   .stage .desc { font-size: .78rem; color: var(--ink-soft); line-height: 1.45; }
   .arrow { align-self: center; padding: 0 .5rem; color: var(--ink-soft); flex: none; }
+  .strip-note { margin: -.5rem 0 0; font-size: .8rem; color: var(--ink-soft); }
 
   /* Locked directions — one card per D-number */
   .decision { border-left: 3px solid var(--accent); padding: .2rem 0 .2rem 1.1rem; margin-bottom: 1.25rem; }
@@ -137,6 +138,15 @@
     <p class="eyebrow">01 · <!-- Why / Direction / Scope / Done means / Unresolved --></p>
     <h2><!-- section heading --></h2>
     <!-- prose, .before-after, .pipeline, .decision cards, .scope, ol.acs, .question — pick what fits -->
+    <!-- Work sequence (see html-explainer.md · Work sequence): epic = binding
+         phase timeline; feature = indicative outcome-level work strip whose
+         caption says /do re-plans; bug = strip only when the fix has stages.
+    <div class="pipeline">
+      <div class="stage"><div class="name">stage</div><div class="desc">outcome</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="stage"><div class="name">stage</div><div class="desc">outcome</div></div>
+    </div>
+    <p class="strip-note">Indicative sequence — /do's plan stage owns the real plan.</p> -->
     <!-- UI-touching items: one .shots pair per touched surface (required — see
          html-explainer.md). Images inline as data: URIs; captions say which
          side is the real app and which is the injected mockup/replica.
