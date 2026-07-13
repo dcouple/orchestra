@@ -37,28 +37,38 @@ morning. Three rules make that safe:
   schedule a self-wakeup (`ScheduleWakeup`) so the run resumes on its own
   instead of idling until a human nudges it. Idle-waiting-on-a-nudge is the
   single biggest waste in a /do run; treat it as a bug.
-- **Action tiers decide what you may do alone.**
-  - **Green — do it unattended:** code, tests, docs, and *reversible,
-    additive* environment changes — new nullable columns / new tables on a
-    **non-production** database, new files, anything self-undoing. Additive
-    staging DDL is green when the project's `AGENTS.md` says so (many repos
-    pre-authorize it); apply it and note the production counterpart in Deploy
-    notes.
-  - **Red — never apply; capture and keep going:** anything destructive or
-    irreversible (dropping/narrowing columns, data backfills/migrations,
-    deletes), and anything touching **production** or real money/customers.
-    Write the exact change to a file under `./tmp/<id>/` (a migration, a
-    script, a deploy note), record it in the PR's Deploy notes, **notify** the
-    human (below), and continue the rest of the run best-effort. A red gate
-    defers one action — it does not stop the run.
-- **Only stop for a red gate that blocks *everything*** (missing access the
-  run can't proceed without, a genuine ambiguity in intent). When you must
-  stop, notify and say precisely what you need. Everything else is deferred
-  and noted, never a full stop.
+- **Action tiers decide what you may do alone. When unsure which tier an
+  action is, it is red — always err toward caution.**
+  - **Green — do it unattended:** code, tests, docs, new files, and
+    **staging** schema changes that are *both* additive/nullable *and*
+    reversible (a new nullable column or new table you could drop with no data
+    loss) — anything self-undoing. Apply it; note the production counterpart
+    in Deploy notes.
+  - **Red — never executed by you:** **anything touching production** — the
+    production database, production config, real users, or money — full stop,
+    even if it looks trivial and even if the human approves it; **anything
+    irreversible** or that affects production users; and any staging change
+    that isn't cleanly reversible. Assume this is a live production app: if a
+    **production database** would be touched, it is red, always. For a red
+    action, capture the exact change to a file under `./tmp/<id>/` (migration,
+    script, deploy note), record it in Deploy notes, and hand the human the
+    exact command — you never run it.
+- **A red gate that only needs a *decision* → ask and wait** (two-way, per
+  `.references/notify.md`): notify with the question and block on the reply
+  from the human's phone, then act on it — but a production *mutation* is never
+  executed by you regardless of the answer (prepare it, hand it back). Schedule
+  a self-wakeup so independent work continues while the gate waits. No two-way
+  configured / no reply in time → fall back to capture-note-and-continue.
+- **Only fully stop for a red gate that blocks *everything*** (access the run
+  can't proceed without, a genuine ambiguity in intent). Notify, say exactly
+  what you need, and wait. Everything else is deferred or asked — never a
+  whole-run freeze.
 
-**Notify** per `.references/notify.md` (repo-config target; silent no-op if
-unset) at exactly three moments: a red gate you deferred on, a hard stop, and
-run completion (PR ready). Never notify on green-tier progress.
+**Notify** per `.references/notify.md` (repo-config targets; silent no-op if
+unset). Because several runs may ping the same phone, every message names the
+**item, stage, and why** with clear visual hierarchy. Fire at: a red gate
+(ask-and-wait, or deferred), a hard stop, and run completion — never on
+green-tier progress.
 
 ## Step 0: Preflight, then Load
 

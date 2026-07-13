@@ -64,6 +64,20 @@ github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the c
 > Publish every work item as a self-contained GitHub issue: `item.md` is
 > the issue body; `refs/` files ride as marker-delimited issue comments.
 
+## Run notifications
+
+Optional. Lets a long autonomous run (`/do`) reach you on your phone at a
+human gate or on completion, and — with a reply target — wait for your answer
+from the phone. Unset → silent no-op. See `.references/notify.md`.
+
+```yaml
+notify:       https://ntfy.sh/<publish-topic>   # push → your phone (subscribe to it in the ntfy app)
+notify_reply: https://ntfy.sh/<reply-topic>     # your phone → the run (optional; enables two-way approve/deny/direction)
+```
+
+Topics are low-sensitivity channel names, not secrets. Nothing secret or PHI
+goes in message bodies.
+
 ## Boundaries
 
 - Commands that must never run automatically (destructive ops, deploys,
