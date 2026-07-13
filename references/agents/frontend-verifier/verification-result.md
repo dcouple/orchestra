@@ -7,7 +7,7 @@
 > prove the work meets its numbered criteria; `/do`'s QA pass uses the same format,
 > one row per Manual-tests checklist item, Result additionally allowing
 > `Left to human — <reason>`) and **reproduce** (from `/discussion` or
-> `/create-issue` — make a reported failure happen deterministically; the failure
+> `/create-plan` — make a reported failure happen deterministically; the failure
 > occurring IS the successful result).
 > Your final message IS the report — no preamble, no process narration.
 

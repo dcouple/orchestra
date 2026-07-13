@@ -1,6 +1,6 @@
 # HTML explainer — shared procedure
 
-Used by `/create-feature`, `/create-epic`, and `/create-issue` after
+Used by `/create-plan` and `/create-epic` after
 `item.md` is drafted. The explainer is the **alignment surface**: a visual
 one-pager the user reads to confirm what the change is and the general
 implementation direction. `item.md` stays the machine-facing contract `/do`

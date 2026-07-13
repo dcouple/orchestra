@@ -1,6 +1,6 @@
 # Socratic gate — shared procedure
 
-Run by `/create-feature`, `/create-epic`, and `/create-issue` after `item.md`
+Run by `/create-plan` and `/create-epic` after `item.md`
 is drafted (`status: draft`) and before publish. The calling skill supplies
 the per-type emphasis — what socrates should bear down on for this item type.
 

@@ -1,6 +1,6 @@
 # Publish a work item — shared procedure
 
-Used by `/create-feature`, `/create-epic`, and `/create-issue` after
+Used by `/create-plan` and `/create-epic` after
 `item.md` is written. The caller supplies the title prefix (`feat:` or
 `fix:`) and the summary that becomes the published body.
 

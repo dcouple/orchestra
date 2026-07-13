@@ -18,7 +18,7 @@ The flow separates *clarity*, *capture*, and *execution*:
    defect. It produces clarity plus a dated decision log
    (`./tmp/discussions/`) that the `/create-*` drafting step reads — never
    deliverables.
-2. **`/create-feature` · `/create-epic` · `/create-issue`** — manually invoked
+2. **`/create-plan` · `/create-epic`** — manually invoked
    capture skills. Each turns what the conversation established into a lean
    work item at `./tmp/<id>/item.md` (Feature Ticket, Epic Spec, or Bug
    Report, raw sources in `./tmp/<id>/refs/`) with verification criteria,
@@ -26,7 +26,7 @@ The flow separates *clarity*, *capture*, and *execution*:
    tracking` section says (GitHub issues, Linear, anything the repo
    documents; the local `./tmp/<id>/` copy is the working truth). A repo
    with no publishing instructions stays local-only — the item lives in
-   `./tmp/<id>/` and the skill says so. `/create-issue` runs the
+   `./tmp/<id>/` and the skill says so. `/create-plan` runs the
    investigator itself if the root cause isn't already established. Before
    publish, every draft passes the **Socratic gate**: the `socrates`
    sub-agent takes an adversarial position on the item's premise (needed at
@@ -69,7 +69,7 @@ consumer repos, so the skills' restatement is what actually executes.
 | --- | --- | --- |
 | Overseer (conducts `/do`, all judgment) | main session — Fable | |
 | Web research | Claude `web-researcher` — Sonnet | |
-| Verify frontend (drive the running app) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-issue |
+| Verify frontend (drive the running app) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-plan |
 | Verify backend (tests/scripts) | **Codex** GPT-5.6 `medium`, workspace-write | |
 | Explore codebase | **Codex** GPT-5.6 `medium`, read-only | Claude `code-researcher` (Sonnet) as backup |
 | Reproduce & root-cause | **Codex** GPT-5.6 `xhigh`, workspace-write | |

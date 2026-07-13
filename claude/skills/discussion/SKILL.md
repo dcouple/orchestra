@@ -1,6 +1,6 @@
 ---
 name: discussion
-description: Interactive back-and-forth to clarify, understand, or figure something out — an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything — e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-feature, /create-epic, or /create-issue.
+description: Interactive back-and-forth to clarify, understand, or figure something out — an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything — e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-plan or /create-epic.
 argument-hint: "[idea, question, or topic]"
 ---
 
@@ -70,8 +70,7 @@ Then point at the capture skill — don't run it yourself unless the user asks:
 Decision log: ./tmp/discussions/YYYY-MM-DD-<slug>.md
 
 Suggested next steps:
-- `/create-feature [title]` — capture a single-outcome change as a Feature Ticket
+- `/create-plan [title]` — capture a single-outcome change as a Feature Ticket, or a defect (investigated here) as a Bug Report
 - `/create-epic [title]` — capture a multi-phase workstream as an Epic Spec
-- `/create-issue [title]` — capture a defect (investigated here) as a Bug Report
 - `/discussion [follow-up]` — keep exploring a different aspect
 ```

@@ -1,6 +1,6 @@
 ---
 name: create-epic
-description: Captures a discussed multi-phase workstream as an Epic Spec work item ready for /do. For a single-outcome change use /create-feature instead.
+description: Captures a discussed multi-phase workstream as an Epic Spec work item ready for /do. For a single-outcome change use /create-plan instead.
 argument-hint: "[epic title or one-line summary]"
 disable-model-invocation: true
 ---
@@ -36,7 +36,7 @@ direction, and the out-of-scope list.
 Split the work into sequential phases, each a self-contained work item: one coherent
 outcome, independently verifiable, buildable on the phases before it. Don't split
 because many files are touched — split where verification surfaces genuinely differ.
-If it collapses to one phase, say so and suggest `/create-feature` instead.
+If it collapses to one phase, say so and suggest `/create-plan` instead.
 
 **Success criteria**: phase table agreed with the user — each phase has a goal, scope,
 and its own verification surface; order confirmed.
@@ -67,7 +67,7 @@ Run the gate per `.references/socratic-gate.md`. A multi-phase commitment
 is never "straightforward" — expect the full challenge. For an epic it bears
 down on shape (are the phases real?), appetite, consequences, and
 completeness, alongside necessity and assumptions. If the dialogue collapses
-the epic to one phase, hand off to `/create-feature`.
+the epic to one phase, hand off to `/create-plan`.
 
 **Success criteria**: gate procedure complete — socrates returned `pass` (or
 the cap was reached, or the user waived); `## Justification` written into

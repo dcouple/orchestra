@@ -1,6 +1,6 @@
 # Root-Cause Finding — agent output format
 
-> Returned **in-conversation** by the Investigator (from `/discussion` or `/create-issue`) — **not a file**.
+> Returned **in-conversation** by the Investigator (from `/discussion` or `/create-plan`) — **not a file**.
 > Feeds the Bug Report's Root cause + Suggested resolution path sections.
 > **Open with the one-line cause + confidence** so the Overseer can branch without
 > reading the body.
