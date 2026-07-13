@@ -222,7 +222,10 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   "done" means), **Visual overview** (when the change is flow-, boundary-,
   or lifecycle-shaped and the `excalidraw-pr-diagrams` skill is available:
   the rendered before → after diagram per that skill's PR standard leads
-  the section, followed by before/after screenshots of the actual behavior
+  the section — and when the flow branches (see Manual tests' fork map),
+  that diagram contrasts the old path against the new fork tree with the
+  after emphasized, so a reviewer sees the shape change, not just the
+  endpoints — followed by before/after screenshots of the actual behavior
   when the change is user-visible — before from the item's refs or
   reproduction evidence, after from the verify captures. All hosted-image
   URLs, never committed files; keep the `.excalidraw` source in
