@@ -65,11 +65,12 @@ morning. Three rules make that safe:
 
 **Notify** per `.references/notify.md` — **one-way for now**: inform the human,
 don't wait for a phone reply (authenticated two-way approve/deny is future
-work). Target comes from repo config (default `ntfy.sh/dcouple-orchestra`;
-silent no-op if unreachable). Messages are plain text — the app doesn't render
-Markdown — titled `[item] stage — why` so concurrent runs stay legible. Fire
-at: a red gate (deferred or blocking), a hard stop, and run completion — never
-on green-tier progress.
+work). Target comes from repo config (default a per-operator
+`ntfy.sh/<gh-username>-dcouple-orchestra`; silent no-op if unreachable), and
+after each send you tell the user in chat where it went. Messages are plain
+text — the app doesn't render Markdown — titled `[item] stage — why` so
+concurrent runs stay legible. Fire at: a red gate (deferred or blocking), a
+hard stop, and run completion — never on green-tier progress.
 
 ## Step 0: Preflight, then Load
 
