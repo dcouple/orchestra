@@ -231,7 +231,15 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   data/auth/money if wrong; Important: user-facing behavior; Nice:
   cosmetic — each item traced to the change motivating it, 10–20 items
   total, plus an "areas not affected" line so safe surfaces are skippable —
-  Step 5's QA pass executes it), **Deploy notes** (each finding: what changed + the
+  Step 5's QA pass executes it. When the change is a **branching flow** —
+  multiple entry cohorts, decision points, or routed continuations rather
+  than one linear path — a flat checklist hides the flow's shape and its
+  coverage holes; lead the section with a **fork map**: a decision-tree of
+  the branches (each fork anchored to its routing `file:line`) plus a
+  journey-coverage table naming every distinct end-to-end journey, tagging
+  each to the checklist item that exercises it, and honestly flagging
+  branches nothing covers — then cross-tag the checklist items with those
+  journey IDs so the mapping is bidirectional), **Deploy notes** (each finding: what changed + the
   action the human takes before/at deploy — name env vars/secrets, never
   their values; omit when the scan finds nothing), **Residual risks** (omit
   if none); when the item has a tracker URL in its frontmatter, link it
