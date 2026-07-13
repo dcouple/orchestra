@@ -218,24 +218,17 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 - Commit selectively (only this run's files, never `git add -A`; secret-scan
   the staged diff), message style `type: short imperative summary`. Rebase
   onto the origin default branch; push (`--force-with-lease` on rewrites).
-- Open the PR: typed title; body = **Summary** (the item's intent and what
-  "done" means), **Visual overview** (when the change is flow-, boundary-,
-  or lifecycle-shaped and the `excalidraw-pr-diagrams` skill is available:
-  the rendered before → after diagram per that skill's PR standard leads
-  the section, followed by before/after screenshots of the actual behavior
-  when the change is user-visible — before from the item's refs or
-  reproduction evidence, after from the verify captures. All hosted-image
-  URLs, never committed files; keep the `.excalidraw` source in
-  `./tmp/<id>/refs/`), **Verification** (evidence per AC), **Manual tests** (the
-  human-exercisable flows derived from the ACs, risk-tiered — Must: breaks
-  data/auth/money if wrong; Important: user-facing behavior; Nice:
-  cosmetic — each item traced to the change motivating it, 10–20 items
-  total, plus an "areas not affected" line so safe surfaces are skippable —
-  Step 5's QA pass executes it), **Deploy notes** (each finding: what changed + the
-  action the human takes before/at deploy — name env vars/secrets, never
-  their values; omit when the scan finds nothing), **Residual risks** (omit
-  if none); when the item has a tracker URL in its frontmatter, link it
-  per that tracker's convention (e.g. `Closes #<n>` for a GitHub issue).
+- Open the PR: typed title; write the body following this skill's
+  `references/pr-body.md` — its section spine (Summary/What-Why-How, Visual
+  overview, User journeys, Verification, Manual tests, QA results, Deploy
+  notes, Residual risks), its body-state / comment-proof split, and its
+  pre-open checklist are binding. The **Visual overview** leads with the
+  before → after diagram per the `excalidraw-pr-diagrams` skill (when
+  available and the change is flow-/boundary-/lifecycle-shaped); the
+  **User journeys** section carries both a journey map and — for branching
+  flows — a fork map cross-tagged into the Manual tests; the deploy-notes
+  scan above feeds the **Deploy notes** section. Link the tracker with its
+  closing keyword (e.g. `Closes #<n>` for a GitHub issue).
 
 ## Step 5: Post-PR review + QA
 
@@ -252,13 +245,16 @@ happens on the artifact, not before it exists.
   `codex` skill role `backend-verifier` runs the command-shaped items. Both
   dispatches follow `.references/qa-verification.md` — external-system
   confirmation by unique marker, preflight, test-mode safety, cleanup.
-  Report at two altitudes: tick the passed items directly in the PR body's
-  Manual tests checklist (`gh pr edit --body-file` — flip `[ ]` to `[x]`,
-  append `— left to human: <reason>` on skipped items, change nothing
-  else), so the description stays the live dashboard GitHub renders; then
-  post the evidence as a PR comment — each item with its quoted output or
-  hosted-image screenshot URLs (never committed files). Body carries state,
-  comments carry proof.
+  Report at two altitudes, into the PR body first per `references/pr-body.md`
+  (the body is the live dashboard, not a comment): with `gh pr edit
+  --body-file`, flip the Manual-tests `[ ]`→`[x]` on passed items (append
+  `— left to human: <reason>` on skipped ones) **and** fill the **QA results**
+  summary line — items executed vs left to the human, plus any bug the pass
+  found and its fix — changing nothing else. Then post the evidence as a PR
+  comment: each item with its quoted output or hosted-image screenshot URLs
+  (never committed files). Body carries state, comment carries proof — never
+  leave the results only in a comment when the body has a checklist and a QA
+  results line to update.
 - **Hosting evidence media**: when the repo is on GitHub, host screenshots,
   GIFs, and videos as assets on a rolling `qa-assets` **prerelease**
   (once per repo: `gh release create qa-assets --prerelease
