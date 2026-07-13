@@ -1,6 +1,6 @@
 ---
 name: postmortem
-description: Runs a postmortem after /do finished and the human reviewed the PR, when the result fell short of intent. Use when the user says a /do run missed the mark, the PR needed rework, the delivered feature didn't match the ticket, or asks "why did /do get this wrong" — or when any workflow skill (/discussion, /create-*) produced the wrong outcome. Root-causes the gap in our system and proposes one concrete improvement.
+description: Runs a postmortem on a /do run — after the human reviewed the PR, or as a routine after-run review. Covers two dimensions: how the run RAN (wall-clock, agent-active vs idle-waiting-on-human, stalls, blockers — always) and, when the result fell short of intent, WHY (root cause in our system). Use when the user says a /do run missed the mark or asks "why did /do get this wrong", when any workflow skill produced the wrong outcome, or simply to review how a completed run spent its time. Proposes one concrete improvement.
 argument-hint: "[PR url/# or work-item id]"
 ---
 
@@ -8,14 +8,24 @@ argument-hint: "[PR url/# or work-item id]"
 
 ## Target: $ARGUMENTS
 
-Compound learning: when a `/do` run fell short of intent — or another workflow
-skill produced the wrong outcome (a ticket the gate should have killed, a skill
-that fired at the wrong moment) — find the root cause in **our system** — the
-skills, agents, templates, and criteria — not just the code. The completion
-artifact is `./tmp/<id>/postmortem.md`, published to the tracker the current
-repo's `AGENTS.md` `Work-item tracking` section configures (postmortems live
-with the repo the run happened in; no tracker configured → local-only),
-plus one proposed (not applied) system change.
+Compound learning on the last `/do` run — on **two** axes:
+
+- **Operations (always):** how the run actually ran — wall-clock, how much was
+  the agent working vs idle waiting on a human, where it stalled, what blocked
+  it. Autonomy leaks (the agent ending its turn mid-run and waiting for a
+  "continue") are invisible to an outcome review yet are the main thing between
+  a run and true overnight autonomy, so this half runs on every run, successful
+  or not.
+- **Outcome (only when it fell short):** where the delivered result missed the
+  intent, root-caused in **our system** — the skills, agents, templates, and
+  criteria — not just the code. (Also covers another workflow skill producing
+  the wrong outcome: a ticket the gate should have killed, a skill that fired
+  at the wrong moment.)
+
+The completion artifact is `./tmp/<id>/postmortem.md`, published to the tracker
+the current repo's `AGENTS.md` `Work-item tracking` section configures
+(postmortems live with the repo the run happened in; no tracker configured →
+local-only), plus one proposed (not applied) system change.
 
 This skill changes nothing: no code fixes, no skill edits. If the code itself needs
 fixing, that goes through `/create-issue` then `/do`; the proposed system change is
@@ -31,18 +41,36 @@ across `./tmp/*/item.md`). Then read:
 - `./tmp/<id>/wrapup.md` — what `/do` claims it delivered and verified
 - PR feedback — `gh pr view <pr> --comments` and the review threads, or ask the user to
   paste it if it lives outside GitHub
+- the run's session transcripts — `~/.claude/projects/<munged-cwd>/*.jsonl` (the cwd with
+  `/`→`-`; a run may span several files after compaction) and the phase/fix commits
+  (`git log --reverse --date=... origin/main..HEAD`) — the raw material for step 2
 
-**Success criteria**: all four sources loaded (or their absence noted — a missing wrapup
-is itself a finding).
+**Success criteria**: all sources loaded (or their absence noted — a missing wrapup
+is itself a finding; missing transcripts mean the operational analysis is best-effort
+from commit timestamps alone).
 
-### 2. Establish the gap [human]
-Discuss with the human what fell short: delivered vs intended, concretely. Anchor on the
-item's intent and ACs — did `/do` miss the ticket, or did the ticket miss the intent?
+### 2. Analyze how the run ran (operations) [always]
+Follow `.references/run-operations-analysis.md`: script the transcripts (don't eyeball) to
+compute wall-clock span, agent-active vs human-idle time and its %, post-completion idle
+(carved out — it inflates duration but isn't a defect), the ranked stalls (agent turn-ends
+that needed a human nudge), per-phase pacing from the commits, and the blocker inventory
+(`AskUserQuestion` gates, rate-limit hits, legitimate background-agent waits). Name the
+single change that would have removed the biggest stall.
 
-**Success criteria**: the gap is stated in one or two concrete sentences the human agrees
-with.
+**Success criteria**: the wall-clock/active/idle split is quantified, each in-run stall is
+attributed to what it waited on, and the highest-leverage operational fix is named — even
+for a run that delivered the right outcome.
 
-### 3. Root-cause it in OUR system
+### 3. Establish the outcome gap [human] — only if the run fell short
+If the run delivered what was asked, say so and skip to step 5 (an operational-only
+postmortem is complete). Otherwise discuss with the human what fell short: delivered vs
+intended, concretely. Anchor on the item's intent and ACs — did `/do` miss the ticket, or
+did the ticket miss the intent?
+
+**Success criteria**: either the run is confirmed on-target (outcome track skipped), or the
+gap is stated in one or two concrete sentences the human agrees with.
+
+### 4. Root-cause it in OUR system — only if there was an outcome gap
 Trace the gap upstream through the pipeline and name where it entered:
 - **Thin ticket** — intent or end state under-specified, so `/do` optimized the wrong thing
 - **Weak AC** — verification criteria passed while the intent failed (untestable or
@@ -57,10 +85,12 @@ The code defect (if any) is a symptom here. Note it, and route the fix through
 **Success criteria**: one primary system-level cause identified, with evidence from the
 step-1 documents (quote the thin section, the weak AC, the review miss).
 
-### 4. Write the postmortem
+### 5. Write the postmortem
 Write `./tmp/<id>/postmortem.md` following this skill's `references/postmortem.md` —
 emit the filled-in frontmatter and body only; the template's "— format" header and
-guidance quotes are authoring notes, not output.
+guidance quotes are authoring notes, not output. Always fill the **Run operations**
+section from step 2; fill the outcome sections only when step 3 found a gap (say
+"on-target" otherwise).
 
 Then publish it to the tracker the current repo's `AGENTS.md` `Work-item
 tracking` section configures — postmortems are kept with the repo the run
@@ -84,13 +114,13 @@ the postmortem issue, so the connection is visible from both sides — someone
 reading the PR/issue later must be able to find the postmortem without
 searching the issue list.
 
-**Success criteria**: `postmortem.md` exists, the "why the gap happened" section names
-the system cause (not just the code defect), the postmortem is published per the
-repo's tracker instructions with its URL recorded (or kept local and the user told,
-when no tracker is configured), and the anchor PR/issue (when one exists) carries a
-comment linking back to it.
+**Success criteria**: `postmortem.md` exists with the Run operations section filled and
+(when the run fell short) the "why the gap happened" section naming the system cause (not
+just the code defect), the postmortem is published per the repo's tracker instructions with
+its URL recorded (or kept local and the user told, when no tracker is configured), and the
+anchor PR/issue (when one exists) carries a comment linking back to it.
 
-### 5. Propose ONE system change [human checkpoint]
+### 6. Propose ONE system change [human checkpoint]
 Propose exactly one concrete change to one specific file — a skill, sub-agent, template,
 or criteria block, named by its path in the canonical skills repo
 (`dcouple/orchestra` — e.g. `claude/skills/discussion/SKILL.md`,
@@ -101,7 +131,10 @@ proposed edit.
 
 Do **not** apply it. Present it for the human to approve; record the proposal (and the
 verdict, if given now) in postmortem.md's "What to change so it doesn't recur" section.
-One change per postmortem — the highest-leverage one — so each fix is attributable.
+One change per postmortem — the highest-leverage one — so each fix is attributable. That
+one change may target the **operational** finding from step 2 (e.g. pre-authorize a
+green-tier gate so it stops stalling, add a self-wakeup so a turn-end resumes, make a
+fallback non-blocking) when the autonomy leak outweighs any outcome gap.
 
 **Success criteria**: proposal names an exact file and shows the concrete edit; nothing
 outside `./tmp/<id>/` was modified.

@@ -24,7 +24,68 @@ work (UI components, styling, client-side state, user-facing copy) → the
 Claude `frontend-implementer`, verified by the Claude `frontend-verifier`.
 web-researcher is a Claude sub-agent.
 
-## Step 0: Load
+## Autonomy & safety (read first)
+
+This run is meant to finish unattended — started at night, reviewed in the
+morning. Three rules make that safe:
+
+- **A phase or step boundary is not a turn boundary.** Never end your turn
+  with work remaining and wait to be told "continue" — chain straight into
+  the next step. Sub-agents run in the background and re-invoke you when they
+  finish; that is not a reason to stop. If you are ever about to yield with
+  work left (a long external wait, a tool that re-invokes you later),
+  schedule a self-wakeup (`ScheduleWakeup`) so the run resumes on its own
+  instead of idling until a human nudges it. Idle-waiting-on-a-nudge is the
+  single biggest waste in a /do run; treat it as a bug.
+- **Action tiers decide what you may do alone. When unsure which tier an
+  action is, it is red — always err toward caution.**
+  - **Green — do it unattended:** code, tests, docs, new files, and
+    **staging** schema changes that are *both* additive/nullable *and*
+    reversible (a new nullable column or new table you could drop with no data
+    loss) — anything self-undoing. Apply it; note the production counterpart
+    in Deploy notes.
+  - **Red — never executed by you:** **anything touching production** — the
+    production database, production config, real users, or money — full stop,
+    even if it looks trivial and even if the human approves it; **anything
+    irreversible** or that affects production users; and any staging change
+    that isn't cleanly reversible. Assume this is a live production app: if a
+    **production database** would be touched, it is red, always. For a red
+    action, capture the exact change to a file under `./tmp/<id>/` (migration,
+    script, deploy note), record it in Deploy notes, and hand the human the
+    exact command — you never run it.
+- **A red gate that only needs a *decision* → ask and wait** (two-way, per
+  `.references/notify.md`): notify with the question and block on the reply
+  from the human's phone, then act on it — but a production *mutation* is never
+  executed by you regardless of the answer (prepare it, hand it back). Schedule
+  a self-wakeup so independent work continues while the gate waits. No two-way
+  configured / no reply in time → fall back to capture-note-and-continue.
+- **Only fully stop for a red gate that blocks *everything*** (access the run
+  can't proceed without, a genuine ambiguity in intent). Notify, say exactly
+  what you need, and wait. Everything else is deferred or asked — never a
+  whole-run freeze.
+
+**Notify** per `.references/notify.md` (repo-config targets; silent no-op if
+unset). Because several runs may ping the same phone, every message names the
+**item, stage, and why** with clear visual hierarchy. Fire at: a red gate
+(ask-and-wait, or deferred), a hard stop, and run completion — never on
+green-tier progress.
+
+## Step 0: Preflight, then Load
+
+**Preflight first — surface everything human-actionable up front,** so the
+run doesn't discover a missing dependency at hour six and stall. Check what
+this run will need end-to-end and, in **one** message to the human, list what
+is missing or expired with the exact command to fix each: tracker + `gh`
+auth; the artifact-provider tool the repo's `AGENTS.md` names (e.g. a Notion
+CLI) if artifacts get published; the notify target (`.references/notify.md`);
+and the credentials/tooling verification will need (DB, cloud, test-mode API
+keys, a browser for computer-use). Resolvable from config or a quick check →
+just confirm it silently. If nothing is missing, say so in one line and
+proceed. A missing green-tier dependency is a preflight note, not a
+stop — the human clears it while you work; only a dependency the run truly
+cannot start without stops Step 0.
+
+Then **Load:**
 
 Get everything about the work item into `./tmp/<id>/` before starting.
 This mirrors the publish rule: the project's `AGENTS.md` `Work-item
@@ -100,7 +161,9 @@ sub-agent; backend/ops work → the `codex` skill, role `implementer` (later
 fix rounds resume the same Codex session). A mixed plan splits into separate
 dispatches — you sequence them. Give each the plan and the item (intent =
 source of truth for *why*). Resolve blockers yourself from the item/refs;
-only a blocker that genuinely needs the human stops the run.
+apply the Autonomy & safety tiers — a red-tier action gets captured, noted,
+and notified, and the run continues; only a red gate that blocks everything
+stops it.
 
 ## Step 3: Verify
 
@@ -194,7 +257,9 @@ happens on the artifact, not before it exists.
   where work-item artifacts go, in which case save them there per its
   instructions.
 - Report to the user: PR link + wrap-up summary + QA items left to the
-  human + anything unresolved.
+  human + anything unresolved (including every red-tier action deferred to
+  Deploy notes during the run). **Notify** run completion per
+  `.references/notify.md`.
 
 ## Epics (type: epic-spec)
 
@@ -204,7 +269,9 @@ phase diff — both reviewers, same Must-Fix gate and cap — fix and
 re-verify, then run the build gate and commit the phase following Step 4's
 commit rules. After the last phase, continue from Step 4's PR steps
 (deploy-notes scan over the whole epic diff, rebase, push, open the PR) and
-run Steps 5–6 once for the whole epic.
+run Steps 5–6 once for the whole epic. Phases chain without stopping — a
+completed phase flows straight into the next phase's Step 1; never yield to
+wait for a "continue" between phases (see Autonomy & safety).
 
 ## Rules
 
@@ -212,4 +279,9 @@ run Steps 5–6 once for the whole epic.
   that produced it; reviewers never edit; the implementer never reviews
   itself.
 - Never expand scope beyond the item.
-- The run is resumable: plan.md plus the item's ✓ state say where you were.
+- Finish unattended: chain steps and phases without stopping for a nudge;
+  defer-note-and-notify red-tier actions rather than blocking; stop only for
+  a red gate that blocks everything (see Autonomy & safety).
+- The run is resumable: plan.md plus the item's ✓ state say where you were —
+  and if a turn ends with work remaining, a self-wakeup resumes it rather
+  than waiting for a human.
