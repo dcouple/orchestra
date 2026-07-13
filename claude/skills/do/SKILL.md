@@ -259,6 +259,20 @@ happens on the artifact, not before it exists.
   post the evidence as a PR comment — each item with its quoted output or
   hosted-image screenshot URLs (never committed files). Body carries state,
   comments carry proof.
+- **Hosting evidence media**: when the repo is on GitHub, host screenshots,
+  GIFs, and videos as assets on a rolling `qa-assets` **prerelease**
+  (once per repo: `gh release create qa-assets --prerelease
+  --title "QA evidence assets" --notes "Rolling QA evidence host — not a
+  software release."` — the explicit `--title`/`--notes` matter: without
+  them `gh release create` prompts interactively and a headless run hangs;
+  then `gh release upload qa-assets <pr#>-<name> --clobber`) and reference the
+  `releases/download/...` URLs — CLI-native, permanent, permission-scoped,
+  any file type. Prefix filenames with the PR number so the rolling release
+  stays browsable. Images/GIFs render inline in comments; videos land as
+  links (GitHub only inline-plays web-UI uploads). Expiring temp hosts are
+  forbidden for evidence — a dead link months later is no evidence at all.
+  On a private repo, note that inline rendering may fail for viewers
+  without repo access; the links still work.
 - After the loop and QA, post surviving Should Fix / Nice to Have findings
   as line-anchored inline PR comments (`gh api` reviews, event `COMMENT` —
   never `REQUEST_CHANGES`: the loop owns Must Fix, and capped survivors are
