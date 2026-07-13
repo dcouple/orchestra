@@ -118,6 +118,10 @@ One line per acceptance criterion, each with the evidence that it holds — what
 was run or driven and the result, quoted or pointed at. Restate the AC id
 (`AC1`, `AC2`…) so a reviewer can check them off against the item. Automated
 proof (tests, logs) lives here; live/visual proof can point to the QA comment.
+Where a criterion wasn't verified, **say so explicitly — "not verified" is
+stated, never implied by omission** — and where the run has gates (review
+passes, build, a Socrates verdict), fold their outcomes in so the reviewer
+sees what cleared the change.
 
 ### Manual tests
 The human-runnable flows derived from the ACs, as **checkboxes**, risk-tiered:

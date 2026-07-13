@@ -94,23 +94,21 @@ names):
 ## Step 6: Open the PR
 
 - Title: same `type: short imperative summary` style as the commit.
-- Body sections, in order (matching `/do`'s PR standard):
-  - **Summary** — the intent of the change and what "done" means, drawn
-    from the final `intent.md`.
-  - **Visual overview** — when the change is flow-, boundary-, or
-    lifecycle-shaped and the `excalidraw-pr-diagrams` skill is available:
-    the rendered before → after diagram per that skill's PR standard.
-    Hosted-image URLs, never committed files; keep the `.excalidraw`
-    source in `./tmp/pr-<branch>/`. Omit when a diagram wouldn't teach
-    anything prose can't.
-  - **Verification** — what was actually run or exercised to prove the
-    change works, with concrete evidence (commands, output, screenshots),
-    plus the gate outcomes (Socrates verdict, review passes, build gate).
-    "Not verified" is stated, never implied.
-  - **Residual risks** — review findings not taken and anything else a
-    reviewer should weigh; omit the section entirely if there are none.
-  - `Closes #<n>` when the PR resolves an issue (from $ARGUMENTS or the
-    conversation), linked per the repo's tracker convention.
+- Write the body following the `/do` skill's `references/pr-body.md` — the
+  single source for the section spine, the body-state / comment-proof split,
+  and the pre-open checklist, so this skill's PRs read identically to `/do`'s
+  and don't drift from the standard. Right-size to an ad-hoc change:
+  **Summary** (from the final `intent.md`), **Verification**, and **Residual
+  risks** are usually the whole body; **Visual overview** only when a diagram
+  teaches something prose can't (keep its `.excalidraw` source in
+  `./tmp/pr-<branch>/`); **User journeys**, **Manual tests**, **QA results**,
+  and **Deploy notes** appear only when the change actually has branches,
+  human-runnable flows, or deploy steps.
+- Two additions specific to this skill's gated path: fold the **gate
+  outcomes** (Socrates verdict, review passes used, build gate) into
+  Verification, and seed **Residual risks** from the review findings you
+  chose not to take. `Closes #<n>` when the PR resolves an issue (from
+  $ARGUMENTS or the conversation), per the repo's tracker convention.
 - Create with `gh pr create` against the default branch, applying the
   Step 5 labels (and milestone, when the repo's conventions call for one).
 
