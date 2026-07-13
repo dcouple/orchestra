@@ -1,0 +1,6 @@
+# Codex project config for orchestra.
+# Linear MCP via the mcp-remote stdio bridge (handles the OAuth flow;
+# works on Codex versions without native streamable-HTTP support).
+[mcp_servers.linear]
+command = "npx"
+args = ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
