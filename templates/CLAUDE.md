@@ -11,6 +11,11 @@ and boundaries. Everything there applies here — do not duplicate it.
 Work-item tracking (where work items are published and where their
 artifacts go) is defined in `AGENTS.md` — the skills read it from there.
 
+Run notifications (optional): add a `Run notifications` section to `AGENTS.md`
+with a `notify:` target (e.g. an `ntfy.sh` topic URL) and long autonomous
+runs will ping it at human gates and completion. Unset → silent no-op. See
+`.references/notify.md`.
+
 ## Claude-specific notes
 
 - Sub-agent and skill definitions live in this repo (`.claude/`, `.codex/`,

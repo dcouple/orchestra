@@ -1,11 +1,11 @@
 # Postmortem — format
 
-> Produced by `/postmortem` after `/do` finishes and the human reviews the PR, when the
-> result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and published to the
-> tracker the repo's `AGENTS.md` `Work-item tracking` section configures, tagged
-> `postmortem` (see SKILL.md step 4 for the metadata; no tracker → stays local).
+> Produced by `/postmortem` on a `/do` run — the Run operations half always, the outcome
+> half when the result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and
+> published to the tracker the repo's `AGENTS.md` `Work-item tracking` section configures,
+> tagged `postmortem` (see SKILL.md step 5 for the metadata; no tracker → stays local).
 > The point is **compound learning**: fix the root cause in *our system*
-> (skill / agent / template / criteria), so the same gap can't recur.
+> (skill / agent / template / criteria), so the same stall or gap can't recur.
 
 ---
 ```yaml
@@ -19,15 +19,25 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 
 # Postmortem — `<item>`
 
+## Run operations (always)
+`<wall-clock span; agent-active vs human-idle time and its %; post-completion idle carved`
+`out (human away after the run finished — inflates duration, not a defect); the ranked`
+`in-run stalls (agent turn-ends that needed a "continue" nudge) with what each waited on;`
+`per-phase pacing from the commits; blocker inventory (AskUserQuestion gates, rate-limit`
+`hits, legitimate background-agent waits). Close with the single change that would have`
+`removed the biggest stall. Per .references/run-operations-analysis.md.>`
+
 ## What we asked for
 `<the intent + desired end state, briefly>`
 
-## What `/do` delivered vs intended
-`<the gap the human found on PR review — concrete>`
+## Outcome vs intended
+`<"On-target — no outcome gap" when the run delivered what was asked; otherwise the gap the`
+`human found on PR review, concrete>`
 
 ## Why the gap happened
-`<root cause in OUR system, not just the code: was it a thin ticket? a weak verification`
-`criterion? a review blind spot? a missing architecture direction?>`
+`<only when there was an outcome gap — root cause in OUR system, not just the code: a thin`
+`ticket? a weak verification criterion? a review blind spot? a missing architecture`
+`direction? Omit for an operational-only postmortem.>`
 
 ## What to change so it doesn't recur
 `<a concrete improvement to a specific skill / sub-agent / template / verification block>`
