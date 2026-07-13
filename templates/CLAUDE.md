@@ -11,7 +11,7 @@ and boundaries. Everything there applies here — do not duplicate it.
 Work-item tracking (where work items are published and where their
 artifacts go) is defined in `AGENTS.md` — the skills read it from there.
 
-Run notifications and their two-way reply target are configured in
+Run notifications (one-way phone pings at gates/completion) are configured in
 `AGENTS.md` (`Run notifications` section) — the skills read them there.
 
 ## Claude-specific notes
