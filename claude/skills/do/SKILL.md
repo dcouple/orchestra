@@ -167,6 +167,30 @@ apply the Autonomy & safety tiers — a red-tier action gets captured, noted,
 and notified, and the run continues; only a red gate that blocks everything
 stops it.
 
+**Bulk fan-outs** (many similar sub-agent dispatches — translations,
+codemods, per-file transforms):
+
+- Every dispatch's prompt carries a machine-verifiable completion contract
+  (e.g. "count leaves identical to source; must be under N — include the
+  audit output in your final message"), and the Overseer runs an independent
+  scripted audit over the WHOLE batch after each wave. A dispatch's exit
+  status or "DONE" claim is never evidence — expect a silent-under-delivery
+  tail on large inputs and budget a repair-wave pass into the schedule.
+- Each dispatch commits its own output immediately on success (one commit
+  per unit: `<kind>: <unit> (<shard>)`). Bulk results must never accumulate
+  uncommitted across waves — one later writer can silently destroy hours of
+  work, and per-unit commits make any bad unit trivially reversible.
+- When a provider quota blocks a wave, arm a resumable retry keyed to the
+  stated reset time (skips already-completed dispatches; detached from the
+  harness's task timeout) and reorder quota-independent work into the gap.
+  Quota is a budget, not a throughput limit: schedule the LARGEST fan-outs
+  as early after a reset as dependencies allow — widening concurrency does
+  not buy more output per window.
+- Shard file-disjoint bulk work across parallel dispatches where
+  dependencies allow (shared registration/index files go to one integrator
+  pass afterward); keep shards small enough that one balky dispatch loses
+  minutes, not the wave.
+
 ## Step 3: Verify
 
 Prove every verification criterion — the `frontend-verifier` sub-agent for
