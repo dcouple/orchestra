@@ -65,6 +65,26 @@ or the visualization has missed the change:
   PNGs in `refs/` next to the explainer. Use the template's `.shots`
   component.
 
+## Work sequence
+
+Every explainer shows how the work unfolds over time, using the template's
+`.pipeline` strip — epics and features differ in what the strip *is*:
+
+- **Epic**: the phase timeline is the spec — one `.stage` per phase,
+  sequential, titles matching `item.md`'s phases exactly. Binding.
+- **Feature**: section 02 carries a **work strip** — 3–6 stages named by
+  outcome ("setting + default" → "blocker service" → "settings row" →
+  "proven"), never by file or task. It is indicative, not binding: `/do`'s
+  plan stage owns the real plan, and the strip's caption must say so
+  (e.g. "indicative sequence — /do re-plans"). It exists so the reader
+  sees the shape and rough size of the work at a glance, not to
+  pre-commit an implementation order.
+- **Bug report**: the suggested resolution path becomes a strip only when
+  it genuinely has stages; a one-step fix stays prose.
+
+Keep stages at outcome altitude — if a stage name only makes sense with a
+file path in it, it's too low.
+
 ## Section map
 
 Every explainer: masthead (type badge, status, title, one-sentence intent),
@@ -73,7 +93,7 @@ then the opening diagram, then numbered sections, then the footer. Per type:
 | # | feature-ticket | epic-spec | bug-report |
 |---|----------------|-----------|------------|
 | 01 · Why | intent + before/after panels; UI mockup pair when UI is touched | problem/context + before/after; UI mockup pair when UI is touched | summary + expected-vs-actual panels; screenshot of the defect when visible |
-| 02 · Direction | proposed approach: pipeline/flow of touched components + `D1…` decision cards (each with its rejected alternative) | cross-cutting decisions as cards + **phase timeline** (the `.pipeline` strip, one `.stage` per phase, sequential) | root cause (state confidence: confirmed/likely/hypothesis) + suggested resolution path |
+| 02 · Direction | proposed approach: `D1…` decision cards (each with its rejected alternative) + **work strip** (see Work sequence) | cross-cutting decisions as cards + **phase timeline** (the `.pipeline` strip, one `.stage` per phase, sequential) | root cause (state confidence: confirmed/likely/hypothesis) + suggested resolution path (a `.pipeline` strip when it genuinely has stages) |
 | 03 · Scope | in / out-of-scope panels | per-epic goals vs non-goals panels | business impact + severity; out-of-scope if any |
 | 04 · Done means | ACs as the auto-numbered `ol.acs` list | ACs per phase (subheading per phase) | AC1 = repro flips to pass, plus prevention criteria |
 | 05 · Unresolved | open questions (omit if none) | open questions | open questions |
@@ -89,7 +109,9 @@ system.
 ## Rules
 
 - **Altitude**: general direction, not design — no file lists, pseudo-code,
-  or task sequences. If it isn't in `item.md`, it doesn't belong here.
+  or task-level sequences (work sequences stay at the outcome level defined
+  in Work sequence). If it isn't in `item.md`, it doesn't belong here —
+  except the feature work strip, which is explicitly indicative.
 - **Self-contained**: no external requests (fonts, scripts, images) — it must
   render from disk and from a file downloaded off wherever the work item is
   published. Inline everything.
