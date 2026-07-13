@@ -186,10 +186,6 @@ codemods, per-file transforms):
   Quota is a budget, not a throughput limit: schedule the LARGEST fan-outs
   as early after a reset as dependencies allow — widening concurrency does
   not buy more output per window.
-- Shard file-disjoint bulk work across parallel dispatches where
-  dependencies allow (shared registration/index files go to one integrator
-  pass afterward); keep shards small enough that one balky dispatch loses
-  minutes, not the wave.
 
 ## Step 3: Verify
 
