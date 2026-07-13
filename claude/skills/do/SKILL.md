@@ -218,35 +218,17 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 - Commit selectively (only this run's files, never `git add -A`; secret-scan
   the staged diff), message style `type: short imperative summary`. Rebase
   onto the origin default branch; push (`--force-with-lease` on rewrites).
-- Open the PR: typed title; body = **Summary** (the item's intent and what
-  "done" means), **Visual overview** (when the change is flow-, boundary-,
-  or lifecycle-shaped and the `excalidraw-pr-diagrams` skill is available:
-  the rendered before → after diagram per that skill's PR standard leads
-  the section — and when the flow branches (see Manual tests' fork map),
-  that diagram contrasts the old path against the new fork tree with the
-  after emphasized, so a reviewer sees the shape change, not just the
-  endpoints — followed by before/after screenshots of the actual behavior
-  when the change is user-visible — before from the item's refs or
-  reproduction evidence, after from the verify captures. All hosted-image
-  URLs, never committed files; keep the `.excalidraw` source in
-  `./tmp/<id>/refs/`), **Verification** (evidence per AC), **Manual tests** (the
-  human-exercisable flows derived from the ACs, risk-tiered — Must: breaks
-  data/auth/money if wrong; Important: user-facing behavior; Nice:
-  cosmetic — each item traced to the change motivating it, 10–20 items
-  total, plus an "areas not affected" line so safe surfaces are skippable —
-  Step 5's QA pass executes it. When the change is a **branching flow** —
-  multiple entry cohorts, decision points, or routed continuations rather
-  than one linear path — a flat checklist hides the flow's shape and its
-  coverage holes; lead the section with a **fork map**: a decision-tree of
-  the branches (each fork anchored to its routing `file:line`) plus a
-  journey-coverage table naming every distinct end-to-end journey, tagging
-  each to the checklist item that exercises it, and honestly flagging
-  branches nothing covers — then cross-tag the checklist items with those
-  journey IDs so the mapping is bidirectional), **Deploy notes** (each finding: what changed + the
-  action the human takes before/at deploy — name env vars/secrets, never
-  their values; omit when the scan finds nothing), **Residual risks** (omit
-  if none); when the item has a tracker URL in its frontmatter, link it
-  per that tracker's convention (e.g. `Closes #<n>` for a GitHub issue).
+- Open the PR: typed title; write the body following this skill's
+  `references/pr-body.md` — its section spine (Summary/What-Why-How, Visual
+  overview, User journeys, Verification, Manual tests, QA results, Deploy
+  notes, Residual risks), its body-state / comment-proof split, and its
+  pre-open checklist are binding. The **Visual overview** leads with the
+  before → after diagram per the `excalidraw-pr-diagrams` skill (when
+  available and the change is flow-/boundary-/lifecycle-shaped); the
+  **User journeys** section carries both a journey map and — for branching
+  flows — a fork map cross-tagged into the Manual tests; the deploy-notes
+  scan above feeds the **Deploy notes** section. Link the tracker with its
+  closing keyword (e.g. `Closes #<n>` for a GitHub issue).
 
 ## Step 5: Post-PR review + QA
 
