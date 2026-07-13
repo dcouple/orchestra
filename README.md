@@ -68,6 +68,18 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
    implementation.
 3. Run it and merge the first sync PR.
 
+## Orchestra consumes itself
+
+The skills are available when working on this repo too: `.claude/skills`,
+`.claude/agents`, `.codex/skills`, and `.references` are **symlinks** to the
+canonical directories above — no sync step, never stale. The usual
+consumer-repo warning is inverted here: editing under the dot-paths edits
+the canonical copy, which is exactly right. Root `AGENTS.md` / `CLAUDE.md`
+configure the skills for this repo (work items publish to
+`dcouple/orchestra` GitHub issues), and the Linear MCP server is wired up
+for both harnesses (`.mcp.json` for Claude Code, `.codex/config.toml` for
+Codex; both authenticate via OAuth on first use).
+
 ## User-level install (optional)
 
 The consumer-repo sync above is the canonical path. If you also want the
