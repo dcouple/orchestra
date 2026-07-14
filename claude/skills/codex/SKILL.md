@@ -49,7 +49,8 @@ Codex reads them itself:
 ```
 You are acting as the <role> in an automated software-development pipeline
 conducted by the Overseer, a separate orchestrating agent. Your report is
-consumed by the Overseer, not by a human.
+consumed by the Overseer, not by a human — it is the sole evidence the
+Overseer acts on; what you miss, the pipeline misses.
 
 First read these two files:
 1. Your role instructions: <instructions path per the mapping below>.
@@ -131,6 +132,9 @@ after one retry).
 ## Rules
 
 - One dispatch, one role — never batch two roles into one Codex session.
+- Never describe the artifact under review as verified, tested, correct, or
+  previously approved in a reviewer dispatch. Re-review dispatches present
+  prior findings as claimed fixed, to be verified.
 - Reviewer and researcher dispatches are read-only: one that edited files is
   a failed run, treat its output as suspect.
 - Don't launch a second implementer session while one is resumable —
