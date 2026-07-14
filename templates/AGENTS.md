@@ -54,6 +54,11 @@ destination and the exact steps — the skills follow these instructions at
 publish, pull, and wrap-up. If this section gives no instructions, nothing
 is published: work items stay local under `./tmp/<id>/`.
 
+Tracker workspace, organization, team, project, and workflow-state names are
+consumer-repository configuration. Keep them here or in a linked local
+document, verify them against the live tracker when they change, and do not
+put consumer-specific routing in synced Orchestra skills or references.
+
 Example — publish to GitHub issues (replace or delete):
 
 ```yaml

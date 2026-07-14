@@ -12,6 +12,12 @@ the `Work-item tracking` section of the project's `AGENTS.md` (or
 1. Set `status: ready` in `item.md`.
 2. Read the project's `Work-item tracking` section and publish exactly as
    it instructs — GitHub issues, Linear, or anything else it documents.
+   Resolve any configured workspace, organization, team, project, or
+   workflow state against the live tracker; do not infer or silently
+   substitute a different destination. If the consumer guidance is stale,
+   correct it in the consumer repository. A user's explicit correction is
+   current intent for the run, but does not remove the need to update that
+   repository guidance.
    Title `<prefix> <item title>`, body per the caller. Upload or attach
    `item.md` and the `refs/` files however the destination supports, so
    the published item carries everything a remote `/do` needs. Record
