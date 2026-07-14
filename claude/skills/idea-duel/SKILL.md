@@ -1,6 +1,6 @@
 ---
 name: idea-duel
-description: Lean dueling-wizards ideation tournament — the two model stacks independently study a project, generate and winnow ideas, blind cross-score each other's, and probe for shared blind spots; the orchestrator synthesizes a consensus matrix whose winners become draft work items. Use when the user wants the strongest next ideas for a project ("what should we build next", "run an idea duel", "most valuable improvements"). Discretionary quota spend — an upstream generator feeding the capture pipeline, never part of /do.
+description: Lean dueling-wizards ideation tournament — the two model stacks independently study a project, generate and winnow ideas, blind cross-score each other's, and probe for shared blind spots; the orchestrator synthesizes a consensus matrix whose winners become draft work items. Use when the user wants the strongest next ideas for a project ("what should we build next", "run an idea duel", "most valuable improvements"). Lean-only by design (4 dispatches); discretionary quota spend — an upstream generator feeding the capture pipeline, never part of /do.
 argument-hint: "[project or area to ideate on, plus any focus or constraints]"
 ---
 
@@ -10,9 +10,11 @@ Single-model brainstorming has one flaw that matters: the model that generates
 an idea also evaluates it. The duel splits those jobs across the two stacks
 and makes **convergence the quality signal** — where two differently-biased
 models agree blind, the idea is probably good; where they trash each other's,
-it's suspect. The lean form is 4 dispatches (~100k tokens at the pinned
-efforts — about one review pass); `--full` escalates to the complete
-tournament and is a deliberate, rare spend.
+it's suspect. Four dispatches, ~100k tokens at the pinned efforts — about one
+review pass. That is the only form: the source methodology's full tournament
+(30→5 winnowing, reveal/rebuttal rounds) is deliberately not implemented —
+it triples the spend for marginal signal, and an accidental invocation would
+burn a session's quota in one go. Do not add it back casually.
 
 ## Wizards (pinned)
 
@@ -24,7 +26,7 @@ tournament and is a deliberate, rare spend.
 - If a participant degrades (fallback model, truncated output), retire it and
   report a single-wizard result honestly — never contaminate scoring.
 
-## Phases (lean default)
+## Phases
 
 0. **Frame** (orchestrator, no dispatch): one-paragraph brief — the project,
    the focus, and the ACTUAL constraints (scale, maturity, appetite); artifact
@@ -54,13 +56,6 @@ tournament and is a deliberate, rare spend.
    sequence (enablers first). Winners become `status: draft` work items under
    `./tmp/<idea-slug>/item.md` — the Socratic gate then serves as the
    tournament's third adversarial filter.
-
-## `--full` (rare, deliberate)
-
-Phase 1 over-generates 30 → winnows 5 per side; between phases 2 and 3 add
-one reveal round (each wizard reads the opponent's scores of its ideas and
-may rebut, concede, or steelman — one dispatch each, ~400 words). Roughly
-triples the spend; reserve it for repo-milestone sessions.
 
 ## Rules
 
