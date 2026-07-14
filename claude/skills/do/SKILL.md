@@ -174,8 +174,10 @@ pass only when the lanes sharply diverge. Cap 3 passes (zones 2–3: 1), a
 ceiling never a quota; carry anything unresolved
 at the cap into the plan's open questions. Score the plan's `confidence:`
 (1–10, one-pass implementation confidence) as each pass exits — while
-budget remains within the caps, a low score is the signal to spend it (more
-research, another pass); the score recorded after the last pass is final.
+budget remains within the caps, a low score is the signal to spend it on
+more research and deepening the plan; a materially revised plan earns a
+fresh review pass (it's a new artifact), an unchanged one never does. The
+score recorded after the last pass is final.
 Never a reason to stop the run.
 
 ## Step 2: Implement

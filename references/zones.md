@@ -59,7 +59,8 @@ verifier, at any zone: acceptance evidence is never trimmed by a dial.
   carry `review_lanes: dual | single` in its frontmatter — set at capture or
   edited later as item metadata on the tracker. `/do` honors it over the
   table's lane dial in both directions (it's the human's explicit call, so
-  unlike the zone it may also de-escalate). Every other dial still derives
+  unlike the zone it may also de-escalate); `single` keeps the Codex lane,
+  same as everywhere the table drops to one. Every other dial still derives
   from the zone.
 - **The initial table is deliberately conservative**: zones 0–1 preserve
   full effort; reductions exist only where yield is already known to be low.
