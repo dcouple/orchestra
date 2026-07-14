@@ -111,7 +111,11 @@ Claude sub-agent) run as background Bash calls.
 
 ### 3. Return the report
 Read the output file. Check the status line the format requires (reviewers:
-`**Verdict:**` + `**Counts:**` with the Must Fix count · implementer:
+`**Verdict:**` + `**Counts:**` with the Must Fix count — a reviewer report
+that arrives tiered P0–P3 instead is a valid report, not a failed run:
+P0/P1 ≡ Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have; map the tiers,
+synthesize the status line from the mapped counts yourself, and never
+burn a retry or re-dispatch over format · implementer:
 `**Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT` ·
 code-researcher: `**Bottom line:**` · investigator: `**Root cause:**` with a
 confidence word · backend-verifier: `**Verdict:**` pass|fail). Return the

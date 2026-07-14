@@ -87,9 +87,13 @@ rounds; investigator and backend-verifier workspace-write for running tests,
 edits forbidden by their role instructions), output capture, and status-line
 parsing.
 
-Review loops exit when **no Must Fix remains from either reviewer** — the
-Overseer judges when a loop has converged and flags anything left
-unresolved in the wrap-up. Codex efforts are defaults — `low` for every
+Review loops exit when **no Must Fix remains from either reviewer** — a
+Codex report tiered P0–P3 maps rather than reformats (P0/P1 ≡ Must Fix,
+P2 ≡ Should Fix, P3 ≡ Nice to Have). Caps are ceilings, never quotas: a
+zero-Must-Fix pass ends the loop even with Should Fixes open (the Overseer
+applies those at its discretion, no re-review), and the only other trigger
+for an extra pass is the two lanes sharply diverging. The Overseer flags
+anything left unresolved at a cap in the wrap-up. Codex efforts are defaults — `low` for every
 role (GPT-5.6-sol at low effort is the efficiency sweet spot); the
 dispatcher may raise a reviewer to `medium` or `high` rarely, when the
 zone warrants it (zone 0 or an epic), with the reason stated in the

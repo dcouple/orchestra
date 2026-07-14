@@ -51,6 +51,17 @@ verifier, at any zone: acceptance evidence is never trimmed by a dial.
   De-escalating below the item's zone is a capture-time decision (the human
   re-zones the item) — never an in-run one. Lowering this table's defaults
   requires postmortem evidence (yield data), one change at a time.
+- **Loop caps are ceilings, never quotas.** A review loop ends the moment a
+  pass returns zero Must Fix (Codex tiers: P0/P1) from every lane and the
+  lanes roughly agree — remaining cap budget is never spent re-reviewing
+  Should Fixes.
+- **`review_lanes:` is the one human-settable dial override.** An item may
+  carry `review_lanes: dual | single` in its frontmatter — set at capture or
+  edited later as item metadata on the tracker. `/do` honors it over the
+  table's lane dial in both directions (it's the human's explicit call, so
+  unlike the zone it may also de-escalate); `single` keeps the Codex lane,
+  same as everywhere the table drops to one. Every other dial still derives
+  from the zone.
 - **The initial table is deliberately conservative**: zones 0–1 preserve
   full effort; reductions exist only where yield is already known to be low.
 - Missing `zone:` on an item → the Overseer classifies from stakes +
@@ -74,3 +85,5 @@ multi-phase commitment warrants it whatever the zone says. The zone still
 gates the frontend-verifier and QA dials per phase, and still rides in every
 record. This override outranks every zone-derived lane/cap clause in the skills —
 an epic at any zone runs dual lanes at cap 3. Skills reference it here.
+The one thing that outranks even this is an explicit `review_lanes:` on the
+epic itself — a human's written choice beats any policy default.

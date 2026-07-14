@@ -10,6 +10,7 @@ type: bug-report
 id: <id>
 status: draft         # draft | ready | done
 zone: <0-3 — stakes + consequence radius, agreed with the user; .references/zones.md>
+review_lanes: <dual | single — optional human override of the zone's lane dial; omit to derive from zone>
 severity: <critical | high | medium | low>
 pr: <url or # — filled when /do opens it>
 ---
