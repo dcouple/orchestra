@@ -247,7 +247,8 @@ happens on the artifact, not before it exists.
 - Run the zone's review lanes over the PR diff (zones 0–2: both reviewers;
   zone 3: Codex alone; epics always both — zones.md's Epics override)
   (correctness + security, `(security)` tags). Loop findings back to the matching implementer and push the fixes;
-  cap 3 passes (zones 2–3: 1; zone 3 single-lane on Codex).
+  cap 3 passes (zones 2–3: 1; zone 3 single-lane on Codex; epics always
+  3, dual-lane — zones.md's Epics override).
 - When no Must Fix remains from either reviewer — or the cap was reached,
   survivors flagged in the wrap-up — run the **QA pass per the zone's dial**
   (`.references/zones.md`): zones 0–1 as the table says, zone 2 trimmed to
