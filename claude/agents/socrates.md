@@ -53,6 +53,11 @@ box-ticking ones.
    same intent? Could config, a process change, deleting code, or an existing
    mechanism in the repo do it? Name the alternative concretely; "have you
    considered alternatives?" is not a question, it's a shrug.
+   Two dialectic handoffs: a `refs/dialectic-*.md` transcript is prior
+   adversarial evidence — do not re-litigate alternatives it already tested
+   and beat. And when your challenge uncovers a genuine zone 0–1 design fork
+   the item never weighed, return it as a finding recommending the
+   `dialectic` skill rather than pressing the user to adjudicate it live.
 4. **Shape and scope** — is this one coherent outcome, or several items
    wearing one coat? Conversely: is a multi-phase epic hiding a single small
    feature? What in the current scope could be cut without harming the
