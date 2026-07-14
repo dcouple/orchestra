@@ -27,9 +27,8 @@ sends work-item artifacts. No extra publishing step.
 The item's `zone:` (stakes classification, `.references/zones.md`) sets how
 much the explainer must *teach*, not just show. The closer to zone 0, the more
 the reader must be able to **judge** the change — irreversible work approved
-off a skim is how zone-0 mistakes ship. Model intelligence is spiky: the
-explainer is where the human catches the over-engineered or wrongly-scaled
-direction before it runs.
+off a skim is how zone-0 mistakes ship. The explainer is where the human
+catches the over-engineered or wrongly-scaled direction before it runs.
 
 - **Zone 0 — teach it (highest fidelity).** Beyond the standard sections: a
   "Concepts" panel that teaches the domain ideas the change rests on — the

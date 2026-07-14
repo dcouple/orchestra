@@ -83,8 +83,7 @@ reachable as `unknown`.
 
 ## Epics
 
-An epic is always **full machinery**: dossier, dual lanes, cap 3 — the
-multi-phase commitment warrants it whatever the zone says. The zone still
+An epic is always **full machinery**: dossier, dual lanes, cap 3. The zone still
 gates the frontend-verifier and QA dials per phase, and still rides in every
 record. This override outranks every zone-derived lane/cap clause in the skills —
 an epic at any zone runs dual lanes at cap 3. Skills reference it here.

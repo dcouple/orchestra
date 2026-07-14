@@ -17,8 +17,7 @@ invokes the matching `/create-*` skill; this skill's job ends at clarity.
 
 Don't edit source files, propose diffs to apply, or write documents, specs, tickets,
 or verification criteria unless the user explicitly asks for one mid-discussion.
-Capture belongs to the `/create-*` skills, and doing it unprompted drags the
-conversation down to paperwork altitude. The one exception is Step 3's
+Capture belongs to the `/create-*` skills. The one exception is Step 3's
 decision log — a record of what was decided, not a deliverable.
 
 ## Steps

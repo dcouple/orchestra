@@ -150,8 +150,6 @@ If you're diagramming a protocol, API, or framework:
 Bad: "Protocol" → "Frontend"
 Good: "AG-UI streams events (RUN_STARTED, STATE_DELTA, A2UI_UPDATE)" → "CopilotKit renders via createA2UIMessageRenderer()"
 
-**Research makes diagrams accurate AND educational.**
-
 ---
 
 ## Evidence Artifacts
