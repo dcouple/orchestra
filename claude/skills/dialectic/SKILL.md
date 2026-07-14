@@ -8,11 +8,11 @@ argument-hint: "[the decision or conflict to debate]"
 
 Parallel blind reviews give redundancy; a dialectic gives **rebuttal** — each
 side must attack the other's strongest case instead of independently missing
-the same thing. The canonical win: catching a direction sized for someone
-else's company (the hundreds-of-millions-of-users answer to a
-hundreds-of-users problem) — over-engineering survives solo review because it
-*is* best practice somewhere; it rarely survives an opponent briefed on the
-actual scale.
+the same thing. What survives solo review is the *plausible-but-mismatched*
+direction: a design whose assumptions — scale, maturity, team size, risk
+tolerance, reversibility — belong to a different context than the motion's.
+It reads as best practice because it is, somewhere else; it rarely survives
+an opponent briefed on the actual constraints.
 
 ## When
 
@@ -32,7 +32,8 @@ change costs more than being wrong would.
    sentence, the candidate positions, and the constraints that decide it —
    the ACTUAL scale, the zone, reversibility, what the repo already does
    (with `file:line` where checkable). An honest motion is most of the value;
-   a motion that omits the real scale invites the trained-on-Google answer.
+   a motion that omits its real constraints invites answers tuned to someone
+   else's context.
 2. **Rounds** (default 2, cap 3) — appended to the motion file:
    - **Advocate**: a Claude sub-agent (`model: opus`, thinking) argues the
      leading position — strongest case, named tradeoffs, checkable claims
