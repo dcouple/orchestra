@@ -282,7 +282,10 @@ happens on the artifact, not before it exists.
 
 - Run the zone's review lanes over the PR diff (zones 0–2: both reviewers;
   zone 3: Codex alone; epics always both — zones.md's Epics override)
-  (correctness + security, `(security)` tags). Loop findings back to the matching implementer and push the fixes;
+  (correctness + security, `(security)` tags). At zones 0–1, when the two
+  lanes disagree head-on about a Must Fix, one round of the `dialectic`
+  skill adjudicates before you rule; at zone 2 the Overseer rules directly —
+  the dialectic is never spent on zone 2–3 items. Loop findings back to the matching implementer and push the fixes;
   cap 3 passes (zones 2–3: 1; zone 3 single-lane on Codex; epics always
   3, dual-lane — zones.md's Epics override).
 - When no Must Fix remains from either reviewer — or the cap was reached,

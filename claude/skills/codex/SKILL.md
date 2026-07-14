@@ -23,6 +23,7 @@ this conversation — the prompt must carry everything the role needs.
 | `code-reviewer` | `gpt-5.6-sol` / `xhigh` | `--yolo` | `--ephemeral` |
 | `code-researcher` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
 | `investigator` | `gpt-5.6-sol` / `xhigh` | `--yolo` | `--ephemeral` |
+| `dialectic-opponent` | `gpt-5.6-sol` / `xhigh` | `read-only` | `--ephemeral` |
 
 High effort is for judgment-heavy roles (review, investigation); medium for
 implementation, exploration, and verification. The investigator and
@@ -66,7 +67,7 @@ Print the report as your final message, in exactly the specified format.
 ```
 
 Role instructions: Codex-only roles (implementer, investigator,
-backend-verifier) → `.references/agents/<role>/instructions.md` · roles
+backend-verifier, dialectic-opponent) → `.references/agents/<role>/instructions.md` · roles
 with a Claude twin (code-researcher, plan-reviewer, code-reviewer) →
 `.claude/agents/<role>.md` (tell Codex to follow the body and ignore the
 YAML frontmatter — it applies to a different harness).
@@ -74,7 +75,8 @@ YAML frontmatter — it applies to a different harness).
 Format files, under `.references/agents/<role>/`: implementer →
 `implementation-result.md` · plan-reviewer / code-reviewer →
 `review-report.md` · code-researcher → `codebase-findings.md` ·
-investigator → `root-cause-finding.md` · backend-verifier →
+investigator → `root-cause-finding.md` · dialectic-opponent →
+`opponent-round.md` · backend-verifier →
 `../frontend-verifier/verification-result.md` (shared verifier format,
 verify mode).
 

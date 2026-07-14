@@ -39,6 +39,13 @@ what the user is actually asking:
   first to exercise the flow and capture evidence, then pass its transcript along
   with the defect report.
 
+For zone 0–1 directions, offer the `dialectic` skill at two moments — when a
+fork resists convergence after the tradeoffs are on the table, and at
+convergence itself, before the decision log is written ("want the opposing
+stack to try to beat this first?"). A direction that survives arrives at
+capture with documented adversarial evidence; one that doesn't just saved a
+/do run. Invoke only on an explicit yes.
+
 Only research what the discussion actually needs — let questions pull research, not
 the other way around. Dispatch mid-conversation as new questions arise; run
 independent dispatches in parallel.
