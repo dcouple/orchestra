@@ -44,9 +44,19 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 
 ## Dial record & right-sizing
 `<copy the wrap-up's dial-record block (zone, lanes, passes, findings split`
-`first-pass/later per lane, verifiers/QA, wall-clock), then ONE judgment`
-`line: review effort was overdone | right-sized | underdone — naming the`
-`single dial that would have changed it. This tunes zones.md's table.>`
+`first-pass/later per lane, verifiers/QA, wall-clock, pr_size, tokens,`
+`spend_ratio, agents roster — filling any "unknown" the transcripts can now`
+`resolve), then ONE judgment line: review effort was overdone | right-sized`
+`| underdone — naming the single dial that would have changed it. Ground the`
+`judgment in spend: tokens per review pass vs the Must Fixes that pass`
+`caught — a pass that found nothing was pure spend. This tunes zones.md's`
+`table.>`
+
+## Acceptance
+`<the human's verdict on the PR, when known: merged as-is | merged after`
+`rework (count the post-label commits) | closed/rejected | still awaiting`
+`review (operations-only postmortem). This is the outcome bit the score`
+`aggregation joins against.>`
 
 ## System change
 `<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval verdict`

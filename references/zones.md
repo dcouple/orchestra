@@ -62,8 +62,6 @@ verifier, at any zone: acceptance evidence is never trimmed by a dial.
   unlike the zone it may also de-escalate); `single` keeps the Codex lane,
   same as everywhere the table drops to one. Every other dial still derives
   from the zone.
-- **The initial table is deliberately conservative**: zones 0–1 preserve
-  full effort; reductions exist only where yield is already known to be low.
 - Missing `zone:` on an item → the Overseer classifies from stakes +
   consequences, records the classification and reasoning in `plan.md`, and
   proceeds; the Socratic gate should have caught this at capture.
@@ -73,10 +71,16 @@ verifier, at any zone: acceptance evidence is never trimmed by a dial.
 The wrap-up's dial record and the postmortem carry: zone, effective dials
 (lanes, passes used per loop, verifiers/QA run), findings per lane split
 first-pass vs later passes (repeat-pass yield is the tuning signal), QA
-findings, wall-clock — and the PR gets the `awaiting-human-review` label
-at wrap-up so that **commits after that label's timestamp** are countable as
-post-review rework. Aggregated later as zone × model × path → rework, this
-is the evidence that tunes this table.
+findings, wall-clock, **tokens** (total, per source, per Codex role), **PR
+size** (files changed, lines added/removed), the **spend ratio** (tokens
+per changed line — the size-normalized cost score), and the **agents
+roster** (role × model × effort × dispatches × duration × tokens) — and
+the PR gets the `awaiting-human-review` label at wrap-up so that **commits
+after that label's timestamp** are countable as post-review rework.
+Aggregated later as zone × model × path → rework and spend, this is the
+evidence that tunes this table — and, exported later to an OTel-backed
+store, the same record is the visualization's raw material; capture it
+even when a number is only reachable as `unknown`.
 
 ## Epics
 

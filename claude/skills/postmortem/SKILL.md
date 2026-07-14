@@ -32,10 +32,16 @@ fixing, that goes through `/create-plan` then `/do`; the proposed system change 
 presented for the human to approve, not applied.
 
 > Every postmortem carries the run's dial record (zone, lanes, passes,
-> findings per lane, QA yield — from `wrapup.md`) plus one judgment line:
-> review effort was overdone / right-sized / underdone, naming the single
-> dial that would have changed it. This is the data that tunes
-> `.references/zones.md`'s table.
+> findings per lane, QA yield, tokens, PR size, spend ratio, agents roster
+> — from `wrapup.md`, cross-checked against the transcripts) plus one
+> judgment line: review effort was overdone / right-sized / underdone,
+> naming the single dial that would have changed it. Review passes are the
+> first place to look — a pass that found nothing was pure spend. This is
+> the data that tunes `.references/zones.md`'s table.
+
+`/do` invokes this skill automatically at wrap-up (operations half only —
+the outcome half needs the human's PR review, so it runs on a later
+invocation). Standalone invocations cover both halves as applicable.
 
 ## Steps
 
