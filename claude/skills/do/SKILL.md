@@ -235,7 +235,18 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   don't assume) and run it. Failures are must-fix before the PR opens.
 - **Deploy notes scan**: scan the run's diff for schema/migrations, env
   vars/secrets, infra/CI, new third-party dependencies, and one-time
-  scripts/backfills. Surface findings; never apply or gate on them.
+  scripts/backfills, then **split each finding by tier and act on it**
+  (Autonomy & safety). A finding's **green-tier half** — an additive/nullable,
+  reversible change on a non-production environment you can reach (e.g. the
+  staging DB) — you **apply in-run**, so verification isn't silently blocked by
+  a schema the tests need; its **red-tier half** — production, irreversible, or
+  secrets — you **capture as a deploy note and never apply**. Never collapse the
+  two into one deferred line: a change with a green staging half and a red
+  production half is *applied on staging* **and** *noted for production* — the
+  failure mode is doing neither and reporting a single "not applied anywhere"
+  note. Flag any finding that **blocks verification/QA** (a column the tests
+  read, a test-mode key the QA pass needs) as a **prerequisite**, called out
+  distinctly from deploy-time actions.
 - Commit selectively (only this run's files, never `git add -A`; secret-scan
   the staged diff), message style `type: short imperative summary`. Rebase
   onto the origin default branch; push (`--force-with-lease` on rewrites).
@@ -312,10 +323,16 @@ happens on the artifact, not before it exists.
 - Label the PR `awaiting-human-review` (create the label if missing) —
   commits after this label's timestamp are the run's post-review rework
   metric (`.references/zones.md`, The record).
-- Report to the user: PR link + wrap-up summary + QA items left to the
-  human + anything unresolved (including every red-tier action deferred to
-  Deploy notes during the run). **Notify** run completion per
-  `.references/notify.md`.
+- Report to the user: **lead with the PR link**, then a short **Human action
+  required** block *before* the prose summary — ordered by urgency and split
+  into **✅ done for you** (green-tier actions the run already applied — e.g.
+  staging DDL) and **⛔ you must do** (red deploy actions + external unblocks
+  like a missing key or access), with anything that **blocks verification/QA
+  surfaced first as a prerequisite**. Only then the wrap-up summary and
+  anything unresolved. A load-bearing next step buried in position three of a
+  flat "left to human" list is a reporting failure: the reader must see up top,
+  separated, exactly what only they can do and what already got done.
+  **Notify** run completion per `.references/notify.md`.
 
 ## Epics (type: epic-spec)
 
