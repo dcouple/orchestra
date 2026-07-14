@@ -145,6 +145,38 @@
   .question { background: var(--warn-soft); border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: .8rem 1.1rem; margin-bottom: .75rem; font-size: .95rem; }
   .question strong { color: var(--warn); font-family: var(--mono); font-size: .78rem; letter-spacing: .05em; }
 
+  /* User-journey flows — one .pipeline per journey, each labeled. Reuses
+     .stage; .skip = a muted/dashed step the journey bypasses, .term = a
+     terminal endpoint (e.g. an off-ramp). */
+  .journey { margin: 0 0 1.5rem; }
+  .journey:last-child { margin-bottom: 0; }
+  .journey-label { font-weight: 600; font-size: .92rem; margin-bottom: .5rem; }
+  .stage.skip { border-style: dashed; opacity: .6; }
+  .stage.term { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* Verification as a categorized checklist (UX vs Backend) + a flow→check map */
+  .vgroup { margin-bottom: 1.6rem; }
+  .vgroup-head { font-family: var(--mono); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: .7rem; }
+  .vlist { list-style: none; }
+  .vlist li { position: relative; padding-left: 1.9rem; margin-bottom: .55rem; font-size: .92rem; line-height: 1.45; max-width: 66ch; }
+  .vlist li::before { content: ""; position: absolute; left: 0; top: .18em; width: 15px; height: 15px; border: 1.5px solid var(--ink-soft); border-radius: 4px; }
+  .flowmap { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: .85rem; }
+  .flowmap th, .flowmap td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .flowmap th { font-family: var(--mono); font-size: .66rem; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); }
+  .flowmap td:first-child { font-weight: 600; white-space: nowrap; }
+
+  /* Run config — the zone panel. Shows the estimated zone (per zones.md) and
+     the dials it derives; framed as an estimate the user finalizes at capture. */
+  .dials { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 1.15rem 1.3rem; }
+  .dial { display: grid; grid-template-columns: 118px 1fr; gap: 1rem; align-items: start; padding: .8rem 0; border-bottom: 1px solid var(--line); }
+  .dial:last-child { border-bottom: none; }
+  .dial-label { font-family: var(--mono); font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); padding-top: .3rem; }
+  .dial-opts { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
+  .pill { font-size: .82rem; padding: .32rem .72rem; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-soft); }
+  .pill.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .dial-why { flex-basis: 100%; font-size: .8rem; color: var(--ink-soft); margin: .4rem 0 0; }
+  .dials-note { font-size: .8rem; color: var(--ink-soft); margin: .9rem 0 0; }
+
   footer { border-top: 1px solid var(--line); margin-top: 3rem; padding-top: 1.25rem; font-size: .8rem; color: var(--ink-soft); }
 </style>
 </head>
@@ -212,8 +244,65 @@
     </div> -->
   </section>
 
+  <!-- USER JOURNEYS (multi-journey items — see html-explainer.md · User journeys):
+       one .pipeline per distinct journey, each with a .journey-label. .skip = a
+       step this journey bypasses (muted/dashed); .term = a terminal off-ramp.
+  <section>
+    <p class="eyebrow">02 · User journeys</p>
+    <h2>The divergent paths, not just the happy one</h2>
+    <div class="journey-label">SMS user — texts patients</div>
+    <div class="pipeline">
+      <div class="stage"><div class="name">Features</div><div class="desc">"text patients"</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="stage skip"><div class="name">Payment</div><div class="desc">skipped — free</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="stage term"><div class="name">Contact us</div><div class="desc">terminal — no checkout</div></div>
+    </div>
+  </section> -->
+
+  <!-- VERIFICATION as a categorized checklist (see html-explainer.md · Verification):
+       group by surface, then map each flow to the checks it exercises.
+  <section>
+    <p class="eyebrow">05 · Verification</p>
+    <h2>What we'll check, by surface</h2>
+    <div class="vgroup">
+      <p class="vgroup-head">UX / in-app flows</p>
+      <ul class="vlist"><li>AC1 — a human-runnable check</li><li>AC2 — …</li></ul>
+    </div>
+    <div class="vgroup">
+      <p class="vgroup-head">Backend / data</p>
+      <ul class="vlist"><li>AC10 — a test-provable check</li></ul>
+    </div>
+    <table class="flowmap">
+      <tr><th>User flow</th><th>Exercises</th></tr>
+      <tr><td>SMS user</td><td>AC1, AC2, AC4 · AC10, AC11</td></tr>
+    </table>
+  </section> -->
+
+  <!-- RUN CONFIG — the zone panel (see html-explainer.md · Run config). The primary
+       dial is the item's zone (per references/zones.md); the rest are the dials it
+       derives. Framed as an estimate the human finalizes at capture.
+  <section>
+    <p class="eyebrow">06 · Run config</p>
+    <h2>How /do will run this</h2>
+    <div class="dials">
+      <div class="dial">
+        <div class="dial-label">Zone</div>
+        <div class="dial-opts">
+          <span class="pill">0</span><span class="pill on">1</span><span class="pill">2</span><span class="pill">3</span>
+          <p class="dial-why">Substantial change, escalated by a money / schema touch (zones.md floors).</p>
+        </div>
+      </div>
+      <div class="dial">
+        <div class="dial-label">Derived</div>
+        <div class="dial-opts"><span class="pill on">dual lanes</span><span class="pill on">cap 3/3</span><span class="pill on">frontend verifier</span><span class="pill on">QA always</span><span class="pill on">full dossier</span></div>
+      </div>
+    </div>
+    <p class="dials-note">Estimated by /create-plan from stakes + consequence radius; dials derive from references/zones.md. You set the final zone at capture.</p>
+  </section> -->
+
   <footer>
-    Generated by <code><!-- /create-feature | /create-epic | /create-issue --></code> ·
+    Generated by <code><!-- /create-plan | /create-epic --></code> ·
     This page is the alignment surface; <code>item.md</code> remains the contract <code>/do</code> executes against.
   </footer>
 </div>

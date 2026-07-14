@@ -77,6 +77,27 @@ or the visualization has missed the change:
 - **Stay self-contained.** Inline any real images as `data:` URIs; keep the
   raw PNGs in `refs/` next to the explainer.
 
+## User journeys
+
+When the change touches more than one user journey or cohort — a routed flow,
+an entry fork, divergent end-states — the explainer carries a **User journeys**
+section (its own numbered section, right after 01 · Why). One `.pipeline` strip
+per distinct journey, each with a bold `.journey-label`, showing that journey's
+actual path through the (re)ordered steps:
+
+- **One strip per journey, not per screen** — the SMS buyer, the free-path
+  cohort, the enterprise off-ramp are each their own row.
+- Mark a step the journey **bypasses** with `.stage.skip` (muted/dashed) and a
+  **terminal off-ramp** with `.stage.term`, so a reader sees where a path
+  diverges or dead-ends, not just the happy line.
+- **State coverage underneath:** which journeys are drawn as mockups in 01 vs
+  only described. A screen-by-screen mockup set must not leave a whole journey
+  unshown — the divergent end-states (free/skip, enterprise, error) are journeys
+  too, the same discipline as the PR body's journey map.
+- **Fit the page** — journey stages shrink to share the row (`min-width: 0`)
+  rather than scrolling off the edge; if a strip still won't fit, it has too
+  many stages, not too little room.
+
 ## Work sequence
 
 Every explainer shows how the work unfolds over time, using the template's
@@ -97,6 +118,38 @@ Every explainer shows how the work unfolds over time, using the template's
 Keep stages at outcome altitude — if a stage name only makes sense with a
 file path in it, it's too low.
 
+## Verification (categorized checklist)
+
+The verification section renders the item's acceptance criteria as a
+**checklist grouped by surface**, not a flat numbered list — so the reader
+sees what will be proven and how:
+
+- Two `.vgroup`s: **UX / in-app flows** (the ACs proven by driving the running
+  app) and **Backend / data** (the ACs proven by tests). Each is a `.vlist` of
+  unchecked checkbox items phrased as human-runnable / test-provable checks.
+- A `.flowmap` table maps each **user flow → the ACs it exercises**, so the
+  SMS-user path and the free-path path each visibly trace to their checks —
+  the bridge between the User-journeys strips and the criteria.
+- The ACs still come verbatim-in-substance from `item.md`; the explainer only
+  regroups and maps them (it never invents criteria).
+
+## Run config (the zone panel)
+
+The final section projects how `/do` will execute — an estimate the human
+finalizes at capture, never a silent default:
+
+- The primary dial is the item's **`zone:` (0–3)** per `references/zones.md`:
+  render the estimated zone with its stakes / consequence-radius reasoning and
+  any escalator floor that raised it. The remaining dials — review lanes, loop
+  caps, frontend verifier, QA, research — are shown as **derived from the
+  zone**, not independently set; `references/zones.md` owns that mapping, so
+  reference it, never restate the table.
+- Use the `.dials` component: one `.dial` per row, `.pill` options with the
+  recommended one `.on`, a one-line `.dial-why`, and a caption noting the
+  estimate is `/create-plan`'s and the human sets the final zone.
+- Collapse to a single line for a trivial item (a `zone: 3` doc change has no
+  execution shape worth a full panel).
+
 ## Section map
 
 Every explainer: masthead (type badge, status, title, one-sentence intent),
@@ -105,12 +158,17 @@ then the opening diagram, then numbered sections, then the footer. Per type:
 | # | feature-ticket | epic-spec | bug-report |
 |---|----------------|-----------|------------|
 | 01 · Why | intent + before/after panels; UI mockup pair when UI is touched | problem/context + before/after; UI mockup pair when UI is touched | summary + expected-vs-actual panels; screenshot of the defect when visible |
-| 02 · Direction | proposed approach: `D1…` decision cards (each with its rejected alternative) + **work strip** (see Work sequence) | cross-cutting decisions as cards + **phase timeline** (the `.pipeline` strip, one `.stage` per phase, sequential) | root cause (state confidence: confirmed/likely/hypothesis) + suggested resolution path (a `.pipeline` strip when it genuinely has stages) |
-| 03 · Scope | in / out-of-scope panels | per-epic goals vs non-goals panels | business impact + severity; out-of-scope if any |
-| 04 · Done means | ACs as the auto-numbered `ol.acs` list | ACs per phase (subheading per phase) | AC1 = repro flips to pass, plus prevention criteria |
-| 05 · Unresolved | open questions (omit if none) | open questions | open questions |
+| 02 · User journeys | flow strips per journey + coverage (multi-journey items; omit for single-path) | per-phase journeys when they diverge | the failing path vs the fixed path |
+| 03 · Direction | proposed approach: `D1…` decision cards (each with its rejected alternative) + **work strip** (see Work sequence) | cross-cutting decisions as cards + **phase timeline** (the `.pipeline` strip, one `.stage` per phase, sequential) | root cause (state confidence: confirmed/likely/hypothesis) + suggested resolution path (a `.pipeline` strip when it genuinely has stages) |
+| 04 · Scope | in / out-of-scope panels | per-epic goals vs non-goals panels | business impact + severity; out-of-scope if any |
+| 05 · Verification | categorized checklist (UX / Backend `.vgroup`s) + flow→AC `.flowmap` | ACs per phase (subheading per phase) | AC1 = repro flips to pass, plus prevention criteria |
+| 06 · Unresolved | open questions (omit if none) | open questions | open questions |
+| 07 · Run config | zone panel (`.dials`; dials derived per `references/zones.md`) | zone panel (epic = full machinery per zones.md) | zone panel |
 
-An epic is one page with the phase timeline — not a page per phase.
+An epic is one page with the phase timeline — not a page per phase. Sections
+02 and 07 are conditional: 02 · User journeys only when the change is
+multi-journey; 07 · Run config whenever the item carries a zone (all but the
+most trivial).
 
 One template serves all three types — the differences live in this section
 map, not in forked templates. Don't create per-type template files; if a
