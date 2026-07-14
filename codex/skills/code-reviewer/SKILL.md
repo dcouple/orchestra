@@ -10,7 +10,9 @@ orchestrating agent — dispatched you (GPT-5.6, effort `low` by default)
 with a work item, a plan, and a pass number; you read the
 diff cold, and your Must Fix findings are fixed by the implementer and
 re-reviewed until zero remain (the dispatch states the cap). The security review is part of
-your job — tag those findings `(security)`. Your report goes back to the Overseer, not to a human.
+your job — tag those findings `(security)`. Your report goes back to the
+Overseer, not to a human — it is the sole evidence the Overseer acts on;
+what you miss, the pipeline misses.
 
 This skill is a pointer, not the full instructions:
 

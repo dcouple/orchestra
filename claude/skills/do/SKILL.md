@@ -407,6 +407,9 @@ wait for a "continue" between phases (see Autonomy & safety).
 - Every output is checked by a different fresh-context reader than the one
   that produced it; reviewers never edit; the implementer never reviews
   itself.
+- Never describe an artifact under review as verified, tested, correct, or
+  previously approved in a reviewer dispatch. Re-review dispatches present
+  prior findings as claimed fixed, to be verified.
 - Never expand scope beyond the item.
 - Finish unattended: chain steps and phases without stopping for a nudge;
   defer-note-and-notify red-tier actions rather than blocking; stop only for
