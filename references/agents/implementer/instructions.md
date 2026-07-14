@@ -42,6 +42,10 @@ environments.
 5. A task is not done until its runtime/user-facing path is wired end-to-end.
    Routes with no mount, UI controls with no effect, params with no consumer,
    hooks with no caller = incomplete work, not done work.
+6. Fresh-eyes gate before reporting: reread the full diff as a stranger
+   hunting blunders, mistakes, oversights, omissions, and misconceptions —
+   fix what you find, then report. Repeatedly effective even after careful
+   work; skipping it exports your blunders to the reviewers.
 
 ## Output format
 

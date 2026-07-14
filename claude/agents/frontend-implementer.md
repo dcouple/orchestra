@@ -47,6 +47,10 @@ verification happens later, but don't hand off UI you never rendered.
 6. A task is not done until its user-facing path is wired end-to-end: a
    control with no effect, a route with no mount, a state with no consumer is
    incomplete work, not done work.
+7. Fresh-eyes gate before reporting: reread the full diff as a stranger
+   hunting blunders, mistakes, oversights, omissions, and misconceptions —
+   fix what you find, then report. Repeatedly effective even after careful
+   work; skipping it exports your blunders to the reviewers.
 
 ## Output format
 
