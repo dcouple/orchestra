@@ -36,13 +36,18 @@ direction before it runs.
   invariants at stake, the terms of art, why the chosen mechanism is safe and
   what breaks if it isn't — written for a human who doesn't live in that
   subsystem. The opening diagram shows the failure path being prevented, not
-  just the happy path. UI mockup pairs and the work strip are mandatory. Name
-  explicitly what is irreversible and what the rollback story is.
+  just the happy path. UI mockup pairs are mandatory when the item touches UI
+  (backend-only zone-0 items keep the mockup section's skip rule — their
+  fidelity budget goes to the Concepts panel and the failure-path diagram
+  instead); the work strip is mandatory wherever the Work sequence section
+  defines one for the item's type. Name explicitly what is irreversible and
+  what the rollback story is.
 - **Zone 1 — full standard.** Every section at full depth; mockups whenever UI
   is touched; concepts explained where the change is system-shaping.
 - **Zone 2 — standard.** The normal lean one-pager.
-- **Zone 3 — minimal.** Masthead, one-line why, before/after, ACs. A diagram
-  only if three boxes genuinely help.
+- **Zone 3 — minimal.** Masthead, one-line why, before/after, ACs, and the
+  minimal opening diagram — three boxes and an arrow satisfies it; the
+  Opening diagram section's always-present rule stands at every zone.
 
 **Zone badge — always.** The masthead meta-row AND the footer carry the zone
 with its label (e.g. `zone 0 — must be perfect`), so the reader calibrates
