@@ -4,8 +4,9 @@
 # Orchestra-owned entries are exact mirrors (stale files inside them are
 # deleted on sync); entries that exist only in the consumer repo — e.g. a
 # repo-local skill — are left untouched. Idempotent: a second run produces
-# zero diff. Note: deleting/renaming a top-level skill in orchestra does NOT
-# remove the old copy from consumers; clean those up in the consumer repo.
+# zero diff. Note: deleting/renaming a top-level entry in orchestra does NOT
+# remove the old copy from consumers by itself — add the old name to the
+# REMOVED_* lists below so syncs purge it everywhere.
 set -euo pipefail
 
 ORCHESTRA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,6 +39,15 @@ sync_dir "$ORCHESTRA_DIR/claude/skills" "$CONSUMER/.claude/skills"
 sync_dir "$ORCHESTRA_DIR/claude/agents" "$CONSUMER/.claude/agents"
 sync_dir "$ORCHESTRA_DIR/codex/skills"  "$CONSUMER/.codex/skills"
 sync_dir "$ORCHESTRA_DIR/references"    "$CONSUMER/.references"
+
+# Entries orchestra used to ship and has since removed or relocated: purged
+# from consumers so a stale copy can't advertise a skill whose
+# .references/agents/* counterparts --delete already removed. Names here were
+# orchestra-owned, so this never touches consumer-local skills.
+REMOVED_CLAUDE_SKILLS=(idea-duel dialectic)
+for name in "${REMOVED_CLAUDE_SKILLS[@]}"; do
+  rm -rf "$CONSUMER/.claude/skills/$name"
+done
 
 echo "synced orchestra -> $CONSUMER"
 git -C "$CONSUMER" status --short -- .claude/skills .claude/agents .codex/skills .references
