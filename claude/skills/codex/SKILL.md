@@ -19,15 +19,15 @@ this conversation — the prompt must carry everything the role needs.
 | --- | --- | --- | --- |
 | `implementer` | `gpt-5.6-sol` / `medium` | `--yolo` | persistent — resume for fix rounds |
 | `backend-verifier` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
-| `plan-reviewer` | `gpt-5.6-sol` / `xhigh` | `--yolo` | `--ephemeral` |
-| `code-reviewer` | `gpt-5.6-sol` / `xhigh` | `--yolo` | `--ephemeral` |
+| `plan-reviewer` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
+| `code-reviewer` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
 | `code-researcher` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
-| `investigator` | `gpt-5.6-sol` / `xhigh` | `--yolo` | `--ephemeral` |
-| `dialectic-opponent` | `gpt-5.6-sol` / `xhigh` | `read-only` | `--ephemeral` |
-| `idea-wizard` | `gpt-5.6-sol` / `low` | `read-only` | `--ephemeral` |
+| `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 
-High effort is for judgment-heavy roles (review, investigation); medium for
-implementation, exploration, and verification. The investigator and
+Efforts are defaults: `medium` across the board, `low` for investigation.
+The dispatcher may raise a reviewer to `high` — rarely, when the zone
+warrants it (zone 0, or an epic), with the reason stated in the dispatch;
+never above `high`, never by default. The investigator and
 backend-verifier act on the environment (tests, scripts, app boots), but
 their charters forbid editing project files.
 
@@ -68,7 +68,7 @@ Print the report as your final message, in exactly the specified format.
 ```
 
 Role instructions: Codex-only roles (implementer, investigator,
-backend-verifier, dialectic-opponent, idea-wizard) → `.references/agents/<role>/instructions.md` · roles
+backend-verifier) → `.references/agents/<role>/instructions.md` · roles
 with a Claude twin (code-researcher, plan-reviewer, code-reviewer) →
 `.claude/agents/<role>.md` (tell Codex to follow the body and ignore the
 YAML frontmatter — it applies to a different harness).
@@ -76,8 +76,7 @@ YAML frontmatter — it applies to a different harness).
 Format files, under `.references/agents/<role>/`: implementer →
 `implementation-result.md` · plan-reviewer / code-reviewer →
 `review-report.md` · code-researcher → `codebase-findings.md` ·
-investigator → `root-cause-finding.md` · dialectic-opponent →
-`opponent-round.md` · idea-wizard → `idea-wizard-output.md` · backend-verifier →
+investigator → `root-cause-finding.md` · backend-verifier →
 `../frontend-verifier/verification-result.md` (shared verifier format,
 verify mode).
 
