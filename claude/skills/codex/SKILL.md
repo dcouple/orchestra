@@ -1,6 +1,6 @@
 ---
 name: codex
-description: Dispatches one Codex (GPT-5.6) sub-agent via `codex exec` — implementer, backend-verifier, plan-reviewer, code-reviewer, code-researcher, or investigator — and returns its report. Used by /do, /discussion, and /create-issue whenever one of these roles runs; not normally invoked by the user directly. Use when a pipeline stage needs its Codex sub-agent dispatched, resumed for a fix round, or re-run.
+description: Dispatches one Codex (GPT-5.6) sub-agent via `codex exec` — implementer, backend-verifier, plan-reviewer, code-reviewer, code-researcher, or investigator — and returns its report. Used by /do, /discussion, and /create-plan whenever one of these roles runs; not normally invoked by the user directly. Use when a pipeline stage needs its Codex sub-agent dispatched, resumed for a fix round, or re-run.
 argument-hint: "[role] [inputs: item/plan paths, question, pass number]"
 ---
 
@@ -51,7 +51,7 @@ Inputs for this run:
 - work item: <item path>
 - plan: <plan path, if the role uses one>
 - question / defect report: <for code-researcher / investigator>
-- review pass: <k>/<cap> <reviewers only — cap 3, or 1 on /do's light lane>
+- review pass: <k>/<cap> <reviewers only — cap per the run's zone — see .references/zones.md>
 - prior findings by ID: <reviewers, pass 2+> / fix instructions: <implementer fix rounds>
 
 Print the report as your final message, in exactly the specified format.

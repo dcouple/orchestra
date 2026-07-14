@@ -1,6 +1,6 @@
 # Bug Report — format
 
-> Produced by `/create-issue`. Saved as `./tmp/<id>/item.md`.
+> Produced by `/create-plan` (bug track). Saved as `./tmp/<id>/item.md`.
 > Spine: intent = **root cause**, desired state = **correct behavior**. Keep it lean.
 
 ---

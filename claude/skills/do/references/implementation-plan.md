@@ -18,7 +18,8 @@
 ---
 type: implementation-plan
 item: <id>
-lane: <light | full>
+zone: <0-3 — from the item, or Overseer-classified with reasoning below>
+lane: <light | full — derived from zone>
 phase: <n | —>
 confidence: <1-10 — one-pass implementation confidence, scored after review>
 ---
@@ -63,13 +64,13 @@ confidence: <1-10 — one-pass implementation confidence, scored after review>
 
 ## Known gotchas
 `<concrete repo/library/runtime footguns near the change site — each with why`
-`it bites — or "none". Full lane: dossier gotchas land here; light lane fills`
+`it bites — or "none". Full lane (zones 0–1): dossier gotchas land here; light (2–3) fills`
 `it from direct research. Empty is a claim, not a default.>`
 
 ## Reconciliation notes
 `<full lane: anchors/gotchas/docs imported from refs/research-dossier.md, conflicts`
 `re-checked against the repo and how they resolved, dossier content intentionally`
-`dropped as low-value. Light lane: "light lane — no dossier".>`
+`dropped as low-value. Zones 2–3: "light — no dossier".>`
 
 ## External references
 `<only when the change leans on a library/framework/API the repo can't answer:`

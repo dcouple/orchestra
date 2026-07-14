@@ -1,6 +1,6 @@
 # Draft a work item — shared mechanics
 
-Used by `/create-feature`, `/create-epic`, and `/create-issue` when writing
+Used by `/create-plan` and `/create-epic` when writing
 `./tmp/<id>/item.md`. The calling skill supplies the document template (from
 its own `references/` directory) and any type-specific content rules.
 
@@ -22,4 +22,8 @@ its own `references/` directory) and any type-specific content rules.
 - Save transcript-worthy raw material (key discussion excerpts, mock-ups,
   links, research worth keeping) to `./tmp/<id>/refs/` and link from the
   item — never inline.
+- Set `zone:` (0–3) in the frontmatter per `.references/zones.md` — agreed
+  with the user, classified by stakes and downstream consequences, never
+  diff size. Escalator surfaces (auth/schema/money/prod config) force
+  zone ≤ 1.
 - Leave `status: draft` until publish.

@@ -28,8 +28,14 @@ the current repo's `AGENTS.md` `Work-item tracking` section configures
 local-only), plus one proposed (not applied) system change.
 
 This skill changes nothing: no code fixes, no skill edits. If the code itself needs
-fixing, that goes through `/create-issue` then `/do`; the proposed system change is
+fixing, that goes through `/create-plan` then `/do`; the proposed system change is
 presented for the human to approve, not applied.
+
+> Every postmortem carries the run's dial record (zone, lanes, passes,
+> findings per lane, QA yield — from `wrapup.md`) plus one judgment line:
+> review effort was overdone / right-sized / underdone, naming the single
+> dial that would have changed it. This is the data that tunes
+> `.references/zones.md`'s table.
 
 ## Steps
 
@@ -80,7 +86,7 @@ Trace the gap upstream through the pipeline and name where it entered:
 - **Skill/agent gap** — a pipeline stage lacks an instruction this failure needed
 
 The code defect (if any) is a symptom here. Note it, and route the fix through
-`/create-issue` then `/do` — not this skill.
+`/create-plan` then `/do` — not this skill.
 
 **Success criteria**: one primary system-level cause identified, with evidence from the
 step-1 documents (quote the thin section, the weak AC, the review miss).
@@ -141,6 +147,6 @@ outside `./tmp/<id>/` was modified.
 
 ```
 Suggested next steps:
-- `/create-issue [defect]` then `/do ./tmp/<id>/item.md` — fix the code gap itself
+- `/create-plan [defect]` then `/do ./tmp/<id>/item.md` — fix the code gap itself
 - Apply the approved system change in a normal editing session, then commit it
 ```

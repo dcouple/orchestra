@@ -1,6 +1,6 @@
 # Feature Ticket — format
 
-> Produced by `/create-feature`. Saved as `./tmp/<id>/item.md`.
+> Produced by `/create-plan` (feature track). Saved as `./tmp/<id>/item.md`.
 > **Lean and high-signal.** Everything here is required-minimal; raw sources go in `refs/`.
 
 ---

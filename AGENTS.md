@@ -43,7 +43,7 @@ edits the canonical copy — that is intended.
 
 ## Work-item tracking
 
-The workflow skills (`/create-feature`, `/create-epic`, `/create-issue`,
+The workflow skills (`/create-plan`, `/create-epic`,
 `/do`) create work-item artifacts (item.md, refs/ including explainer.html,
 plan.md, wrapup.md) locally under `./tmp/<id>/`. `./tmp/` is scratch —
 never commit it.
