@@ -206,10 +206,7 @@ multi-journey; 07 · Run config whenever the item carries a zone (all but the
 most trivial).
 
 One template serves all three types — the differences live in this section
-map, not in forked templates. Don't create per-type template files; if a
-type's explainer genuinely outgrows the shared skeleton, split into shared
-`<style>` + per-type body skeletons rather than duplicating the visual
-system.
+map, not in forked templates.
 
 ## Rules
 

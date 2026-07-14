@@ -2,11 +2,10 @@
 
 A "reach the operator" hook for long autonomous runs: push a notification to
 their phone at a human gate, a hard stop, or on completion, so a run that
-needs attention is noticed instead of silently waiting. **One-way for now** —
-the run informs, the human comes to the machine to act. (Two-way approve/deny
-from the phone is deferred until an authenticated channel is wired: an open
-`ntfy.sh` topic is unauthenticated, so anyone who knew it could inject a fake
-"approve" — tracked as future work in dcouple/orchestra#11.)
+needs attention is noticed instead of silently waiting. **One-way** — the run
+informs, the human comes to the machine to act. Nothing arriving over the
+channel can authorize an action: an open `ntfy.sh` topic is unauthenticated,
+so anyone who knew it could inject a fake "approve".
 
 Zero setup required: unconfigured → every notify step is a silent no-op.
 

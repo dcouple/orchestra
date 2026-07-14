@@ -96,8 +96,7 @@ names):
 - Title: same `type: short imperative summary` style as the commit.
 - Write the body following the `/do` skill's `references/pr-body.md` — the
   single source for the section spine, the body-state / comment-proof split,
-  and the pre-open checklist, so this skill's PRs read identically to `/do`'s
-  and don't drift from the standard. Right-size to an ad-hoc change:
+  and the pre-open checklist. Right-size to an ad-hoc change:
   **Summary** (from the final `intent.md`), **Verification**, and **Residual
   risks** are usually the whole body; **Visual overview** only when a diagram
   teaches something prose can't (keep its `.excalidraw` source in

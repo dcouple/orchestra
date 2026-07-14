@@ -40,6 +40,10 @@ edits the canonical copy — that is intended.
   resolve here too, via the symlinks.
 - `templates/` is scaffolding copied once into new consumer repos, never
   synced.
+- Skill, agent, and reference bodies state what exists. Rejected designs,
+  removed modes, editor-facing warnings, and tuning/benchmark rationale go
+  in PR descriptions and commit messages — not the body. Sole exception: a
+  one-line live footgun the invoking agent will hit this session.
 
 ## Work-item tracking
 

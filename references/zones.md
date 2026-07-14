@@ -78,9 +78,8 @@ roster** (role × model × effort × dispatches × duration × tokens) — and
 the PR gets the `awaiting-human-review` label at wrap-up so that **commits
 after that label's timestamp** are countable as post-review rework.
 Aggregated later as zone × model × path → rework and spend, this is the
-evidence that tunes this table — and, exported later to an OTel-backed
-store, the same record is the visualization's raw material; capture it
-even when a number is only reachable as `unknown`.
+evidence that tunes this table; capture it even when a number is only
+reachable as `unknown`.
 
 ## Epics
 

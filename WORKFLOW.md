@@ -70,10 +70,10 @@ consumer repos, so the skills' restatement is what actually executes.
 | Overseer (conducts `/do`, all judgment) | main session — Fable | |
 | Web research | Claude `web-researcher` — Sonnet | |
 | Verify frontend (drive the running app) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-plan |
-| Verify backend (tests/scripts) | **Codex** GPT-5.6 `low`, workspace-write | |
-| Explore codebase | **Codex** GPT-5.6 `low`, read-only | Claude `code-researcher` (Sonnet) as backup |
-| Reproduce & root-cause | **Codex** GPT-5.6 `low`, workspace-write | |
-| Write the diff — backend/ops | **Codex** GPT-5.6 `low`, workspace-write | |
+| Verify backend (tests/scripts) | **Codex** GPT-5.6 `low` | |
+| Explore codebase | **Codex** GPT-5.6 `low` | Claude `code-researcher` (Sonnet) as backup |
+| Reproduce & root-cause | **Codex** GPT-5.6 `low` | |
+| Write the diff — backend/ops | **Codex** GPT-5.6 `low` | |
 | Write the diff — frontend web/mobile (UI, styling, client state, user-facing copy) | Claude `frontend-implementer` — Opus | never routed through Codex |
 | Challenge the draft work item (Socratic gate) | Claude `socrates` — Opus | always invoked by all three `/create-*`; self-calibrates — fast-passes straightforward drafts, full challenge for epics/unargued items |
 | Review the plan | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `low` + Claude `plan-reviewer` (Opus) | Must-Fix gate = union of both |
@@ -81,11 +81,10 @@ consumer repos, so the skills' restatement is what actually executes.
 
 Every Codex role is dispatched by the **`codex` skill**
 (`claude/skills/codex/`), the one place that knows the `codex exec`
-mechanics per role — model, effort, sandbox (reviewers/researchers read-only
-+ ephemeral; implementer workspace-write with `resume --last` across fix
-rounds; investigator and backend-verifier workspace-write for running tests,
-edits forbidden by their role instructions), output capture, and status-line
-parsing.
+mechanics per role — model, effort, session mode (`--yolo` for every role;
+reviewers/researchers ephemeral and no-edit by charter; implementer
+persistent with `resume --last` across fix rounds), output capture, and
+status-line parsing.
 
 Review loops exit when **no Must Fix remains from either reviewer** — a
 Codex report tiered P0–P3 maps rather than reformats (P0/P1 ≡ Must Fix,
@@ -94,8 +93,7 @@ zero-Must-Fix pass ends the loop even with Should Fixes open (the Overseer
 applies those at its discretion, no re-review), and the only other trigger
 for an extra pass is the two lanes sharply diverging. The Overseer flags
 anything left unresolved at a cap in the wrap-up. Codex efforts are defaults — `low` for every
-role (GPT-5.6-sol at low effort is the efficiency sweet spot); the
-dispatcher may raise a reviewer to `medium` or `high` rarely, when the
+role; the dispatcher may raise a reviewer to `medium` or `high` rarely, when the
 zone warrants it (zone 0 or an epic), with the reason stated in the
 dispatch — never above `high`. Frontend code
 and customer-facing copy never route through Codex — they're the

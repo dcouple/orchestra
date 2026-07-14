@@ -15,12 +15,11 @@ When using this skill for pull request diagrams in Codex or Claude:
 
 - Always create and edit diagram working files in a temporary working directory outside the target repo, preferably `/tmp/codex-pr-diagrams/<repo-or-pr>/` or `C:\tmp\codex-pr-diagrams\<repo-or-pr>\`.
 - Do not create generated `.excalidraw`, `.png`, or temporary render files inside the repository unless the user explicitly asks for tracked diagram assets.
-- For PR descriptions, use the rendered Excalidraw image as the primary visual. Do not add Mermaid diagrams by default; they are usually redundant once the Excalidraw image includes before/after flow and reviewer explainers. Add Mermaid only if the user explicitly asks for a durable text-rendered fallback.
+- For PR descriptions, use the rendered Excalidraw image as the primary visual. Do not add Mermaid diagrams by default; add Mermaid only if the user explicitly asks for a durable text-rendered fallback.
 - Save matching `.excalidraw` source files under `/tmp` for local iteration and future reuse.
 - PR visual overviews must include explicit `Before` and `After` diagrams so reviewers can see both the old behavior and the new behavior without inferring the diff from prose.
 - Keep each PR diagram focused on the change boundary: before, after, and why the new flow is safer.
 - After generating diagrams, update the PR description with a dedicated `## Visual Overview` section.
-- The canonical copy of this skill lives in `dcouple/orchestra` (`claude/skills/excalidraw-pr-diagrams/`); parsa's copies in `dcouple/skills` (`parsa/.claude/skills/`, `parsa/.codex/skills/`) are siblings. Keep all copies materially equivalent unless there is an agent-specific reason to diverge. `/do` embeds its PR standard in the Visual overview step.
 
 ### PR Asset Publishing
 
@@ -342,7 +341,7 @@ After generating the JSON, you MUST run the render-view-fix loop until the diagr
 
 ## Large / Comprehensive Diagram Strategy
 
-**For comprehensive or technical diagrams, you MUST build the JSON one section at a time.** Do NOT attempt to generate the entire file in a single pass. This is a hard constraint — Claude Code has a ~32,000 token output limit per response, and a comprehensive diagram easily exceeds that in one shot. Even if it didn't, generating everything at once leads to worse quality. Section-by-section is better in every way.
+**For comprehensive or technical diagrams, you MUST build the JSON one section at a time.** Do NOT attempt to generate the entire file in a single pass. This is a hard constraint — Claude Code has a ~32,000 token output limit per response, and a comprehensive diagram easily exceeds that in one shot.
 
 ### The Section-by-Section Workflow
 
@@ -380,9 +379,9 @@ Each section should be independently understandable: its elements, internal arro
 
 ### What NOT to Do
 
-- **Don't generate the entire diagram in one response.** You will hit the output token limit and produce truncated, broken JSON. Even if the diagram is small enough to fit, splitting into sections produces better results.
-- **Don't use a coding agent** to generate the JSON. The agent won't have sufficient context about the skill's rules, and the coordination overhead negates any benefit.
-- **Don't write a Python generator script.** The templating and coordinate math seem helpful but introduce a layer of indirection that makes debugging harder. Hand-crafted JSON with descriptive IDs is more maintainable.
+- **Don't generate the entire diagram in one response.** You will hit the output token limit and produce truncated, broken JSON.
+- **Don't use a coding agent** to generate the JSON — it won't have this skill's rules in context.
+- **Don't write a Python generator script** — hand-craft the JSON with descriptive IDs.
 
 ---
 

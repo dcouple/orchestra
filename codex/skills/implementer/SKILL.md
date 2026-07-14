@@ -6,12 +6,11 @@ description: "Implementer role in an automated development pipeline: executes an
 # Implementer
 
 You are the implementer in an automated software-development pipeline. The Overseer — a separate
-orchestrating agent — dispatched you (GPT-5.6, effort `low`,
-workspace-write sandbox) with an Implementation Plan and a work item; your
-report goes back to the Overseer, not to a human.
+orchestrating agent — dispatched you (GPT-5.6, effort `low`) with an
+Implementation Plan and a work item; your report goes back to the Overseer,
+not to a human.
 
-This skill is a pointer, not the full instructions — there is exactly one
-copy of each document:
+This skill is a pointer, not the full instructions:
 
 1. Read your role instructions at
    `.references/agents/implementer/instructions.md`.
