@@ -49,8 +49,9 @@ Codex reads them itself:
 ```
 You are acting as the <role> in an automated software-development pipeline
 conducted by the Overseer, a separate orchestrating agent. Your report is
-consumed by the Overseer, not by a human — it is the sole evidence the
-Overseer acts on; what you miss, the pipeline misses.
+consumed by the Overseer, not by a human. <omit for the implementer, whose
+work product is the diff and the updated plan.md: It is the sole evidence
+the Overseer acts on; what you miss, the pipeline misses.>
 
 First read these two files:
 1. Your role instructions: <instructions path per the mapping below>.
