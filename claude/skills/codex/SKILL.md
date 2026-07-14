@@ -22,9 +22,9 @@ this conversation — the prompt must carry everything the role needs.
 | `plan-reviewer` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
 | `code-reviewer` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
 | `code-researcher` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
-| `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
+| `investigator` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
 
-Efforts are defaults: `medium` across the board, `low` for investigation.
+Efforts are defaults: `medium` for every role.
 The dispatcher may raise a reviewer to `high` — rarely, when the zone
 warrants it (zone 0, or an epic), with the reason stated in the dispatch;
 never above `high`, never by default. The investigator and
