@@ -32,6 +32,17 @@ pr: <url or #>
 - `<anything unresolved, deferred, or worth a future work item>`
 - Deploy notes: `<each item + human action before/at deploy, or "none">`
 
+## Dial record
+```yaml
+zone: <0-3>            # from the item (or Overseer-classified, noted)
+lanes: <dual | single-codex>
+passes: {plan: <used>/<cap>, post_pr: <used>/<cap>}
+findings_per_lane: {codex: <n>, claude: <n — omit on single lane>}
+verifiers: {frontend: <ran|skipped>, qa_pass: <ran|trimmed|skipped>}
+qa_findings: <n>
+deviations: <none | "+1 notch: reason">
+```
+
 ## Deltas vs plan
 `<only where the final diff diverges from the plan's Files-changed table — or "none".`
 `The full file list lives in the plan and the PR diff; don't repeat it here.>`

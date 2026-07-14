@@ -114,12 +114,15 @@ user to set one up.
 
 ## Step 1: Plan
 
-Set the lane first, and record it in `plan.md`'s frontmatter:
-
-- **light** — one surface, a handful of files, low blast radius, no
-  schema/auth/async changes. No dossier; research directly. Review loops
-  this run cap at 1 pass instead of 3.
-- **full** — everything else. Epics are always full.
+Read the item's `zone:` and derive this run's dials from the table in
+`.references/zones.md` — record zone and effective dials in `plan.md`'s
+frontmatter. Zones 0–1 run the full lane (dossier, dual reviews, cap 3);
+zones 2–3 run light (no dossier, cap 1; zone 3 reviews single-lane on
+Codex). You may raise the effective zone one notch with a recorded reason;
+never lower it — that's the human's call at capture or the table's via
+postmortem evidence. Item missing a zone → classify it yourself from stakes
+and downstream consequences, record the reasoning, and proceed. Epics are
+always full-lane regardless of zone.
 
 Full lane: dispatch the `codex` skill, role `code-researcher`, to map the
 territory the plan builds on — critical codebase anchors, patterns to
@@ -149,7 +152,7 @@ questions and proceed on the least-committal reading. Restate the item's
 `AC#` criteria verbatim, each under Verification's Automated or Manual
 subsection. Run the review
 loop — both reviewers, findings fixed into the plan — until you're satisfied
-the plan is ready, cap 3 passes (light lane: 1); carry anything unresolved
+the plan is ready, cap 3 passes (zones 2–3: 1); carry anything unresolved
 at the cap into the plan's open questions. Score the plan's `confidence:`
 (1–10, one-pass implementation confidence) as each pass exits — while
 budget remains within the caps, a low score is the signal to spend it (more
@@ -237,7 +240,7 @@ happens on the artifact, not before it exists.
 
 - Run both reviewers over the PR diff (correctness + security, `(security)`
   tags). Loop findings back to the matching implementer and push the fixes;
-  cap 3 passes (light lane: 1).
+  cap 3 passes (zones 2–3: 1; zone 3 single-lane on Codex).
 - When no Must Fix remains from either reviewer — or the cap was reached,
   survivors flagged in the wrap-up — run the **QA pass**: execute the PR
   body's Manual tests checklist best-effort, highest risk tier first. The
@@ -283,6 +286,9 @@ happens on the artifact, not before it exists.
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
   instructions.
+- Label the PR `awaiting-human-review` (create the label if missing) —
+  commits after this label's timestamp are the run's post-review rework
+  metric (`.references/zones.md`, The record).
 - Report to the user: PR link + wrap-up summary + QA items left to the
   human + anything unresolved (including every red-tier action deferred to
   Deploy notes during the run). **Notify** run completion per

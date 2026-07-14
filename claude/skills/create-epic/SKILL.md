@@ -18,6 +18,11 @@ This skill *captures and sharpens* — it does not re-run the discussion.
 
 ## Steps
 
+> Epics carry a `zone:` like any item (`.references/zones.md`), agreed with
+> the user — epics are always full-lane, but the zone still sets verifier/QA
+> dials and rides into every phase's record.
+
+
 ### 1. Assemble the core from the conversation
 Drive toward what the spec needs, pulling from the discussion so far:
 - **Problem / context** — the broader problem and why now

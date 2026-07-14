@@ -2,7 +2,7 @@
 
 > Returned **in-conversation** by the Plan Reviewer to the Overseer — **not a file**.
 > Runs 1+ times in the plan-review loop; the Overseer feeds Must-Fix items back into the
-> plan and re-reviews until zero Must-Fix (cap 3; light lane 1), then implement proceeds.
+> plan and re-reviews until zero Must-Fix (cap per zone — 3, or 1 at zones 2–3), then implement proceeds.
 > **Your final message IS the report: begin with the verdict.** Every line is a verdict,
 > a finding with a location, or a check you ran — no preamble, no process narration,
 > no closing summary.

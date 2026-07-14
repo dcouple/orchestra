@@ -55,9 +55,13 @@ skill (role `code-researcher`); for an external fact, the `web-researcher`
 sub-agent. A decision the user consciously defers is recorded in the item's
 Open questions as a deferral — named, never papered over.
 
+Set the **zone** (0–3) with the user per `.references/zones.md` — stakes and
+downstream consequence radius, never diff size; escalator surfaces force
+zone ≤ 1. It goes in the item frontmatter and drives `/do`'s review effort.
+
 **Success criteria**: the user has explicitly agreed to intent, end state, each
 locked direction (including the compatibility stance when behavior is
-replaced), and the out-of-scope list.
+replaced), the zone, and the out-of-scope list.
 
 **Bug track** — take stock of the investigation. Check what the conversation
 already established: reproduction, root cause + evidence, confidence level. A

@@ -31,6 +31,12 @@ This skill changes nothing: no code fixes, no skill edits. If the code itself ne
 fixing, that goes through `/create-plan` then `/do`; the proposed system change is
 presented for the human to approve, not applied.
 
+> Every postmortem carries the run's dial record (zone, lanes, passes,
+> findings per lane, QA yield — from `wrapup.md`) plus one judgment line:
+> review effort was overdone / right-sized / underdone, naming the single
+> dial that would have changed it. This is the data that tunes
+> `.references/zones.md`'s table.
+
 ## Steps
 
 ### 1. Load the record
