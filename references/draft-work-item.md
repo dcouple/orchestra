@@ -24,6 +24,5 @@ its own `references/` directory) and any type-specific content rules.
   item — never inline.
 - Set `zone:` (0–3) in the frontmatter per `.references/zones.md` — agreed
   with the user, classified by stakes and downstream consequences, never
-  diff size. Escalator surfaces (auth/schema/money/prod config) force
-  zone ≤ 1.
+  diff size. That file's escalator rules are canonical.
 - Leave `status: draft` until publish.

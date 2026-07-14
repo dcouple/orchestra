@@ -1,9 +1,9 @@
 # Socratic gate — shared procedure
 
 One dimension socrates always checks: the item's `zone:` against its blast
-radius per `.references/zones.md` — a low zone on work that touches escalator
-surfaces (auth, schema, money, prod config) or with a wide consequence radius
-is a finding.
+radius per `.references/zones.md` — a zone too *lenient* (too high a number)
+for work touching that file's escalator surfaces or carrying a wide
+consequence radius is a finding.
 
 Run by `/create-plan` and `/create-epic` after `item.md`
 is drafted (`status: draft`) and before publish. The calling skill supplies

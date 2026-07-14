@@ -37,10 +37,12 @@ pr: <url or #>
 zone: <0-3>            # from the item (or Overseer-classified, noted)
 lanes: <dual | single-codex>
 passes: {plan: <used>/<cap>, post_pr: <used>/<cap>}
-findings_per_lane: {codex: <n>, claude: <n — omit on single lane>}
+findings: {plan: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}},
+           post_pr: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}}}
 verifiers: {frontend: <ran|skipped>, qa_pass: <ran|trimmed|skipped>}
 qa_findings: <n>
-deviations: <none | "+1 notch: reason">
+wall_clock: <h:mm, run start to wrap-up>
+deviations: <none | "escalated <z>→<z-1>: reason">
 ```
 
 ## Deltas vs plan

@@ -18,9 +18,8 @@ This skill *captures and sharpens* — it does not re-run the discussion.
 
 ## Steps
 
-> Epics carry a `zone:` like any item (`.references/zones.md`), agreed with
-> the user — epics are always full-lane, but the zone still sets verifier/QA
-> dials and rides into every phase's record.
+> Epics carry a `zone:` like any item, agreed with the user; the epic
+> override in `.references/zones.md` (Epics) governs how it applies.
 
 
 ### 1. Assemble the core from the conversation

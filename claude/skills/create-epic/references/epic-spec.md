@@ -10,6 +10,7 @@
 type: epic-spec
 id: <id>
 status: ready         # draft | ready | done
+zone: <0-3 — stakes + consequence radius; the zones.md Epics override governs how it applies>
 pr: <one PR for the whole epic — phases commit sequentially>
 ---
 ```

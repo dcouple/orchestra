@@ -9,6 +9,7 @@
 type: bug-report
 id: <id>
 status: draft         # draft | ready | done
+zone: <0-3 — stakes + consequence radius, agreed with the user; .references/zones.md>
 severity: <critical | high | medium | low>
 pr: <url or # — filled when /do opens it>
 ---
