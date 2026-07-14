@@ -37,10 +37,11 @@ change costs more than being wrong would.
    - **Advocate**: a Claude sub-agent (`model: opus`, thinking) argues the
      leading position — strongest case, named tradeoffs, checkable claims
      cited.
-   - **Opponent**: a `codex` skill dispatch (`gpt-5.6-sol` / `xhigh`,
-     read-only charter) must (a) rebut the advocate's specific claims — no
-     restating its own case as rebuttal — and (b) present the strongest
-     alternative under the motion's constraints.
+   - **Opponent**: a `codex` skill dispatch, role `dialectic-opponent`
+     (`gpt-5.6-sol` / `xhigh`, read-only — instructions and round format
+     under `.references/agents/dialectic-opponent/`): rebut the advocate's
+     specific claims — no restating its own case as rebuttal — then present
+     the strongest alternative under the motion's constraints.
    - Sides alternate; each round reads everything before it; no side edits
      another's text. A side may concede with reasons — early convergence is
      a valid outcome, including convergence on a third design neither side
