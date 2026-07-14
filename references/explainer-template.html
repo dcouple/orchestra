@@ -98,13 +98,48 @@
     color: var(--accent); background: var(--accent-soft); padding: .15rem .4rem; border-radius: 3px;
   }
 
-  /* UI before/after mockup pair — see html-explainer.md · UI before/after mockups */
-  .shots { display: grid; gap: 1.25rem; margin: 1.25rem 0; }
+  /* UI before/after mockups — a vertical stack of before|after PAIRS.
+     Each .pair is its own 2-col grid, so rows can never bleed into each
+     other, and captions sit in normal flow. align-items:start lets each
+     card size to its content — short cards don't stretch, so there's no
+     dead whitespace and no caption overflow. Never put fixed heights on a
+     mock. See html-explainer.md · UI before/after mockups. */
+  .shots { margin: 1.75rem 0; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; margin-bottom: 2rem; }
+  .pair:last-child { margin-bottom: 0; }
+  @media (max-width: 560px) { .pair { grid-template-columns: 1fr; } }
   .shot { margin: 0; }
   .shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
   .shot.after img { border-color: var(--accent); }
-  .shot figcaption { margin-top: .45rem; font-size: .8rem; color: var(--ink-soft); }
+  .shot figcaption { margin-top: .55rem; font-size: .8rem; color: var(--ink-soft); line-height: 1.4; }
   .shot.after figcaption { color: var(--accent); }
+
+  /* Schematic screen replica — build mockups from these parts when a real
+     screenshot can't be driven. Content-sized (no heights), generous
+     padding so it breathes. Compose, don't hand-roll. */
+  .mock { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 1.1rem 1.15rem 1.25rem; font-size: .85rem; }
+  .shot.after .mock { border-color: var(--accent); }
+  .mock-eyebrow { font-family: var(--mono); font-size: .64rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: .7rem; }
+  .mock-q { font-weight: 600; font-size: .9rem; margin-bottom: .85rem; }
+  .mock-opt { display: flex; align-items: center; gap: .6rem; border: 1px solid var(--line); border-radius: 6px; padding: .6rem .7rem; margin-bottom: .55rem; }
+  .mock-opt:last-child { margin-bottom: 0; }
+  .mock-opt.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .mock-opt .mark { width: 15px; height: 15px; flex: none; border: 1.5px solid var(--ink-soft); position: relative; }
+  .mock-opt .mark.radio { border-radius: 50%; }
+  .mock-opt .mark.check { border-radius: 4px; }
+  .mock-opt.sel .mark { border-color: var(--accent); background: var(--accent); }
+  .mock-opt.sel .mark.check::after { content: "✓"; position: absolute; inset: 0; color: var(--paper); font-size: 11px; line-height: 15px; text-align: center; }
+  .mock-opt.sel .mark.radio::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--paper); }
+  .mock-field { display: flex; justify-content: space-between; align-items: center; gap: 1rem; border: 1px solid var(--line); border-radius: 6px; padding: .6rem .7rem; margin-bottom: .55rem; color: var(--ink-soft); }
+  .mock-field:last-child { margin-bottom: 0; }
+  .mock-field.hl { border-color: var(--accent); }
+  .mock-field .val { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .mock-doc { border: 1px dashed var(--line); border-radius: 6px; padding: 1.5rem .7rem; text-align: center; color: var(--ink-soft); margin-bottom: .7rem; }
+  .shot.after .mock-doc { border-style: solid; border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .mock-actions { display: flex; gap: .5rem; margin-top: .2rem; }
+  .mock-btn { font-size: .8rem; padding: .4rem .85rem; border-radius: 6px; border: 1px solid var(--line); color: var(--ink-soft); }
+  .mock-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+  .mock-note { font-size: .76rem; color: var(--ink-soft); margin-top: .75rem; }
 
   /* Open questions */
   .question { background: var(--warn-soft); border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: .8rem 1.1rem; margin-bottom: .75rem; font-size: .95rem; }
@@ -147,12 +182,33 @@
       <div class="stage"><div class="name">stage</div><div class="desc">outcome</div></div>
     </div>
     <p class="strip-note">Indicative sequence — /do's plan stage owns the real plan.</p> -->
-    <!-- UI-touching items: one .shots pair per touched surface (required — see
-         html-explainer.md). Images inline as data: URIs; captions say which
-         side is the real app and which is the injected mockup/replica.
+    <!-- UI-touching items: a .shots stack, one .pair per touched surface
+         (required — see html-explainer.md). Prefer real screenshots (<img>
+         data: URIs) driven from the app; otherwise compose a schematic from
+         the .mock parts. Captions say which side is real vs mocked. Never set
+         a fixed height on a .mock — cards size to content so nothing overlaps.
     <div class="shots">
-      <figure class="shot"><img src="data:image/png;base64,..." alt=""><figcaption>Before — real app</figcaption></figure>
-      <figure class="shot after"><img src="data:image/png;base64,..." alt=""><figcaption>After — proposed change rendered in the real app</figcaption></figure>
+      <div class="pair">
+        <figure class="shot">
+          <div class="mock">
+            <div class="mock-eyebrow">features</div>
+            <div class="mock-q">What are you here for?</div>
+            <div class="mock-opt sel"><span class="mark radio"></span>Team Chat</div>
+            <div class="mock-opt"><span class="mark radio"></span>SMS</div>
+          </div>
+          <figcaption>Before — single-choice (indicative mockup, not a screenshot)</figcaption>
+        </figure>
+        <figure class="shot after">
+          <div class="mock">
+            <div class="mock-eyebrow">features</div>
+            <div class="mock-q">What are you here for? (pick any)</div>
+            <div class="mock-opt sel"><span class="mark check"></span>Patient texting</div>
+            <div class="mock-opt sel"><span class="mark check"></span>Team chat</div>
+            <div class="mock-opt"><span class="mark check"></span>External organizations</div>
+          </div>
+          <figcaption>After — multi-select (indicative mockup)</figcaption>
+        </figure>
+      </div>
     </div> -->
   </section>
 
