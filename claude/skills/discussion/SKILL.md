@@ -39,6 +39,11 @@ what the user is actually asking:
   first to exercise the flow and capture evidence, then pass its transcript along
   with the defect report.
 
+When the discussion's real question is generative — "what should we build
+next", "what's worth improving here" — offer the `idea-duel` skill and invoke
+it on an explicit yes (it spends real quota; never launch it unprompted). Its
+winners come back as draft items the discussion can then weigh.
+
 Only research what the discussion actually needs — let questions pull research, not
 the other way around. Dispatch mid-conversation as new questions arise; run
 independent dispatches in parallel.

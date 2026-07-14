@@ -1,6 +1,6 @@
 ---
 name: idea-duel
-description: Lean dueling-wizards ideation tournament — the two model stacks independently study a project, generate and winnow ideas, blind cross-score each other's, and probe for shared blind spots; the orchestrator synthesizes a consensus matrix whose winners become draft work items. Use when the user wants the strongest next ideas for a project ("what should we build next", "run an idea duel", "most valuable improvements"). Lean-only by design (4 dispatches); discretionary quota spend — an upstream generator feeding the capture pipeline, never part of /do.
+description: Lean dueling-wizards ideation tournament — the two model stacks independently study a project, generate and winnow ideas, blind cross-score each other's, and probe for shared blind spots; the orchestrator synthesizes a consensus matrix whose winners become draft work items. Use when the user wants the strongest next ideas for a project ("what should we build next", "run an idea duel", "most valuable improvements"). Four dispatches, discretionary quota spend — an upstream generator feeding the capture pipeline, typically offered from /discussion; never part of /do.
 argument-hint: "[project or area to ideate on, plus any focus or constraints]"
 ---
 
@@ -11,10 +11,7 @@ an idea also evaluates it. The duel splits those jobs across the two stacks
 and makes **convergence the quality signal** — where two differently-biased
 models agree blind, the idea is probably good; where they trash each other's,
 it's suspect. Four dispatches, ~100k tokens at the pinned efforts — about one
-review pass. That is the only form: the source methodology's full tournament
-(30→5 winnowing, reveal/rebuttal rounds) is deliberately not implemented —
-it triples the spend for marginal signal, and an accidental invocation would
-burn a session's quota in one go. Do not add it back casually.
+review pass.
 
 ## Wizards (pinned)
 
