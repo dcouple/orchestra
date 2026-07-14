@@ -74,6 +74,14 @@ or the visualization has missed the change:
   explicitly that the shown surface is the only thing touched. If the
   item's UI delta is genuinely none (backend-only), state that in section
   01 and skip the mockups; the opening diagram carries the page.
+- **Frame by journey; state coverage.** When the item changes more than one
+  user journey or cohort, organize the mockups by the journeys they show and
+  add a short **coverage line** — which journeys are drawn vs only described.
+  The divergent end-states are journeys too, not decoration: a free / skip
+  path, an enterprise or error off-ramp, a fallback variant each deserve a
+  mockup or an explicit "described-only" note. Same discipline as the PR
+  body's journey map — a screen-by-screen set of mockups must not quietly
+  leave a whole journey unshown.
 - **Stay self-contained.** Inline any real images as `data:` URIs; keep the
   raw PNGs in `refs/` next to the explainer.
 
