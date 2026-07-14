@@ -63,9 +63,8 @@ morning. Three rules make that safe:
   can't proceed without, a genuine ambiguity in intent). Notify, say exactly
   what you need, and wait.
 
-**Notify** per `.references/notify.md` — **one-way for now**: inform the human,
-don't wait for a phone reply (authenticated two-way approve/deny is future
-work). Target comes from repo config (default a per-operator
+**Notify** per `.references/notify.md` — **one-way**: inform the human,
+don't wait for a phone reply. Target comes from repo config (default a per-operator
 `ntfy.sh/<gh-username>-dcouple-orchestra`; silent no-op if unreachable), and
 after each send you tell the user in chat where it went. Messages are plain
 text — the app doesn't render Markdown — titled `[item] stage — why` so
@@ -161,8 +160,7 @@ questions and proceed on the least-committal reading. Restate the item's
 subsection. Before dispatching reviewers, run one **fresh-eyes pass** over
 the finished plan yourself — reread it as a stranger hunting blunders,
 mistakes, oversights, omissions, and misconceptions, and fix what you find.
-This same-context pass is nearly free and reliably yields real findings even
-on careful work; spend it before the expensive dispatches. Then run the review
+Then run the review
 loop — this run's effective review lanes per the dials above (zones 0–2:
 Codex + Claude in parallel; zone 3: Codex alone; `review_lanes:` override
 honored — on an epic too, where it outranks the always-dual Epics
@@ -356,6 +354,15 @@ happens on the artifact, not before it exists.
 
 ## Step 6: Wrap-up
 
+- Assemble the dial record's **run record** before writing: `gh pr view
+  --json changedFiles,additions,deletions` for `pr_size`; per-role Codex
+  tokens summed from the dispatches' `CODEX <role>: … · tokens <n>` lines;
+  Claude sub-agent tokens from the harness's task summaries where shown;
+  the `agents` roster (role, model, effort, dispatches, duration, tokens)
+  and `spend_ratio`. Record `unknown` where a source didn't expose a
+  number — never estimate. This record is what the postmortem and the
+  zones.md tuning aggregate consume; a run that doesn't emit it is
+  invisible to that tuning.
 - Write `./tmp/<id>/wrapup.md` following this skill's
   `references/wrap-up-report.md`; post
   it as a PR comment. `plan.md` and `wrapup.md` stay in `./tmp/<id>/` —
@@ -371,10 +378,16 @@ happens on the artifact, not before it exists.
   staging DDL) and **⛔ you must do** (red deploy actions + external unblocks
   like a missing key or access), with anything that **blocks verification/QA
   surfaced first as a prerequisite**. Only then the wrap-up summary and
-  anything unresolved. A load-bearing next step buried in position three of a
-  flat "left to human" list is a reporting failure: the reader must see up top,
-  separated, exactly what only they can do and what already got done.
-  **Notify** run completion per `.references/notify.md`.
+  anything unresolved. **Notify** run completion per `.references/notify.md`.
+- Then run the `postmortem` skill on this run automatically, in its
+  **ops-only mode** — the operations half (wall-clock, stalls, tokens,
+  review-pass yield) needs no human input and attaches to the same work
+  item, so every run leaves an analyzable record without being asked. Its
+  change proposals are recorded in the published postmortem, never waited
+  on — the run ends right after it publishes. The outcome half stays
+  deferred: it runs when the human returns from PR review (or invokes
+  `/postmortem` again), because "did the result match intent" isn't
+  knowable at wrap-up.
 
 ## Epics (type: epic-spec)
 

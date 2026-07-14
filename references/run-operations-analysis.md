@@ -44,6 +44,16 @@ Parse the transcripts and derive:
   pre-authorized?), sub-agent/tool rate-limit hits, and long legitimate
   background-agent runtimes (these are *productive* waits, not stalls — keep
   them out of the leak column).
+- **Tokens** — assistant events carry `message.usage`
+  (`input_tokens`, `output_tokens`, cache reads/writes); sum them for the
+  main session, and attribute sub-agent usage from their task events where
+  present. Codex dispatch tokens don't appear in these transcripts — take
+  them from the wrap-up's per-role figures (each dispatch's
+  `CODEX <role>: … · tokens <n>` line). Cross-check the wrap-up's
+  `tokens:` block against what you computed; report both when they
+  disagree. Pair tokens with the review-pass findings: **tokens spent per
+  pass vs Must Fixes that pass caught** is the single best signal for
+  right-sizing the loop.
 
 Reference script (adapt paths; classify conservatively):
 

@@ -24,9 +24,7 @@ this conversation — the prompt must carry everything the role needs.
 | `code-researcher` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 
-Efforts are defaults: `low` for every role — GPT-5.6-sol at low effort is
-the efficiency sweet spot (better quality per token than the 5.5
-generation at medium). The dispatcher may raise a reviewer to `medium` or
+Efforts are defaults: `low` for every role. The dispatcher may raise a reviewer to `medium` or
 `high` — rarely, when the zone warrants it (zone 0, or an epic), with the
 reason stated in the dispatch; never above `high`, never by default. The investigator and
 backend-verifier act on the environment (tests, scripts, app boots), but
@@ -38,7 +36,7 @@ unattended, and an approval prompt or approval-layer refusal mid-flight burns
 the dispatch. The operator authorizes this via the /do preflight harness
 check. Reviewer/researcher dispatches are still no-edit by charter (see
 Rules: one that edited files is a failed run) — the guarantee is the charter
-plus a diff check, no longer a sandbox. The `implementer` role is
+plus a diff check. The `implementer` role is
 for backend/ops work only — frontend web/mobile code and customer-facing
 copy go to the Claude `frontend-implementer` sub-agent, never through Codex.
 
@@ -46,7 +44,7 @@ copy go to the Claude `frontend-implementer` sub-agent, never through Codex.
 
 ### 1. Build the prompt
 Every prompt names the role instructions and output format by absolute path —
-Codex reads them itself, so there is exactly one copy of each:
+Codex reads them itself:
 
 ```
 You are acting as the <role> in an automated software-development pipeline
@@ -118,9 +116,11 @@ synthesize the status line from the mapped counts yourself, and never
 burn a retry or re-dispatch over format · implementer:
 `**Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT` ·
 code-researcher: `**Bottom line:**` · investigator: `**Root cause:**` with a
-confidence word · backend-verifier: `**Verdict:**` pass|fail). Return the
+confidence word · backend-verifier: `**Verdict:**` pass|fail). Capture the
+token usage `codex exec` prints in its end-of-run summary. Return the
 report verbatim to the caller, prefixed with one line:
-`CODEX <role>: <status line>`.
+`CODEX <role>: <status line> · tokens <n | unknown>` — the Overseer sums
+these per role into the wrap-up's run record.
 
 If the run errored, timed out, or the report lacks its status line after one
 retry, return the error plus whatever output exists to the caller.

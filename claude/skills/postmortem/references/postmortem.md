@@ -40,14 +40,27 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `direction? Omit for an operational-only postmortem.>`
 
 ## What to change so it doesn't recur
-`<a concrete improvement to a specific skill / sub-agent / template / verification block>`
+`<the concrete improvements the findings support — each names a specific skill /`
+`sub-agent / template / verification block and shows the proposed edit; zero is a`
+`valid answer, and so is several>`
 
 ## Dial record & right-sizing
 `<copy the wrap-up's dial-record block (zone, lanes, passes, findings split`
-`first-pass/later per lane, verifiers/QA, wall-clock), then ONE judgment`
-`line: review effort was overdone | right-sized | underdone — naming the`
-`single dial that would have changed it. This tunes zones.md's table.>`
+`first-pass/later per lane, verifiers/QA, wall-clock, pr_size, tokens,`
+`spend_ratio, agents roster — filling any "unknown" the transcripts can now`
+`resolve), then ONE judgment line: review effort was overdone | right-sized`
+`| underdone — naming the single dial that would have changed it. Ground the`
+`judgment in spend: tokens per review pass vs the Must Fixes that pass`
+`caught — a pass that found nothing was pure spend. This tunes zones.md's`
+`table.>`
 
-## System change
-`<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval verdict`
-`on the proposed change once the human gives it>`
+## Acceptance
+`<the human's verdict on the PR, when known: merged as-is | merged after`
+`rework (count the post-label commits) | closed/rejected | still awaiting`
+`review (operations-only postmortem). This is the outcome bit the score`
+`aggregation joins against.>`
+
+## System changes
+`<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval`
+`verdicts on the proposed changes once the human gives them — pending until then;`
+`an auto-run postmortem never waits for them>`

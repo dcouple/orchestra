@@ -20,7 +20,7 @@ pr: <url or #>
 
 ## Verification evidence
 `<what was run / driven and the result vs each acceptance criterion.`
-`Text/log evidence, plus QA screenshots where captured; video deferred.>`
+`Text/log evidence, plus QA screenshots where captured.>`
 
 ## Review outcome
 `<final state after the review loop — "Must Fix: 0 · passes used: k/<cap>" — and the`
@@ -50,6 +50,19 @@ verifiers: {frontend: <ran|skipped>, qa_pass: <ran|trimmed|skipped>}
 qa_findings: <n>
 wall_clock: <h:mm, run start to wrap-up>
 deviations: <none | "escalated <z>→<z-1>: reason">
+pr_size: {files_changed: <n>, additions: <n>, deletions: <n>}  # gh pr view --json changedFiles,additions,deletions
+tokens:                # per source; "unknown" is honest, a guess is not
+  codex: {total: <n>, by_role: {implementer: <n>, plan_reviewer: <n>, code_reviewer: <n>, ...}}
+                       # summed from each dispatch's "CODEX <role>: … · tokens <n>" line
+  claude_subagents: <n | unknown>   # from the harness's task-completion summaries
+  overseer: <n | unknown>           # main session, when the harness exposes it
+  total: <n — sum of the known>
+spend_ratio: <tokens.total ÷ (additions + deletions), 1 decimal — append " (lower bound)"
+              whenever any token source above is unknown: a partial total presented as the
+              true cost poisons the tuning data with falsely cheap runs>
+agents:                # one row per role actually dispatched
+  - {role: <role>, model: <model>, effort: <effort | thinking>, dispatches: <n>,
+     wall_clock: <m:ss | unknown>, tokens: <n | unknown>}
 ```
 
 ## Deltas vs plan
