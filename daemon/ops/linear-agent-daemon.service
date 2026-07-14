@@ -1,0 +1,37 @@
+[Unit]
+Description=Linear agent webhook daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=linear-daemon
+Group=linear-daemon
+WorkingDirectory=/opt/linear-agent-daemon
+EnvironmentFile=/etc/linear-agent-daemon/env
+ExecStart=/usr/bin/node /opt/linear-agent-daemon/dist/index.js
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+UMask=0077
+ReadWritePaths=/var/lib/linear-agent-daemon
+
+[Install]
+WantedBy=multi-user.target
