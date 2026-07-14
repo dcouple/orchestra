@@ -55,11 +55,17 @@ function delegatedAgentSessionNode(id: string, appUserId: string, createdAt = is
 }
 
 describe("LinearGateway", () => {
-  it("lists agent sessions with the owning app bearer and filters by app actor id", async () => {
+  it("lists active agent sessions with the owning app bearer and filters by app actor id", async () => {
     const api = await stub(request => {
       expect(JSON.stringify(request.body)).toContain("agentSessions");
       return { body: { data: { agentSessions: { __typename: "AgentSessionConnection",
-        nodes: [agentSessionNode("session-1", "actor-1"), agentSessionNode("session-2", "other")],
+        nodes: [
+          agentSessionNode("session-1", "actor-1"),
+          agentSessionNode("session-2", "other"),
+          { ...agentSessionNode("session-3", "actor-1"), status: "completed", endedAt: iso },
+          { ...agentSessionNode("session-4", "actor-1"), dismissedAt: iso },
+          { ...agentSessionNode("session-5", "actor-1"), archivedAt: iso },
+        ],
         pageInfo: pageInfo() } } } };
     });
     const eventLog = log();

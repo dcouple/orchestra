@@ -285,6 +285,7 @@ export class LinearGateway {
         const variables = { first: 100, ...(after ? { after } : {}) };
         const connection = await client.agentSessions(variables);
         for (const node of connection.nodes) {
+          if (this.isTerminalSession(node)) continue;
           const summary = await this.sessionSummary(app, node);
           if (this.appUserIdOf(node) === appActorId) sessions.push(summary);
         }
@@ -464,7 +465,7 @@ export class LinearGateway {
     };
   }
 
-  private isTerminalSession(node: DelegatedSessionNode): boolean {
+  private isTerminalSession(node: AgentSessionNodeState): boolean {
     if (node.endedAt || node.archivedAt || node.dismissedAt) return true;
     const status = node.status?.toLowerCase();
     return status === "done" || status === "completed" || status === "complete"
@@ -508,12 +509,19 @@ interface DelegatedIssuesResponse {
 interface DelegatedSessionNode {
   id: string;
   createdAt?: string | null;
-  endedAt?: string | null;
-  archivedAt?: string | null;
-  dismissedAt?: string | null;
+  endedAt?: unknown;
+  archivedAt?: unknown;
+  dismissedAt?: unknown;
   status?: string | null;
   appUser?: { id?: string | null } | null;
   creator?: { id?: string | null } | null;
+}
+
+interface AgentSessionNodeState {
+  endedAt?: unknown;
+  archivedAt?: unknown;
+  dismissedAt?: unknown;
+  status?: string | null;
 }
 
 interface IssueAgentSessionsResponse {

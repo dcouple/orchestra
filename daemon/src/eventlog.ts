@@ -177,8 +177,35 @@ export class EventLog {
 
   private migrateTurnColumns(): void {
     const columns = new Set((this.db.prepare("PRAGMA table_info(turns)").all() as Array<{ name: string }>).map(column => column.name));
-    if (!columns.has("source_key")) this.db.prepare("ALTER TABLE turns ADD COLUMN source_key TEXT").run();
+    const addedSourceKey = !columns.has("source_key");
+    if (addedSourceKey) this.db.prepare("ALTER TABLE turns ADD COLUMN source_key TEXT").run();
+    this.backfillCreatedTurnSourceKeys();
+    if (addedSourceKey) this.seedActivityCursorsForSourceKeyMigration(Date.now());
     this.db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_source_key ON turns(source_key)").run();
+  }
+
+  private backfillCreatedTurnSourceKeys(): void {
+    this.db.prepare(`
+      WITH candidates AS (
+        SELECT
+          t.id,
+          'created:' || COALESCE(NULLIF(e.agent_session_id, ''), t.linear_session_id) AS source_key,
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(NULLIF(e.agent_session_id, ''), t.linear_session_id)
+            ORDER BY t.id
+          ) AS rank
+        FROM turns t
+        LEFT JOIN events e ON e.id=t.event_id
+        WHERE t.kind='created' AND t.source_key IS NULL
+      )
+      UPDATE turns
+      SET source_key=(SELECT candidates.source_key FROM candidates WHERE candidates.id=turns.id)
+      WHERE id IN (SELECT id FROM candidates WHERE rank=1)
+    `).run();
+  }
+
+  private seedActivityCursorsForSourceKeyMigration(now: number): void {
+    this.db.prepare("UPDATE sessions SET last_seen_activity_at=? WHERE last_seen_activity_at IS NULL").run(now);
   }
 
   private migrateAckColumns(): void {
@@ -423,6 +450,9 @@ export class EventLog {
   }
   reclaimExpiredCleanups(cutoff: number): number {
     return this.db.prepare("UPDATE cleanup_jobs SET status='pending',claimed_at=NULL WHERE status='running' AND claimed_at<?").run(cutoff).changes;
+  }
+  reclaimRunningCleanups(): number {
+    return this.db.prepare("UPDATE cleanup_jobs SET status='pending',claimed_at=NULL WHERE status='running'").run().changes;
   }
   markCleanupDone(id: number): void { this.db.prepare("UPDATE cleanup_jobs SET status='done',claimed_at=NULL WHERE id=?").run(id); }
   retryCleanup(id: number, error: string, next: number): void { this.db.prepare("UPDATE cleanup_jobs SET status='pending',claimed_at=NULL,error=?,next_attempt_at=? WHERE id=?").run(error,next,id); }

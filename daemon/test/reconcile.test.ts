@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
@@ -48,7 +49,7 @@ class FakeGateway {
   async listDelegatedIssueAgentSessions(): Promise<AgentSessionSummary[]> { return []; }
   async listSessionActivitiesSince(app: "planner" | "implementer", session: string, since: number | null): Promise<AgentPromptActivity[]> {
     this.activityCalls.push({ app, session, since });
-    return this.activities.get(session) ?? [];
+    return (this.activities.get(session) ?? []).filter(activity => since === null || activity.createdAt >= since);
   }
 }
 
@@ -114,6 +115,79 @@ describe("ReconcileWorker", () => {
       sourceActivityId: "activity-2", receivedAt: 7_001, rawBody: Buffer.from("{}") });
     expect(log.turnStates()).toHaveLength(3);
     expect(log.getSession("planner-session")?.lastSeenActivityAt).toBe(5_100);
+    await worker.stop();
+    log.close();
+  });
+
+  it("does not replay pre-upgrade created or prompted turns after source-key migration", async () => {
+    const dbPath = path();
+    const old = new Database(dbPath);
+    old.exec(`
+      CREATE TABLE events (
+        id INTEGER PRIMARY KEY,
+        delivery_id TEXT NOT NULL UNIQUE,
+        webhook_id TEXT,
+        app TEXT NOT NULL CHECK(app IN ('planner','implementer')),
+        action TEXT,
+        agent_session_id TEXT,
+        issue_id TEXT,
+        received_at INTEGER NOT NULL,
+        raw_body BLOB NOT NULL
+      );
+      CREATE TABLE sessions (
+        linear_session_id TEXT PRIMARY KEY,
+        app TEXT NOT NULL CHECK(app IN ('planner','implementer')),
+        issue_id TEXT,
+        issue_identifier TEXT,
+        worktree_path TEXT,
+        branch TEXT,
+        claude_session_id TEXT,
+        mode TEXT NOT NULL DEFAULT 'planner',
+        status TEXT NOT NULL DEFAULT 'active',
+        last_seen_at INTEGER NOT NULL,
+        last_seen_activity_at INTEGER
+      );
+      CREATE TABLE turns (
+        id INTEGER PRIMARY KEY,
+        event_id INTEGER NOT NULL UNIQUE,
+        linear_session_id TEXT NOT NULL,
+        issue_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('created','prompted')),
+        prompt TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending','running','awaiting_activity','done','failed','interrupted')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        started_at INTEGER,
+        finished_at INTEGER
+      );
+    `);
+    old.prepare(`INSERT INTO events (id,delivery_id,webhook_id,app,action,agent_session_id,issue_id,received_at,raw_body)
+      VALUES (1,'created',NULL,'planner','created','planner-session','issue-1',1000,?),
+        (2,'prompted',NULL,'planner','prompted','planner-session','issue-1',2000,?)`)
+      .run(Buffer.from("{}"), Buffer.from("{}"));
+    old.prepare(`INSERT INTO sessions (linear_session_id,app,issue_id,issue_identifier,mode,status,last_seen_at,last_seen_activity_at)
+      VALUES ('planner-session','planner','issue-1','ENG-1','planner','active',2000,NULL)`).run();
+    old.prepare(`INSERT INTO turns (id,event_id,linear_session_id,issue_id,kind,status)
+      VALUES (1,1,'planner-session','issue-1','created','done'),
+        (2,2,'planner-session','issue-1','prompted','done')`).run();
+    old.close();
+
+    const log = new EventLog(dbPath);
+    const migrated = new Database(dbPath, { readonly: true });
+    expect(migrated.prepare("SELECT source_key sourceKey FROM turns WHERE id=1").get())
+      .toEqual({ sourceKey: "created:planner-session" });
+    const seeded = log.getSession("planner-session")?.lastSeenActivityAt;
+    expect(seeded).toEqual(expect.any(Number));
+    expect(seeded!).toBeGreaterThan(2_000);
+    migrated.close();
+
+    const gateway = new FakeGateway();
+    gateway.sessions.planner = [{ id: "planner-session", app: "planner", issueId: "issue-1", issueIdentifier: "ENG-1" }];
+    gateway.activities.set("planner-session", [{ id: "old-activity", body: "old prompt", createdAt: 2_000 }]);
+    const worker = new ReconcileWorker(log, gateway as unknown as LinearGateway, config(), { logger: { log: vi.fn(), error: vi.fn() }, now: () => 10_000 });
+    await worker.trigger();
+    expect(gateway.activityCalls).toEqual([{ app: "planner", session: "planner-session", since: seeded! }]);
+    expect(log.turnStates()).toHaveLength(2);
     await worker.stop();
     log.close();
   });

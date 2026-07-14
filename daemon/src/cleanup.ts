@@ -15,7 +15,7 @@ export class CleanupWorker {
   }
   private readonly worktrees:WorktreeManager;
   start():void {
-    this.stopped=false; this.log.reclaimExpiredCleanups(this.now()-(this.options.leaseMs??600_000));
+    this.stopped=false; this.log.reclaimRunningCleanups();
     this.timer=setInterval(()=>void this.trigger(),this.options.pollMs??250);
     this.reconcileTimer=setInterval(()=>void this.reconcile(),this.options.reconcileMs??60_000);
     this.timer.unref(); this.reconcileTimer.unref(); void this.reconcile();

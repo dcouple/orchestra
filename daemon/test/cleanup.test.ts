@@ -35,6 +35,11 @@ describe("CleanupWorker",()=>{
     expect(s.log.cleanupStates()[0]?.status).toBe("retained");expect(poster.posts[0]).toContain(s.tree.path);expect(existsSync(s.tree.path)).toBe(true);s.log.close();});
   it("reclaims an expired running job after restart",async()=>{const s=await setup();s.log.stageExternalUrl("session","implementer","Pull Request","https://github.com/dcouple/example/pull/42",3);complete(s.log);expect(s.log.claimNextCleanup(10)).toBeDefined();
     const worker=new CleanupWorker(s.log,new Poster() as unknown as LinearGateway,s.root,s.repo,{pollMs:10,reconcileMs:20,leaseMs:1,now:()=>20});worker.start();await waitFor(()=>s.log.cleanupStates()[0]?.status==="done");await worker.stop();s.log.close();});
+  it("reclaims a fresh running cleanup at startup so same-issue turns are not wedged",async()=>{const s=await setup();s.log.stageExternalUrl("session","implementer","Pull Request","https://github.com/dcouple/example/pull/42",3);complete(s.log);expect(s.log.claimNextCleanup(10)).toBeDefined();
+    s.log.append({deliveryId:"planner",app:"planner",action:"created",agentSessionId:"planner-session",issueId:"issue",issueIdentifier:"ENG-42",receivedAt:11,rawBody:Buffer.from("{}")});
+    expect(s.log.claimNextTurn(12)).toBeUndefined();
+    const worker=new CleanupWorker(s.log,new Poster() as unknown as LinearGateway,s.root,s.repo,{pollMs:1000,reconcileMs:1000,now:()=>12});worker.start();
+    expect(s.log.cleanupStates()[0]?.status).toBe("pending");expect(s.log.claimNextTurn(13)).toMatchObject({linearSessionId:"planner-session"});await worker.stop();s.log.close();});
   it("does not reclaim a running cleanup during periodic reconcile",async()=>{const s=await setup();s.log.stageExternalUrl("session","implementer","Pull Request","https://github.com/dcouple/example/pull/42",3);complete(s.log);
     let now=10;const worker=new CleanupWorker(s.log,new Poster() as unknown as LinearGateway,s.root,s.repo,{pollMs:1000,reconcileMs:1000,leaseMs:1,now:()=>now});
     const internals=worker as unknown as {worktrees:{remove(issueIdentifier:string):Promise<void>};reconcile():Promise<void>};
