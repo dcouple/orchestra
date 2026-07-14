@@ -54,8 +54,12 @@ burn a session's quota in one go. Do not add it back casually.
    duel produces; promote it to the winners regardless of the matrix. Emit
    `DUEL_REPORT.md`: the matrix, the reasoning, and a dependency-ordered
    sequence (enablers first). Winners become `status: draft` work items under
-   `./tmp/<idea-slug>/item.md` — the Socratic gate then serves as the
-   tournament's third adversarial filter.
+   `./tmp/<idea-slug>/item.md`, each carrying its duel evidence — both
+   scores, the verdict line, and what it beat — pre-seeded into the item's
+   Justification and `refs/` (link `DUEL_REPORT.md`). The Socratic gate then
+   serves as the tournament's third adversarial filter, and calibrates down
+   accordingly: an item with documented duel evidence earns a fast pass
+   unless its premise has a hole the duel never tested.
 
 ## Rules
 
