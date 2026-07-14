@@ -155,7 +155,7 @@ copy matches. Publish per `.references/publish-work-item.md` — title
 end state or reproduction + root cause, verification criteria summary, and
 the Justification section. Bug exception: leave `status: draft` if the cause
 is still a hypothesis and the user wants more evidence first — publish
-happens either way, so the evidence trail lives with the published item.
+happens either way.
 
 **Success criteria**: published and cross-linked per the shared procedure —
 or, when the repo configures no destination, the item is complete in

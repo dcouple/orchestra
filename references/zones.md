@@ -78,14 +78,12 @@ roster** (role × model × effort × dispatches × duration × tokens) — and
 the PR gets the `awaiting-human-review` label at wrap-up so that **commits
 after that label's timestamp** are countable as post-review rework.
 Aggregated later as zone × model × path → rework and spend, this is the
-evidence that tunes this table — and, exported later to an OTel-backed
-store, the same record is the visualization's raw material; capture it
-even when a number is only reachable as `unknown`.
+evidence that tunes this table; capture it even when a number is only
+reachable as `unknown`.
 
 ## Epics
 
-An epic is always **full machinery**: dossier, dual lanes, cap 3 — the
-multi-phase commitment warrants it whatever the zone says. The zone still
+An epic is always **full machinery**: dossier, dual lanes, cap 3. The zone still
 gates the frontend-verifier and QA dials per phase, and still rides in every
 record. This override outranks every zone-derived lane/cap clause in the skills —
 an epic at any zone runs dual lanes at cap 3. Skills reference it here.

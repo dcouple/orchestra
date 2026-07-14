@@ -110,9 +110,6 @@ first, as a sentence.
   bidirectional. The journey map tells the reviewer what the golden path feels
   like; the flow map proves no branch was forgotten.
 
-Keep the distinction crisp: the journey map is *depth on the happy paths*, the
-flow map is *breadth across all paths*. Neither substitutes for the other.
-
 ### Verification
 One line per acceptance criterion, each with the evidence that it holds — what
 was run or driven and the result, quoted or pointed at. Restate the AC id

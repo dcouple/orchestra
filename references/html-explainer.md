@@ -27,9 +27,8 @@ sends work-item artifacts. No extra publishing step.
 The item's `zone:` (stakes classification, `.references/zones.md`) sets how
 much the explainer must *teach*, not just show. The closer to zone 0, the more
 the reader must be able to **judge** the change — irreversible work approved
-off a skim is how zone-0 mistakes ship. Model intelligence is spiky: the
-explainer is where the human catches the over-engineered or wrongly-scaled
-direction before it runs.
+off a skim is how zone-0 mistakes ship. The explainer is where the human
+catches the over-engineered or wrongly-scaled direction before it runs.
 
 - **Zone 0 — teach it (highest fidelity).** Beyond the standard sections: a
   "Concepts" panel that teaches the domain ideas the change rests on — the
@@ -206,10 +205,7 @@ multi-journey; 07 · Run config whenever the item carries a zone (all but the
 most trivial).
 
 One template serves all three types — the differences live in this section
-map, not in forked templates. Don't create per-type template files; if a
-type's explainer genuinely outgrows the shared skeleton, split into shared
-`<style>` + per-type body skeletons rather than duplicating the visual
-system.
+map, not in forked templates.
 
 ## Rules
 
