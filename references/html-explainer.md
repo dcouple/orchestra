@@ -22,6 +22,38 @@ The file lives in `refs/`, so publish carries it along with every other
 artifact — inlined in issue comments, or wherever the project's `AGENTS.md`
 sends work-item artifacts. No extra publishing step.
 
+## Fidelity scales with the zone
+
+The item's `zone:` (stakes classification, `.references/zones.md`) sets how
+much the explainer must *teach*, not just show. The closer to zone 0, the more
+the reader must be able to **judge** the change — irreversible work approved
+off a skim is how zone-0 mistakes ship. Model intelligence is spiky: the
+explainer is where the human catches the over-engineered or wrongly-scaled
+direction before it runs.
+
+- **Zone 0 — teach it (highest fidelity).** Beyond the standard sections: a
+  "Concepts" panel that teaches the domain ideas the change rests on — the
+  invariants at stake, the terms of art, why the chosen mechanism is safe and
+  what breaks if it isn't — written for a human who doesn't live in that
+  subsystem. The opening diagram shows the failure path being prevented, not
+  just the happy path. UI mockup pairs are mandatory when the item touches UI
+  (backend-only zone-0 items keep the mockup section's skip rule — their
+  fidelity budget goes to the Concepts panel and the failure-path diagram
+  instead); the work strip is mandatory wherever the Work sequence section
+  defines one for the item's type. Name explicitly what is irreversible and
+  what the rollback story is.
+- **Zone 1 — full standard.** Every section at full depth; mockups whenever UI
+  is touched; concepts explained where the change is system-shaping.
+- **Zone 2 — standard.** The normal lean one-pager.
+- **Zone 3 — minimal.** Masthead, one-line why, before/after, ACs, and the
+  minimal opening diagram — three boxes and an arrow satisfies it; the
+  Opening diagram section's always-present rule stands at every zone.
+
+**Zone badge — always.** The masthead meta-row AND the footer carry the zone
+with its label (e.g. `zone 0 — must be perfect`), so the reader calibrates
+attention before reading and is reminded at the sign-off point. The template's
+`.badge.zone` / footer slot render it.
+
 ## Opening diagram
 
 Every explainer opens with a diagram, directly after the masthead and before
@@ -187,6 +219,7 @@ system.
   published. Inline everything.
 - **Both themes**: the template's tokens already handle light/dark; keep any
   additions on the tokens.
-- **Lean**: a one-pager the user reads in two minutes. Structure only earns
-  its place when it encodes something true (phases are a real sequence;
-  D-numbers are real locked decisions).
+- **Lean — relative to zone**: zone 2–3 reads in two minutes; zone 0 earns
+  more length only where it teaches judgment. Structure only earns its place
+  when it encodes something true (phases are a real sequence; D-numbers are
+  real locked decisions).
