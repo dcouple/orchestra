@@ -32,7 +32,7 @@ pr: <url or #>
 `<This is what the user-facing report leads with. Split by owner, ordered`
 `blocking-first — never a flat undifferentiated list where the load-bearing`
 `item hides mid-way.>`
-- **⛔ Blocks verification / QA (prerequisite):** `<what the tests or the QA pass still need — a prod DDL not yet applied, a missing key/access — or "none">`
+- **⛔ Blocks verification / QA (prerequisite):** `<a STAGING / TEST resource the tests or QA pass still need — a staging column not yet added, a test-mode key or sandbox access — or "none". NOT production DDL: prod is a deploy action (below), and verification runs against non-prod, so an unapplied prod migration never blocks verification.>`
 - **⛔ You must do (deploy / external):** `<red-tier deploy actions + external unblocks, each with the exact command / toggle / env-var name, or "none">`
 - **✅ Done for you (applied in-run):** `<green-tier actions the run already took — e.g. staging DDL applied + verified — so the human doesn't redo them, or "none">`
 

@@ -211,6 +211,11 @@ independently. Include the change type's rubric from
 `.references/verification-methods.md`); its blocker items gate alongside
 the ACs. Quoted evidence on every pass; nothing is assumed. Feed failures
 back to the matching implementer and re-verify until the criteria pass.
+**Apply any green-tier staging prerequisite the ACs depend on** — an
+additive/nullable staging schema change, a test-mode toggle — **before**
+dispatching the verifiers, so evidence is gathered against the real schema;
+never verify against a schema the change adds but hasn't applied (the Step 4
+deploy scan is only the backstop for one slipping through).
 
 Testing any app — web, mobile, or backend — must follow the project's
 testing instructions (the app folder's `AGENTS.md`/testing docs). If a
@@ -235,15 +240,22 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   scripts/backfills, then **split each finding by tier and act on it**
   (Autonomy & safety). A finding's **green-tier half** — an additive/nullable,
   reversible change on a non-production environment you can reach (e.g. the
-  staging DB) — you **apply in-run**, so verification isn't silently blocked by
-  a schema the tests need; its **red-tier half** — production, irreversible, or
-  secrets — you **capture as a deploy note and never apply**. Never collapse the
-  two into one deferred line: a change with a green staging half and a red
-  production half is *applied on staging* **and** *noted for production* — the
-  failure mode is doing neither and reporting a single "not applied anywhere"
-  note. Flag any finding that **blocks verification/QA** (a column the tests
-  read, a test-mode key the QA pass needs) as a **prerequisite**, called out
-  distinctly from deploy-time actions.
+  staging DB) — **must be applied before the verification that depends on it**:
+  a staging column the tests read is a Step 3 prerequisite applied at
+  implement/verify time, not a Step 4 discovery. This scan is the **backstop** —
+  if it is the first to catch an unapplied green change, apply it **and re-run
+  the affected verification**, since Step 3 finished before this scan and any
+  evidence gathered against the missing schema is void. Its **red-tier half** —
+  production, irreversible, or secrets — you **capture as a deploy note and
+  never apply**. Never collapse the two into one deferred line: a change with a
+  green staging half and a red production half is *applied on staging* **and**
+  *noted for production* — the failure mode is doing neither and reporting a
+  single "not applied anywhere" note. Flag any finding that **blocks
+  verification/QA** — a *staging/test* resource the run gathers evidence against
+  (a staging column the tests read, a test-mode key the QA pass needs) — as a
+  **prerequisite**, distinct from deploy-time actions. A **production** change
+  is never a verification prerequisite: verification runs against non-prod, so
+  an unapplied prod migration is a deploy action, not a blocker.
 - Commit selectively (only this run's files, never `git add -A`; secret-scan
   the staged diff), message style `type: short imperative summary`. Rebase
   onto the origin default branch; push (`--force-with-lease` on rewrites).
