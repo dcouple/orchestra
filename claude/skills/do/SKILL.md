@@ -375,12 +375,15 @@ happens on the artifact, not before it exists.
   like a missing key or access), with anything that **blocks verification/QA
   surfaced first as a prerequisite**. Only then the wrap-up summary and
   anything unresolved. **Notify** run completion per `.references/notify.md`.
-- Then run the `postmortem` skill on this run automatically — its
-  operations half (wall-clock, stalls, tokens, review-pass yield) needs no
-  human input and attaches to the same work item, so every run leaves an
-  analyzable record without being asked. The outcome half stays deferred:
-  it runs when the human returns from PR review (or invokes `/postmortem`
-  again), because "did the result match intent" isn't knowable at wrap-up.
+- Then run the `postmortem` skill on this run automatically, in its
+  **ops-only mode** — the operations half (wall-clock, stalls, tokens,
+  review-pass yield) needs no human input and attaches to the same work
+  item, so every run leaves an analyzable record without being asked. Its
+  change proposals are recorded in the published postmortem, never waited
+  on — the run ends right after it publishes. The outcome half stays
+  deferred: it runs when the human returns from PR review (or invokes
+  `/postmortem` again), because "did the result match intent" isn't
+  knowable at wrap-up.
 
 ## Epics (type: epic-spec)
 

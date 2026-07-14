@@ -40,7 +40,9 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `direction? Omit for an operational-only postmortem.>`
 
 ## What to change so it doesn't recur
-`<a concrete improvement to a specific skill / sub-agent / template / verification block>`
+`<the concrete improvements the findings support — each names a specific skill /`
+`sub-agent / template / verification block and shows the proposed edit; zero is a`
+`valid answer, and so is several>`
 
 ## Dial record & right-sizing
 `<copy the wrap-up's dial-record block (zone, lanes, passes, findings split`
@@ -58,6 +60,7 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `review (operations-only postmortem). This is the outcome bit the score`
 `aggregation joins against.>`
 
-## System change
-`<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval verdict`
-`on the proposed change once the human gives it>`
+## System changes
+`<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval`
+`verdicts on the proposed changes once the human gives them — pending until then;`
+`an auto-run postmortem never waits for them>`

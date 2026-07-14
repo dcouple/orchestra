@@ -49,6 +49,7 @@ findings: {plan: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: 
 verifiers: {frontend: <ran|skipped>, qa_pass: <ran|trimmed|skipped>}
 qa_findings: <n>
 wall_clock: <h:mm, run start to wrap-up>
+deviations: <none | "escalated <z>→<z-1>: reason">
 pr_size: {files_changed: <n>, additions: <n>, deletions: <n>}  # gh pr view --json changedFiles,additions,deletions
 tokens:                # per source; "unknown" is honest, a guess is not
   codex: {total: <n>, by_role: {implementer: <n>, plan_reviewer: <n>, code_reviewer: <n>, ...}}
@@ -56,7 +57,9 @@ tokens:                # per source; "unknown" is honest, a guess is not
   claude_subagents: <n | unknown>   # from the harness's task-completion summaries
   overseer: <n | unknown>           # main session, when the harness exposes it
   total: <n — sum of the known>
-spend_ratio: <tokens.total ÷ (additions + deletions), 1 decimal — size-normalized cost>
+spend_ratio: <tokens.total ÷ (additions + deletions), 1 decimal — append " (lower bound)"
+              whenever any token source above is unknown: a partial total presented as the
+              true cost poisons the tuning data with falsely cheap runs>
 agents:                # one row per role actually dispatched
   - {role: <role>, model: <model>, effort: <effort | thinking>, dispatches: <n>,
      wall_clock: <m:ss | unknown>, tokens: <n | unknown>}

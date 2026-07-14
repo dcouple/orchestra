@@ -1,6 +1,6 @@
 ---
 name: postmortem
-description: Runs a postmortem on a /do run — after the human reviewed the PR, or as a routine after-run review. Covers two dimensions: how the run RAN (wall-clock, agent-active vs idle-waiting-on-human, stalls, blockers — always) and, when the result fell short of intent, WHY (root cause in our system). Use when the user says a /do run missed the mark or asks "why did /do get this wrong", when any workflow skill produced the wrong outcome, or simply to review how a completed run spent its time. Proposes one concrete improvement.
+description: Runs a postmortem on a /do run — after the human reviewed the PR, or as a routine after-run review. Covers two dimensions: how the run RAN (wall-clock, agent-active vs idle-waiting-on-human, stalls, blockers — always) and, when the result fell short of intent, WHY (root cause in our system). Use when the user says a /do run missed the mark or asks "why did /do get this wrong", when any workflow skill produced the wrong outcome, or simply to review how a completed run spent its time. Proposes the system improvements the findings support — never applied, never a gate.
 argument-hint: "[PR url/# or work-item id]"
 ---
 
@@ -12,10 +12,7 @@ Compound learning on the last `/do` run — on **two** axes:
 
 - **Operations (always):** how the run actually ran — wall-clock, how much was
   the agent working vs idle waiting on a human, where it stalled, what blocked
-  it. Autonomy leaks (the agent ending its turn mid-run and waiting for a
-  "continue") are invisible to an outcome review yet are the main thing between
-  a run and true overnight autonomy, so this half runs on every run, successful
-  or not.
+  it. This half runs on every run, successful or not.
 - **Outcome (only when it fell short):** where the delivered result missed the
   intent, root-caused in **our system** — the skills, agents, templates, and
   criteria — not just the code. (Also covers another workflow skill producing
@@ -25,7 +22,7 @@ Compound learning on the last `/do` run — on **two** axes:
 The completion artifact is `./tmp/<id>/postmortem.md`, published to the tracker
 the current repo's `AGENTS.md` `Work-item tracking` section configures
 (postmortems live with the repo the run happened in; no tracker configured →
-local-only), plus one proposed (not applied) system change.
+local-only), plus the proposed (never applied) system changes its findings support.
 
 This skill changes nothing: no code fixes, no skill edits. If the code itself needs
 fixing, that goes through `/create-plan` then `/do`; the proposed system change is
@@ -39,9 +36,12 @@ presented for the human to approve, not applied.
 > first place to look — a pass that found nothing was pure spend. This is
 > the data that tunes `.references/zones.md`'s table.
 
-`/do` invokes this skill automatically at wrap-up (operations half only —
-the outcome half needs the human's PR review, so it runs on a later
-invocation). Standalone invocations cover both halves as applicable.
+`/do` invokes this skill automatically at wrap-up in **ops-only mode**:
+steps 3–4 are skipped (the outcome half needs the human's PR review, so it
+runs on a later invocation) and step 6's proposals are recorded in the
+published postmortem without waiting on anyone — the unattended run ends
+right after publishing. Standalone invocations cover both halves as
+applicable.
 
 ## Steps
 
@@ -132,24 +132,26 @@ just the code defect), the postmortem is published per the repo's tracker instru
 its URL recorded (or kept local and the user told, when no tracker is configured), and the
 anchor PR/issue (when one exists) carries a comment linking back to it.
 
-### 6. Propose ONE system change [human checkpoint]
-Propose exactly one concrete change to one specific file — a skill, sub-agent, template,
-or criteria block, named by its path in the canonical skills repo
-(`dcouple/orchestra` — e.g. `claude/skills/discussion/SKILL.md`,
+### 6. Propose system changes
+Propose the system changes the findings actually support — zero, one, or several:
+don't force a proposal when nothing is wrong, and don't cap them when the run
+surfaced more. Each proposal names one concrete change to one specific file — a
+skill, sub-agent, template, or criteria block, by its path in the canonical skills
+repo (`dcouple/orchestra` — e.g. `claude/skills/discussion/SKILL.md`,
 `references/verification-criteria.md`, `claude/agents/code-reviewer.md`).
 The copies in each consumer repo (`.claude/`, `.codex/`, `.references/`) are synced
 mirrors — the edit lands in orchestra and re-syncs. Quote the file path and show the
-proposed edit.
+proposed edit. Proposals target **operational** findings from step 2 (pre-authorize a
+green-tier gate, add a self-wakeup, make a fallback non-blocking) as readily as
+outcome gaps.
 
-Do **not** apply it. Present it for the human to approve; record the proposal (and the
-verdict, if given now) in postmortem.md's "What to change so it doesn't recur" section.
-One change per postmortem — the highest-leverage one — so each fix is attributable. That
-one change may target the **operational** finding from step 2 (e.g. pre-authorize a
-green-tier gate so it stops stalling, add a self-wakeup so a turn-end resumes, make a
-fallback non-blocking) when the autonomy leak outweighs any outcome gap.
+Do **not** apply any of them. Record each in postmortem.md's "What to change so it
+doesn't recur" section for the human to weigh later — this step is a report, never a
+gate: don't wait for approval, and an auto-run at `/do` wrap-up ends after
+publishing, full stop.
 
-**Success criteria**: proposal names an exact file and shows the concrete edit; nothing
-outside `./tmp/<id>/` was modified.
+**Success criteria**: each proposal names an exact file and shows the concrete edit;
+nothing outside `./tmp/<id>/` was modified; the run never paused for approval.
 
 ```
 Suggested next steps:
