@@ -39,6 +39,10 @@ what the user is actually asking:
   first to exercise the flow and capture evidence, then pass its transcript along
   with the defect report.
 
+When a zone 0–1 design fork resists convergence after the tradeoffs are on
+the table, offer the `dialectic` skill — a Claude advocate vs a Codex
+opponent on a written motion — rather than another solo research round.
+
 Only research what the discussion actually needs — let questions pull research, not
 the other way around. Dispatch mid-conversation as new questions arise; run
 independent dispatches in parallel.
