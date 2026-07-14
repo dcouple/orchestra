@@ -138,11 +138,11 @@ sees what will be proven and how:
 The final section projects how `/do` will execute — an estimate the human
 finalizes at capture, never a silent default:
 
-- The primary dial is the item's **`zone:` (0–3)** per `references/zones.md`:
+- The primary dial is the item's **`zone:` (0–3)** per `.references/zones.md`:
   render the estimated zone with its stakes / consequence-radius reasoning and
   any escalator floor that raised it. The remaining dials — review lanes, loop
   caps, frontend verifier, QA, research — are shown as **derived from the
-  zone**, not independently set; `references/zones.md` owns that mapping, so
+  zone**, not independently set; `.references/zones.md` owns that mapping, so
   reference it, never restate the table.
 - Use the `.dials` component: one `.dial` per row, `.pill` options with the
   recommended one `.on`, a one-line `.dial-why`, and a caption noting the
@@ -163,7 +163,7 @@ then the opening diagram, then numbered sections, then the footer. Per type:
 | 04 · Scope | in / out-of-scope panels | per-epic goals vs non-goals panels | business impact + severity; out-of-scope if any |
 | 05 · Verification | categorized checklist (UX / Backend `.vgroup`s) + flow→AC `.flowmap` | ACs per phase (subheading per phase) | AC1 = repro flips to pass, plus prevention criteria |
 | 06 · Unresolved | open questions (omit if none) | open questions | open questions |
-| 07 · Run config | zone panel (`.dials`; dials derived per `references/zones.md`) | zone panel (epic = full machinery per zones.md) | zone panel |
+| 07 · Run config | zone panel (`.dials`; dials derived per `.references/zones.md`) | zone panel (epic = full machinery per zones.md) | zone panel |
 
 An epic is one page with the phase timeline — not a page per phase. Sections
 02 and 07 are conditional: 02 · User journeys only when the change is

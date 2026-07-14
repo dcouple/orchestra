@@ -150,6 +150,10 @@
      terminal endpoint (e.g. an off-ramp). */
   .journey { margin: 0 0 1.5rem; }
   .journey:last-child { margin-bottom: 0; }
+  /* Journey rows fit the page instead of scrolling: stages shrink (overrides
+     the base .stage min-width / .pipeline overflow for .journey children). */
+  .journey .pipeline { overflow-x: visible; }
+  .journey .stage { min-width: 0; flex: 1 1 0; }
   .journey-label { font-weight: 600; font-size: .92rem; margin-bottom: .5rem; }
   .stage.skip { border-style: dashed; opacity: .6; }
   .stage.term { border-color: var(--accent); background: var(--accent-soft); }
@@ -250,13 +254,15 @@
   <section>
     <p class="eyebrow">02 · User journeys</p>
     <h2>The divergent paths, not just the happy one</h2>
-    <div class="journey-label">SMS user — texts patients</div>
-    <div class="pipeline">
-      <div class="stage"><div class="name">Features</div><div class="desc">"text patients"</div></div>
-      <div class="arrow">&#8594;</div>
-      <div class="stage skip"><div class="name">Payment</div><div class="desc">skipped — free</div></div>
-      <div class="arrow">&#8594;</div>
-      <div class="stage term"><div class="name">Contact us</div><div class="desc">terminal — no checkout</div></div>
+    <div class="journey">
+      <div class="journey-label">Journey A — the divergent path</div>
+      <div class="pipeline">
+        <div class="stage"><div class="name">Entry step</div><div class="desc">where this journey starts</div></div>
+        <div class="arrow">&#8594;</div>
+        <div class="stage skip"><div class="name">Optional step</div><div class="desc">skipped on this path</div></div>
+        <div class="arrow">&#8594;</div>
+        <div class="stage term"><div class="name">Off-ramp</div><div class="desc">terminal — journey ends here</div></div>
+      </div>
     </div>
   </section> -->
 
