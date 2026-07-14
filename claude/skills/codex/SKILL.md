@@ -17,17 +17,18 @@ this conversation — the prompt must carry everything the role needs.
 
 | Role | Model / effort | Sandbox | Session |
 | --- | --- | --- | --- |
-| `implementer` | `gpt-5.6-sol` / `medium` | `--yolo` | persistent — resume for fix rounds |
-| `backend-verifier` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
-| `plan-reviewer` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
-| `code-reviewer` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
-| `code-researcher` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
-| `investigator` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
+| `implementer` | `gpt-5.6-sol` / `low` | `--yolo` | persistent — resume for fix rounds |
+| `backend-verifier` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
+| `plan-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
+| `code-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
+| `code-researcher` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
+| `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 
-Efforts are defaults: `medium` for every role.
-The dispatcher may raise a reviewer to `high` — rarely, when the zone
-warrants it (zone 0, or an epic), with the reason stated in the dispatch;
-never above `high`, never by default. The investigator and
+Efforts are defaults: `low` for every role — GPT-5.6-sol at low effort is
+the efficiency sweet spot (better quality per token than the 5.5
+generation at medium). The dispatcher may raise a reviewer to `medium` or
+`high` — rarely, when the zone warrants it (zone 0, or an epic), with the
+reason stated in the dispatch; never above `high`, never by default. The investigator and
 backend-verifier act on the environment (tests, scripts, app boots), but
 their charters forbid editing project files.
 
