@@ -81,14 +81,11 @@ is missing or expired with the exact command to fix each: tracker + `gh`
 auth; the artifact-provider tool the repo's `AGENTS.md` names (e.g. a Notion
 CLI) if artifacts get published; the notify target (`.references/notify.md`);
 and the credentials/tooling verification will need (DB, cloud, test-mode API
-keys, a browser for computer-use); and the **harness permission modes**: this
-session must be running with bypassed permissions
-(`claude --dangerously-skip-permissions` — check the process args or note the
-first permission prompt as the tell) and Codex action-role dispatches use
-`--yolo` per the codex skill — an approval prompt or approval-layer refusal
-mid-run burns whole dispatches (a 29-minute environment boot was once wasted
-on one). If the harness is NOT in bypass mode, that is a preflight note with
-the exact relaunch command — not a stop. Resolvable from config or a quick check →
+keys, a browser for computer-use); and the **harness permission modes** —
+the orchestrator session runs under `claude --dangerously-skip-permissions`
+and every codex dispatch uses `--yolo`; approvals must never gate an
+unattended run. Not in bypass mode → preflight note with the exact relaunch
+command. Resolvable from config or a quick check →
 just confirm it silently. If nothing is missing, say so in one line and
 proceed. A missing green-tier dependency is a preflight note, not a
 stop — the human clears it while you work; only a dependency the run truly
