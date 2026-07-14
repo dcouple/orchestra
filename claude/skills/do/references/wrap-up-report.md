@@ -28,9 +28,16 @@ pr: <url or #>
 `Should Fix / Nice to Have items intentionally deferred, and why — the same`
 `survivors live as inline PR comments; this is the summary, not a second list.>`
 
+## Human action required
+`<This is what the user-facing report leads with. Split by owner, ordered`
+`blocking-first — never a flat undifferentiated list where the load-bearing`
+`item hides mid-way.>`
+- **⛔ Blocks verification / QA (prerequisite):** `<what the tests or the QA pass still need — a prod DDL not yet applied, a missing key/access — or "none">`
+- **⛔ You must do (deploy / external):** `<red-tier deploy actions + external unblocks, each with the exact command / toggle / env-var name, or "none">`
+- **✅ Done for you (applied in-run):** `<green-tier actions the run already took — e.g. staging DDL applied + verified — so the human doesn't redo them, or "none">`
+
 ## Residual risks / follow-ups
-- `<anything unresolved, deferred, or worth a future work item>`
-- Deploy notes: `<each item + human action before/at deploy, or "none">`
+- `<genuine risks or future work items — NOT actions; actions go in the block above>`
 
 ## Dial record
 ```yaml

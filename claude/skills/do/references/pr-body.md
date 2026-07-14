@@ -174,8 +174,18 @@ name the exact dashboard toggle. A deployer should not have to run a tool to
 learn what is about to change. For schema changes, put **only additive DDL
 (CREATE / ADD)** in the run-this block and **flag any destructive DDL (DROP,
 type-changing ALTER) separately for explicit human confirmation** rather than
-pasting it as routine. Where the repo has distinct environments, note
-per-environment state (e.g. "staging already has these; production does not").
+pasting it as routine.
+
+**Split every finding by environment and state what the run already did.** A
+green-tier reversible change on a non-production environment (additive/nullable
+staging DDL, a test-mode toggle) is **applied by the run** — mark it
+`staging: ✅ applied`; its production counterpart is the human's
+`production: ⛔ run at deploy` with the exact SQL/command. Never write one
+blended "DDL — not applied to any DB" line: it hides both the green action the
+run should have taken and the precise red action the human owns. And flag any
+finding that **blocks verification** (a column the tests read, a key the QA
+pass needs) as a **prerequisite**, not merely a deploy-time note — a prereq the
+run left unmet is why a "green" PR fails the moment someone tests it.
 
 **Omit the whole section when the scan finds nothing** — an empty Deploy notes
 reads as "nothing to do," which is a lie if you skipped the scan.
@@ -208,6 +218,9 @@ Run before opening, and again after any body edit in Step 5:
 - [ ] Build / typecheck / lint gate passed before opening (Step 4's gate).
 - [ ] Deploy notes: scan actually run; section present iff findings exist;
       migrations pasted as concrete SQL (additive in the run block, destructive
-      flagged), not a command to run.
+      flagged), not a command to run; each finding split by environment —
+      green staging half applied in-run (`✅ applied`), red production half
+      handed off (`⛔ run at deploy`); verification-blocking findings marked as
+      prerequisites.
 - [ ] No secret values anywhere in the body or a comment.
 - [ ] Closing keyword present and correct.
