@@ -34,7 +34,13 @@ change costs more than being wrong would.
    (with `file:line` where checkable). An honest motion is most of the value;
    a motion that omits its real constraints invites answers tuned to someone
    else's context.
-2. **Rounds** (default 2, cap 3) — appended to the motion file:
+2. **Rounds** (default 2, cap 3) — appended to the motion file. **Round 1 is
+   blind and parallel**: both sides write their opening position from the
+   motion alone, neither seeing the other — agreement despite different
+   biases is the quality signal, and a blind opening prevents the second
+   mover anchoring on the first. Later rounds are sequential rebuttal. Every
+   round is capped at ~400 words — density over coverage; argue the
+   load-bearing points only.
    - **Advocate**: a Claude sub-agent (`model: opus`, thinking) argues the
      leading position — strongest case, named tradeoffs, checkable claims
      cited.
@@ -47,6 +53,10 @@ change costs more than being wrong would.
      another's text. A side may concede with reasons — early convergence is
      a valid outcome, including convergence on a third design neither side
      opened with.
+   - **Final round, both sides**: end with (a) a steelman — the opponent's
+     single strongest point, stated fairly — and (b) a blind-spot line: what
+     neither position addresses. Both feed the verdict's grafts and residual
+     risks.
 3. **Verdict** — the Overseer (never either wizard) closes the file: the
    chosen direction, the points grafted from the losing side, and the named
    residual risks. The verdict lands where the decision lives — the
