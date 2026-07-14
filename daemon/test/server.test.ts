@@ -60,11 +60,12 @@ describe("webhook HTTP integration", () => {
   it("AC1: responds under 5s and persists a signed fresh event", async () => {
     const { log, server } = setup(); const address = await server.listen();
     const body = JSON.stringify({ webhookTimestamp: Date.now(), webhookId: "wh", action: "created",
-      agentSession: { id: "session", issue: { id: "issue" } } });
+      agentSession: { id: "session", issue: { id: "issue", identifier: "ENG-42" } } });
     const started = performance.now();
     const response = await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(body), body });
     expect(response.status).toBe(200); expect(performance.now() - started).toBeLessThan(5000);
     expect(log.count()).toBe(1); expect(log.ackCount()).toBe(1);
+    expect(log.getSession("session")).toMatchObject({ issueId: "issue", issueIdentifier: "ENG-42" });
     await server.close(); log.close();
   });
 
@@ -184,6 +185,7 @@ describe("webhook HTTP integration", () => {
     const graphqlPort = (graphql.address() as { port: number }).port;
     const env = { ...process.env, PORT: String(port), BIND_ADDR: "127.0.0.1", DB_PATH: dbPath,
       DAEMON_TEST_MODE: "1",
+      SESSIONS_ENABLED: "0",
       LINEAR_GRAPHQL_URL: `http://127.0.0.1:${graphqlPort}/graphql`,
       PLANNER_WEBHOOK_SECRET: "planner-secret", PLANNER_LINEAR_TOKEN: "p",
       IMPLEMENTER_WEBHOOK_SECRET: "implementer-secret", IMPLEMENTER_LINEAR_TOKEN: "i" };

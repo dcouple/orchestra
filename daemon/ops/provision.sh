@@ -11,7 +11,7 @@ SOURCE_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl gnupg rsync sqlite3 ufw
+apt-get install -y ca-certificates curl git gnupg rsync sqlite3 ufw
 
 if ! command -v node >/dev/null || [[ "$(node --version)" != v22.* ]]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -32,10 +32,16 @@ if ! id linear-daemon >/dev/null 2>&1; then
   useradd --system --home-dir /var/lib/linear-agent-daemon --create-home --shell /usr/sbin/nologin linear-daemon
 fi
 install -d -o linear-daemon -g linear-daemon -m 0750 /opt/linear-agent-daemon /var/lib/linear-agent-daemon
+install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/worktrees /var/lib/linear-agent-daemon/repos
 install -d -o root -g linear-daemon -m 0750 /etc/linear-agent-daemon
 if [[ ! -f /etc/linear-agent-daemon/env ]]; then
   install -o linear-daemon -g linear-daemon -m 0600 /dev/null /etc/linear-agent-daemon/env
   echo "created /etc/linear-agent-daemon/env; populate it before starting the service" >&2
+fi
+
+if [[ ! -x /var/lib/linear-agent-daemon/.local/bin/claude ]]; then
+  runuser -u linear-daemon -- env HOME=/var/lib/linear-agent-daemon bash -c \
+    'curl -fsSL https://claude.ai/install.sh | bash'
 fi
 
 if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
@@ -71,8 +77,30 @@ ufw --force enable
 systemctl daemon-reload
 systemctl enable caddy linear-agent-daemon
 systemctl restart caddy
-if [[ -s /etc/linear-agent-daemon/env ]]; then
+env_has_key() {
+  local key="$1"
+  grep -Eq "^[[:space:]]*${key}=[^[:space:]]+" /etc/linear-agent-daemon/env
+}
+env_sessions_enabled() {
+  ! grep -Eq '^[[:space:]]*SESSIONS_ENABLED=0([[:space:]]*(#.*)?)?$' /etc/linear-agent-daemon/env
+}
+env_ready_for_restart() {
+  if [[ ! -s /etc/linear-agent-daemon/env ]]; then
+    echo "service enabled but not started: populate /etc/linear-agent-daemon/env, then systemctl restart linear-agent-daemon" >&2
+    return 1
+  fi
+  if env_sessions_enabled; then
+    local missing=()
+    for key in TARGET_REPO_PATH LINEAR_API_KEY; do
+      if ! env_has_key "$key"; then missing+=("$key"); fi
+    done
+    if (( ${#missing[@]} )); then
+      echo "service enabled but not restarted: SESSIONS_ENABLED=1 requires ${missing[*]} in /etc/linear-agent-daemon/env" >&2
+      return 1
+    fi
+  fi
+  return 0
+}
+if env_ready_for_restart; then
   systemctl restart linear-agent-daemon
-else
-  echo "service enabled but not started: populate /etc/linear-agent-daemon/env, then systemctl restart linear-agent-daemon" >&2
 fi

@@ -10,7 +10,7 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 
 function event(overrides: Record<string, unknown> = {}) {
   return { deliveryId: "delivery-1", app: "planner" as const, action: "created", agentSessionId: "session-1",
-    issueId: "issue-1", webhookId: "webhook-1", receivedAt: 1000, rawBody: Buffer.from("{}"), ...overrides };
+    issueId: "issue-uuid-1", issueIdentifier: "ENG-42", webhookId: "webhook-1", receivedAt: 1000, rawBody: Buffer.from("{}"), ...overrides };
 }
 
 describe("EventLog", () => {
@@ -38,7 +38,79 @@ describe("EventLog", () => {
     const log = new EventLog(path());
     log.append(event({ action: "prompted" }));
     expect(log.ackCount()).toBe(0);
+    expect(log.turnStates()).toHaveLength(1);
     log.close();
+  });
+
+  it("fans out planner turns only, dedupes, and claims FIFO per issue", () => {
+    const log = new EventLog(path());
+    log.append(event());
+    log.append(event({ deliveryId: "delivery-2", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
+    log.append(event({ deliveryId: "delivery-3", app: "implementer" }));
+    expect(log.turnStates()).toHaveLength(2);
+    expect(log.claimNextTurn(1100)).toMatchObject({ kind: "created", issueId: "issue-uuid-1" });
+    expect(log.claimNextTurn(1100)).toBeUndefined();
+    log.finishTurn(1, "response", "done", 1200);
+    log.markTurnActivityPosted(1, 1201);
+    expect(log.claimNextTurn(1300)).toMatchObject({ kind: "prompted", issueId: "issue-uuid-1" });
+    log.close();
+  });
+
+  it("rekeys prompted-before-created turns and blocks later same-issue work until terminal activity posts", () => {
+    const log = new EventLog(path());
+    log.append(event({ deliveryId: "prompted-first", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
+    expect(log.turnStates()[0]).toMatchObject({ issueId: "session-1", status: "pending" });
+    log.append(event({ deliveryId: "created-second" }));
+    expect(log.turnStates().map(turn => turn.issueId)).toEqual(["issue-uuid-1", "issue-uuid-1"]);
+    expect(log.claimNextTurn(1100)).toMatchObject({ id: 1, kind: "prompted", issueId: "issue-uuid-1" });
+    expect(log.claimNextTurn(1101)).toBeUndefined();
+    log.finishTurn(1, "response", "done", 1200);
+    expect(log.claimNextTurn(1201)).toBeUndefined();
+    log.markTurnActivityPosted(1, 1300);
+    expect(log.claimNextTurn(1301)).toMatchObject({ id: 2, kind: "created", issueId: "issue-uuid-1" });
+    log.close();
+  });
+
+  it("uses terminal activity creation time for the retry window", () => {
+    const log = new EventLog(path());
+    log.append(event({ receivedAt: 1000 }));
+    expect(log.claimNextTurn(2000)).toMatchObject({ id: 1 });
+    log.finishTurn(1, "response", "late response", 2_000_000);
+    expect(log.pendingTurnActivities(2_000_000, 30 * 60_000)[0])
+      .toMatchObject({ turnId: 1, createdAt: 2_000_000, receivedAt: 1000 });
+    log.close();
+  });
+
+  it("still returns expired pending terminal activities so the worker can fail them", () => {
+    const log = new EventLog(path());
+    log.append(event());
+    expect(log.claimNextTurn(1000)).toMatchObject({ id: 1 });
+    log.finishTurn(1, "response", "stuck", 1000);
+    log.markTurnActivityRetry(1, 1000 + 30 * 60_000 + 1);
+    expect(log.pendingTurnActivities(1000 + 30 * 60_000 + 1, 30 * 60_000)[0])
+      .toMatchObject({ turnId: 1, createdAt: 1000, status: "pending" });
+    log.close();
+  });
+
+  it("preserves session fields, persists state, and reconciles interrupted turns", () => {
+    const dbPath = path(); const log = new EventLog(dbPath);
+    log.append(event());
+    log.updateSessionWorktree("session-1", "/worktree", "agents/ENG-42", 1001);
+    log.updateClaudeSessionId("session-1", "claude-1", 1002);
+    log.append(event({ deliveryId: "delivery-2", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
+    expect(log.getSession("session-1")).toMatchObject({ issueId: "issue-uuid-1", issueIdentifier: "ENG-42",
+      worktreePath: "/worktree", branch: "agents/ENG-42", claudeSessionId: "claude-1" });
+    expect(log.claimNextTurn(1100)?.id).toBe(1);
+    expect(log.interruptStaleRunning(1200)).toEqual([1]);
+    expect(log.pendingTurnActivities(1200)[0]).toMatchObject({ kind: "error", turnId: 1 });
+    expect(log.claimNextTurn(1201)).toBeUndefined();
+    log.markTurnActivityPosted(1, 1300);
+    expect(log.turnStates()[0]?.status).toBe("interrupted");
+    expect(log.claimNextTurn(1301)).toMatchObject({ id: 2, kind: "prompted" });
+    log.close();
+    const reopened = new EventLog(dbPath);
+    expect(reopened.getSession("session-1")?.claudeSessionId).toBe("claude-1");
+    reopened.close();
   });
 
   it("survives close/reopen with ack state and tokens", () => {

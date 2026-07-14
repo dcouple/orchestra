@@ -77,6 +77,7 @@ export class WebhookServer {
         action: stringField(verified.payload.action),
         agentSessionId: stringField(session?.id),
         issueId: stringField(session?.issueId) ?? stringField(issue?.id),
+        issueIdentifier: stringField(issue?.identifier),
         webhookId: stringField(verified.payload.webhookId),
         receivedAt: Date.now(),
         rawBody,

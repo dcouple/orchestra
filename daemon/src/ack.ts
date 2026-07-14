@@ -22,6 +22,7 @@ export class AckWorker {
   private reconcileTimer?: NodeJS.Timeout;
   private draining = false;
   private stopped = false;
+  private drainPromise?: Promise<void>;
   private readonly now: () => number;
   private readonly random: () => number;
   private readonly logger: Pick<Console, "error">;
@@ -41,10 +42,16 @@ export class AckWorker {
     void this.drain(true);
   }
 
-  trigger(): void { queueMicrotask(() => void this.drain(false)); }
+  trigger(): void { queueMicrotask(() => { this.drainPromise = this.drain(false); void this.drainPromise; }); }
 
-  async drain(includeFailed: boolean): Promise<void> {
-    if (this.draining || this.stopped) return;
+  drain(includeFailed: boolean): Promise<void> {
+    if (this.draining) return this.drainPromise ?? Promise.resolve();
+    if (this.stopped) return Promise.resolve();
+    this.drainPromise = this.doDrain(includeFailed);
+    return this.drainPromise;
+  }
+
+  private async doDrain(includeFailed: boolean): Promise<void> {
     this.draining = true;
     try {
       const rows = this.log.pendingAcks(this.now()).filter(row => includeFailed || row.status === "pending");
@@ -107,9 +114,10 @@ export class AckWorker {
     return now + Math.max(this.options.reconcileMs ?? 60_000, retryAfterMs ?? 0);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+    await this.drainPromise;
   }
 }

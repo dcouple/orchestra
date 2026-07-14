@@ -1,8 +1,8 @@
 # Linear agent daemon provisioning and operations
 
 Provisioning and OAuth registration are human-controlled deploy gates. Do not run this
-runbook from an automated agent. Phase 1 does not close AC3 or AC5 until the live smoke
-checks below are captured.
+runbook from an automated agent. Real Linear, Claude, and systemd acceptance is not closed
+until the live smoke checks below are captured.
 
 ## Host and DNS
 
@@ -30,7 +30,7 @@ bash -n ops/provision.sh
 sudo DAEMON_HOST=linear-agent.example.com ops/provision.sh "$PWD"
 ```
 
-It installs Node 22, pnpm 11.8, Caddy, UFW, the dedicated `linear-daemon` user, and the
+It installs Node 22, pnpm 11.8, Git, Claude Code, Caddy, UFW, the dedicated `linear-daemon` user, and the
 systemd unit. It also installs the `sqlite3` CLI used by the smoke checks. It deploys with
 `pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod`. Caddy terminates TLS,
 enforces a 1 MB request-body cap, and proxies only to the daemon's loopback listener.
@@ -40,7 +40,8 @@ for NodeSource and pnpm so the script remains runnable on a clean host. Before p
 use, fetch the scripts once, review and pin their checksums in your deployment notes where
 practical, and rely on the pinned pnpm version plus `pnpm install --frozen-lockfile` for the
 application dependency graph. Caddy packages are installed from the signed Cloudsmith apt
-repository.
+repository. The Claude native installer is another vendor `curl | bash` path: review and
+checksum the downloaded installer before production provisioning when practical.
 
 The default firewall permits only SSH and HTTPS. Linear currently publishes these webhook
 source IPs: `35.231.147.226`, `35.243.134.228`, `34.140.253.14`, `34.38.87.206`,
@@ -80,12 +81,47 @@ PLANNER_LINEAR_CLIENT_SECRET=...
 IMPLEMENTER_WEBHOOK_SECRET=...
 IMPLEMENTER_LINEAR_CLIENT_ID=...
 IMPLEMENTER_LINEAR_CLIENT_SECRET=...
+SESSIONS_ENABLED=1
+TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/bloom-mono
+WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
+LINEAR_API_KEY=...
+CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
+CLAUDE_PERMISSION_MODE=bypassPermissions
+CLAUDE_MAX_TURNS=100
+SESSION_CONCURRENCY=2
+KEEPALIVE_MS=900000
+ATTACHMENTS_ENABLED=1
+ATTACHMENT_HOSTS=uploads.linear.app
 ```
 
 The daemon requests 30-day client-credentials app tokens and persists their expiry in
 SQLite. It reacquires on expiry or an API 401. Rotate a client secret in Linear, update the
 matching host value, restart, and verify an ack; rotation invalidates that app's existing
 tokens. Revoke the app installation in Linear to cut off access immediately.
+
+## Planner credentials and repository
+
+Install only a dedicated bot identity. Clone over HTTPS; never configure an SSH remote:
+
+```bash
+sudo -u linear-daemon -H git config --global user.name bloom-agent
+sudo -u linear-daemon -H git config --global user.email bloom-agent@example.com
+sudo -u linear-daemon -H git config --global credential.helper store
+sudo -u linear-daemon -H bash
+read -rsp "GitHub fine-grained PAT: " GITHUB_PAT; printf "\n"
+umask 077
+printf "https://x-access-token:%s@github.com\n" "$GITHUB_PAT" > "$HOME/.git-credentials"
+unset GITHUB_PAT
+exit
+sudo -u linear-daemon -H git clone https://github.com/dcouple/bloom-mono.git /var/lib/linear-agent-daemon/repos/bloom-mono
+sudo chmod 600 /var/lib/linear-agent-daemon/.git-credentials
+```
+
+Use a fine-grained PAT or GitHub App installation token limited to the target repository.
+The `read -s` flow keeps the token out of shell history and process argv. Install the
+dedicated Anthropic credential as `linear-daemon` using the current Claude Code headless
+authentication procedure, and put the scoped `LINEAR_API_KEY` only in the mode-0600 env
+file. Confirm `sudo -u linear-daemon -H claude --version` and that `git remote -v` is HTTPS.
 
 ## Host checks
 
@@ -158,6 +194,30 @@ and confirm Linear reuses `Linear-Delivery`; record the two delivery IDs. Linear
 about 1 minute, 1 hour, and 6 hours and may disable repeated failures, so re-enable a
 disabled webhook manually in the app settings.
 
+## Planner-session smoke
+
+Assign bloom-planner to a test issue. Within ten seconds, confirm the ack and session-start
+thought; then verify the worktree branch includes the issue identifier and the turn ends in
+a response. Reply on the Linear thread and confirm the same Claude session and worktree are
+used. Run a long prompt and verify thought/action gaps stay under 20 minutes. Finally restart
+the service between turns, reply again, and confirm resume still uses state under the pinned
+`HOME=/var/lib/linear-agent-daemon`:
+
+```bash
+sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
+  "select linear_session_id,issue_identifier,worktree_path,branch,claude_session_id,status from sessions order by last_seen_at desc;"
+sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
+  "select id,linear_session_id,kind,status,error from turns order by id desc limit 20;"
+sudo systemctl restart linear-agent-daemon
+sudo journalctl -u linear-agent-daemon -f
+```
+
+Capture a redacted `prompted` payload and attachment node shape. Confirm Git and Claude can
+spawn under `SystemCallFilter=@system-service`; if the journal proves a specific syscall
+denial, widen only the named directive and record that deliberate change. Direct HTTP MCP
+configuration is primary; `mcp-remote` with a bearer header is the fallback for an older
+Claude build that cannot use direct HTTP MCP configuration.
+
 ## Credential inventory
 
 | Credential | Phase / owner | Path and mode | Scope | Rotation or revocation |
@@ -165,7 +225,7 @@ disabled webhook manually in the app settings.
 | Two webhook secrets | 1 / `linear-daemon` | env, `0600` | Verify one app route each | Rotate in each app, update env, restart |
 | Two OAuth client IDs/secrets | 1 / `linear-daemon` | env, `0600` | Agent scopes only | Rotate secret or revoke app; update and restart |
 | SQLite event/token database | 1 / `linear-daemon` | `/var/lib/linear-agent-daemon/events.db*`, `0600`/dir `0750` | Raw payloads and OAuth access tokens | Encrypt backups; delete per retention; revoke OAuth apps if exposed |
-| Bot git identity + repo deploy key | 2–3 / `linear-daemon` | `~/.gitconfig`, `~/.ssh`, `0600` key | One repository, least privilege | Revoke deploy key and replace |
+| Bot git identity + HTTPS credential | 2–3 / `linear-daemon` | `~/.gitconfig`, `~/.git-credentials`, `0600` | One repository, least privilege | Revoke PAT/App token and replace |
 | `LINEAR_API_KEY` for spawned sessions | 2 / `linear-daemon` | env, `0600` | Scoped bot access | Revoke in Linear, replace env |
 | Anthropic authentication | 2 / `linear-daemon` | provider config, `0600` | Dedicated bot billing/project | Revoke provider token, replace |
 
@@ -181,5 +241,7 @@ journalctl -u caddy --since today
 
 Logs contain delivery/session/issue IDs but no raw webhook bodies or tokens. Back up
 `/var/lib/linear-agent-daemon/events.db` using SQLite's backup mechanism. The service uses
-WAL and `Restart=always`; investigate named `ack_failed` errors and manually confirm any
-late reconciled activity.
+WAL and `Restart=always`; investigate named `ack_failed`, `terminal_activity_delivery_failed`,
+and `session_turn_unhandled` errors. Inspect `turns` rows in `failed`/`interrupted` and
+`turn_activities` rows in `failed`; preserve the durable activity ID when retrying so Linear
+can accept duplicate IDs idempotently.

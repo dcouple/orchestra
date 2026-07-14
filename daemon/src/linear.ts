@@ -9,6 +9,8 @@ import type { AppConfig, AppName } from "./config.js";
 import type { EventLog } from "./eventlog.js";
 
 export type PostResult = { ok: true } | { ok: false; retriable: boolean; error: string; retryAfterMs?: number };
+export type ProgressContent = { type: "thought" | "action"; body: string };
+export type TerminalContent = { type: "response" | "error"; body: string };
 
 interface TokenResponse { access_token?: unknown; expires_in?: unknown; error?: unknown; error_description?: unknown; }
 interface TokenGrant { promise: Promise<string>; force: boolean; }
@@ -190,6 +192,19 @@ export class LinearGateway {
     activityId: string,
     deadlineAt: number,
   ): Promise<PostResult> {
+    return this.postActivity(app, agentSessionId, activityId,
+      { type: "thought", body: "picked up — starting work" }, true, deadlineAt);
+  }
+
+  async postActivity(app: AppName, agentSessionId: string, activityId: string,
+    content: ProgressContent, ephemeral: true, deadlineAt: number): Promise<PostResult>;
+  async postActivity(app: AppName, agentSessionId: string, activityId: string,
+    content: TerminalContent, ephemeral: false, deadlineAt: number): Promise<PostResult>;
+  async postActivity(app: AppName, agentSessionId: string, activityId: string,
+    content: ProgressContent | TerminalContent, ephemeral: boolean, deadlineAt: number): Promise<PostResult> {
+    if (ephemeral && content.type !== "thought" && content.type !== "action") {
+      return { ok: false, retriable: false, error: `ephemeral is invalid for ${content.type} activities` };
+    }
     const attempt = async (forceToken: boolean): Promise<PostResult & { unauthorized?: boolean }> => {
       try {
         const token = await this.getAppToken(app, deadlineAt, forceToken);
@@ -202,8 +217,8 @@ export class LinearGateway {
         const operation = client.createAgentActivity({
           id: activityId,
           agentSessionId,
-          content: { type: "thought", body: "picked up — starting work" },
-          ephemeral: true,
+          content,
+          ...(ephemeral ? { ephemeral: true } : {}),
         });
         const payload = await operation.finally(() => clearTimeout(timer));
         if (!payload.success) return { ok: false, retriable: false, error: "agentActivityCreate returned success:false" };

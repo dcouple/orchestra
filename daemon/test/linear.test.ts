@@ -55,6 +55,23 @@ describe("LinearGateway", () => {
     await api.close(); eventLog.close();
   });
 
+  it("posts non-ephemeral response and error activities", async () => {
+    const api = await stub(() => ({ body: success })); const eventLog = log();
+    const gateway = new LinearGateway(eventLog, {
+      planner: { name: "planner", webhookSecret: "p", staticToken: "token-p" },
+      implementer: { name: "implementer", webhookSecret: "i", staticToken: "token-i" },
+    }, api.graphqlUrl, api.tokenUrl);
+    await gateway.postActivity("planner", "session", "00000000-0000-4000-8000-000000000010",
+      { type: "response", body: "answer" }, false, Date.now() + 1000);
+    await gateway.postActivity("planner", "session", "00000000-0000-4000-8000-000000000011",
+      { type: "error", body: "failed" }, false, Date.now() + 1000);
+    expect(api.requests.map(request => (request.body.variables as { input: Record<string, unknown> }).input))
+      .toEqual([expect.objectContaining({ content: { type: "response", body: "answer" } }),
+        expect.objectContaining({ content: { type: "error", body: "failed" } })]);
+    expect(api.requests.every(request => !(request.body.variables as { input: Record<string, unknown> }).input.ephemeral)).toBe(true);
+    await api.close(); eventLog.close();
+  });
+
   it("acquires and persists a client_credentials token, then recovers it after restart", async () => {
     let grants = 0;
     const api = await stub(request => request.url === "/oauth/token"

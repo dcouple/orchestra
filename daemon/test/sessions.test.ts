@@ -1,0 +1,386 @@
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { createHmac } from "node:crypto";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { createServer as createNetServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import type { Config } from "../src/config.js";
+import { EventLog } from "../src/eventlog.js";
+import type { LinearGateway, PostResult } from "../src/linear.js";
+import { SessionWorker } from "../src/sessions.js";
+
+const dirs: string[] = [];
+const oldMode = process.env.CLAUDE_FAKE_MODE;
+const oldArgs = process.env.CLAUDE_FAKE_ARGS_FILE;
+const oldDelay = process.env.CLAUDE_FAKE_DELAY_MS;
+afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  if (oldMode === undefined) delete process.env.CLAUDE_FAKE_MODE; else process.env.CLAUDE_FAKE_MODE = oldMode;
+  if (oldArgs === undefined) delete process.env.CLAUDE_FAKE_ARGS_FILE; else process.env.CLAUDE_FAKE_ARGS_FILE = oldArgs;
+  if (oldDelay === undefined) delete process.env.CLAUDE_FAKE_DELAY_MS; else process.env.CLAUDE_FAKE_DELAY_MS = oldDelay; });
+function git(args: string[], cwd?: string): void { execFileSync("git", args, { cwd, stdio: "ignore" }); }
+function setup() {
+  const dir = mkdtempSync(join(tmpdir(), "sessions-")); dirs.push(dir);
+  const seed = join(dir, "seed"), origin = join(dir, "origin.git"), repo = join(dir, "repo"); mkdirSync(seed);
+  git(["init", "-b", "main"], seed); git(["config", "user.email", "test@example.com"], seed); git(["config", "user.name", "Test"], seed);
+  git(["commit", "--allow-empty", "-m", "initial"], seed); git(["clone", "--bare", seed, origin]); git(["clone", origin, repo]);
+  const log = new EventLog(join(dir, "events.db"));
+  const config: Config = { port: 0, bindAddr: "127.0.0.1", dbPath: join(dir, "events.db"), replayWindowMs: 60_000,
+    linearGraphqlUrl: "http://unused", linearTokenUrl: "http://unused", apps: {
+      planner: { name: "planner", webhookSecret: "p", staticToken: "p" }, implementer: { name: "implementer", webhookSecret: "i", staticToken: "i" } },
+    sessionsEnabled: true, worktreesRoot: join(dir, "trees"), targetRepoPath: repo,
+    claudeArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")], claudePermissionMode: "plan", claudeMaxTurns: 5,
+    sessionConcurrency: 2, keepaliveMs: 30, linearApiKey: "linear-key", attachmentsEnabled: false, attachmentHosts: ["uploads.linear.app"] };
+  return { dir, log, config };
+}
+class Poster {
+  posts: Array<{ session: string; content: { type: string; body: string }; ephemeral: boolean; at: number }> = [];
+  failures = 0;
+  async postActivity(_app: string, session: string, _id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+    this.posts.push({ session, content, ephemeral, at: Date.now() });
+    if (!ephemeral && this.failures-- > 0) return { ok: false, retriable: true, error: "temporary" };
+    return { ok: true };
+  }
+}
+class CapturingLogger {
+  lines: string[] = [];
+  log(...args: unknown[]): void { this.lines.push(String(args[0])); }
+  error(...args: unknown[]): void { this.lines.push(String(args[0])); }
+  entries(): Array<Record<string, unknown>> { return this.lines.map(line => JSON.parse(line) as Record<string, unknown>); }
+}
+function append(log: EventLog, delivery: string, session: string, action: "created" | "prompted", issue = "issue-uuid", identifier = "ENG-42") {
+  const raw = action === "created" ? { action, promptContext: "Help plan this", agentSession: { id: session, issue: { id: issue, identifier } } }
+    : { action, agentActivity: { body: "follow up" }, agentSession: { id: session } };
+  log.append({ deliveryId: delivery, app: "planner", action, agentSessionId: session,
+    ...(action === "created" ? { issueId: issue, issueIdentifier: identifier } : {}), receivedAt: Date.now(), rawBody: Buffer.from(JSON.stringify(raw)) });
+}
+async function waitFor(predicate: () => boolean, timeout = 4000): Promise<void> {
+  const end = Date.now() + timeout; while (!predicate()) { if (Date.now() > end) throw new Error("timed out"); await new Promise(resolve => setTimeout(resolve, 20)); }
+}
+async function freePort(): Promise<number> {
+  const server = createNetServer(); await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port; await new Promise<void>(resolve => server.close(() => resolve())); return port;
+}
+async function healthy(port: number, child: ChildProcess): Promise<void> {
+  const end = Date.now() + 4000;
+  while (Date.now() < end) { if (child.exitCode !== null) throw new Error(`child exited ${child.exitCode}`);
+    try { if ((await fetch(`http://127.0.0.1:${port}/healthz`)).ok) return; } catch {} await new Promise(resolve => setTimeout(resolve, 25)); }
+  throw new Error("child health timed out");
+}
+
+describe("SessionWorker", () => {
+  it("AC1/AC2/AC3-contract: creates worktree, posts response, then resumes in the same cwd", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    append(log, "d1", "linear-session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    append(log, "d2", "linear-session", "prompted"); worker.trigger(); await waitFor(() => log.turnStates()[1]?.status === "done");
+    expect(poster.posts.some(post => !post.ephemeral && post.content.type === "response" && post.content.body === "planner answer")).toBe(true);
+    expect(poster.posts.some(post => !post.ephemeral && post.content.body.includes("resumed claude-session-1"))).toBe(true);
+    const invocations = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(invocations[1].args).toContain("--resume"); expect(invocations[1].cwd).toBe(invocations[0].cwd);
+    const completions = logger.entries().filter(entry => entry.event === "session_turn_completed");
+    expect(completions).toHaveLength(2);
+    expect(completions[0]).toMatchObject({ event: "session_turn_completed", turnId: 1,
+      issueIdentifier: "ENG-42", linearSessionId: "linear-session", attempts: 1, durationMs: expect.any(Number) });
+    expect(JSON.stringify(completions)).not.toContain("linear-key");
+    expect(JSON.stringify(completions)).not.toContain("Help plan this");
+    expect(log.getSession("linear-session")?.branch).toContain("ENG-42"); await worker.stop(); log.close();
+  });
+  it("AC4-contract: emits progress and keepalive before a slow response", async () => {
+    const { log, config } = setup(); const poster = new Poster(); process.env.CLAUDE_FAKE_MODE = "slow"; process.env.CLAUDE_FAKE_DELAY_MS = "120";
+    append(log, "d1", "session", "created"); const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    const terminal = poster.posts.findIndex(post => !post.ephemeral); const before = poster.posts.slice(0, terminal);
+    expect(before.some(post => post.content.body.includes("still working"))).toBe(true); expect(before.every(post => post.ephemeral)).toBe(true);
+    await worker.stop(); log.close();
+  });
+  it("AC5: posts durable error after crash and accepts the next prompt", async () => {
+    const { log, config } = setup(); const poster = new Poster(); process.env.CLAUDE_FAKE_MODE = "crash";
+    append(log, "d1", "session", "created"); const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed"); expect(poster.posts.some(post => post.content.type === "error" && !post.ephemeral)).toBe(true);
+    process.env.CLAUDE_FAKE_MODE = "happy"; append(log, "d2", "session", "prompted"); worker.trigger(); await waitFor(() => log.turnStates()[1]?.status === "done");
+    await worker.stop(); log.close();
+  });
+  it("AC6: serializes one issue while different issues run in parallel", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); process.env.CLAUDE_FAKE_MODE = "slow"; process.env.CLAUDE_FAKE_DELAY_MS = "100";
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); append(log, "d1", "s1", "created", "issue-1", "ENG-1");
+    append(log, "d2", "s1", "prompted"); append(log, "d3", "s2", "created", "issue-2", "ENG-2");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates().every(turn => turn.status === "done")); await worker.stop();
+    const rows = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    const starts = rows.filter(row => row.phase === "start"), ends = rows.filter(row => row.phase === "end");
+    const issue1 = starts.filter(row => row.cwd.endsWith("ENG-1")); expect(issue1).toHaveLength(2);
+    const issue2Start = starts.find(row => row.cwd.endsWith("ENG-2"));
+    const intervalFor = (start: { cwd: string; at: number }) => {
+      const end = ends.find(row => row.cwd === start.cwd && row.at >= start.at);
+      expect(end).toBeDefined();
+      return { start: start.at, end: end!.at };
+    };
+    expect(issue2Start).toBeDefined();
+    const issue1Intervals = issue1.map(intervalFor);
+    const issue2Interval = intervalFor(issue2Start!);
+    expect(issue1[1].at).toBeGreaterThanOrEqual(issue1Intervals[0].end);
+    expect(issue1Intervals.some(interval => issue2Interval.start < interval.end && issue2Interval.end > interval.start)).toBe(true);
+    log.close();
+  });
+  it("serializes prompted-before-created turns after provisional issue rekey", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster();
+    process.env.CLAUDE_FAKE_MODE = "slow"; process.env.CLAUDE_FAKE_DELAY_MS = "100"; process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    log.append({ deliveryId: "d1", app: "planner", action: "prompted", agentSessionId: "session",
+      receivedAt: Date.now(), rawBody: Buffer.from(JSON.stringify({ action: "prompted", agentActivity: { body: "first" }, agentSession: { id: "session" } })) });
+    append(log, "d2", "session", "created", "issue-1", "ENG-1");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates().every(turn => turn.status === "done")); await worker.stop();
+    const rows = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    const starts = rows.filter(row => row.phase === "start"); const ends = rows.filter(row => row.phase === "end");
+    expect(starts).toHaveLength(2);
+    expect(starts.every(row => row.cwd.endsWith("ENG-1"))).toBe(true);
+    expect(starts[1].at).toBeGreaterThanOrEqual(ends.find(row => row.cwd === starts[0].cwd && row.at >= starts[0].at)!.at);
+    log.close();
+  });
+  it("releases a persisted progress barrier on restart and posts the real terminal response", async () => {
+    const { log, config } = setup(); const poster = new Poster();
+    append(log, "d1", "session", "created");
+    const turn = log.claimNextTurn(1000)!;
+    log.finishTurn(turn.id, "response", "real persisted response", 1100, "activity-1", true);
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config,
+      { pollMs: 10, reconcileMs: 20, now: () => 1200 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    expect(poster.posts.find(post => !post.ephemeral)).toMatchObject({ content: { type: "response", body: "real persisted response" } });
+    expect(poster.posts.some(post => post.content.body.includes("interrupted"))).toBe(false);
+    await worker.stop(); log.close();
+  });
+  it("gives late terminal activities a full retry budget from their creation time", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger(); let clock = 2_000_000;
+    poster.failures = 1;
+    log.append({ deliveryId: "d1", app: "planner", action: "created", agentSessionId: "session", issueId: "issue", issueIdentifier: "ENG-9",
+      receivedAt: 1, rawBody: Buffer.from(JSON.stringify({ action: "created", promptContext: "old", agentSession: { id: "session", issue: { id: "issue", identifier: "ENG-9" } } })) });
+    const turn = log.claimNextTurn(clock - 100)!;
+    log.finishTurn(turn.id, "response", "late response", clock, "activity-1");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config,
+      { pollMs: 10, reconcileMs: 20, logger, now: () => clock }); worker.start();
+    await waitFor(() => logger.entries().some(entry => entry.event === "terminal_activity_retry_scheduled"));
+    clock += 1000;
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    expect(poster.posts.filter(post => !post.ephemeral).map(post => post.content.body)).toEqual(["late response", "late response"]);
+    await worker.stop(); log.close();
+  });
+  it("does not start a later same-issue turn until the earlier terminal activity posts", async () => {
+    const { dir, log, config } = setup(); const logger = new CapturingLogger();
+    class FastRetryPoster extends Poster {
+      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+        this.posts.push({ session, content, ephemeral, at: Date.now() });
+        if (!ephemeral && this.failures-- > 0) return { ok: false, retriable: true, retryAfterMs: 50, error: "temporary" };
+        return { ok: true };
+      }
+    }
+    const poster = new FastRetryPoster(); poster.failures = 1;
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    append(log, "d1", "session", "created", "issue-1", "ENG-1"); append(log, "d2", "session", "prompted");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => logger.entries().some(entry => entry.event === "terminal_activity_retry_scheduled"));
+    const firstStarts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(firstStarts).toHaveLength(1);
+    await waitFor(() => log.turnStates().every(turn => turn.status === "done"));
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(2);
+    await worker.stop(); log.close();
+  });
+  it("expires retriable terminal delivery failures and unblocks the issue", async () => {
+    const { log, config } = setup(); const logger = new CapturingLogger(); let clock = 1000;
+    class ExpiringPoster extends Poster {
+      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+        this.posts.push({ session, content, ephemeral, at: clock });
+        if (!ephemeral && content.body === "stuck terminal response")
+          return { ok: false, retriable: true, retryAfterMs: 30 * 60_000 + 1, error: "temporary" };
+        return { ok: true };
+      }
+    }
+    const poster = new ExpiringPoster();
+    append(log, "d1", "session", "created", "issue-1", "ENG-1"); append(log, "d2", "session", "prompted");
+    const turn = log.claimNextTurn(clock)!;
+    log.finishTurn(turn.id, "response", "stuck terminal response", clock, "activity-1");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config,
+      { pollMs: 10, reconcileMs: 20, logger, now: () => clock }); worker.start();
+    await waitFor(() => logger.entries().some(entry => entry.event === "terminal_activity_retry_scheduled"));
+    expect(log.turnStates()[1]?.status).toBe("pending");
+    clock += 30 * 60_000 + 1;
+    await waitFor(() => logger.entries().some(entry => entry.event === "terminal_activity_delivery_failed"));
+    await waitFor(() => log.turnStates()[1]?.status === "done");
+    expect(log.turnStates()[0]?.status).toBe("failed");
+    expect(logger.entries().find(entry => entry.event === "terminal_activity_delivery_failed"))
+      .toMatchObject({ event: "terminal_activity_delivery_failed", turnId: 1,
+        linearSessionId: "session", attempts: 2, error: "temporary" });
+    await worker.stop(); log.close();
+  });
+  it("retries a durable terminal activity after a transient failure", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger(); poster.failures = 1;
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done", 6000);
+    expect(logger.entries().find(entry => entry.event === "terminal_activity_retry_scheduled"))
+      .toMatchObject({ event: "terminal_activity_retry_scheduled", turnId: 1,
+        linearSessionId: "session", attempts: 1, next_attempt_at: expect.any(Number), error: "temporary" });
+    expect(poster.posts.filter(post => !post.ephemeral)).toHaveLength(2); await worker.stop(); log.close();
+  });
+  it("logs terminal activity delivery failures with job id and attempts", async () => {
+    class TerminalFailingPoster extends Poster {
+      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+        await super.postActivity(app, session, id, content, ephemeral);
+        return ephemeral ? { ok: true } : { ok: false, retriable: false, error: "permanent" };
+      }
+    }
+    const { log, config } = setup(); const poster = new TerminalFailingPoster(); const logger = new CapturingLogger();
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    expect(logger.entries().find(entry => entry.event === "terminal_activity_delivery_failed"))
+      .toMatchObject({ event: "terminal_activity_delivery_failed", turnId: 1,
+        linearSessionId: "session", attempts: 1, error: "permanent" });
+    await worker.stop(); log.close();
+  });
+  it("logs unhandled turn failures with job id and attempts", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    config.targetRepoPath = join(dir, "missing-repo");
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    expect(logger.entries().find(entry => entry.event === "session_turn_unhandled"))
+      .toMatchObject({ event: "session_turn_unhandled", turnId: 1,
+        linearSessionId: "session", issueId: "issue-uuid", attempts: 1, error: expect.any(String) });
+    await worker.stop(); log.close();
+  });
+  it("captures noisy stderr tails in failure logs without exposing them in terminal activity", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "stderr-fail";
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    expect(logger.entries().find(entry => entry.event === "session_turn_failed"))
+      .toMatchObject({ event: "session_turn_failed", turnId: 1, linearSessionId: "session",
+        attempts: 1, stderrTail: expect.stringContaining("stderr-line-") });
+    expect(poster.posts.find(post => !post.ephemeral)?.content.body).not.toContain("stderr-line-");
+    await worker.stop(); log.close();
+  });
+  it("cancels progress and keepalive when the Claude runner rejects after progress starts", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    config.claudeArgv = [];
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    const postsAfterFailure = poster.posts.length;
+    await new Promise(resolve => setTimeout(resolve, 120));
+    expect(poster.posts).toHaveLength(postsAfterFailure);
+    expect(logger.entries().find(entry => entry.event === "session_turn_unhandled"))
+      .toMatchObject({ event: "session_turn_unhandled", turnId: 1, attempts: 1, error: expect.stringContaining("Claude argv is empty") });
+    await worker.stop(); log.close();
+  });
+  it("downloads allowlisted attachments with bearer auth, sanitizes names, and keeps git clean", async () => {
+    const received: Array<string | undefined> = [];
+    const server = createServer((request, response) => {
+      received.push(request.headers.authorization);
+      if (request.url === "/big") { response.writeHead(200, { "Content-Length": String(11 * 1024 * 1024) }); response.end(); return; }
+      if (request.url === "/redirect") { response.writeHead(302, { Location: `http://localhost:${(server.address() as { port: number }).port}/file` }); response.end(); return; }
+      response.end("attachment body");
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    const { log, config } = setup(); const poster = new Poster(); config.attachmentsEnabled = true; config.attachmentHosts = ["127.0.0.1"];
+    const raw = { promptContext: "plan", agentSession: { issue: { attachments: [
+      { url: `http://127.0.0.1:${port}/file`, title: "../../secret.txt" },
+      { url: `http://127.0.0.1:${port}/big`, filename: "big.bin" },
+      { url: `http://127.0.0.1:${port}/redirect`, filename: "redirect.txt" },
+      { url: `http://example.invalid/file`, filename: "blocked.txt" },
+    ] } } };
+    log.append({ deliveryId: "d1", app: "planner", action: "created", agentSessionId: "session", issueId: "issue",
+      issueIdentifier: "ENG-8", receivedAt: Date.now(), rawBody: Buffer.from(JSON.stringify(raw)) });
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config,
+      { pollMs: 10, reconcileMs: 20, attachmentTestAllowHttp: true }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    const worktree = log.getSession("session")!.worktreePath!;
+    expect(readdirSync(join(worktree, ".linear-attachments"))).toHaveLength(1);
+    expect(received).toEqual(["Bearer linear-key", "Bearer linear-key", "Bearer linear-key"]);
+    expect(log.turnStates()[0]?.prompt).toMatch(/big\.bin: failed|redirect\.txt: failed|blocked\.txt: failed/);
+    expect(execFileSync("git", ["status", "--porcelain"], { cwd: worktree, encoding: "utf8" })).toBe("");
+    await worker.stop(); log.close(); await new Promise<void>(resolve => server.close(() => resolve()));
+  });
+  it("aborts a stalled attachment body at the per-file deadline and continues the turn", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "Content-Type": "application/octet-stream" });
+      response.write("partial");
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    const { log, config } = setup(); const poster = new Poster(); config.attachmentsEnabled = true; config.attachmentHosts = ["127.0.0.1"];
+    const raw = { promptContext: "plan", agentSession: { issue: { attachments: [
+      { url: `http://127.0.0.1:${port}/stall`, title: "stall.txt" },
+    ] } } };
+    log.append({ deliveryId: "d1", app: "planner", action: "created", agentSessionId: "session", issueId: "issue",
+      issueIdentifier: "ENG-10", receivedAt: Date.now(), rawBody: Buffer.from(JSON.stringify(raw)) });
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config,
+      { pollMs: 10, reconcileMs: 20, attachmentTestAllowHttp: true, attachmentTimeoutMs: 50 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    expect(log.turnStates()[0]?.prompt).toContain("stall.txt: failed (attachment timed out)");
+    await worker.stop(); log.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+  });
+  it("AC7-contract: reopens SQLite and resumes the persisted Claude session after restart", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    append(log, "d1", "session", "created"); const first = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); first.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done"); await first.stop(); log.close();
+    const reopened = new EventLog(config.dbPath); append(reopened, "d2", "session", "prompted");
+    const second = new SessionWorker(reopened, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); second.start();
+    await waitFor(() => reopened.turnStates()[1]?.status === "done");
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts[1].args.slice(starts[1].args.indexOf("--resume"), starts[1].args.indexOf("--resume") + 2))
+      .toEqual(["--resume", "claude-session-1"]);
+    await second.stop(); reopened.close();
+  });
+  it("AC7 child-restart: SIGKILL then prompted resumes the persisted session", async () => {
+    const { dir, log, config } = setup(); log.close(); const port = await freePort(); const requests: unknown[] = [];
+    const graphql = createServer((request, response) => { const chunks: Buffer[] = []; request.on("data", chunk => chunks.push(chunk));
+      request.on("end", () => { requests.push(JSON.parse(Buffer.concat(chunks).toString())); response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ data: { agentActivityCreate: { success: true, agentActivity: { id: "a" } } } })); }); });
+    await new Promise<void>(resolve => graphql.listen(0, "127.0.0.1", resolve)); const graphqlPort = (graphql.address() as { port: number }).port;
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    const env = { ...process.env, DAEMON_TEST_MODE: "1", PORT: String(port), BIND_ADDR: "127.0.0.1", DB_PATH: config.dbPath,
+      PLANNER_WEBHOOK_SECRET: "planner-secret", PLANNER_LINEAR_TOKEN: "p", IMPLEMENTER_WEBHOOK_SECRET: "i", IMPLEMENTER_LINEAR_TOKEN: "i",
+      SESSIONS_ENABLED: "1", TARGET_REPO_PATH: config.targetRepoPath!, WORKTREES_ROOT: config.worktreesRoot, LINEAR_API_KEY: "key",
+      CLAUDE_BIN: `${process.execPath} ${resolve("test/fixtures/fake-claude.mjs")}`, CLAUDE_PERMISSION_MODE: "plan", ATTACHMENTS_ENABLED: "0",
+      LINEAR_GRAPHQL_URL: `http://127.0.0.1:${graphqlPort}/graphql` };
+    const launch = () => spawn(process.execPath, [resolve("dist/index.js")], { env, stdio: "ignore" });
+    const send = async (delivery: string, body: Record<string, unknown>) => { const encoded = JSON.stringify({ webhookTimestamp: Date.now(), ...body });
+      const signature = createHmac("sha256", "planner-secret").update(encoded).digest("hex");
+      expect((await fetch(`http://127.0.0.1:${port}/webhook/planner`, { method: "POST", body: encoded,
+        headers: { "Linear-Signature": signature, "Linear-Delivery": delivery } })).status).toBe(200); };
+    let child = launch(); await healthy(port, child);
+    await send("d1", { action: "created", promptContext: "plan", agentSession: { id: "session", issue: { id: "issue", identifier: "ENG-7" } } });
+    await waitFor(() => { const db = new EventLog(config.dbPath); const done = db.turnStates()[0]?.status === "done"; db.close(); return done; });
+    child.kill("SIGKILL"); await new Promise(resolve => child.once("close", resolve)); child = launch(); await healthy(port, child);
+    await send("d2", { action: "prompted", agentActivity: { body: "continue" }, agentSession: { id: "session" } });
+    await waitFor(() => { const db = new EventLog(config.dbPath); const done = db.turnStates()[1]?.status === "done"; db.close(); return done; });
+    child.kill("SIGTERM"); await new Promise(resolve => child.once("close", resolve));
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts[1].args).toContain("--resume"); expect(starts[1].args).toContain("claude-session-1"); expect(requests.length).toBeGreaterThan(2);
+    await new Promise<void>(resolve => graphql.close(() => resolve()));
+  }, 10_000);
+  it("persists a compacted session id and never posts progress after the terminal response", async () => {
+    const { dir, log, config } = setup(); process.env.CLAUDE_FAKE_MODE = "new-id"; process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    class DelayedPoster extends Poster {
+      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+        if (ephemeral) await new Promise(resolve => setTimeout(resolve, 30));
+        return super.postActivity(app, session, id, content, ephemeral);
+      }
+    }
+    const poster = new DelayedPoster(); append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done"); expect(log.getSession("session")?.claudeSessionId).toBe("claude-session-2");
+    process.env.CLAUDE_FAKE_MODE = "happy"; append(log, "d2", "session", "prompted"); worker.trigger(); await waitFor(() => log.turnStates()[1]?.status === "done");
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts[1].args).toContain("claude-session-2");
+    expect(poster.posts.at(-1)?.ephemeral).toBe(false);
+    await worker.stop(); log.close();
+  });
+});
