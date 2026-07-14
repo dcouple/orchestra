@@ -30,7 +30,7 @@ bash -n ops/provision.sh
 sudo DAEMON_HOST=linear-agent.example.com ops/provision.sh "$PWD"
 ```
 
-It installs Node 22, pnpm 11.8, Git, Claude Code, Caddy, UFW, the dedicated `linear-daemon` user, and the
+It installs Node 22, pnpm 11.8, Git, pinned GitHub CLI and Codex CLI releases, Claude Code, Caddy, UFW, the dedicated `linear-daemon` user, and the
 systemd unit. It also installs the `sqlite3` CLI used by the smoke checks. It deploys with
 `pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod`. Caddy terminates TLS,
 enforces a 1 MB request-body cap, and proxies only to the daemon's loopback listener.
@@ -59,6 +59,9 @@ In Linear, create `bloom-planner` and `bloom-implementer` separately. For each a
    authorize the installation. Never request `admin` with an app actor.
 2. Enable webhooks, select **Agent session events**, and use respectively
    `https://linear-agent.example.com/webhook/planner` or `/webhook/implementer`.
+   On bloom-implementer also enable the **Issues** category. If Linear requires a separate
+   webhook subscription, point it at the same implementer route with the same signing secret;
+   the daemon dispatches by payload `type`.
 3. Record the client ID, client secret, and webhook signing secret directly in the host env
    file. Do not put credentials in shell history or the repository.
 
@@ -88,6 +91,9 @@ LINEAR_API_KEY=...
 CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_MAX_TURNS=100
+DO_PERMISSION_MODE=bypassPermissions
+DO_MAX_TURNS=300
+# DO_MAX_BUDGET_USD=50
 SESSION_CONCURRENCY=2
 KEEPALIVE_MS=900000
 ATTACHMENTS_ENABLED=1
@@ -122,6 +128,21 @@ The `read -s` flow keeps the token out of shell history and process argv. Instal
 dedicated Anthropic credential as `linear-daemon` using the current Claude Code headless
 authentication procedure, and put the scoped `LINEAR_API_KEY` only in the mode-0600 env
 file. Confirm `sudo -u linear-daemon -H claude --version` and that `git remote -v` is HTTPS.
+The target repository must contain its own `AGENTS.md` work-item tracker configuration; the
+daemon guarantees `/do` runs on its required non-default `agents/<identifier>` branch.
+
+Authenticate GitHub and Codex for the service user, then verify them from the systemd user
+context. Use only the repository-scoped bot token. `GH_TOKEN`/`GITHUB_TOKEN` may instead be
+placed in the mode-0600 env file and is passed to `/do` without webhook/OAuth secrets.
+
+```bash
+sudo -u linear-daemon -H gh auth login --git-protocol https
+sudo -u linear-daemon -H gh auth status
+sudo -u linear-daemon -H codex exec --version
+sudo -u linear-daemon -H git -C /var/lib/linear-agent-daemon/repos/bloom-mono push --dry-run origin HEAD
+# Human red-tier gate: push a disposable branch, create a draft PR with gh, then close it.
+sudo -u linear-daemon -H gh pr create --repo dcouple/bloom-mono --draft --fill --head <disposable-branch>
+```
 
 ## Host checks
 
@@ -218,6 +239,23 @@ denial, widen only the named directive and record that deliberate change. Direct
 configuration is primary; `mcp-remote` with a bearer header is the fallback for an older
 Claude build that cannot use direct HTTP MCP configuration.
 
+## Implementer smoke
+
+Assign bloom-implementer to a plan-ready test issue. Confirm the session contains no
+elicitation/human-input request, `/do` starts on `agents/<identifier>`, a PR is created, and
+the PR appears in session external URLs. Confirm the final `/do` text matches PR extraction.
+Move the issue to a workflow state whose stable type is `completed`; verify the Issues
+webhook arrives and both worktree and local branch disappear. Repeat with an uncommitted
+file and verify the worktree remains and a thought names its path. Confirm the full flow
+under systemd hardening.
+
+```bash
+sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
+  "select linear_session_id,label,url,status,error from session_external_urls order by id desc limit 10;"
+sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
+  "select issue_identifier,status,attempts,error from cleanup_jobs order by id desc limit 10;"
+```
+
 ## Credential inventory
 
 | Credential | Phase / owner | Path and mode | Scope | Rotation or revocation |
@@ -225,7 +263,8 @@ Claude build that cannot use direct HTTP MCP configuration.
 | Two webhook secrets | 1 / `linear-daemon` | env, `0600` | Verify one app route each | Rotate in each app, update env, restart |
 | Two OAuth client IDs/secrets | 1 / `linear-daemon` | env, `0600` | Agent scopes only | Rotate secret or revoke app; update and restart |
 | SQLite event/token database | 1 / `linear-daemon` | `/var/lib/linear-agent-daemon/events.db*`, `0600`/dir `0750` | Raw payloads and OAuth access tokens | Encrypt backups; delete per retention; revoke OAuth apps if exposed |
-| Bot git identity + HTTPS credential | 2–3 / `linear-daemon` | `~/.gitconfig`, `~/.git-credentials`, `0600` | One repository, least privilege | Revoke PAT/App token and replace |
+| Bot git/gh identity + HTTPS credential | 2–3 / `linear-daemon` | `~/.gitconfig`, `~/.git-credentials` or env, `0600` | One repository, least privilege | Revoke PAT/App token and replace |
+| Codex authentication | 3 / `linear-daemon` | provider config under service HOME, `0600` | Dedicated bot project | Revoke provider token, replace |
 | `LINEAR_API_KEY` for spawned sessions | 2 / `linear-daemon` | env, `0600` | Scoped bot access | Revoke in Linear, replace env |
 | Anthropic authentication | 2 / `linear-daemon` | provider config, `0600` | Dedicated bot billing/project | Revoke provider token, replace |
 
@@ -244,4 +283,5 @@ Logs contain delivery/session/issue IDs but no raw webhook bodies or tokens. Bac
 WAL and `Restart=always`; investigate named `ack_failed`, `terminal_activity_delivery_failed`,
 and `session_turn_unhandled` errors. Inspect `turns` rows in `failed`/`interrupted` and
 `turn_activities` rows in `failed`; preserve the durable activity ID when retrying so Linear
-can accept duplicate IDs idempotently.
+can accept duplicate IDs idempotently. Also investigate `external_url_delivery_failed`,
+`cleanup_failed`, and `cleanup_notification_failed` without manually changing turn status.

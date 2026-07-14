@@ -235,4 +235,29 @@ export class LinearGateway {
     }
     return first;
   }
+
+  async setSessionExternalUrl(app: AppName, agentSessionId: string, label: string, url: string,
+    deadlineAt: number): Promise<PostResult> {
+    const attempt = async (forceToken: boolean): Promise<PostResult & { unauthorized?: boolean }> => {
+      try {
+        const token = await this.getAppToken(app, deadlineAt, forceToken);
+        const remaining = deadlineAt - this.now();
+        if (remaining <= 0) return { ok: false, retriable: true, error: "Linear session update deadline exceeded" };
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(new Error("Linear session update timed out")), remaining); timer.unref();
+        const client = new LinearClient({ accessToken: token, apiUrl: this.graphqlUrl, signal: controller.signal });
+        const payload = await client.updateAgentSession(agentSessionId, { addedExternalUrls: [{ label, url }] })
+          .finally(() => clearTimeout(timer));
+        if (!payload.success) return { ok: false, retriable: false, error: "agentSessionUpdate returned success:false" };
+        return { ok: true };
+      } catch (error) { return classifyError(error, this.now()); }
+    };
+    const first = await attempt(false);
+    if (!first.ok && first.unauthorized && !this.apps[app].staticToken) {
+      this.log.invalidateToken(app);
+      if (deadlineAt <= this.now()) return first;
+      return attempt(true);
+    }
+    return first;
+  }
 }

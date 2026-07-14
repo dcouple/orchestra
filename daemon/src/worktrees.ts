@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -18,6 +18,32 @@ export class WorktreeManager {
     await previous;
     try { return await this.ensureWorktreeLocked(rawIdentifier); }
     finally { release(); }
+  }
+
+  async isClean(path: string): Promise<boolean> {
+    await this.validate(path);
+    return (await this.git(["status", "--porcelain"], path)).trim() === "";
+  }
+
+  async isPresent(path: string): Promise<boolean> { return this.exists(path); }
+
+  async remove(rawIdentifier: string): Promise<void> {
+    const previous = this.mutation;
+    let release!: () => void;
+    this.mutation = new Promise<void>(resolve => { release = resolve; });
+    await previous;
+    try {
+      const identifier = rawIdentifier.replace(/[^A-Za-z0-9-]/g, "-") || "issue";
+      const path = resolve(this.root, identifier);
+      if (await this.exists(path)) {
+        await this.validate(path);
+        if (!(await this.isClean(path))) throw new Error(`Refusing to remove dirty worktree: ${path}`);
+        await rm(resolve(path, ".linear-attachments"), { recursive: true, force: true });
+        await this.git(["worktree", "remove", path], this.repo);
+      }
+      try { await this.git(["branch", "-D", `agents/${identifier}`], this.repo); }
+      catch (error) { if (await this.gitOk(["show-ref", "--verify", `refs/heads/agents/${identifier}`], this.repo)) throw error; }
+    } finally { release(); }
   }
 
   private async ensureWorktreeLocked(rawIdentifier: string): Promise<Worktree> {

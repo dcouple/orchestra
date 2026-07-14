@@ -10,7 +10,7 @@ export type ClaudeEvent =
 
 export interface RunTurnOptions {
   cwd: string; prompt: string; resumeSessionId?: string; argv: string[]; permissionMode: string;
-  maxTurns: number; mcpConfigJson: string; env?: NodeJS.ProcessEnv;
+  maxTurns: number; maxBudgetUsd?: number; mcpConfigJson: string; env?: NodeJS.ProcessEnv;
   onEvent?: (event: ClaudeEvent) => void | Promise<void>;
   onSessionId?: (id: string) => void | Promise<void>;
   signal?: AbortSignal;
@@ -30,7 +30,8 @@ function childEnv(extra: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
   const include = (key: string, value: string | undefined): void => {
     if (value === undefined) return;
     if (key === "PATH" || key === "HOME" || key === "TMPDIR" || key === "TEMP" || key === "TMP" || key === "LANG"
-      || key.startsWith("LC_") || key.startsWith("ANTHROPIC_") || key.startsWith("CLAUDE_") || key === "LINEAR_API_KEY") {
+      || key.startsWith("LC_") || key.startsWith("ANTHROPIC_") || key.startsWith("CLAUDE_") || key === "LINEAR_API_KEY"
+      || key === "GH_TOKEN" || key === "GITHUB_TOKEN") {
       allowed[key] = value;
     }
   };
@@ -53,6 +54,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   const args = [...prefix, "-p", options.prompt, "--output-format", "stream-json", "--verbose"];
   if (options.resumeSessionId) args.push("--resume", options.resumeSessionId);
   args.push("--permission-mode", options.permissionMode, "--max-turns", String(options.maxTurns), "--mcp-config", configPath);
+  if (options.maxBudgetUsd !== undefined) args.push("--max-budget-usd", String(options.maxBudgetUsd));
   const child = spawn(bin, args, { cwd: options.cwd, env: childEnv(options.env), detached: true, stdio: ["ignore", "pipe", "pipe"] });
   let latestId: string | undefined;
   let resultText: string | undefined;

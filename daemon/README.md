@@ -4,7 +4,10 @@ This orchestra-only Node 22 service receives signed Linear AgentSessionEvent web
 the separate planner and implementer OAuth apps. It verifies each raw request, appends it
 to SQLite, acknowledges new sessions asynchronously, and runs bloom-planner discussions in
 per-issue git worktrees. Planner turns stream Claude progress to Linear, persist terminal
-activities for retry, and resume the stored Claude session on follow-up prompts.
+activities for retry, and resume the stored Claude session on follow-up prompts. Implementer
+assignments run a fresh, unattended literal `/do <identifier>` turn in the same issue worktree,
+durably attach an opened PR to the Linear session, and clean up clean worktrees after completed
+Issue webhooks. Dirty worktrees are retained and reported to the session.
 
 ## Local checks
 
@@ -52,6 +55,8 @@ Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are require
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
 `CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),
 `CLAUDE_PERMISSION_MODE` (`bypassPermissions`), `CLAUDE_MAX_TURNS` (100),
+`DO_PERMISSION_MODE` (`bypassPermissions`; production rejects every other value),
+`DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),
 `SESSION_CONCURRENCY` (2), `KEEPALIVE_MS` (900000), `ATTACHMENTS_ENABLED` (1), and
 `ATTACHMENT_HOSTS` (`uploads.linear.app`). Set `SESSIONS_ENABLED=0` for ingress-only runs.
 

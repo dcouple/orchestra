@@ -12,7 +12,7 @@ if (argsFile) await appendFile(argsFile,
 if (process.env.CLAUDE_FAKE_ENV_FILE) await appendFile(process.env.CLAUDE_FAKE_ENV_FILE,
   `${JSON.stringify({ args, env: process.env, at: Date.now(), phase: "env" })}\n`);
 const emit = value => process.stdout.write(`${JSON.stringify(value)}\n`);
-const session = resumed || "claude-session-1";
+const session = resumed || (mode === "do-pr" || mode === "do-pr-error" ? "claude-do-session" : "claude-session-1");
 emit({ type: "system", subtype: "init", session_id: session, uuid: "init" });
 if (mode === "crash") process.exit(7);
 if (mode === "no-result") process.exit(0);
@@ -35,8 +35,8 @@ emit({ type: "assistant", session_id: session, message: { content: [
 if (mode === "new-id") emit({ type: "assistant", session_id: "claude-session-2", message: { content: [{ type: "text", text: "compacted" }] } });
 if (mode === "slow") await new Promise(resolve => setTimeout(resolve, Number(process.env.CLAUDE_FAKE_DELAY_MS || process.env.FAKE_DELAY_MS || 100)));
 const finalSession = mode === "new-id" ? "claude-session-2" : session;
-emit({ type: "result", subtype: mode === "denied" ? "error" : "success", is_error: mode === "denied",
-  result: resumed ? `resumed ${resumed}` : "planner answer", session_id: finalSession,
+emit({ type: "result", subtype: mode === "denied" || mode === "do-pr-error" ? "error" : "success", is_error: mode === "denied" || mode === "do-pr-error",
+  result: mode === "do-pr" || mode === "do-pr-error" ? "Opened https://github.com/dcouple/example/pull/42" : resumed ? `resumed ${resumed}` : "planner answer", session_id: finalSession,
   permission_denials: mode === "denied" ? [{ tool: "Bash" }] : [] });
 if (mode === "touch-file" && process.env.CLAUDE_FAKE_TOUCH_FILE) await writeFile(process.env.CLAUDE_FAKE_TOUCH_FILE, "done");
 if (argsFile) await appendFile(argsFile,

@@ -67,16 +67,21 @@ export class WebhookServer {
         Date.now(), this.options.config.replayWindowMs);
       if (!verified.ok) { this.json(response, 401, { error: verified.reason }); return; }
 
-      const session = objectField(verified.payload.agentSession);
-      const issue = objectField(session?.issue);
+      const payloadType = stringField(verified.payload.type);
+      const isIssue = payloadType === "Issue";
+      const session = isIssue ? undefined : objectField(verified.payload.agentSession);
+      const issue = isIssue ? objectField(verified.payload.data) : objectField(session?.issue);
+      const state = objectField(issue?.state);
       const deliveryHeader = request.headers["linear-delivery"];
       const deliveryId = Array.isArray(deliveryHeader) ? deliveryHeader[0] : deliveryHeader;
       const event = {
         deliveryId,
         app,
+        type: payloadType,
+        stateType: isIssue ? stringField(state?.type) : undefined,
         action: stringField(verified.payload.action),
-        agentSessionId: stringField(session?.id),
-        issueId: stringField(session?.issueId) ?? stringField(issue?.id),
+        agentSessionId: isIssue ? undefined : stringField(session?.id),
+        issueId: isIssue ? stringField(issue?.id) : stringField(session?.issueId) ?? stringField(issue?.id),
         issueIdentifier: stringField(issue?.identifier),
         webhookId: stringField(verified.payload.webhookId),
         receivedAt: Date.now(),

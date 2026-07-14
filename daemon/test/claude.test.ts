@@ -41,15 +41,17 @@ describe("runTurn", () => {
   it("passes only the child allowlist and keeps bearer tokens out of argv", async () => {
     const dir = cwd(); const envFile = join(dir, "env.jsonl");
     const result = await runTurn(options({ cwd: dir, mcpConfigJson: JSON.stringify({ token: "secret-token" }),
-      env: { CLAUDE_FAKE_ENV_FILE: envFile, LINEAR_API_KEY: "linear-key", PLANNER_WEBHOOK_SECRET: "webhook-secret",
+      maxBudgetUsd:12.5, env: { CLAUDE_FAKE_ENV_FILE: envFile, LINEAR_API_KEY: "linear-key", GH_TOKEN:"github-key", PLANNER_WEBHOOK_SECRET: "webhook-secret",
         PLANNER_LINEAR_CLIENT_SECRET: "client-secret", IMPLEMENTER_LINEAR_CLIENT_SECRET: "other-secret" } }));
     expect(result.ok).toBe(true);
     const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { args: string[]; env: Record<string, string> };
     expect(row.env.LINEAR_API_KEY).toBe("linear-key");
+    expect(row.env.GH_TOKEN).toBe("github-key");
     expect(row.env.PLANNER_WEBHOOK_SECRET).toBeUndefined();
     expect(row.env.PLANNER_LINEAR_CLIENT_SECRET).toBeUndefined();
     expect(row.env.IMPLEMENTER_LINEAR_CLIENT_SECRET).toBeUndefined();
     expect(row.args).toContain("--mcp-config");
+    expect(row.args).toEqual(expect.arrayContaining(["--max-budget-usd","12.5"]));
     expect(JSON.stringify(row.args)).not.toContain("secret-token");
   });
   it("drains noisy stderr and returns a bounded tail on failure", async () => {

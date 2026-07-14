@@ -40,6 +40,13 @@ async function stub(handler: (request: { url: string; authorization?: string; bo
 const success = { data: { agentActivityCreate: { success: true, lastSyncId: 1, agentActivity: { id: "activity" } } } };
 
 describe("LinearGateway", () => {
+  it("updates session addedExternalUrls with the owning app bearer",async()=>{
+    const api=await stub(()=>({body:{data:{agentSessionUpdate:{success:true,agentSession:{id:"session"}}}}}));const eventLog=log();
+    const gateway=new LinearGateway(eventLog,{planner:{name:"planner",webhookSecret:"p",staticToken:"p"},implementer:{name:"implementer",webhookSecret:"i",staticToken:"token-i"}},api.graphqlUrl,api.tokenUrl);
+    expect(await gateway.setSessionExternalUrl("implementer","session","Pull Request","https://github.com/x/y/pull/1",Date.now()+1000)).toEqual({ok:true});
+    expect(api.requests[0]?.authorization).toBe("Bearer token-i");expect(JSON.stringify(api.requests[0]?.body)).toContain("agentSessionUpdate");
+    expect(api.requests[0]?.body.variables).toMatchObject({id:"session",input:{addedExternalUrls:[{label:"Pull Request",url:"https://github.com/x/y/pull/1"}]}});await api.close();eventLog.close();
+  });
   it("AC3-contract: SDK mutation carries id, session, ephemeral thought and Bearer token", async () => {
     const api = await stub(() => ({ body: success })); const eventLog = log();
     const gateway = new LinearGateway(eventLog, {

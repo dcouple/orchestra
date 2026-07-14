@@ -3,7 +3,7 @@ import { mkdir, open, realpath, unlink } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { Config } from "./config.js";
 import { runTurn, type ClaudeEvent } from "./claude.js";
-import type { EventLog, TurnActivityRow, TurnRow } from "./eventlog.js";
+import type { EventLog, ExternalUrlRow, TurnActivityRow, TurnRow } from "./eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
 import { WorktreeManager } from "./worktrees.js";
 
@@ -11,6 +11,7 @@ interface Logger { log(...args: unknown[]): void; error(...args: unknown[]): voi
 export interface SessionWorkerOptions {
   pollMs?: number; reconcileMs?: number; now?: () => number; logger?: Logger;
   attachmentTestAllowHttp?: boolean; attachmentTimeoutMs?: number;
+  onTurnComplete?: () => void;
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -90,7 +91,8 @@ export class SessionWorker {
         const promise = this.process(turn, controller.signal).catch(error => {
           this.logger.error(jsonLog({ event: "session_turn_unhandled", turnId: turn.id,
             linearSessionId: turn.linearSessionId, issueId: turn.issueId, attempts: turn.attempts, error: String(error) }));
-          try { this.log.finishTurn(turn.id, "error", `Planner turn failed: ${error instanceof Error ? error.message : String(error)}`, this.now()); } catch {}
+          const role = turn.app === "implementer" ? "Implementer" : "Planner";
+          try { this.log.finishTurn(turn.id, "error", `${role} turn failed: ${error instanceof Error ? error.message : String(error)}`, this.now()); } catch {}
         }).finally(() => { this.active.delete(turn.id); void this.triggerActivityDrain(); void this.drain(); });
         this.active.set(turn.id, { promise, controller });
       }
@@ -103,24 +105,27 @@ export class SessionWorker {
     const identifier = session.issueIdentifier ?? session.issueId ?? turn.issueId;
     const worktree = await this.worktrees.ensureWorktree(identifier);
     this.log.updateSessionWorktree(turn.linearSessionId, worktree.path, worktree.branch, this.now());
-    let prompt = this.composePrompt(turn, identifier);
-    if (this.config.attachmentsEnabled) prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
+    const implementer = session.mode === "implementer";
+    let prompt = implementer ? `/do ${identifier}` : this.composePrompt(turn, identifier);
+    if (!implementer && this.config.attachmentsEnabled) prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
     this.log.setTurnPrompt(turn.id, prompt);
     const postProgress = (id: string, content: ProgressContent) => this.gateway.postActivity(
-      "planner", turn.linearSessionId, id, content, true, this.now() + 10_000);
+      turn.app, turn.linearSessionId, id, content, true, this.now() + 10_000);
     const progress = new ProgressQueue(postProgress, this.now, this.logger);
-    progress.push({ type: "thought", body: "session started — reading the ticket" });
+    progress.push({ type: "thought", body: implementer ? "implementation started — running /do" : "session started — reading the ticket" });
     const keepalive = setInterval(() => {
       if (this.now() - progress.lastSuccess >= this.config.keepaliveMs)
-        progress.push({ type: "thought", body: "still working on this turn" });
+        progress.push({ type: "thought", body: implementer ? "still working on implementation" : "still working on this turn" });
     }, Math.max(10, Math.min(this.config.keepaliveMs, 60_000)));
     keepalive.unref();
     const mcpConfigJson = JSON.stringify({ mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp",
       headers: { Authorization: `Bearer ${this.config.linearApiKey}` } } } });
     const result = await runTurn({ cwd: worktree.path, prompt,
-        ...(turn.kind === "prompted" && session.claudeSessionId ? { resumeSessionId: session.claudeSessionId } : {}),
-        argv: this.config.claudeArgv, permissionMode: this.config.claudePermissionMode,
-        maxTurns: this.config.claudeMaxTurns, mcpConfigJson, env: { LINEAR_API_KEY: this.config.linearApiKey! }, signal,
+        ...(!implementer && turn.kind === "prompted" && session.claudeSessionId ? { resumeSessionId: session.claudeSessionId } : {}),
+        argv: this.config.claudeArgv, permissionMode: implementer ? this.config.doPermissionMode : this.config.claudePermissionMode,
+        maxTurns: implementer ? this.config.doMaxTurns : this.config.claudeMaxTurns,
+        ...(implementer && this.config.doMaxBudgetUsd !== undefined ? { maxBudgetUsd: this.config.doMaxBudgetUsd } : {}),
+        mcpConfigJson, env: { LINEAR_API_KEY: this.config.linearApiKey!, GH_TOKEN: process.env.GH_TOKEN, GITHUB_TOKEN: process.env.GITHUB_TOKEN }, signal,
         onSessionId: id => this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()),
         onEvent: event => progress.push(event.type === "text"
           ? { type: "thought", body: event.text } : { type: "action", body: describeTool(event) }),
@@ -131,6 +136,11 @@ export class SessionWorker {
       });
     clearInterval(keepalive);
     const finishedAt = this.now();
+    if (implementer && result.resultText) {
+      const url = this.extractPullRequestUrl(result.resultText);
+      if (url) this.log.stageExternalUrl(turn.linearSessionId, turn.app, "Pull Request", url, finishedAt);
+      else this.logger.log(jsonLog({ event: "implementer_pr_url_not_found", turnId: turn.id, linearSessionId: turn.linearSessionId }));
+    }
     if (result.ok) {
       this.log.finishTurn(turn.id, "response", result.resultText || "Turn completed.", finishedAt, randomUUID(), true);
       this.logger.log(jsonLog({ event: "session_turn_completed", turnId: turn.id, issueIdentifier: identifier,
@@ -139,7 +149,7 @@ export class SessionWorker {
     } else {
       const detail = result.spawnError ?? (result.permissionDenials.length ? "Claude permission was denied" :
         result.signal ? `Claude exited on ${result.signal}` : !result.sawResult ? "Claude exited without a result" : `Claude exited with code ${result.exitCode}`);
-      this.log.finishTurn(turn.id, "error", `Planner turn failed: ${detail}`, finishedAt, randomUUID(), true);
+      this.log.finishTurn(turn.id, "error", `${implementer ? "Implementer" : "Planner"} turn failed: ${detail}`, finishedAt, randomUUID(), true);
       this.logger.error(jsonLog({ event: "session_turn_failed", turnId: turn.id, issueIdentifier: identifier,
         linearSessionId: turn.linearSessionId, attempts: turn.attempts, durationMs: Math.max(0, finishedAt - (turn.startedAt ?? turn.receivedAt)),
         error: detail, ...(result.stderrTail ? { stderrTail: result.stderrTail } : {}) }));
@@ -147,6 +157,11 @@ export class SessionWorker {
     await progress.cancelAndWait();
     this.log.touchSession(turn.linearSessionId, this.now());
     this.log.clearTurnProgressBarrier(turn.id);
+  }
+
+  private extractPullRequestUrl(value: string): string | undefined {
+    return /https:\/\/(?:github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+|gitlab\.com\/[^\s]+\/-\/merge_requests\/\d+|[^\s/]+\/[^\s]+\/(?:pull|merge_requests?)\/\d+)/i.exec(value)?.[0]
+      ?.replace(/[),.;]+$/, "");
   }
 
   private composePrompt(turn: TurnRow, identifier: string): string {
@@ -249,11 +264,21 @@ export class SessionWorker {
   private async drainActivities(): Promise<void> {
     if (this.stopped) return;
     for (const activity of this.log.pendingTurnActivities(this.now())) await this.postTerminal(activity);
+    for (const external of this.log.pendingExternalUrls(this.now())) await this.postExternalUrl(external);
+  }
+  private async postExternalUrl(row: ExternalUrlRow): Promise<void> {
+    const result = await this.gateway.setSessionExternalUrl(row.app,row.linearSessionId,row.label,row.url,this.now()+10_000);
+    if (result.ok) { this.log.markExternalUrlPosted(row.id); return; }
+    if (result.retriable && this.now() < row.createdAt + 30*60_000) {
+      this.log.markExternalUrlRetry(row.id,result.error,this.now()+Math.max(result.retryAfterMs ?? 0,1_000)); return;
+    }
+    this.log.markExternalUrlFailed(row.id,result.error);
+    this.logger.error(jsonLog({ event:"external_url_delivery_failed", id:row.id, error:result.error }));
   }
   private async postTerminal(activity: TurnActivityRow): Promise<void> {
     const result = await this.gateway.postActivity(activity.app, activity.linearSessionId, activity.activityId,
       { type: activity.kind, body: activity.body }, false, this.now() + 10_000);
-    if (result.ok) { this.log.markTurnActivityPosted(activity.turnId, this.now()); return; }
+    if (result.ok) { this.log.markTurnActivityPosted(activity.turnId, this.now()); this.options.onTurnComplete?.(); return; }
     if (result.retriable && this.now() < activity.createdAt + 30 * 60_000) {
       const nextAttemptAt = this.now() + Math.max(result.retryAfterMs ?? 0, 1_000);
       this.log.markTurnActivityRetry(activity.turnId, nextAttemptAt);

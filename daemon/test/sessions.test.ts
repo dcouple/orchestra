@@ -31,17 +31,23 @@ function setup() {
       planner: { name: "planner", webhookSecret: "p", staticToken: "p" }, implementer: { name: "implementer", webhookSecret: "i", staticToken: "i" } },
     sessionsEnabled: true, worktreesRoot: join(dir, "trees"), targetRepoPath: repo,
     claudeArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")], claudePermissionMode: "plan", claudeMaxTurns: 5,
+    doPermissionMode:"plan",doMaxTurns:50,doMaxBudgetUsd:10,
     sessionConcurrency: 2, keepaliveMs: 30, linearApiKey: "linear-key", attachmentsEnabled: false, attachmentHosts: ["uploads.linear.app"] };
   return { dir, log, config };
 }
 class Poster {
-  posts: Array<{ session: string; content: { type: string; body: string }; ephemeral: boolean; at: number }> = [];
+  posts: Array<{ app:string; session: string; content: { type: string; body: string }; ephemeral: boolean; at: number }> = [];
+  urls:Array<{app:string;session:string;label:string;url:string}>=[];
   failures = 0;
+  urlFailures=0;
   async postActivity(_app: string, session: string, _id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
-    this.posts.push({ session, content, ephemeral, at: Date.now() });
+    this.posts.push({ app:_app, session, content, ephemeral, at: Date.now() });
     if (!ephemeral && this.failures-- > 0) return { ok: false, retriable: true, error: "temporary" };
     return { ok: true };
   }
+  async setSessionExternalUrl(app:string,session:string,label:string,url:string):Promise<PostResult>{
+    if(this.urlFailures-->0)return {ok:false,retriable:true,error:"temporary url failure"};
+    this.urls.push({app,session,label,url});return {ok:true};}
 }
 class CapturingLogger {
   lines: string[] = [];
@@ -54,6 +60,10 @@ function append(log: EventLog, delivery: string, session: string, action: "creat
     : { action, agentActivity: { body: "follow up" }, agentSession: { id: session } };
   log.append({ deliveryId: delivery, app: "planner", action, agentSessionId: session,
     ...(action === "created" ? { issueId: issue, issueIdentifier: identifier } : {}), receivedAt: Date.now(), rawBody: Buffer.from(JSON.stringify(raw)) });
+}
+function appendImplementer(log:EventLog,delivery:string,session:string,issue="issue-uuid",identifier="ENG-42"){
+  log.append({deliveryId:delivery,app:"implementer",action:"created",agentSessionId:session,issueId:issue,issueIdentifier:identifier,
+    receivedAt:Date.now(),rawBody:Buffer.from(JSON.stringify({action:"created",agentSession:{id:session,issue:{id:issue,identifier}}}))});
 }
 async function waitFor(predicate: () => boolean, timeout = 4000): Promise<void> {
   const end = Date.now() + timeout; while (!predicate()) { if (Date.now() > end) throw new Error("timed out"); await new Promise(resolve => setTimeout(resolve, 20)); }
@@ -70,6 +80,28 @@ async function healthy(port: number, child: ChildProcess): Promise<void> {
 }
 
 describe("SessionWorker", () => {
+  it("phase3 AC1/AC2/AC3: do-mode reuses worktree, starts fresh, uses literal prompt, and posts PR URL",async()=>{
+    const {dir,log,config}=setup(); const poster=new Poster(); process.env.CLAUDE_FAKE_ARGS_FILE=join(dir,"args.jsonl");
+    append(log,"planner","planner-session","created"); let worker=new SessionWorker(log,poster as unknown as LinearGateway,config,{pollMs:10,reconcileMs:20});worker.start();
+    await waitFor(()=>log.turnStates()[0]?.status==="done"); await worker.stop();
+    process.env.CLAUDE_FAKE_MODE="do-pr"; appendImplementer(log,"implementer","implementer-session");
+    worker=new SessionWorker(log,poster as unknown as LinearGateway,config,{pollMs:10,reconcileMs:20});worker.start();
+    await waitFor(()=>log.turnStates()[1]?.status==="done"&&poster.urls.length===1); await worker.stop();
+    const starts=readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE,"utf8").trim().split("\n").map(line=>JSON.parse(line)).filter(row=>row.phase==="start");
+    expect(starts[1].cwd).toBe(starts[0].cwd); expect(starts[1].args).not.toContain("--resume");
+    expect(starts[1].args.slice(starts[1].args.indexOf("-p"),starts[1].args.indexOf("--output-format"))).toEqual(["-p","/do ENG-42"]);
+    expect(log.getSession("implementer-session")?.claudeSessionId).toBe("claude-do-session");
+    expect(poster.urls[0]).toEqual({app:"implementer",session:"implementer-session",label:"Pull Request",url:"https://github.com/dcouple/example/pull/42"});
+    expect(poster.posts.filter(p=>p.session==="implementer-session").every(p=>p.app==="implementer")).toBe(true); log.close();
+  });
+  it("phase3 AC2/AC3-on-error: creates a missing worktree and retries an error result's PR URL",async()=>{
+    const {log,config}=setup();const poster=new Poster();poster.urlFailures=1;process.env.CLAUDE_FAKE_MODE="do-pr-error";
+    appendImplementer(log,"implementer-only","implementer-session","issue-new","ENG-99");
+    const worker=new SessionWorker(log,poster as unknown as LinearGateway,config,{pollMs:10,reconcileMs:20});worker.start();
+    await waitFor(()=>log.turnStates()[0]?.status==="failed"&&poster.urls.length===1);await worker.stop();
+    expect(log.getSession("implementer-session")?.worktreePath).toContain("ENG-99");
+    expect(log.externalUrlStates()[0]).toMatchObject({status:"posted",url:"https://github.com/dcouple/example/pull/42"});log.close();
+  });
   it("AC1/AC2/AC3-contract: creates worktree, posts response, then resumes in the same cwd", async () => {
     const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");

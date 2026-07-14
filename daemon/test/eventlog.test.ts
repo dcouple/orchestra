@@ -42,18 +42,43 @@ describe("EventLog", () => {
     log.close();
   });
 
-  it("fans out planner turns only, dedupes, and claims FIFO per issue", () => {
+  it("fans out planner and implementer created turns, but implementer prompted is ignored", () => {
     const log = new EventLog(path());
     log.append(event());
     log.append(event({ deliveryId: "delivery-2", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
     log.append(event({ deliveryId: "delivery-3", app: "implementer" }));
-    expect(log.turnStates()).toHaveLength(2);
+    log.append(event({ deliveryId: "delivery-4", app: "implementer", action: "prompted" }));
+    expect(log.turnStates()).toHaveLength(3);
     expect(log.claimNextTurn(1100)).toMatchObject({ kind: "created", issueId: "issue-uuid-1" });
     expect(log.claimNextTurn(1100)).toBeUndefined();
     log.finishTurn(1, "response", "done", 1200);
     log.markTurnActivityPosted(1, 1201);
     expect(log.claimNextTurn(1300)).toMatchObject({ kind: "prompted", issueId: "issue-uuid-1" });
     log.close();
+  });
+
+  it("persists dedicated external URLs and cleanup jobs across reopen", () => {
+    const dbPath = path(); const log = new EventLog(dbPath);
+    log.append(event()); log.updateSessionWorktree("session-1", "/worktree", "agents/ENG-42", 1001);
+    log.append(event({ deliveryId:"impl",app:"implementer",agentSessionId:"impl-session",receivedAt:1002 }));
+    log.updateSessionWorktree("impl-session","/worktree","agents/ENG-42",1003);
+    for(let i=0;i<2;i++){const turn=log.claimNextTurn(1003+i)!;log.finishTurn(turn.id,"response","done",1003+i);log.markTurnActivityPosted(turn.id,1003+i);}
+    expect(log.sessionByIssueIdentifier("ENG-42")?.linearSessionId).toBe("impl-session");
+    log.stageExternalUrl("impl-session","implementer","Pull Request","https://github.com/x/y/pull/1",1004);
+    log.stageExternalUrl("impl-session","implementer","Pull Request","https://github.com/x/y/pull/1",1005);
+    log.append(event({deliveryId:"issue-done",app:"implementer",agentSessionId:undefined,action:"update",type:"Issue",stateType:"completed",receivedAt:1006}));
+    expect(log.externalUrlStates()).toHaveLength(1); expect(log.cleanupStates()).toHaveLength(1);
+    log.close(); const reopened=new EventLog(dbPath);
+    expect(reopened.pendingExternalUrls(1006)).toHaveLength(1);
+    expect(reopened.claimNextCleanup(1006)).toMatchObject({linearSessionId:"impl-session",app:"implementer"});
+    reopened.close();
+  });
+  it("makes turn and cleanup claims mutually exclusive per issue",()=>{
+    const log=new EventLog(path());log.append(event({app:"implementer"}));log.updateSessionWorktree("session-1","/worktree","agents/ENG-42",1001);
+    log.append(event({deliveryId:"done",app:"implementer",agentSessionId:undefined,action:"update",type:"Issue",stateType:"completed",receivedAt:1002}));
+    expect(log.claimNextCleanup(1002)).toBeUndefined();const first=log.claimNextTurn(1002)!;log.finishTurn(first.id,"response","done",1003);log.markTurnActivityPosted(first.id,1003);
+    expect(log.claimNextCleanup(1004)).toBeDefined();log.append(event({deliveryId:"planner",app:"planner",agentSessionId:"planner",receivedAt:1005}));
+    expect(log.claimNextTurn(1005)).toBeUndefined();log.markCleanupDone(1);expect(log.claimNextTurn(1006)).toMatchObject({linearSessionId:"planner"});log.close();
   });
 
   it("rekeys prompted-before-created turns and blocks later same-issue work until terminal activity posts", () => {

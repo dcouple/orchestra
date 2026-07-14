@@ -24,6 +24,9 @@ export interface Config {
   claudeArgv: string[];
   claudePermissionMode: string;
   claudeMaxTurns: number;
+  doPermissionMode: string;
+  doMaxTurns: number;
+  doMaxBudgetUsd?: number;
   sessionConcurrency: number;
   keepaliveMs: number;
   linearApiKey?: string;
@@ -74,6 +77,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (sessionsEnabled && !targetRepoPath) required(env, "TARGET_REPO_PATH");
   if (sessionsEnabled && !linearApiKey) required(env, "LINEAR_API_KEY");
   const claudeArgv = (env.CLAUDE_BIN?.trim() || "claude").split(/\s+/);
+  const doPermissionMode = env.DO_PERMISSION_MODE?.trim() || "bypassPermissions";
+  if (!testMode && doPermissionMode !== "bypassPermissions") {
+    throw new Error("DO_PERMISSION_MODE must be bypassPermissions unless DAEMON_TEST_MODE=1");
+  }
+  const budgetRaw = env.DO_MAX_BUDGET_USD?.trim();
+  const doMaxBudgetUsd = budgetRaw === undefined || budgetRaw === "" ? undefined : Number(budgetRaw);
+  if (doMaxBudgetUsd !== undefined && (!Number.isFinite(doMaxBudgetUsd) || doMaxBudgetUsd <= 0)) {
+    throw new Error("DO_MAX_BUDGET_USD must be a positive number");
+  }
   return {
     port: positiveInteger(env, "PORT", 8787),
     bindAddr: env.BIND_ADDR?.trim() || "127.0.0.1",
@@ -88,6 +100,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     claudeArgv,
     claudePermissionMode: env.CLAUDE_PERMISSION_MODE?.trim() || "bypassPermissions",
     claudeMaxTurns: positiveInteger(env, "CLAUDE_MAX_TURNS", 100),
+    doPermissionMode,
+    doMaxTurns: positiveInteger(env, "DO_MAX_TURNS", 300),
+    ...(doMaxBudgetUsd !== undefined ? { doMaxBudgetUsd } : {}),
     sessionConcurrency: positiveInteger(env, "SESSION_CONCURRENCY", 2),
     keepaliveMs: positiveInteger(env, "KEEPALIVE_MS", 900_000),
     ...(linearApiKey ? { linearApiKey } : {}),

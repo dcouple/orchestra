@@ -16,6 +16,12 @@ describe("loadConfig", () => {
     expect(config.apps.planner.staticToken).toBe("pt");
     expect(config.sessionsEnabled).toBe(false);
     expect(config.claudeArgv).toEqual(["claude"]);
+    expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
+  });
+  it("forces production do-mode autonomy and parses its budget",()=>{
+    expect(()=>loadConfig({...base,DAEMON_TEST_MODE:undefined,DO_PERMISSION_MODE:"plan"})).toThrow("DO_PERMISSION_MODE");
+    expect(loadConfig({...base,DO_PERMISSION_MODE:"plan",DO_MAX_TURNS:"400",DO_MAX_BUDGET_USD:"25.5"}))
+      .toMatchObject({doPermissionMode:"plan",doMaxTurns:400,doMaxBudgetUsd:25.5});
   });
   it("loads planner-session defaults and names required variables", () => {
     expect(() => loadConfig({ ...base, SESSIONS_ENABLED: "1" })).toThrow("TARGET_REPO_PATH");

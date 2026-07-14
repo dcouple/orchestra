@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -33,5 +33,18 @@ describe("WorktreeManager", () => {
     const setup = repository(); mkdirSync(setup.root);
     git(["clone", setup.origin, join(setup.root, "ENG-99")]);
     await expect(new WorktreeManager(setup.root, setup.repo).ensureWorktree("ENG-99")).rejects.toThrow(/foreign repository/);
+  });
+  it("removes clean worktrees with ignored attachments and their branch", async()=>{
+    const setup=repository(); const manager=new WorktreeManager(setup.root,setup.repo); const tree=await manager.ensureWorktree("ENG-44");
+    mkdirSync(join(tree.path,".linear-attachments")); writeFileSync(join(tree.path,".linear-attachments","file"),"x");
+    expect(await manager.isClean(tree.path)).toBe(true); await manager.remove("ENG-44");
+    expect(existsSync(tree.path)).toBe(false); expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-44"],setup.repo)).toThrow();
+  });
+  it("refuses dirty worktrees and deletes dangling branches idempotently",async()=>{
+    const setup=repository(); const manager=new WorktreeManager(setup.root,setup.repo); const tree=await manager.ensureWorktree("ENG-45");
+    writeFileSync(join(tree.path,"dirty.txt"),"x"); expect(await manager.isClean(tree.path)).toBe(false);
+    await expect(manager.remove("ENG-45")).rejects.toThrow("dirty"); expect(existsSync(tree.path)).toBe(true);
+    rmSync(join(tree.path,"dirty.txt")); git(["worktree","remove",tree.path],setup.repo); await manager.remove("ENG-45");
+    expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-45"],setup.repo)).toThrow();
   });
 });

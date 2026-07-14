@@ -12,6 +12,8 @@ export interface AppendEvent {
   webhookId?: string | undefined;
   receivedAt: number;
   rawBody: Buffer;
+  type?: string | undefined;
+  stateType?: string | undefined;
 }
 
 export interface SessionRow {
@@ -30,6 +32,9 @@ export interface TurnActivityRow {
   body: string; status: "pending" | "posted" | "failed"; attempts: number; nextAttemptAt: number;
   createdAt: number; progressBarrier: number; receivedAt: number;
 }
+export interface ExternalUrlRow { id: number; linearSessionId: string; app: AppName; label: string; url: string; attempts: number; nextAttemptAt: number; createdAt: number; }
+export interface CleanupJobRow { id: number; issueId: string; issueIdentifier: string; linearSessionId: string; app: AppName; status: string; attempts: number; createdAt: number; claimedAt: number | null; notifyActivityId: string; }
+export interface CleanupNotificationRow { jobId: number; app: AppName; linearSessionId: string; activityId: string; body: string; attempts: number; nextAttemptAt: number; createdAt: number; }
 
 export interface AckRow {
   eventId: number;
@@ -127,9 +132,35 @@ export class EventLog {
         created_at INTEGER NOT NULL DEFAULT 0,
         progress_barrier INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS session_external_urls (
+        id INTEGER PRIMARY KEY, linear_session_id TEXT NOT NULL, app TEXT NOT NULL CHECK(app IN ('planner','implementer')),
+        label TEXT NOT NULL, url TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','posted','failed')),
+        attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+        error TEXT, UNIQUE(linear_session_id,url)
+      );
+      CREATE TABLE IF NOT EXISTS cleanup_jobs (
+        id INTEGER PRIMARY KEY, issue_id TEXT NOT NULL UNIQUE, issue_identifier TEXT NOT NULL,
+        linear_session_id TEXT NOT NULL, app TEXT NOT NULL CHECK(app IN ('planner','implementer')),
+        status TEXT NOT NULL CHECK(status IN ('pending','running','done','retained','failed')),
+        attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, error TEXT,
+        created_at INTEGER NOT NULL, claimed_at INTEGER, notify_activity_id TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cleanup_notifications (
+        job_id INTEGER PRIMARY KEY REFERENCES cleanup_jobs(id), app TEXT NOT NULL, linear_session_id TEXT NOT NULL,
+        activity_id TEXT NOT NULL UNIQUE, body TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','posted','failed')),
+        attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, error TEXT
+      );
     `);
+    this.migrateEventColumns();
     this.migrateAckColumns();
     this.migrateTurnActivityColumns();
+  }
+
+  private migrateEventColumns(): void {
+    const columns = new Set((this.db.prepare("PRAGMA table_info(events)").all() as Array<{ name: string }>).map(column => column.name));
+    if (!columns.has("type")) this.db.prepare("ALTER TABLE events ADD COLUMN type TEXT").run();
+    if (!columns.has("state_type")) this.db.prepare("ALTER TABLE events ADD COLUMN state_type TEXT").run();
+    if (!columns.has("issue_identifier")) this.db.prepare("ALTER TABLE events ADD COLUMN issue_identifier TEXT").run();
   }
 
   private migrateAckColumns(): void {
@@ -151,29 +182,31 @@ export class EventLog {
     const deliveryId = event.deliveryId?.trim() || `sha256:${createHash("sha256").update(event.rawBody).digest("hex")}`;
     const run = this.db.transaction(() => {
       const result = this.db.prepare(`INSERT OR IGNORE INTO events
-        (delivery_id, webhook_id, app, action, agent_session_id, issue_id, received_at, raw_body)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        (delivery_id, webhook_id, app, action, agent_session_id, issue_id, issue_identifier, type, state_type, received_at, raw_body)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(deliveryId, event.webhookId ?? null, event.app, event.action ?? null,
-          event.agentSessionId ?? null, event.issueId ?? null, event.receivedAt, event.rawBody);
+          event.agentSessionId ?? null, event.issueId ?? null, event.issueIdentifier ?? null, event.type ?? null,
+          event.stateType ?? null, event.receivedAt, event.rawBody);
       if (result.changes === 0) return false;
       if (event.action === "created" && event.agentSessionId) {
         this.db.prepare(`INSERT INTO acks (event_id, activity_id, status, next_attempt_at, deadline_at)
           VALUES (?, ?, 'pending', ?, ?)`)
           .run(Number(result.lastInsertRowid), randomUUID(), event.receivedAt, event.receivedAt + 10_000);
       }
-      if (event.app === "planner" && (event.action === "created" || event.action === "prompted") && event.agentSessionId) {
+      const createsTurn = event.agentSessionId && (event.action === "created" || (event.app === "planner" && event.action === "prompted"));
+      if (createsTurn) {
         const existing = this.db.prepare("SELECT issue_id issueId, issue_identifier issueIdentifier FROM sessions WHERE linear_session_id=?")
           .get(event.agentSessionId) as { issueId: string | null; issueIdentifier: string | null } | undefined;
         const issueId = event.issueId ?? existing?.issueId ?? event.agentSessionId;
         const issueIdentifier = event.issueIdentifier ?? existing?.issueIdentifier ?? event.issueId ?? event.agentSessionId;
         this.db.prepare(`INSERT INTO sessions
           (linear_session_id, app, issue_id, issue_identifier, mode, status, last_seen_at)
-          VALUES (?, ?, ?, ?, 'planner', 'active', ?)
+          VALUES (?, ?, ?, ?, ?, 'active', ?)
           ON CONFLICT(linear_session_id) DO UPDATE SET
             issue_id=COALESCE(excluded.issue_id, sessions.issue_id),
             issue_identifier=COALESCE(excluded.issue_identifier, sessions.issue_identifier),
             last_seen_at=excluded.last_seen_at`)
-          .run(event.agentSessionId, event.app, issueId, issueIdentifier, event.receivedAt);
+          .run(event.agentSessionId, event.app, issueId, issueIdentifier, event.app, event.receivedAt);
         if (event.action === "created" && event.issueId) {
           this.db.prepare(`UPDATE sessions SET issue_id=?, issue_identifier=?, last_seen_at=?
             WHERE linear_session_id=?`)
@@ -186,6 +219,9 @@ export class EventLog {
         }
         this.db.prepare(`INSERT INTO turns (event_id, linear_session_id, issue_id, kind, status)
           VALUES (?, ?, ?, ?, 'pending')`).run(Number(result.lastInsertRowid), event.agentSessionId, issueId, event.action);
+      }
+      if (event.type === "Issue" && event.stateType === "completed" && event.issueId && event.issueIdentifier) {
+        this.enqueueCleanup(event.issueId, event.issueIdentifier, event.receivedAt);
       }
       return true;
     });
@@ -202,6 +238,7 @@ export class EventLog {
               OR EXISTS (SELECT 1 FROM turn_activities a WHERE a.turn_id=earlier.id AND a.status='pending')
             ))
           AND NOT EXISTS (SELECT 1 FROM turns active WHERE active.issue_id=t.issue_id AND active.status='running')
+          AND NOT EXISTS (SELECT 1 FROM cleanup_jobs c WHERE c.issue_id=t.issue_id AND c.status='running')
         ORDER BY t.id LIMIT 1`).get() as { id: number } | undefined;
       if (!candidate) return undefined;
       const changed = this.db.prepare(`UPDATE turns SET status='running', attempts=attempts+1, started_at=?, error=NULL
@@ -223,6 +260,13 @@ export class EventLog {
     return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
       mode, status, last_seen_at lastSeenAt FROM sessions WHERE linear_session_id=?`).get(linearSessionId) as SessionRow | undefined;
+  }
+  sessionByIssueIdentifier(identifier: string): SessionRow | undefined {
+    const query = (mode: string) => this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
+      issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
+      mode, status, last_seen_at lastSeenAt FROM sessions WHERE issue_identifier=? AND mode=? ORDER BY last_seen_at DESC LIMIT 1`)
+      .get(identifier, mode) as SessionRow | undefined;
+    return query("implementer") ?? query("planner");
   }
   updateSessionWorktree(linearSessionId: string, path: string, branch: string, now = Date.now()): void {
     this.db.prepare(`UPDATE sessions SET worktree_path=?, branch=?, last_seen_at=? WHERE linear_session_id=?`)
@@ -250,13 +294,15 @@ export class EventLog {
   interruptStaleRunning(now = Date.now()): number[] {
     return this.db.transaction(() => {
       this.db.prepare("UPDATE turn_activities SET progress_barrier=0 WHERE progress_barrier=1").run();
-      const rows = this.db.prepare("SELECT id FROM turns WHERE status='running'").all() as Array<{ id: number }>;
+      const rows = this.db.prepare(`SELECT t.id,e.app FROM turns t JOIN events e ON e.id=t.event_id WHERE t.status='running'`).all() as Array<{ id: number; app: AppName }>;
       for (const row of rows) {
         this.db.prepare("UPDATE turns SET status='interrupted', error='daemon restarted during turn', finished_at=? WHERE id=?").run(now, row.id);
         this.db.prepare(`INSERT OR IGNORE INTO turn_activities
           (turn_id, kind, activity_id, body, status, next_attempt_at, created_at, progress_barrier)
           VALUES (?, 'error', ?, ?, 'pending', ?, ?, 0)`)
-          .run(row.id, randomUUID(), "The planner session was interrupted by a daemon restart. Please prompt again to continue.", now, now);
+          .run(row.id, randomUUID(), row.app === "implementer"
+            ? "The implementation run was interrupted by a daemon restart. Assign bloom-implementer again to retry."
+            : "The planner session was interrupted by a daemon restart. Please prompt again to continue.", now, now);
       }
       return rows.map(row => row.id);
     })();
@@ -295,6 +341,70 @@ export class EventLog {
   turnStates(): Array<{ id: number; status: string; issueId: string; prompt: string | null }> {
     return this.db.prepare("SELECT id, status, issue_id issueId, prompt FROM turns ORDER BY id").all() as Array<{ id: number; status: string; issueId: string; prompt: string | null }>;
   }
+
+  stageExternalUrl(linearSessionId: string, app: AppName, label: string, url: string, now = Date.now()): void {
+    this.db.prepare(`INSERT OR IGNORE INTO session_external_urls
+      (linear_session_id,app,label,url,status,next_attempt_at,created_at) VALUES (?,?,?,?, 'pending',?,?)`)
+      .run(linearSessionId, app, label, url, now, now);
+  }
+  pendingExternalUrls(now = Date.now()): ExternalUrlRow[] {
+    return this.db.prepare(`SELECT id, linear_session_id linearSessionId, app, label, url, attempts,
+      next_attempt_at nextAttemptAt, created_at createdAt FROM session_external_urls
+      WHERE status='pending' AND next_attempt_at<=? ORDER BY id`).all(now) as ExternalUrlRow[];
+  }
+  hasExternalUrl(linearSessionId: string): boolean {
+    return this.db.prepare("SELECT 1 FROM session_external_urls WHERE linear_session_id=? LIMIT 1").get(linearSessionId) !== undefined;
+  }
+  markExternalUrlPosted(id: number): void { this.db.prepare("UPDATE session_external_urls SET status='posted',attempts=attempts+1,error=NULL WHERE id=?").run(id); }
+  markExternalUrlRetry(id: number, error: string, next: number): void { this.db.prepare("UPDATE session_external_urls SET attempts=attempts+1,error=?,next_attempt_at=? WHERE id=?").run(error,next,id); }
+  markExternalUrlFailed(id: number, error: string): void { this.db.prepare("UPDATE session_external_urls SET status='failed',attempts=attempts+1,error=? WHERE id=?").run(error,id); }
+
+  enqueueCleanup(issueId: string, identifier: string, now = Date.now()): void {
+    const session = this.sessionByIssueIdentifier(identifier);
+    if (!session?.worktreePath) return;
+    this.db.prepare(`INSERT OR IGNORE INTO cleanup_jobs
+      (issue_id,issue_identifier,linear_session_id,app,status,next_attempt_at,created_at,notify_activity_id)
+      VALUES (?,?,?,?, 'pending',?,?,?)`).run(issueId,identifier,session.linearSessionId,session.app,now,now,randomUUID());
+  }
+  claimNextCleanup(now = Date.now()): CleanupJobRow | undefined {
+    return this.db.transaction(() => {
+      const candidate = this.db.prepare(`SELECT id FROM cleanup_jobs c WHERE status='pending' AND next_attempt_at<=?
+        AND NOT EXISTS (SELECT 1 FROM turns t WHERE t.issue_id=c.issue_id AND t.status IN ('pending','running','awaiting_activity'))
+        ORDER BY id LIMIT 1`).get(now) as { id: number } | undefined;
+      if (!candidate) return undefined;
+      this.db.prepare("UPDATE cleanup_jobs SET status='running',attempts=attempts+1,claimed_at=?,error=NULL WHERE id=? AND status='pending'").run(now,candidate.id);
+      return this.cleanupById(candidate.id);
+    })();
+  }
+  private cleanupById(id: number): CleanupJobRow | undefined {
+    return this.db.prepare(`SELECT id,issue_id issueId,issue_identifier issueIdentifier,linear_session_id linearSessionId,
+      app,status,attempts,created_at createdAt,claimed_at claimedAt,notify_activity_id notifyActivityId FROM cleanup_jobs WHERE id=?`).get(id) as CleanupJobRow | undefined;
+  }
+  reclaimExpiredCleanups(cutoff: number): number {
+    return this.db.prepare("UPDATE cleanup_jobs SET status='pending',claimed_at=NULL WHERE status='running' AND claimed_at<?").run(cutoff).changes;
+  }
+  markCleanupDone(id: number): void { this.db.prepare("UPDATE cleanup_jobs SET status='done',claimed_at=NULL WHERE id=?").run(id); }
+  retryCleanup(id: number, error: string, next: number): void { this.db.prepare("UPDATE cleanup_jobs SET status='pending',claimed_at=NULL,error=?,next_attempt_at=? WHERE id=?").run(error,next,id); }
+  failCleanup(id: number, error: string): void { this.db.prepare("UPDATE cleanup_jobs SET status='failed',claimed_at=NULL,error=? WHERE id=?").run(error,id); }
+  retainCleanup(id: number, body: string, now = Date.now()): void {
+    this.db.transaction(() => {
+      const job = this.cleanupById(id); if (!job) throw new Error(`Missing cleanup ${id}`);
+      this.db.prepare(`INSERT OR IGNORE INTO cleanup_notifications
+        (job_id,app,linear_session_id,activity_id,body,status,next_attempt_at,created_at) VALUES (?,?,?,?,?,'pending',?,?)`)
+        .run(id,job.app,job.linearSessionId,job.notifyActivityId,body,now,now);
+      this.db.prepare("UPDATE cleanup_jobs SET status='retained',claimed_at=NULL WHERE id=?").run(id);
+    })();
+  }
+  pendingCleanupNotifications(now = Date.now()): CleanupNotificationRow[] {
+    return this.db.prepare(`SELECT job_id jobId,app,linear_session_id linearSessionId,activity_id activityId,body,attempts,
+      next_attempt_at nextAttemptAt,created_at createdAt FROM cleanup_notifications WHERE status='pending' AND next_attempt_at<=?`).all(now) as CleanupNotificationRow[];
+  }
+  markCleanupNotificationPosted(id: number): void { this.db.prepare("UPDATE cleanup_notifications SET status='posted',attempts=attempts+1 WHERE job_id=?").run(id); }
+  retryCleanupNotification(id: number,error:string,next:number):void { this.db.prepare("UPDATE cleanup_notifications SET attempts=attempts+1,error=?,next_attempt_at=? WHERE job_id=?").run(error,next,id); }
+  failCleanupNotification(id:number,error:string):void { this.db.prepare("UPDATE cleanup_notifications SET status='failed',attempts=attempts+1,error=? WHERE job_id=?").run(error,id); }
+  externalUrlStates(): Array<{linearSessionId:string;url:string;status:string}> { return this.db.prepare("SELECT linear_session_id linearSessionId,url,status FROM session_external_urls ORDER BY id").all() as Array<{linearSessionId:string;url:string;status:string}>; }
+  cleanupStates(): Array<{id:number;status:string;issueId:string}> { return this.db.prepare("SELECT id,status,issue_id issueId FROM cleanup_jobs ORDER BY id").all() as Array<{id:number;status:string;issueId:string}>; }
+  cleanupNotificationStates(): Array<{jobId:number;status:string;body:string}> { return this.db.prepare("SELECT job_id jobId,status,body FROM cleanup_notifications ORDER BY job_id").all() as Array<{jobId:number;status:string;body:string}>; }
 
   pendingAcks(now = Date.now(), retryWindowMs = 30 * 60_000): AckRow[] {
     return this.db.prepare(`SELECT a.event_id eventId, e.app, e.agent_session_id agentSessionId,

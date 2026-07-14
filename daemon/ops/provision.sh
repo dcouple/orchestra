@@ -13,6 +13,17 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y ca-certificates curl git gnupg rsync sqlite3 ufw
 
+GH_VERSION="2.76.2"
+ARCH="$(dpkg --print-architecture)"
+case "${ARCH}" in amd64) GH_ARCH="amd64" ;; arm64) GH_ARCH="arm64" ;; *) echo "unsupported gh architecture: ${ARCH}" >&2; exit 1 ;; esac
+if ! command -v gh >/dev/null || [[ "$(gh --version | head -1)" != "gh version ${GH_VERSION} "* ]]; then
+  tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
+  curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${GH_ARCH}.tar.gz" -o "${tmp}/gh.tgz"
+  tar -xzf "${tmp}/gh.tgz" -C "${tmp}"
+  install -m 0755 "${tmp}/gh_${GH_VERSION}_linux_${GH_ARCH}/bin/gh" /usr/local/bin/gh
+  rm -rf "${tmp}"; trap - EXIT
+fi
+
 if ! command -v node >/dev/null || [[ "$(node --version)" != v22.* ]]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
@@ -49,6 +60,12 @@ if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
   curl -fsSL https://get.pnpm.io/install.sh \
     | env PNPM_VERSION=11.8.0 PNPM_HOME=/opt/pnpm SHELL=/bin/bash sh -
   ln -sfn /opt/pnpm/pnpm /usr/local/bin/pnpm
+fi
+
+CODEX_VERSION="0.101.0"
+if ! command -v codex >/dev/null || [[ "$(codex --version)" != *"${CODEX_VERSION}"* ]]; then
+  PNPM_HOME=/opt/pnpm pnpm add --global "@openai/codex@${CODEX_VERSION}"
+  ln -sfn /opt/pnpm/codex /usr/local/bin/codex
 fi
 
 rsync -a --delete \
@@ -91,7 +108,7 @@ env_ready_for_restart() {
   fi
   if env_sessions_enabled; then
     local missing=()
-    for key in TARGET_REPO_PATH LINEAR_API_KEY; do
+    for key in TARGET_REPO_PATH LINEAR_API_KEY DO_PERMISSION_MODE DO_MAX_TURNS; do
       if ! env_has_key "$key"; then missing+=("$key"); fi
     done
     if (( ${#missing[@]} )); then
