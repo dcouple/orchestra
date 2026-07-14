@@ -17,17 +17,27 @@ this conversation — the prompt must carry everything the role needs.
 
 | Role | Model / effort | Sandbox | Session |
 | --- | --- | --- | --- |
-| `implementer` | `gpt-5.6-sol` / `medium` | `workspace-write` | persistent — resume for fix rounds |
-| `backend-verifier` | `gpt-5.6-sol` / `medium` | `workspace-write` | `--ephemeral` |
+| `implementer` | `gpt-5.6-sol` / `medium` | `--yolo` | persistent — resume for fix rounds |
+| `backend-verifier` | `gpt-5.6-sol` / `medium` | `--yolo` | `--ephemeral` |
 | `plan-reviewer` | `gpt-5.6-sol` / `xhigh` | `read-only` | `--ephemeral` |
 | `code-reviewer` | `gpt-5.6-sol` / `xhigh` | `read-only` | `--ephemeral` |
 | `code-researcher` | `gpt-5.6-sol` / `medium` | `read-only` | `--ephemeral` |
-| `investigator` | `gpt-5.6-sol` / `xhigh` | `workspace-write` | `--ephemeral` |
+| `investigator` | `gpt-5.6-sol` / `xhigh` | `--yolo` | `--ephemeral` |
 
 High effort is for judgment-heavy roles (review, investigation); medium for
 implementation, exploration, and verification. The investigator and
-backend-verifier get `workspace-write` so they can run tests and scripts,
-but their charters forbid editing project files. The `implementer` role is
+backend-verifier act on the environment (tests, scripts, app boots), but
+their charters forbid editing project files.
+
+**Approvals must never gate a pipeline dispatch.** Action roles (implementer,
+backend-verifier, investigator) run with `--yolo`
+(`--dangerously-bypass-approvals-and-sandbox`): the run is unattended, so an
+approval prompt or an approval-layer refusal mid-flight burns the whole
+dispatch — a verifier once booted a full dev environment for 29 minutes only
+for the approval layer to refuse the key step. The operator authorizes this
+via the /do preflight harness check. Read-only roles (reviewers, researcher)
+keep `-s read-only` — approvals never gate reads, and the sandbox is the
+guarantee a reviewer can't edit. The `implementer` role is
 for backend/ops work only — frontend web/mobile code and customer-facing
 copy go to the Claude `frontend-implementer` sub-agent, never through Codex.
 
@@ -83,8 +93,9 @@ nothing assumed from this conversation.
 Run via Bash (timeout 600000 ms), from the repo root:
 
 ```bash
-# effort / sandbox / --ephemeral per the role table
-codex exec -m gpt-5.6-sol -c model_reasoning_effort="<effort>" -s <sandbox> \
+# effort per the role table; sandbox column: `--yolo` for action roles,
+# `-s read-only` for review/research roles
+codex exec -m gpt-5.6-sol -c model_reasoning_effort="<effort>" <--yolo | -s read-only> \
   [--ephemeral] --skip-git-repo-check -C <repo root> \
   -o <scratchpad>/codex-<role>-<n>.md "<prompt>"
 
