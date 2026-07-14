@@ -101,6 +101,19 @@ describe("webhook HTTP integration", () => {
     await server.close(); log.close();
   });
 
+  it("dedupes prompted webhooks for the same agentActivity id across deliveries", async () => {
+    const { log, server } = setup(); const address = await server.listen();
+    const created = JSON.stringify({ webhookTimestamp: Date.now(), action: "created",
+      agentSession: { id: "session", issue: { id: "issue", identifier: "ENG-42" } } });
+    expect((await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(created, "planner-secret", "created"), body: created })).status).toBe(200);
+    const prompted = JSON.stringify({ webhookTimestamp: Date.now(), action: "prompted",
+      agentActivity: { id: "activity-1", body: "reply" }, agentSession: { id: "session" } });
+    expect((await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(prompted, "planner-secret", "prompt-1"), body: prompted })).status).toBe(200);
+    expect((await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(prompted, "planner-secret", "prompt-2"), body: prompted })).status).toBe(200);
+    expect(log.turnStates().map(turn => turn.kind)).toEqual(["created", "prompted"]);
+    await server.close(); log.close();
+  });
+
   it("AC3-contract: signed created webhook automatically drains through the ack worker to GraphQL", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const graphql = createHttpServer((request, response) => {
@@ -191,6 +204,7 @@ describe("webhook HTTP integration", () => {
     const env = { ...process.env, PORT: String(port), BIND_ADDR: "127.0.0.1", DB_PATH: dbPath,
       DAEMON_TEST_MODE: "1",
       SESSIONS_ENABLED: "0",
+      RECONCILE_REQUEST_TIMEOUT_MS: "100",
       LINEAR_GRAPHQL_URL: `http://127.0.0.1:${graphqlPort}/graphql`,
       PLANNER_WEBHOOK_SECRET: "planner-secret", PLANNER_LINEAR_TOKEN: "p",
       IMPLEMENTER_WEBHOOK_SECRET: "implementer-secret", IMPLEMENTER_LINEAR_TOKEN: "i" };

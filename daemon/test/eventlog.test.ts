@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { EventLog } from "../src/eventlog.js";
 
@@ -30,7 +31,7 @@ describe("EventLog", () => {
     log.append(event());
     log.append(event({ deliveryId: "delivery-2" }));
     expect(log.count()).toBe(2);
-    expect(log.ackCount()).toBe(2);
+    expect(log.ackCount()).toBe(1);
     log.close();
   });
 
@@ -42,12 +43,21 @@ describe("EventLog", () => {
     log.close();
   });
 
+  it("keeps distinct real prompts without activity ids as separate turns", () => {
+    const log = new EventLog(path());
+    log.append(event());
+    log.append(event({ deliveryId: "prompt-1", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
+    log.append(event({ deliveryId: "prompt-2", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
+    expect(log.turnStates().map(turn => turn.kind)).toEqual(["created", "prompted", "prompted"]);
+    log.close();
+  });
+
   it("fans out planner and implementer created turns, but implementer prompted is ignored", () => {
     const log = new EventLog(path());
     log.append(event());
     log.append(event({ deliveryId: "delivery-2", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
-    log.append(event({ deliveryId: "delivery-3", app: "implementer" }));
-    log.append(event({ deliveryId: "delivery-4", app: "implementer", action: "prompted" }));
+    log.append(event({ deliveryId: "delivery-3", app: "implementer", agentSessionId: "implementer-session" }));
+    log.append(event({ deliveryId: "delivery-4", app: "implementer", agentSessionId: "implementer-session", action: "prompted" }));
     expect(log.turnStates()).toHaveLength(3);
     expect(log.claimNextTurn(1100)).toMatchObject({ kind: "created", issueId: "issue-uuid-1" });
     expect(log.claimNextTurn(1100)).toBeUndefined();
@@ -151,6 +161,39 @@ describe("EventLog", () => {
     expect(reopened.pendingAcks(2000)[0]).toMatchObject({ status: "failed", lastError: "temporary", failureKind: "retriable" });
     expect(reopened.getToken("planner")).toEqual({ accessToken: "token", expiresAt: 5000 });
     reopened.close();
+  });
+
+  it("migrates a pre-source-key turns table before creating the unique source key index", () => {
+    const dbPath = path();
+    const old = new Database(dbPath);
+    old.exec(`
+      CREATE TABLE turns (
+        id INTEGER PRIMARY KEY,
+        event_id INTEGER NOT NULL UNIQUE,
+        linear_session_id TEXT NOT NULL,
+        issue_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('created','prompted')),
+        prompt TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending','running','awaiting_activity','done','failed','interrupted')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        started_at INTEGER,
+        finished_at INTEGER
+      );
+    `);
+    old.close();
+
+    const log = new EventLog(dbPath);
+    const db = new Database(dbPath, { readonly: true });
+    const columns = (db.prepare("PRAGMA table_info(turns)").all() as Array<{ name: string }>).map(column => column.name);
+    const indexes = (db.prepare("PRAGMA index_list(turns)").all() as Array<{ name: string; unique: number }>).map(index => ({
+      name: index.name,
+      unique: index.unique,
+    }));
+    expect(columns).toContain("source_key");
+    expect(indexes).toContainEqual({ name: "idx_turns_source_key", unique: 1 });
+    db.close();
+    log.close();
   });
 
   it("uses a stable body hash fallback when Linear-Delivery is absent", () => {

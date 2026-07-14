@@ -68,6 +68,43 @@ if ! command -v codex >/dev/null || [[ "$(codex --version)" != *"${CODEX_VERSION
   ln -sfn /opt/pnpm/codex /usr/local/bin/codex
 fi
 
+if [[ "${INSTALL_ANDROID:-0}" == "1" ]]; then
+  ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-35}"
+  ANDROID_AVD_NAME="${ANDROID_AVD_NAME:-linear-smoke}"
+  ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/opt/android-sdk}"
+  ANDROID_CMDLINE_TOOLS_VERSION="${ANDROID_CMDLINE_TOOLS_VERSION:-11076708}"
+  ANDROID_SYSTEM_IMAGE="system-images;android-${ANDROID_API_LEVEL};google_apis;x86_64"
+  apt-get install -y unzip libgl1 libpulse0 libnss3 libxcomposite1 libxcursor1 libxi6 libxtst6
+  install -d -o linear-daemon -g linear-daemon -m 0755 "${ANDROID_SDK_ROOT}"
+  if [[ ! -x "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" ]]; then
+    tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
+    curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" -o "${tmp}/cmdline-tools.zip"
+    unzip -q "${tmp}/cmdline-tools.zip" -d "${tmp}"
+    install -d -o linear-daemon -g linear-daemon -m 0755 "${ANDROID_SDK_ROOT}/cmdline-tools/latest"
+    rsync -a "${tmp}/cmdline-tools/" "${ANDROID_SDK_ROOT}/cmdline-tools/latest/"
+    chown -R linear-daemon:linear-daemon "${ANDROID_SDK_ROOT}/cmdline-tools"
+    rm -rf "${tmp}"; trap - EXIT
+  fi
+  runuser -u linear-daemon -- env ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT}" ANDROID_HOME="${ANDROID_SDK_ROOT}" \
+    bash -c "yes | '${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager' --licenses >/dev/null"
+  runuser -u linear-daemon -- env ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT}" ANDROID_HOME="${ANDROID_SDK_ROOT}" \
+    "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" \
+      "platform-tools" "emulator" "platforms;android-${ANDROID_API_LEVEL}" "${ANDROID_SYSTEM_IMAGE}"
+  if runuser -u linear-daemon -- env ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT}" ANDROID_HOME="${ANDROID_SDK_ROOT}" \
+      "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/avdmanager" list avd | grep -q "Name: ${ANDROID_AVD_NAME}$"; then
+    runuser -u linear-daemon -- env ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT}" ANDROID_HOME="${ANDROID_SDK_ROOT}" \
+      "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/avdmanager" delete avd -n "${ANDROID_AVD_NAME}" >/dev/null || true
+  fi
+  runuser -u linear-daemon -- env ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT}" ANDROID_HOME="${ANDROID_SDK_ROOT}" \
+    bash -c "printf 'no\n' | '${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/avdmanager' create avd -n '${ANDROID_AVD_NAME}' -k '${ANDROID_SYSTEM_IMAGE}' --force"
+  if [[ -e /dev/kvm ]]; then
+    if getent group kvm >/dev/null; then usermod -aG kvm linear-daemon; fi
+    echo "Android AVD ${ANDROID_AVD_NAME} installed with KVM device present" >&2
+  else
+    echo "Android AVD ${ANDROID_AVD_NAME} installed; /dev/kvm missing, smoke script will use -no-accel" >&2
+  fi
+fi
+
 rsync -a --delete \
   --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' \
   "${SOURCE_DIR}/" /opt/linear-agent-daemon/

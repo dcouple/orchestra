@@ -71,6 +71,7 @@ export class WebhookServer {
       const isIssue = payloadType === "Issue";
       const session = isIssue ? undefined : objectField(verified.payload.agentSession);
       const issue = isIssue ? objectField(verified.payload.data) : objectField(session?.issue);
+      const agentActivity = isIssue ? undefined : objectField(verified.payload.agentActivity);
       const state = objectField(issue?.state);
       const deliveryHeader = request.headers["linear-delivery"];
       const deliveryId = Array.isArray(deliveryHeader) ? deliveryHeader[0] : deliveryHeader;
@@ -81,6 +82,7 @@ export class WebhookServer {
         stateType: isIssue ? stringField(state?.type) : undefined,
         action: stringField(verified.payload.action),
         agentSessionId: isIssue ? undefined : stringField(session?.id),
+        sourceActivityId: isIssue ? undefined : stringField(agentActivity?.id),
         issueId: isIssue ? stringField(issue?.id) : stringField(session?.issueId) ?? stringField(issue?.id),
         issueIdentifier: stringField(issue?.identifier),
         webhookId: stringField(verified.payload.webhookId),

@@ -38,8 +38,153 @@ async function stub(handler: (request: { url: string; authorization?: string; bo
 }
 
 const success = { data: { agentActivityCreate: { success: true, lastSyncId: 1, agentActivity: { id: "activity" } } } };
+const iso = "2026-07-14T12:00:00.000Z";
+function agentSessionNode(id = "session-1", appUserId = "actor-1", issueId = "issue-1") {
+  return { __typename: "AgentSession", id, createdAt: iso, updatedAt: iso, dismissedAt: null, archivedAt: null,
+    endedAt: null, startedAt: null, plan: null, summary: null, sourceMetadata: null, externalLink: null,
+    url: null, slugId: id, status: "active", context: "{}", externalUrls: "{}", type: "issue",
+    externalLinks: [], appUser: { id: appUserId }, sourceComment: null, comment: null, creator: null,
+    issue: { id: issueId }, dismissedBy: null };
+}
+function pageInfo(hasNextPage = false, endCursor: string | null = null) {
+  return { __typename: "PageInfo", startCursor: null, endCursor, hasPreviousPage: false, hasNextPage };
+}
+function delegatedAgentSessionNode(id: string, appUserId: string, createdAt = iso, endedAt: string | null = null) {
+  return { id, createdAt, endedAt, archivedAt: null, dismissedAt: null, status: endedAt ? "completed" : "active",
+    appUser: { id: appUserId }, creator: null };
+}
 
 describe("LinearGateway", () => {
+  it("lists agent sessions with the owning app bearer and filters by app actor id", async () => {
+    const api = await stub(request => {
+      expect(JSON.stringify(request.body)).toContain("agentSessions");
+      return { body: { data: { agentSessions: { __typename: "AgentSessionConnection",
+        nodes: [agentSessionNode("session-1", "actor-1"), agentSessionNode("session-2", "other")],
+        pageInfo: pageInfo() } } } };
+    });
+    const eventLog = log();
+    const gateway = new LinearGateway(eventLog, {
+      planner: { name: "planner", webhookSecret: "p", staticToken: "token-p" },
+      implementer: { name: "implementer", webhookSecret: "i", staticToken: "token-i" },
+    }, api.graphqlUrl, api.tokenUrl);
+    await expect(gateway.listAgentSessions("planner", "actor-1", Date.now() + 1000))
+      .resolves.toEqual([{ id: "session-1", app: "planner", issueId: "issue-1", createdAt: Date.parse(iso) }]);
+    expect(api.requests[0]?.authorization).toBe("Bearer token-p");
+    expect(api.requests[0]?.body.variables).toMatchObject({ first: 100 });
+    await api.close(); eventLog.close();
+  });
+
+  it("requires app actor id before bulk session discovery", async () => {
+    const api = await stub(() => ({ body: { data: { agentSessions: { nodes: [], pageInfo: pageInfo() } } } }));
+    const eventLog = log();
+    const gateway = new LinearGateway(eventLog, {
+      planner: { name: "planner", webhookSecret: "p", staticToken: "token-p" },
+      implementer: { name: "implementer", webhookSecret: "i", staticToken: "token-i" },
+    }, api.graphqlUrl, api.tokenUrl);
+    await expect(gateway.listAgentSessions("planner", undefined, Date.now() + 1000)).rejects.toThrow(/APP_ACTOR_ID/);
+    expect(api.requests).toHaveLength(0);
+    await api.close(); eventLog.close();
+  });
+
+  it("pages delegated issue sessions past 20 and excludes sessions owned by other app actors", async () => {
+    let issueSessionPages = 0;
+    const api = await stub(request => {
+      const text = JSON.stringify(request.body);
+      if (text.includes("query delegatedIssues")) {
+        return { body: { data: { issues: { nodes: [{ id: "issue-1", identifier: "ENG-1" }],
+          pageInfo: pageInfo() } } } };
+      }
+      if (text.includes("query delegatedIssueAgentSessions")) {
+        issueSessionPages++;
+        const variables = request.body.variables as { after?: string };
+        if (!variables.after) {
+          return { body: { data: { issue: { agentSessions: {
+            nodes: Array.from({ length: 20 }, (_, index) => delegatedAgentSessionNode(`foreign-${index}`, "other-actor")),
+            pageInfo: pageInfo(true, "cursor-20"),
+          } } } } };
+        }
+        return { body: { data: { issue: { agentSessions: {
+          nodes: [
+            delegatedAgentSessionNode("foreign-20", "other-actor"),
+            delegatedAgentSessionNode("old-target", "actor-1", "2026-07-14T11:00:00.000Z", "2026-07-14T11:30:00.000Z"),
+            delegatedAgentSessionNode("session-21", "actor-1", "2026-07-14T12:00:00.000Z"),
+          ],
+          pageInfo: pageInfo(),
+        } } } } };
+      }
+      throw new Error(`unexpected request ${text}`);
+    });
+    const eventLog = log();
+    const gateway = new LinearGateway(eventLog, {
+      planner: { name: "planner", webhookSecret: "p", staticToken: "token-p" },
+      implementer: { name: "implementer", webhookSecret: "i", staticToken: "token-i" },
+    }, api.graphqlUrl, api.tokenUrl);
+    await expect(gateway.listDelegatedIssueAgentSessions("planner", "actor-1", Date.now() + 1000))
+      .resolves.toEqual([{ id: "session-21", app: "planner", issueId: "issue-1", issueIdentifier: "ENG-1", createdAt: Date.parse(iso) }]);
+    expect(issueSessionPages).toBe(2);
+    expect(api.requests.map(request => request.body.variables)).toEqual([
+      expect.objectContaining({ first: 50, delegateId: "actor-1" }),
+      expect.objectContaining({ issueId: "issue-1", first: 20 }),
+      expect.objectContaining({ issueId: "issue-1", first: 20, after: "cursor-20" }),
+    ]);
+    await api.close(); eventLog.close();
+  });
+
+  it("lists prompt activities since the session activity cursor", async () => {
+    const api = await stub(request => {
+      const text = JSON.stringify(request.body);
+      if (text.includes("query agentSession(")) {
+        return { body: { data: { agentSession: agentSessionNode("session-1", "actor-1", "issue-1") } } };
+      }
+      expect(text).toContain("agentSession_activities");
+      return { body: { data: { agentSession: { activities: { __typename: "AgentActivityConnection",
+        nodes: [{ __typename: "AgentActivity", id: "activity-1", createdAt: iso, updatedAt: iso, archivedAt: null,
+          ephemeral: false, signal: null, signalMetadata: null, sourceMetadata: null, sourceComment: null,
+          user: { id: "user-1" }, agentSession: { id: "session-1" },
+          content: { __typename: "AgentActivityPromptContent", type: "prompt", body: "reply text" } }],
+        pageInfo: pageInfo() } } } } };
+    });
+    const eventLog = log();
+    const gateway = new LinearGateway(eventLog, {
+      planner: { name: "planner", webhookSecret: "p", staticToken: "token-p" },
+      implementer: { name: "implementer", webhookSecret: "i", staticToken: "token-i" },
+    }, api.graphqlUrl, api.tokenUrl);
+    await expect(gateway.listSessionActivitiesSince("planner", "session-1", Date.parse("2026-07-14T11:59:00.000Z"), Date.now() + 1000))
+      .resolves.toEqual([{ id: "activity-1", body: "reply text", createdAt: Date.parse(iso) }]);
+    expect(api.requests[1]?.body.variables).toMatchObject({ id: "session-1", first: 100,
+      filter: { type: { eq: "prompt" }, createdAt: { gte: "2026-07-14T11:59:00.000Z" } } });
+    await api.close(); eventLog.close();
+  });
+
+  it("re-enables a disabled matching webhook and skips an already-enabled one", async () => {
+    let enabled = false;
+    const api = await stub(request => {
+      const text = JSON.stringify(request.body);
+      if (text.includes("query webhooks")) return { body: { data: { webhooks: { __typename: "WebhookConnection",
+        nodes: [{ __typename: "Webhook", id: "webhook-1", label: "agent", secret: null,
+          url: "https://agent.example.com/webhook/planner", updatedAt: iso, resourceTypes: ["AgentSession"],
+          archivedAt: null, createdAt: iso, enabled, allPublicTeams: true, team: null, creator: null }],
+        pageInfo: pageInfo() } } } };
+      expect(text).toContain("updateWebhook");
+      enabled = true;
+      return { body: { data: { webhookUpdate: { __typename: "WebhookPayload", success: true, lastSyncId: 1,
+        webhook: { id: "webhook-1" } } } } };
+    });
+    const eventLog = log();
+    const gateway = new LinearGateway(eventLog, {
+      planner: { name: "planner", webhookSecret: "p", staticToken: "token-p" },
+      implementer: { name: "implementer", webhookSecret: "i", staticToken: "token-i" },
+    }, api.graphqlUrl, api.tokenUrl);
+    await expect(gateway.ensureWebhookEnabled("planner", "https://agent.example.com/webhook/planner", Date.now() + 1000))
+      .resolves.toEqual({ matched: true, updated: true });
+    await expect(gateway.ensureWebhookEnabled("planner", "https://agent.example.com/webhook/planner", Date.now() + 1000))
+      .resolves.toEqual({ matched: true, updated: false });
+    const mutations = api.requests.filter(request => JSON.stringify(request.body).includes("updateWebhook"));
+    expect(mutations).toHaveLength(1);
+    expect(mutations[0]?.body.variables).toMatchObject({ id: "webhook-1", input: { enabled: true } });
+    await api.close(); eventLog.close();
+  });
+
   it("updates session addedExternalUrls with the owning app bearer",async()=>{
     const api=await stub(()=>({body:{data:{agentSessionUpdate:{success:true,agentSession:{id:"session"}}}}}));const eventLog=log();
     const gateway=new LinearGateway(eventLog,{planner:{name:"planner",webhookSecret:"p",staticToken:"p"},implementer:{name:"implementer",webhookSecret:"i",staticToken:"token-i"}},api.graphqlUrl,api.tokenUrl);
@@ -93,7 +238,7 @@ describe("LinearGateway", () => {
     const second = new LinearGateway(db, apps, api.graphqlUrl, api.tokenUrl);
     expect(await second.getAppToken("planner")).toBe("token-1"); expect(grants).toBe(1);
     const grant = api.requests[0]!;
-    expect(grant.body).toMatchObject({ grant_type: "client_credentials", scope: "read,write,app:assignable,app:mentionable" });
+    expect(grant.body).toMatchObject({ grant_type: "client_credentials", scope: "read,write,app:assignable,app:mentionable,admin" });
     expect(grant.authorization).toMatch(/^Basic /);
     await api.close(); db.close();
   });

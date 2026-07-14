@@ -7,6 +7,7 @@ export interface AppendEvent {
   app: AppName;
   action?: string | undefined;
   agentSessionId?: string | undefined;
+  sourceActivityId?: string | undefined;
   issueId?: string | undefined;
   issueIdentifier?: string | undefined;
   webhookId?: string | undefined;
@@ -19,7 +20,7 @@ export interface AppendEvent {
 export interface SessionRow {
   linearSessionId: string; app: AppName; issueId: string | null; issueIdentifier: string | null;
   worktreePath: string | null; branch: string | null; claudeSessionId: string | null;
-  mode: string; status: string; lastSeenAt: number;
+  mode: string; status: string; lastSeenAt: number; lastSeenActivityAt: number | null;
 }
 export interface TurnRow {
   id: number; eventId: number; app: AppName; linearSessionId: string; issueId: string; kind: "created" | "prompted";
@@ -77,6 +78,7 @@ export class EventLog {
         app TEXT NOT NULL CHECK(app IN ('planner','implementer')),
         action TEXT,
         agent_session_id TEXT,
+        source_activity_id TEXT,
         issue_id TEXT,
         received_at INTEGER NOT NULL,
         raw_body BLOB NOT NULL
@@ -106,13 +108,15 @@ export class EventLog {
         claude_session_id TEXT,
         mode TEXT NOT NULL DEFAULT 'planner',
         status TEXT NOT NULL DEFAULT 'active',
-        last_seen_at INTEGER NOT NULL
+        last_seen_at INTEGER NOT NULL,
+        last_seen_activity_at INTEGER
       );
       CREATE TABLE IF NOT EXISTS turns (
         id INTEGER PRIMARY KEY,
         event_id INTEGER NOT NULL UNIQUE REFERENCES events(id),
         linear_session_id TEXT NOT NULL,
         issue_id TEXT NOT NULL,
+        source_key TEXT,
         kind TEXT NOT NULL CHECK(kind IN ('created','prompted')),
         prompt TEXT,
         status TEXT NOT NULL CHECK(status IN ('pending','running','awaiting_activity','done','failed','interrupted')),
@@ -152,6 +156,8 @@ export class EventLog {
       );
     `);
     this.migrateEventColumns();
+    this.migrateSessionColumns();
+    this.migrateTurnColumns();
     this.migrateAckColumns();
     this.migrateTurnActivityColumns();
   }
@@ -161,6 +167,18 @@ export class EventLog {
     if (!columns.has("type")) this.db.prepare("ALTER TABLE events ADD COLUMN type TEXT").run();
     if (!columns.has("state_type")) this.db.prepare("ALTER TABLE events ADD COLUMN state_type TEXT").run();
     if (!columns.has("issue_identifier")) this.db.prepare("ALTER TABLE events ADD COLUMN issue_identifier TEXT").run();
+    if (!columns.has("source_activity_id")) this.db.prepare("ALTER TABLE events ADD COLUMN source_activity_id TEXT").run();
+  }
+
+  private migrateSessionColumns(): void {
+    const columns = new Set((this.db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>).map(column => column.name));
+    if (!columns.has("last_seen_activity_at")) this.db.prepare("ALTER TABLE sessions ADD COLUMN last_seen_activity_at INTEGER").run();
+  }
+
+  private migrateTurnColumns(): void {
+    const columns = new Set((this.db.prepare("PRAGMA table_info(turns)").all() as Array<{ name: string }>).map(column => column.name));
+    if (!columns.has("source_key")) this.db.prepare("ALTER TABLE turns ADD COLUMN source_key TEXT").run();
+    this.db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_source_key ON turns(source_key)").run();
   }
 
   private migrateAckColumns(): void {
@@ -182,17 +200,12 @@ export class EventLog {
     const deliveryId = event.deliveryId?.trim() || `sha256:${createHash("sha256").update(event.rawBody).digest("hex")}`;
     const run = this.db.transaction(() => {
       const result = this.db.prepare(`INSERT OR IGNORE INTO events
-        (delivery_id, webhook_id, app, action, agent_session_id, issue_id, issue_identifier, type, state_type, received_at, raw_body)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        (delivery_id, webhook_id, app, action, agent_session_id, source_activity_id, issue_id, issue_identifier, type, state_type, received_at, raw_body)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(deliveryId, event.webhookId ?? null, event.app, event.action ?? null,
-          event.agentSessionId ?? null, event.issueId ?? null, event.issueIdentifier ?? null, event.type ?? null,
+          event.agentSessionId ?? null, event.sourceActivityId ?? null, event.issueId ?? null, event.issueIdentifier ?? null, event.type ?? null,
           event.stateType ?? null, event.receivedAt, event.rawBody);
       if (result.changes === 0) return false;
-      if (event.action === "created" && event.agentSessionId) {
-        this.db.prepare(`INSERT INTO acks (event_id, activity_id, status, next_attempt_at, deadline_at)
-          VALUES (?, ?, 'pending', ?, ?)`)
-          .run(Number(result.lastInsertRowid), randomUUID(), event.receivedAt, event.receivedAt + 10_000);
-      }
       const createsTurn = event.agentSessionId && (event.action === "created" || (event.app === "planner" && event.action === "prompted"));
       if (createsTurn) {
         const existing = this.db.prepare("SELECT issue_id issueId, issue_identifier issueIdentifier FROM sessions WHERE linear_session_id=?")
@@ -217,8 +230,16 @@ export class EventLog {
               .run(event.issueId, event.agentSessionId, existing.issueId);
           }
         }
-        this.db.prepare(`INSERT INTO turns (event_id, linear_session_id, issue_id, kind, status)
-          VALUES (?, ?, ?, ?, 'pending')`).run(Number(result.lastInsertRowid), event.agentSessionId, issueId, event.action);
+        const sourceKey = this.turnSourceKey(event);
+        const turnResult = this.db.prepare(`INSERT OR IGNORE INTO turns
+          (event_id, linear_session_id, issue_id, source_key, kind, status)
+          VALUES (?, ?, ?, ?, ?, 'pending')`)
+          .run(Number(result.lastInsertRowid), event.agentSessionId, issueId, sourceKey, event.action);
+        if (event.action === "created" && turnResult.changes > 0) {
+          this.db.prepare(`INSERT INTO acks (event_id, activity_id, status, next_attempt_at, deadline_at)
+            VALUES (?, ?, 'pending', ?, ?)`)
+            .run(Number(result.lastInsertRowid), randomUUID(), event.receivedAt, event.receivedAt + 10_000);
+        }
       }
       if (event.type === "Issue" && event.stateType === "completed" && event.issueId && event.issueIdentifier) {
         this.enqueueCleanup(event.issueId, event.issueIdentifier, event.receivedAt);
@@ -226,6 +247,15 @@ export class EventLog {
       return true;
     });
     return { inserted: run(), deliveryId };
+  }
+
+  private turnSourceKey(event: AppendEvent): string | null {
+    if (!event.agentSessionId) return null;
+    if (event.action === "created") return `created:${event.agentSessionId}`;
+    if (event.app === "planner" && event.action === "prompted" && event.sourceActivityId) {
+      return `prompt:${event.agentSessionId}:${event.sourceActivityId}`;
+    }
+    return null;
   }
 
   claimNextTurn(now = Date.now()): TurnRow | undefined {
@@ -259,14 +289,25 @@ export class EventLog {
   getSession(linearSessionId: string): SessionRow | undefined {
     return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
-      mode, status, last_seen_at lastSeenAt FROM sessions WHERE linear_session_id=?`).get(linearSessionId) as SessionRow | undefined;
+      mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt FROM sessions WHERE linear_session_id=?`).get(linearSessionId) as SessionRow | undefined;
   }
   sessionByIssueIdentifier(identifier: string): SessionRow | undefined {
     const query = (mode: string) => this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
-      mode, status, last_seen_at lastSeenAt FROM sessions WHERE issue_identifier=? AND mode=? ORDER BY last_seen_at DESC LIMIT 1`)
+      mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt FROM sessions WHERE issue_identifier=? AND mode=? ORDER BY last_seen_at DESC LIMIT 1`)
       .get(identifier, mode) as SessionRow | undefined;
     return query("implementer") ?? query("planner");
+  }
+  plannerSessionsForReconcile(): SessionRow[] {
+    return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
+      issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
+      mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt
+      FROM sessions WHERE app='planner' AND mode='planner' ORDER BY last_seen_at`)
+      .all() as SessionRow[];
+  }
+  updateLastSeenActivity(linearSessionId: string, seenAt: number, now = Date.now()): void {
+    this.db.prepare(`UPDATE sessions SET last_seen_activity_at=MAX(COALESCE(last_seen_activity_at, 0), ?), last_seen_at=?
+      WHERE linear_session_id=?`).run(seenAt, now, linearSessionId);
   }
   updateSessionWorktree(linearSessionId: string, path: string, branch: string, now = Date.now()): void {
     this.db.prepare(`UPDATE sessions SET worktree_path=?, branch=?, last_seen_at=? WHERE linear_session_id=?`)
@@ -338,8 +379,8 @@ export class EventLog {
         END, error=?, finished_at=? WHERE id=?`).run(error, now, turnId);
     })();
   }
-  turnStates(): Array<{ id: number; status: string; issueId: string; prompt: string | null }> {
-    return this.db.prepare("SELECT id, status, issue_id issueId, prompt FROM turns ORDER BY id").all() as Array<{ id: number; status: string; issueId: string; prompt: string | null }>;
+  turnStates(): Array<{ id: number; status: string; issueId: string; kind: string; prompt: string | null }> {
+    return this.db.prepare("SELECT id, status, issue_id issueId, kind, prompt FROM turns ORDER BY id").all() as Array<{ id: number; status: string; issueId: string; kind: string; prompt: string | null }>;
   }
 
   stageExternalUrl(linearSessionId: string, app: AppName, label: string, url: string, now = Date.now()): void {

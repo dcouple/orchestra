@@ -55,8 +55,9 @@ port 443.
 In Linear, create `bloom-planner` and `bloom-implementer` separately. For each app:
 
 1. Enable client-credentials tokens and request comma-separated scopes
-   `read,write,app:assignable,app:mentionable`; use `actor=app`. A workspace admin must
-   authorize the installation. Never request `admin` with an app actor.
+   `read,write,app:assignable,app:mentionable,admin`; use `actor=app`. A workspace admin
+   must authorize the installation. The `admin` scope is required for startup webhook
+   re-enable.
 2. Enable webhooks, select **Agent session events**, and use respectively
    `https://linear-agent.example.com/webhook/planner` or `/webhook/implementer`.
    On bloom-implementer also enable the **Issues** category. If Linear requires a separate
@@ -78,12 +79,17 @@ The file must contain:
 PORT=8787
 BIND_ADDR=127.0.0.1
 DB_PATH=/var/lib/linear-agent-daemon/events.db
+WEBHOOK_BASE_URL=https://linear-agent.example.com
 PLANNER_WEBHOOK_SECRET=...
 PLANNER_LINEAR_CLIENT_ID=...
 PLANNER_LINEAR_CLIENT_SECRET=...
+PLANNER_APP_ACTOR_ID=...
 IMPLEMENTER_WEBHOOK_SECRET=...
 IMPLEMENTER_LINEAR_CLIENT_ID=...
 IMPLEMENTER_LINEAR_CLIENT_SECRET=...
+IMPLEMENTER_APP_ACTOR_ID=...
+RECONCILE_INTERVAL_MS=60000
+RECONCILE_REQUEST_TIMEOUT_MS=10000
 SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/bloom-mono
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
@@ -100,10 +106,27 @@ ATTACHMENTS_ENABLED=1
 ATTACHMENT_HOSTS=uploads.linear.app
 ```
 
-The daemon requests 30-day client-credentials app tokens and persists their expiry in
-SQLite. It reacquires on expiry or an API 401. Rotate a client secret in Linear, update the
-matching host value, restart, and verify an ack; rotation invalidates that app's existing
-tokens. Revoke the app installation in Linear to cut off access immediately.
+The daemon requests 30-day client-credentials app tokens with
+`read,write,app:assignable,app:mentionable,admin` and persists their expiry in SQLite. It
+reacquires on expiry or an API 401. Rotate a client secret in Linear, update the matching
+host value, restart, and verify an ack; rotation invalidates that app's existing tokens.
+Revoke the app installation in Linear to cut off access immediately.
+
+Deploy-gate confirmations before relying on startup reconciliation in production:
+
+```bash
+# Confirm bulk agentSessions is scoped to the calling app actor and pages as expected.
+# If it is not, keep PLANNER_APP_ACTOR_ID / IMPLEMENTER_APP_ACTOR_ID populated so the
+# delegate issue -> issue.agentSessions fallback can resolve real session IDs.
+# If either APP_ACTOR_ID is missing, startup reconciliation still re-enables webhooks but
+# skips session-discovery synthesis for that app to avoid importing foreign sessions.
+
+# Confirm the added admin scope authorizes webhooks/updateWebhook under client_credentials
+# and does not force token-invalidating re-consent beyond the planned app reinstall.
+
+# Capture one prompted webhook and the same activity through GraphQL; verify
+# webhook agentActivity.id == GraphQL AgentActivity.id.
+```
 
 ## Planner credentials and repository
 
@@ -212,8 +235,8 @@ curl -fsS https://linear-agent.example.com/healthz
 Capture one live AgentSessionEvent payload from a temporary redacted diagnostic (never log
 raw payloads permanently) and verify the tolerant parser's fields. Trigger a webhook retry
 and confirm Linear reuses `Linear-Delivery`; record the two delivery IDs. Linear retries at
-about 1 minute, 1 hour, and 6 hours and may disable repeated failures, so re-enable a
-disabled webhook manually in the app settings.
+about 1 minute, 1 hour, and 6 hours and may disable repeated failures. On restart, confirm
+the daemon re-enables each app webhook; use the app settings only as the manual fallback.
 
 ## Planner-session smoke
 
@@ -255,6 +278,37 @@ sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
 sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
   "select issue_identifier,status,attempts,error from cleanup_jobs order by id desc limit 10;"
 ```
+
+## Android emulator smoke
+
+Android enablement is opt-in during provisioning because it downloads large SDK artifacts
+and depends on KVM availability:
+
+```bash
+sudo INSTALL_ANDROID=1 ANDROID_API_LEVEL=35 ANDROID_AVD_NAME=linear-smoke \
+  DAEMON_HOST=linear-agent.example.com ops/provision.sh "$PWD"
+```
+
+The provisioner installs Android command-line tools, accepts SDK licenses for the
+`linear-daemon` user, installs platform-tools/emulator/a Google APIs x86_64 system image,
+creates a fresh AVD, and adds the service user to `kvm` when `/dev/kvm` exists. If KVM is
+absent, the smoke script falls back to `-no-accel`; treat that as a capacity warning.
+
+Live boot/install/launch/screenshot is a red deploy gate and must be run by a human on the
+VPS, twice to prove idempotency:
+
+```bash
+sudo -u linear-daemon -H env \
+  ANDROID_SDK_ROOT=/opt/android-sdk \
+  ANDROID_AVD_NAME=linear-smoke \
+  ANDROID_PACKAGE_NAME=com.example.app \
+  ANDROID_SCREENSHOT_PATH=/var/lib/linear-agent-daemon/android-smoke.png \
+  /opt/linear-agent-daemon/ops/android-smoke.sh /path/to/app.apk
+sudo -u linear-daemon -H test -s /var/lib/linear-agent-daemon/android-smoke.png
+```
+
+Record whether KVM was used, the APK/package tested, both exit codes, and the screenshot
+artifact path. Do not run the emulator smoke from an automated implementation agent.
 
 ## Credential inventory
 

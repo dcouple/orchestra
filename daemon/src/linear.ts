@@ -11,6 +11,20 @@ import type { EventLog } from "./eventlog.js";
 export type PostResult = { ok: true } | { ok: false; retriable: boolean; error: string; retryAfterMs?: number };
 export type ProgressContent = { type: "thought" | "action"; body: string };
 export type TerminalContent = { type: "response" | "error"; body: string };
+export interface AgentSessionSummary {
+  id: string;
+  app: AppName;
+  issueId?: string;
+  issueIdentifier?: string;
+  createdAt?: number;
+}
+export interface AgentPromptActivity {
+  id: string;
+  body: string;
+  createdAt: number;
+}
+export interface WebhookEnsureResult { matched: boolean; updated: boolean; }
+interface Logger { warn(...args: unknown[]): void; }
 
 interface TokenResponse { access_token?: unknown; expires_in?: unknown; error?: unknown; error_description?: unknown; }
 interface TokenGrant { promise: Promise<string>; force: boolean; }
@@ -118,6 +132,7 @@ export class LinearGateway {
     private readonly graphqlUrl: string,
     private readonly tokenUrl: string,
     private readonly now: () => number = Date.now,
+    private readonly logger: Logger = console,
   ) {}
 
   async getAppToken(app: AppName, deadlineAt = this.now() + 5_000, force = false): Promise<string> {
@@ -158,7 +173,7 @@ export class LinearGateway {
   private async fetchAppToken(app: AppName, config: AppConfig, deadlineAt: number): Promise<string> {
     const remaining = deadlineAt - this.now();
     if (remaining <= 0) throw new Error("OAuth token request deadline exceeded");
-    const body = new URLSearchParams({ grant_type: "client_credentials", scope: "read,write,app:assignable,app:mentionable" });
+    const body = new URLSearchParams({ grant_type: "client_credentials", scope: "read,write,app:assignable,app:mentionable,admin" });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error("OAuth token request timed out")), remaining);
     timer.unref();
@@ -260,4 +275,281 @@ export class LinearGateway {
     }
     return first;
   }
+
+  async listAgentSessions(app: AppName, appActorId: string | undefined, deadlineAt = this.now() + 10_000): Promise<AgentSessionSummary[]> {
+    if (!appActorId) throw new Error(`APP_ACTOR_ID is required to list ${app} agent sessions`);
+    return this.withLinearClient(app, deadlineAt, "Linear agentSessions request", async client => {
+      const sessions: AgentSessionSummary[] = [];
+      let after: string | undefined;
+      do {
+        const variables = { first: 100, ...(after ? { after } : {}) };
+        const connection = await client.agentSessions(variables);
+        for (const node of connection.nodes) {
+          const summary = await this.sessionSummary(app, node);
+          if (this.appUserIdOf(node) === appActorId) sessions.push(summary);
+        }
+        after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? undefined : undefined;
+      } while (after);
+      return sessions;
+    });
+  }
+
+  async listDelegatedIssueAgentSessions(app: AppName, appActorId: string, deadlineAt = this.now() + 10_000): Promise<AgentSessionSummary[]> {
+    return this.withLinearClient(app, deadlineAt, "Linear delegated issue request", async client => {
+      const sessions = new Map<string, AgentSessionSummary>();
+      let after: string | undefined;
+      do {
+        const data = await this.rawRequest<DelegatedIssuesResponse>(client, delegatedIssuesQuery, {
+          first: 50,
+          ...(after ? { after } : {}),
+          delegateId: appActorId,
+        });
+        for (const issue of data.issues.nodes) {
+          const session = await this.delegatedIssueSession(client, app, appActorId, issue);
+          if (session) sessions.set(session.id, session);
+        }
+        after = data.issues.pageInfo.hasNextPage ? data.issues.pageInfo.endCursor ?? undefined : undefined;
+      } while (after);
+      return [...sessions.values()];
+    });
+  }
+
+  private async delegatedIssueSession(client: LinearClient, app: AppName, appActorId: string,
+    issue: { id: string; identifier: string }): Promise<AgentSessionSummary | undefined> {
+    let after: string | undefined;
+    let sawSessionIdentity = false;
+    let fallback: DelegatedSessionNode | undefined;
+    do {
+      const data = await this.rawRequest<IssueAgentSessionsResponse>(client, delegatedIssueAgentSessionsQuery, {
+        issueId: issue.id,
+        first: 20,
+        ...(after ? { after } : {}),
+      });
+      const connection = data.issue?.agentSessions;
+      if (!connection) return undefined;
+      for (const node of connection.nodes) {
+        if (this.isTerminalSession(node)) continue;
+        const nodeActorId = this.appUserIdOf(node);
+        if (nodeActorId) sawSessionIdentity = true;
+        if (nodeActorId === appActorId) return this.delegatedSessionSummary(app, issue, node);
+        if (!nodeActorId && this.newerSession(node, fallback)) fallback = node;
+      }
+      after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? undefined : undefined;
+    } while (after);
+
+    if (fallback && !sawSessionIdentity) {
+      this.logger.warn(JSON.stringify({ event: "delegated_issue_session_identity_missing", app, issueId: issue.id,
+        selectedSessionId: fallback.id }));
+      return this.delegatedSessionSummary(app, issue, fallback);
+    }
+    return undefined;
+  }
+
+  async listSessionActivitiesSince(app: AppName, agentSessionId: string, since: number | null, deadlineAt = this.now() + 10_000): Promise<AgentPromptActivity[]> {
+    return this.withLinearClient(app, deadlineAt, "Linear agent session activities request", async client => {
+      const session = await client.agentSession(agentSessionId);
+      const activities: AgentPromptActivity[] = [];
+      let after: string | undefined;
+      do {
+        const connection = await session.activities({
+          first: 100,
+          ...(after ? { after } : {}),
+          filter: {
+            type: { eq: "prompt" },
+            ...(since !== null ? { createdAt: { gte: new Date(since) } } : {}),
+          },
+        });
+        for (const node of connection.nodes) {
+          const body = activityBody(node);
+          if (!body) continue;
+          activities.push({ id: node.id, body, createdAt: node.createdAt.getTime() });
+        }
+        after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? undefined : undefined;
+      } while (after);
+      activities.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+      return activities;
+    });
+  }
+
+  async ensureWebhookEnabled(app: AppName, webhookUrl: string, deadlineAt = this.now() + 10_000): Promise<WebhookEnsureResult> {
+    return this.withLinearClient(app, deadlineAt, "Linear webhooks request", async client => {
+      const target = webhookUrl.replace(/\/+$/, "");
+      let after: string | undefined;
+      do {
+        const connection = await client.webhooks({ first: 100, ...(after ? { after } : {}) });
+        for (const webhook of connection.nodes) {
+          if (webhook.url?.replace(/\/+$/, "") !== target) continue;
+          if (webhook.enabled) return { matched: true, updated: false };
+          const payload = await client.updateWebhook(webhook.id, { enabled: true });
+          if (!payload.success) throw new Error(`webhook update returned success:false for ${webhook.id}`);
+          return { matched: true, updated: true };
+        }
+        after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? undefined : undefined;
+      } while (after);
+      return { matched: false, updated: false };
+    });
+  }
+
+  private async withLinearClient<T>(
+    app: AppName,
+    deadlineAt: number,
+    description: string,
+    operation: (client: LinearClient) => Promise<T>,
+  ): Promise<T> {
+    const attempt = async (forceToken: boolean): Promise<T> => {
+      const token = await this.getAppToken(app, deadlineAt, forceToken);
+      const remaining = deadlineAt - this.now();
+      if (remaining <= 0) throw new Error(`${description} deadline exceeded`);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(new Error(`${description} timed out`)), remaining);
+      timer.unref();
+      try {
+        const client = new LinearClient({ accessToken: token, apiUrl: this.graphqlUrl, signal: controller.signal });
+        return await operation(client);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    try {
+      return await attempt(false);
+    } catch (error) {
+      const classified = classifyError(error, this.now());
+      if (!classified.ok && classified.unauthorized && !this.apps[app].staticToken && deadlineAt > this.now()) {
+        this.log.invalidateToken(app);
+        return attempt(true);
+      }
+      throw error;
+    }
+  }
+
+  private async rawRequest<T>(client: LinearClient, query: string, variables: Record<string, unknown>): Promise<T> {
+    const rawClient = (client as unknown as { client: { request(query: string, variables: Record<string, unknown>): Promise<T> } }).client;
+    return rawClient.request(query, variables);
+  }
+
+  private async sessionSummary(app: AppName, node: unknown, issueIdOverride?: string, issueIdentifierOverride?: string): Promise<AgentSessionSummary> {
+    const session = node as {
+      id: string; createdAt?: Date; issueId?: string; issue?: Promise<{ id: string; identifier?: string }>; _issue?: { id?: string; identifier?: string };
+    };
+    let issueId = issueIdOverride ?? session.issueId ?? stringValue(session._issue?.id);
+    let issueIdentifier = issueIdentifierOverride ?? stringValue(session._issue?.identifier);
+    return {
+      id: session.id,
+      app,
+      ...(issueId ? { issueId } : {}),
+      ...(issueIdentifier ? { issueIdentifier } : {}),
+      ...(session.createdAt ? { createdAt: session.createdAt.getTime() } : {}),
+    };
+  }
+
+  private appUserIdOf(node: unknown): string | undefined {
+    const session = node as {
+      appUserId?: string;
+      _appUser?: { id?: string | null };
+      appUser?: { id?: string | null } | null;
+      creator?: { id?: string | null } | null;
+    };
+    return session.appUserId ?? stringValue(session._appUser?.id) ?? stringValue(session.appUser?.id) ?? stringValue(session.creator?.id);
+  }
+
+  private delegatedSessionSummary(app: AppName, issue: { id: string; identifier: string },
+    node: DelegatedSessionNode): AgentSessionSummary {
+    const createdAt = typeof node.createdAt === "string" ? Date.parse(node.createdAt) : undefined;
+    return {
+      id: node.id,
+      app,
+      issueId: issue.id,
+      issueIdentifier: issue.identifier,
+      ...(createdAt !== undefined && Number.isFinite(createdAt) ? { createdAt } : {}),
+    };
+  }
+
+  private isTerminalSession(node: DelegatedSessionNode): boolean {
+    if (node.endedAt || node.archivedAt || node.dismissedAt) return true;
+    const status = node.status?.toLowerCase();
+    return status === "done" || status === "completed" || status === "complete"
+      || status === "failed" || status === "canceled" || status === "cancelled"
+      || status === "dismissed" || status === "ended";
+  }
+
+  private newerSession(candidate: DelegatedSessionNode, current: DelegatedSessionNode | undefined): boolean {
+    if (!current) return true;
+    const candidateTime = typeof candidate.createdAt === "string" ? Date.parse(candidate.createdAt) : 0;
+    const currentTime = typeof current.createdAt === "string" ? Date.parse(current.createdAt) : 0;
+    return candidateTime > currentTime;
+  }
 }
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function activityBody(node: unknown): string | undefined {
+  const content = (node as { content?: unknown }).content;
+  if (content && typeof content === "object") {
+    const body = (content as { body?: unknown }).body;
+    if (typeof body === "string" && body.trim()) return body;
+    const prompt = (content as { prompt?: unknown }).prompt;
+    if (typeof prompt === "string" && prompt.trim()) return prompt;
+  }
+  return undefined;
+}
+
+interface DelegatedIssuesResponse {
+  issues: {
+    nodes: Array<{
+      id: string;
+      identifier: string;
+    }>;
+    pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+  };
+}
+
+interface DelegatedSessionNode {
+  id: string;
+  createdAt?: string | null;
+  endedAt?: string | null;
+  archivedAt?: string | null;
+  dismissedAt?: string | null;
+  status?: string | null;
+  appUser?: { id?: string | null } | null;
+  creator?: { id?: string | null } | null;
+}
+
+interface IssueAgentSessionsResponse {
+  issue?: {
+    agentSessions: {
+      nodes: DelegatedSessionNode[];
+      pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+    };
+  } | null;
+}
+
+const delegatedIssuesQuery = `
+  query delegatedIssues($first: Int!, $after: String, $delegateId: String!) {
+    issues(first: $first, after: $after, filter: { delegate: { id: { eq: $delegateId } } }) {
+      nodes { id identifier }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+const delegatedIssueAgentSessionsQuery = `
+  query delegatedIssueAgentSessions($issueId: String!, $first: Int!, $after: String) {
+    issue(id: $issueId) {
+      agentSessions(first: $first, after: $after) {
+        nodes {
+          id
+          createdAt
+          endedAt
+          archivedAt
+          dismissedAt
+          status
+          appUser { id }
+          creator { id }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+`;

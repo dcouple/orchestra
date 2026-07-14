@@ -5,6 +5,7 @@ export type AppName = "planner" | "implementer";
 export interface AppConfig {
   name: AppName;
   webhookSecret: string;
+  appActorId?: string;
   clientId?: string;
   clientSecret?: string;
   staticToken?: string;
@@ -17,6 +18,9 @@ export interface Config {
   replayWindowMs: number;
   linearGraphqlUrl: string;
   linearTokenUrl: string;
+  webhookBaseUrl: string;
+  reconcileIntervalMs: number;
+  reconcileRequestTimeoutMs: number;
   apps: Record<AppName, AppConfig>;
   sessionsEnabled: boolean;
   worktreesRoot: string;
@@ -59,7 +63,8 @@ function enabled(env: NodeJS.ProcessEnv, name: string, fallback = true): boolean
 function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean): AppConfig {
   const prefix = name.toUpperCase();
   const staticToken = env[`${prefix}_LINEAR_TOKEN`]?.trim();
-  const base = { name, webhookSecret: required(env, `${prefix}_WEBHOOK_SECRET`) };
+  const appActorId = env[`${prefix}_APP_ACTOR_ID`]?.trim();
+  const base = { name, webhookSecret: required(env, `${prefix}_WEBHOOK_SECRET`), ...(appActorId ? { appActorId } : {}) };
   if (testMode && staticToken) return { ...base, staticToken };
   return {
     ...base,
@@ -74,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const sessionsEnabled = enabled(env, "SESSIONS_ENABLED");
   const targetRepoPath = env.TARGET_REPO_PATH?.trim();
   const linearApiKey = env.LINEAR_API_KEY?.trim();
+  const webhookBaseUrl = env.WEBHOOK_BASE_URL?.trim() || (testMode ? "http://127.0.0.1:8787" : required(env, "WEBHOOK_BASE_URL"));
   if (sessionsEnabled && !targetRepoPath) required(env, "TARGET_REPO_PATH");
   if (sessionsEnabled && !linearApiKey) required(env, "LINEAR_API_KEY");
   const claudeArgv = (env.CLAUDE_BIN?.trim() || "claude").split(/\s+/);
@@ -93,6 +99,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     replayWindowMs: positiveInteger(env, "REPLAY_WINDOW_MS", 60_000),
     linearGraphqlUrl: env.LINEAR_GRAPHQL_URL?.trim() || "https://api.linear.app/graphql",
     linearTokenUrl: env.LINEAR_TOKEN_URL?.trim() || "https://api.linear.app/oauth/token",
+    webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
+    reconcileIntervalMs: positiveInteger(env, "RECONCILE_INTERVAL_MS", 60_000),
+    reconcileRequestTimeoutMs: positiveInteger(env, "RECONCILE_REQUEST_TIMEOUT_MS", 10_000),
     apps: { planner: appConfig(env, "planner", testMode), implementer: appConfig(env, "implementer", testMode) },
     sessionsEnabled,
     worktreesRoot: env.WORKTREES_ROOT?.trim() || `${dirname(dbPath)}/worktrees`,
