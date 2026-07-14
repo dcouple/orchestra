@@ -10,6 +10,7 @@ type: feature-ticket
 id: <id>
 status: ready         # draft | ready | done
 zone: <0-3 — stakes + consequence radius, agreed with the user; .references/zones.md>
+review_lanes: <dual | single — optional human override of the zone's lane dial; omit to derive from zone>
 pr: <url or # — filled when /do opens it>
 ---
 ```

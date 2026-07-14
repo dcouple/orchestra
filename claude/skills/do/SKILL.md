@@ -122,7 +122,10 @@ Read the item's `zone:` and derive this run's dials from the table in
 `.references/zones.md` — record zone and effective dials in `plan.md`'s
 frontmatter. Zones 0–1 run the full lane (dossier, dual reviews, cap 3);
 zones 2–3 run light (no dossier, cap 1; zone 3 reviews single-lane on
-Codex). You may escalate the effective zone one notch toward 0 with the
+Codex). An explicit `review_lanes: dual | single` in the item frontmatter
+outranks the zone's lane dial — it's the human's setting, made at capture
+or edited later as item metadata on the tracker (Step 0's pull picks up
+tracker edits). You may escalate the effective zone one notch toward 0 with the
 reason recorded in `plan.md`'s frontmatter; never de-escalate — that's the
 human's call at capture, or the table's via postmortem evidence. Item
 missing a zone → classify it yourself from stakes and downstream
@@ -160,10 +163,15 @@ the finished plan yourself — reread it as a stranger hunting blunders,
 mistakes, oversights, omissions, and misconceptions, and fix what you find.
 This same-context pass is nearly free and reliably yields real findings even
 on careful work; spend it before the expensive dispatches. Then run the review
-loop — the zone's review lanes (zones 0–2: Codex + Claude in parallel;
-zone 3: Codex alone; epics: always both, per zones.md's Epics) — findings
+loop — this run's effective review lanes per the dials above (zones 0–2:
+Codex + Claude in parallel; zone 3: Codex alone; `review_lanes:` override
+honored; epics: always both, per zones.md's Epics) — findings
 fixed into the plan — until you're satisfied
-the plan is ready, cap 3 passes (zones 2–3: 1); carry anything unresolved
+the plan is ready — same exit rule as the post-PR loop: a pass returning
+zero Must Fix from every lane (Codex tiers: P0/P1 count as Must Fix) ends
+it, Should Fixes folded in at your discretion with no re-review, one extra
+pass only when the lanes sharply diverge. Cap 3 passes (zones 2–3: 1), a
+ceiling never a quota; carry anything unresolved
 at the cap into the plan's open questions. Score the plan's `confidence:`
 (1–10, one-pass implementation confidence) as each pass exits — while
 budget remains within the caps, a low score is the signal to spend it (more
@@ -280,14 +288,27 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 Reviews run against the open PR and fixes land on it — self-correction
 happens on the artifact, not before it exists.
 
-- Run the zone's review lanes over the PR diff (zones 0–2: both reviewers;
-  zone 3: Codex alone; epics always both — zones.md's Epics override)
-  (correctness + security, `(security)` tags). When the two lanes disagree
-  head-on about a Must Fix, the Overseer weighs both arguments and rules.
-  Loop findings back to the matching implementer and push the fixes;
-  cap 3 passes (zones 2–3: 1; zone 3 single-lane on Codex; epics always
-  3, dual-lane — zones.md's Epics override).
-- When no Must Fix remains from either reviewer — or the cap was reached,
+- Run the review lanes over the PR diff (zones 0–2: both reviewers;
+  zone 3: Codex alone; the item's explicit `review_lanes:` outranks the
+  zone default; epics always both — zones.md's Epics override)
+  (correctness + security, `(security)` tags). A Codex report may arrive
+  tiered P0–P3 (its built-in review format) instead of the prescribed
+  Must/Should format — map it, never re-dispatch over format: P0/P1 ≡
+  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the two lanes
+  disagree head-on about a Must Fix, the Overseer weighs both arguments
+  and rules.
+- **Another pass runs only on a trigger — the caps are ceilings, never
+  quotas** (cap 3 passes; zones 2–3: 1; epics always 3, dual-lane —
+  zones.md's Epics override). Two triggers: (a) **any Must Fix / P0 / P1
+  from either lane** — loop those findings back to the matching
+  implementer, push the fixes, re-review; (b) the two lanes' reports
+  **diverge sharply** (little overlap in what they caught, or conflicting
+  overall verdicts) — one extra pass to confirm convergence. **A pass with
+  zero Must Fix from every lane ends the loop**, even with Should Fixes
+  open: apply the Should Fixes you judge worth it (or leave them to the
+  inline comments below) — a Should Fix never triggers a re-review by
+  itself.
+- When the loop ends — zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up — run the **QA pass per the zone's dial**
   (`.references/zones.md`): zones 0–1 as the table says, zone 2 trimmed to
   the command-shaped items (record `qa_pass: trimmed`), zone 3 skipped

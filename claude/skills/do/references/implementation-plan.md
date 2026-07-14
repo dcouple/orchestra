@@ -24,6 +24,7 @@ zone: <0-3 — the item's, or Overseer-classified>
 effective_zone: <after any one-notch escalation — same as zone when none>
 zone_reasoning: <why classified/escalated — omit when the item carried the zone unchanged>
 lane: <light | full — derived from effective_zone; epics are always full (zones.md Epics)>
+review_lanes: <dual | single — the item's explicit override when present, else the zone default>
 phase: <n | —>
 confidence: <1-10 — one-pass implementation confidence, scored after review>
 ---

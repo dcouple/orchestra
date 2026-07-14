@@ -174,8 +174,11 @@ finalizes at capture, never a silent default:
   render the estimated zone with its stakes / consequence-radius reasoning and
   any escalator floor that raised it. The remaining dials — review lanes, loop
   caps, frontend verifier, QA, research — are shown as **derived from the
-  zone**, not independently set; `.references/zones.md` owns that mapping, so
-  reference it, never restate the table.
+  zone**; `.references/zones.md` owns that mapping, so reference it, never
+  restate the table. The one exception: **review lanes** are human-settable —
+  render the effective value (the item's `review_lanes:` override when
+  present, the zone default otherwise) and note it stays editable as item
+  metadata on the tracker until `/do` runs.
 - Use the `.dials` component: one `.dial` per row, `.pill` options with the
   recommended one `.on`, a one-line `.dial-why`, and a caption noting the
   estimate is `/create-plan`'s and the human sets the final zone.

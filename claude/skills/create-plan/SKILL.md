@@ -58,6 +58,10 @@ Open questions as a deferral — named, never papered over.
 Set the **zone** (0–3) with the user per `.references/zones.md` — stakes and
 downstream consequence radius, never diff size; escalator surfaces force
 zone ≤ 1. It goes in the item frontmatter and drives `/do`'s review effort.
+If the user wants a specific review depth, also set
+`review_lanes: dual | single` in the frontmatter — it overrides the zone's
+lane dial (zones.md), rides to the tracker with the item, and stays
+editable there as metadata until `/do` runs.
 
 **Success criteria**: the user has explicitly agreed to intent, end state, each
 locked direction (including the compatibility stance when behavior is

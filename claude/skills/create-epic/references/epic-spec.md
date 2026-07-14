@@ -11,6 +11,7 @@ type: epic-spec
 id: <id>
 status: ready         # draft | ready | done
 zone: <0-3 — stakes + consequence radius; the zones.md Epics override governs how it applies>
+review_lanes: <dual | single — optional; a human's explicit choice here outranks even the Epics override>
 pr: <one PR for the whole epic — phases commit sequentially>
 ---
 ```
