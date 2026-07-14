@@ -165,7 +165,8 @@ This same-context pass is nearly free and reliably yields real findings even
 on careful work; spend it before the expensive dispatches. Then run the review
 loop — this run's effective review lanes per the dials above (zones 0–2:
 Codex + Claude in parallel; zone 3: Codex alone; `review_lanes:` override
-honored; epics: always both, per zones.md's Epics) — findings
+honored — on an epic too, where it outranks the always-dual Epics
+default; epics otherwise always both, per zones.md's Epics) — findings
 fixed into the plan — until you're satisfied
 the plan is ready — same exit rule as the post-PR loop: a pass returning
 zero Must Fix from every lane (Codex tiers: P0/P1 count as Must Fix) ends
@@ -292,7 +293,9 @@ happens on the artifact, not before it exists.
 
 - Run the review lanes over the PR diff (zones 0–2: both reviewers;
   zone 3: Codex alone; the item's explicit `review_lanes:` outranks the
-  zone default; epics always both — zones.md's Epics override)
+  zone default and, when set on the epic itself, even the Epics
+  always-dual default; epics otherwise always both — zones.md's Epics
+  override)
   (correctness + security, `(security)` tags). A Codex report may arrive
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format — map it, never re-dispatch over format: P0/P1 ≡
@@ -300,7 +303,8 @@ happens on the artifact, not before it exists.
   disagree head-on about a Must Fix, the Overseer weighs both arguments
   and rules.
 - **Another pass runs only on a trigger — the caps are ceilings, never
-  quotas** (cap 3 passes; zones 2–3: 1; epics always 3, dual-lane —
+  quotas** (cap 3 passes; zones 2–3: 1; epics always 3 passes,
+  dual-lane unless the epic's own `review_lanes:` says otherwise —
   zones.md's Epics override). Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** — loop those findings back to the matching
   implementer, push the fixes, re-review; (b) the two lanes' reports
