@@ -40,12 +40,12 @@ The flow separates *clarity*, *capture*, and *execution*:
    `AGENTS.md`'s `Work-item tracking` instructions — e.g. harvested from a
    GitHub issue's artifact comments — or read from `./tmp/<id>/` when the
    repo configures no tracker) →
-   lane call (light/full) → plan + review loop (full lane backed by
+   zone-derived dials (`references/zones.md`) → plan + review loop (full lane backed by
    a research dossier, every plan under the evidence contract) → implement →
    verify → build gate + deploy-notes scan + PR → post-PR review loop + QA
    pass over the PR's manual tests → wrap-up, with the wrap-up posted as a
    PR comment at the end. Deliberately high-level:
-   the Overseer judges the lane, how much research a plan needs, and when
+   the Overseer applies the item's zone (escalating one notch at most), how much research a plan needs, and when
    each review loop has converged.
 4. **`/prepare-pull-request`** — the exit ramp for ad-hoc changes made in a
    session *outside* `/do` (which handles its own PR prep). It retrofits
@@ -76,8 +76,8 @@ consumer repos, so the skills' restatement is what actually executes.
 | Write the diff — backend/ops | **Codex** GPT-5.6 `medium`, workspace-write | |
 | Write the diff — frontend web/mobile (UI, styling, client state, user-facing copy) | Claude `frontend-implementer` — Opus | never routed through Codex |
 | Challenge the draft work item (Socratic gate) | Claude `socrates` — Opus | always invoked by all three `/create-*`; self-calibrates — fast-passes straightforward drafts, full challenge for epics/unargued items |
-| Review the plan | **two parallel reviewers**: Codex GPT-5.6 `xhigh` + Claude `plan-reviewer` (Opus) | Must-Fix gate = union of both |
-| Review the diff + security | **two parallel reviewers**: Codex GPT-5.6 `xhigh` + Claude `code-reviewer` (Opus) | Must-Fix gate = union of both |
+| Review the plan | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `xhigh` + Claude `plan-reviewer` (Opus) | Must-Fix gate = union of both |
+| Review the diff + security | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `xhigh` + Claude `code-reviewer` (Opus) | Must-Fix gate = union of both |
 
 Every Codex role is dispatched by the **`codex` skill**
 (`claude/skills/codex/`), the one place that knows the `codex exec`

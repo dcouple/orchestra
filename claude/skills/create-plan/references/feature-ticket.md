@@ -9,6 +9,7 @@
 type: feature-ticket
 id: <id>
 status: ready         # draft | ready | done
+zone: <0-3 — stakes + consequence radius, agreed with the user; .references/zones.md>
 pr: <url or # — filled when /do opens it>
 ---
 ```

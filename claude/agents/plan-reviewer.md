@@ -1,6 +1,6 @@
 ---
 name: plan-reviewer
-description: One of two parallel plan reviewers — always dispatched alongside the Codex plan-reviewer in /do's plan-review loop; the Must-Fix gate is the union of both reports. Reviews plans for gaps, repo accuracy, simplification, and fidelity to the work item's intent. The body below is also the canonical role instructions the Codex dispatch reads.
+description: The Claude lane of the plan reviewers — dispatched alongside the Codex plan-reviewer at zones 0–2 (zone 3 runs Codex alone; .references/zones.md); the Must-Fix gate is the union of both reports. Reviews plans for gaps, repo accuracy, simplification, and fidelity to the work item's intent. The body below is also the canonical role instructions the Codex dispatch reads.
 tools: Glob, Grep, Read
 model: opus
 color: yellow

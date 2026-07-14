@@ -51,7 +51,7 @@ Inputs for this run:
 - work item: <item path>
 - plan: <plan path, if the role uses one>
 - question / defect report: <for code-researcher / investigator>
-- review pass: <k>/<cap> <reviewers only — cap per the run's zone — see .references/zones.md>
+- review pass: <k>/<cap> <reviewers only — the dispatch states the resolved cap; /do derives it from the run's zone>
 - prior findings by ID: <reviewers, pass 2+> / fix instructions: <implementer fix rounds>
 
 Print the report as your final message, in exactly the specified format.

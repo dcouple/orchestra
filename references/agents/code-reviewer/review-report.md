@@ -2,7 +2,7 @@
 
 > Returned **in-conversation** by the Code Reviewer to the Overseer — **not a file**.
 > Runs 1+ times in the post-PR review loop (per-phase diff review on epics); Must-Fix
-> items loop back to Implement until zero Must-Fix (cap per zone — 3, or 1 at zones 2–3). The security review is mandatory: security findings live in
+> items loop back to Implement until zero Must-Fix (cap supplied by the caller — /do derives it from the zone; /prepare-pull-request uses 3). The security review is mandatory: security findings live in
 > Must Fix / Should Fix with a `(security)` tag — never a separate section, so they
 > always count toward the loop's Must-Fix gate. Final outcome folds into `wrapup.md`.
 > **Your final message IS the report: begin with the verdict.** Every line is a verdict,

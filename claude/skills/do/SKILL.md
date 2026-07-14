@@ -11,14 +11,14 @@ disable-model-invocation: true
 
 You are the **Overseer** — the orchestrating agent (Fable, this session);
 sub-agent role instructions and report formats refer to you by that name.
-Every judgment call is yours — which lane the item takes, how much research
+Every judgment call is yours — the effective zone (one escalation notch), how much research
 the plan needs, when the plan is ready, when review findings are resolved. Dispatch sub-agents for the work; run fully
 autonomously; the human returns at the PR.
 
 **Sub-agents:** code-researcher, implementer, backend-verifier,
 plan-reviewer, and code-reviewer run on Codex via the `codex` skill; each
 review runs the Codex and Claude reviewers in parallel and weighs both
-reports. Work routes by surface: backend/ops implementation and
+reports at zones 0–2; zone 3 runs the Codex lane alone. Work routes by surface: backend/ops implementation and
 verification → Codex (implementer, backend-verifier); frontend web/mobile
 work (UI components, styling, client-side state, user-facing copy) → the
 Claude `frontend-implementer`, verified by the Claude `frontend-verifier`.
@@ -118,11 +118,12 @@ Read the item's `zone:` and derive this run's dials from the table in
 `.references/zones.md` — record zone and effective dials in `plan.md`'s
 frontmatter. Zones 0–1 run the full lane (dossier, dual reviews, cap 3);
 zones 2–3 run light (no dossier, cap 1; zone 3 reviews single-lane on
-Codex). You may raise the effective zone one notch with a recorded reason;
-never lower it — that's the human's call at capture or the table's via
-postmortem evidence. Item missing a zone → classify it yourself from stakes
-and downstream consequences, record the reasoning, and proceed. Epics are
-always full-lane regardless of zone.
+Codex). You may escalate the effective zone one notch toward 0 with the
+reason recorded in `plan.md`'s frontmatter; never de-escalate — that's the
+human's call at capture, or the table's via postmortem evidence. Item
+missing a zone → classify it yourself from stakes and downstream
+consequences, record the reasoning in the frontmatter, and proceed. Epics:
+see zones.md's Epics override.
 
 Full lane: dispatch the `codex` skill, role `code-researcher`, to map the
 territory the plan builds on — critical codebase anchors, patterns to
@@ -151,7 +152,9 @@ detail, never decide by silent assumption — name it in the plan's Open
 questions and proceed on the least-committal reading. Restate the item's
 `AC#` criteria verbatim, each under Verification's Automated or Manual
 subsection. Run the review
-loop — both reviewers, findings fixed into the plan — until you're satisfied
+loop — the zone's review lanes (zones 0–2: Codex + Claude in parallel;
+zone 3: Codex alone; epics: always both, per zones.md's Epics) — findings
+fixed into the plan — until you're satisfied
 the plan is ready, cap 3 passes (zones 2–3: 1); carry anything unresolved
 at the cap into the plan's open questions. Score the plan's `confidence:`
 (1–10, one-pass implementation confidence) as each pass exits — while
@@ -188,8 +191,11 @@ codemods, per-file transforms):
 ## Step 3: Verify
 
 Prove every verification criterion — the `frontend-verifier` sub-agent for
-computer-use flows in the running app, the `codex` skill role
-`backend-verifier` for tests/scripts. The plan's Automated subsection is the
+computer-use flows in the running app (dispatched per the zone's verifier
+dial for discretionary checks; an AC whose only possible proof needs the
+running app always gets the verifier, at any zone — acceptance evidence is
+never trimmed by a dial), the `codex`
+skill role `backend-verifier` for tests/scripts. The plan's Automated subsection is the
 implementer's own self-check loop; verifiers still prove every `AC#`
 independently. Include the change type's rubric from
 `.references/rubrics/` in each verifier dispatch (see
@@ -238,11 +244,16 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 Reviews run against the open PR and fixes land on it — self-correction
 happens on the artifact, not before it exists.
 
-- Run both reviewers over the PR diff (correctness + security, `(security)`
-  tags). Loop findings back to the matching implementer and push the fixes;
-  cap 3 passes (zones 2–3: 1; zone 3 single-lane on Codex).
+- Run the zone's review lanes over the PR diff (zones 0–2: both reviewers;
+  zone 3: Codex alone; epics always both — zones.md's Epics override)
+  (correctness + security, `(security)` tags). Loop findings back to the matching implementer and push the fixes;
+  cap 3 passes (zones 2–3: 1; zone 3 single-lane on Codex; epics always
+  3, dual-lane — zones.md's Epics override).
 - When no Must Fix remains from either reviewer — or the cap was reached,
-  survivors flagged in the wrap-up — run the **QA pass**: execute the PR
+  survivors flagged in the wrap-up — run the **QA pass per the zone's dial**
+  (`.references/zones.md`): zones 0–1 as the table says, zone 2 trimmed to
+  the command-shaped items (record `qa_pass: trimmed`), zone 3 skipped
+  (record `skipped`). When it runs: execute the PR
   body's Manual tests checklist best-effort, highest risk tier first. The
   `frontend-verifier` drives the running app and captures screenshots; the
   `codex` skill role `backend-verifier` runs the command-shaped items. Both
@@ -298,7 +309,8 @@ happens on the artifact, not before it exists.
 
 Run Steps 1–3 per phase, sequentially — per-phase `plan-<n>.md`, tick the
 phase ✓ in the spec on completion. After each phase verifies, review the
-phase diff — both reviewers, same Must-Fix gate and cap — fix and
+phase diff — the epic profile: dual lanes, cap 3 (zones.md's Epics
+override outranks the zone's lane/cap dials) — fix and
 re-verify, then run the build gate and commit the phase following Step 4's
 commit rules. After the last phase, continue from Step 4's PR steps
 (deploy-notes scan over the whole epic diff, rebase, push, open the PR) and

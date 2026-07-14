@@ -42,6 +42,12 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 ## What to change so it doesn't recur
 `<a concrete improvement to a specific skill / sub-agent / template / verification block>`
 
+## Dial record & right-sizing
+`<copy the wrap-up's dial-record block (zone, lanes, passes, findings split`
+`first-pass/later per lane, verifiers/QA, wall-clock), then ONE judgment`
+`line: review effort was overdone | right-sized | underdone — naming the`
+`single dial that would have changed it. This tunes zones.md's table.>`
+
 ## System change
 `<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval verdict`
 `on the proposed change once the human gives it>`
