@@ -155,7 +155,11 @@ External references. When genuinely uncertain about a requirement or design
 detail, never decide by silent assumption — name it in the plan's Open
 questions and proceed on the least-committal reading. Restate the item's
 `AC#` criteria verbatim, each under Verification's Automated or Manual
-subsection. Run the review
+subsection. Before dispatching reviewers, run one **fresh-eyes pass** over
+the finished plan yourself — reread it as a stranger hunting blunders,
+mistakes, oversights, omissions, and misconceptions, and fix what you find.
+This same-context pass is nearly free and reliably yields real findings even
+on careful work; spend it before the expensive dispatches. Then run the review
 loop — the zone's review lanes (zones 0–2: Codex + Claude in parallel;
 zone 3: Codex alone; epics: always both, per zones.md's Epics) — findings
 fixed into the plan — until you're satisfied

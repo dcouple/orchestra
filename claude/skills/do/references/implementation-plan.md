@@ -11,7 +11,9 @@
 > the repo's current conventions, no template/placeholder paths, no line number
 > that wasn't verified in this checkout. Cheap mechanical catch: grep the plan
 > for `<feature>`, `path/to/`, `TBD`, fact bullets missing `Evidence:`, and a
-> Goal & invariants section still carrying template wording.
+> Goal & invariants section still carrying template wording. Final gate: one
+> fresh-eyes reread of the whole plan as if it were a stranger's — hunting
+> blunders, oversights, omissions, misconceptions — before any reviewer sees it.
 
 ---
 ```yaml
