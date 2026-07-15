@@ -45,7 +45,9 @@ Parse the transcripts and derive:
   their task-notification returns; never estimated), duration, and a short note
   (what dominated, what it overlapped). Close the table with aggregates: each
   phase's share of wall-clock as a %, the summed overseer turnaround gaps
-  between dispatches, and the human-idle total. A run record without this table
+  between dispatches, and the human-idle total. Each row also carries its
+  **tokens** (from the three sources in the Tokens bullet below) and **est.
+  cost**, so time and spend read side by side. A run record without this table
   is incomplete — durations per dispatch without the table (or vice versa) hide
   exactly the serial bottlenecks the analysis exists to find.
 - **Blocker inventory** — count and time-stamp: `AskUserQuestion` pauses
@@ -53,16 +55,29 @@ Parse the transcripts and derive:
   pre-authorized?), sub-agent/tool rate-limit hits, and long legitimate
   background-agent runtimes (these are *productive* waits, not stalls — keep
   them out of the leak column).
-- **Tokens** — assistant events carry `message.usage`
-  (`input_tokens`, `output_tokens`, cache reads/writes); sum them for the
-  main session, and attribute sub-agent usage from their task events where
-  present. Codex dispatch tokens don't appear in these transcripts — take
-  them from the wrap-up's per-role figures (each dispatch's
-  `CODEX <role>: … · tokens <n>` line). Cross-check the wrap-up's
-  `tokens:` block against what you computed; report both when they
-  disagree. Pair tokens with the review-pass findings: **tokens spent per
-  pass vs Must Fixes that pass caught** is the single best signal for
-  right-sizing the loop.
+- **Tokens — harvest all three sources; `unknown` is only legal after checking
+  each.** Every layer already logs usage:
+  1. **Main loop**: assistant events in the session JSONL carry
+     `message.usage` (`input_tokens`, `output_tokens`,
+     `cache_read_input_tokens`, `cache_creation_input_tokens`) plus
+     `message.model` — bucket them by timestamp into the per-step windows and
+     report output and cache read/write separately (cache reads usually
+     dominate raw volume and price differently).
+  2. **Claude sub-agents**: each dispatch has its own transcript at
+     `<session-dir>/subagents/agent-<id>.jsonl` with the same per-event
+     usage; the harness also prints a `subagent_tokens` total in every
+     completion notification — cross-check the two.
+  3. **Codex dispatches**: `codex exec` prints a `tokens used` total at
+     end-of-run — for background dispatches it sits in the task's stdout
+     output file (grep for the line after `tokens used`); per-turn
+     granularity lives in `~/.codex/sessions/<date>/rollout-*.jsonl` as
+     `token_count` events (input / cached_input / output / reasoning).
+  **Cost**: tokens × the per-model price table, with cache reads/writes priced
+  at their own rates — the transcripts carry the model id, so mixed-model runs
+  attribute correctly. Cross-check the wrap-up's `tokens:` block against what
+  you computed; report both when they disagree. Pair tokens with the
+  review-pass findings: **tokens spent per pass vs Must Fixes that pass
+  caught** is the single best signal for right-sizing the loop.
 
 Reference script (adapt paths; classify conservatively):
 
@@ -125,5 +140,6 @@ parallel-vs-sequential reads at a glance. Build it as a small self-contained
 HTML/SVG page, render a screenshot headless, and **embed the PNG where the
 humans already look** — the anchor PR (host on the repo's rolling `qa-assets`
 prerelease, `<pr#>-run-timeline.png`) and the tracker issue — rather than
-only linking an external page. The HTML source lives in `./tmp/<id>/refs/`
-alongside the postmortem.
+only linking an external page. Each bar carries its token count (label or
+tooltip), so the timeline shows spend as well as time. The HTML source lives
+in `./tmp/<id>/refs/` alongside the postmortem.

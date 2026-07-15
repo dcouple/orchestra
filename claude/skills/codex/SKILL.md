@@ -119,7 +119,10 @@ burn a retry or re-dispatch over format · implementer:
 `**Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT` ·
 code-researcher: `**Bottom line:**` · investigator: `**Root cause:**` with a
 confidence word · backend-verifier: `**Verdict:**` pass|fail). Capture the
-token usage `codex exec` prints in its end-of-run summary. Return the
+token usage `codex exec` prints in its end-of-run summary — for a background
+dispatch it's in the task's stdout output file (the line after `tokens used`);
+per-turn detail lives in `~/.codex/sessions/<date>/rollout-*.jsonl`
+`token_count` events. `unknown` is only legal after checking both. Return the
 report verbatim to the caller, prefixed with one line:
 `CODEX <role>: <status line> · tokens <n | unknown>` — the Overseer sums
 these per role into the wrap-up's run record.
