@@ -39,6 +39,15 @@ Parse the transcripts and derive:
 - **Per-phase pacing** — map phase/fix commit timestamps
   (`git log --reverse --date=... origin/main..HEAD`) onto the timeline; a long
   gap between two phase commits with no agent activity is a stall.
+- **Per-step timing table — REQUIRED, the heart of the record.** One row per
+  pipeline step *and* per sub-agent dispatch: step/dispatch name, start and end
+  clock time (from the scripted event stream — dispatch tool-use timestamps and
+  their task-notification returns; never estimated), duration, and a short note
+  (what dominated, what it overlapped). Close the table with aggregates: each
+  phase's share of wall-clock as a %, the summed overseer turnaround gaps
+  between dispatches, and the human-idle total. A run record without this table
+  is incomplete — durations per dispatch without the table (or vice versa) hide
+  exactly the serial bottlenecks the analysis exists to find.
 - **Blocker inventory** — count and time-stamp: `AskUserQuestion` pauses
   (which gates, and were they green-tier things that should have been
   pre-authorized?), sub-agent/tool rate-limit hits, and long legitimate
@@ -101,9 +110,20 @@ for t,g in stalls: print(f'  stall: agent idle {g:.0f}min before human msg at {t
 
 Fold the numbers into the postmortem's **Run operations** section (see
 `postmortem.md` format): the wall-clock/active/idle split, the
-post-completion-idle carve-out, the ranked stalls with what each was waiting
-on, the blocker inventory, and — the payoff — the one operational change that
-would have removed the biggest stall (pre-authorize a green-tier gate, add a
+post-completion-idle carve-out, **the per-step timing table (required — see
+above)**, the ranked stalls with what each was waiting on, the blocker
+inventory, and — the payoff — the one operational change that would have
+removed the biggest stall (pre-authorize a green-tier gate, add a
 self-wakeup so a turn-end resumes, make a fallback non-blocking). That change
 is a candidate for the postmortem's single proposed system change when the
 operational leak outweighs any outcome gap.
+
+**Timeline visualization (render it, attach it).** Turn the per-step table
+into a Gantt: one row per dispatch (plus an Overseer row for the main loop's
+own working segments) over the fixed time axis, phase bands behind, so
+parallel-vs-sequential reads at a glance. Build it as a small self-contained
+HTML/SVG page, render a screenshot headless, and **embed the PNG where the
+humans already look** — the anchor PR (host on the repo's rolling `qa-assets`
+prerelease, `<pr#>-run-timeline.png`) and the tracker issue — rather than
+only linking an external page. The HTML source lives in `./tmp/<id>/refs/`
+alongside the postmortem.
