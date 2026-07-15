@@ -12,6 +12,10 @@ the `Work-item tracking` section of the project's `AGENTS.md` (or
 1. Set `status: ready` in `item.md`.
 2. Read the project's `Work-item tracking` section and publish exactly as
    it instructs — GitHub issues, Linear, or anything else it documents.
+   Treat tracker organization, workspace, project, and team names as
+   repo-specific configuration. Resolve them from the project's instructions
+   or explicit user input; if a required destination remains unspecified or
+   ambiguous, ask before publishing.
    Title `<prefix> <item title>`, body per the caller. Upload or attach
    `item.md` and the `refs/` files however the destination supports, so
    the published item carries everything a remote `/do` needs. Record
