@@ -21,11 +21,19 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 
 ## Run operations (always)
 `<wall-clock span; agent-active vs human-idle time and its %; post-completion idle carved`
-`out (human away after the run finished — inflates duration, not a defect); the ranked`
-`in-run stalls (agent turn-ends that needed a "continue" nudge) with what each waited on;`
-`per-phase pacing from the commits; blocker inventory (AskUserQuestion gates, rate-limit`
-`hits, legitimate background-agent waits). Close with the single change that would have`
-`removed the biggest stall. Per .references/run-operations-analysis.md.>`
+`out (human away after the run finished — inflates duration, not a defect); the`
+`PER-STEP TIMING TABLE — required, never summarized away: one row per pipeline step and`
+`per dispatch with start/end clock time (scripted from the transcript, not estimated),`
+`duration, TOKENS (main JSONL usage + subagents/agent-*.jsonl or notification totals +`
+`Codex "tokens used" stdout / rollout token_count events — "unknown" only after checking`
+`all three) and est. cost, and note, closed with phase %-of-wall-clock aggregates and`
+`summed turnaround gaps; the ranked in-run stalls (agent turn-ends that needed a "continue" nudge) with`
+`what each waited on; per-phase pacing from the commits; blocker inventory`
+`(AskUserQuestion gates, rate-limit hits, legitimate background-agent waits). Render the`
+`table as a Gantt timeline (HTML/SVG in refs/, screenshot embedded on the anchor PR and`
+`tracker issue — parallel vs sequential must read at a glance). Close with the single`
+`change that would have removed the biggest stall. Per`
+`.references/run-operations-analysis.md.>`
 
 ## What we asked for
 `<the intent + desired end state, briefly>`
