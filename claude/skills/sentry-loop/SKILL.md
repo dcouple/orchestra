@@ -90,11 +90,23 @@ creates must be closable by a single PR; its title is the change, imperative
 
 1. **One issue per fix.** If a root cause needs two changes (a revert now and
    a redo later; a backend guard and a separate UI affordance), that is two
-   issues, cross-linked, each independently shippable. Body: root cause with
-   file:line and introducing change, evidence (Sentry links, affected
-   users/orgs, support tickets), acceptance criteria, and the suggested entry
-   point (`/create-plan TM-xxx` or straight `/do` for trivial ones). Never
-   start the fix.
+   issues, cross-linked, each independently shippable. Never start the fix.
+
+   **The body is the investigation, not just its verdict.** A reader must be
+   able to follow the journey from Sentry to conclusion without re-deriving
+   it. Required sections, in order:
+   - **Sentry evidence** — what the event(s) actually showed: error string,
+     `extra` data, decisive tags (release, counts, first/last seen, users),
+     linked issue(s).
+   - **Hypotheses** — the ranked candidates formed before reading code.
+   - **Trace** — the path walked (file:line) and what confirmed the winner;
+     the introducing change if found.
+   - **Ruled out** — each discarded hypothesis with the evidence that killed
+     it. An issue with nothing ruled out is a smell (Stage 3 wasn't
+     hypothesis-first).
+   - **Root cause + confidence** — one sentence, and why that confidence.
+   - **Fix shape** — acceptance criteria and the suggested entry point
+     (`/create-plan <id>` or straight `/do` for trivial ones).
 2. **Hygiene findings follow the same rule** — each fixable noise source
    (a dev cron writing to prod Sentry, a dead task type still queued) is its
    own small PR-sized issue. Noise that isn't ours to fix (third-party,
