@@ -29,10 +29,10 @@ before the filing stage.
 
 ## Stage 1 — Sweep
 
-1. Establish the window: `$ARGUMENTS` if given, else 7d. Then check the
-   tracker for the most recent loop report (search by the loop label); if one
-   exists and is newer than the window start, narrow the window to "since last
-   run" and note that in the report.
+1. Establish the window: `$ARGUMENTS` if given, else 7d. Then find the
+   standing loop-report issue (search by the loop label); if its latest run
+   comment is newer than the window start, narrow the window to "since last
+   run" and note that in this run's comment.
 2. Pull the volume shape: `search_events` grouped by project
    (`count()`, `count_unique(issue)`) for the window.
 3. Pull the issue list: `search_issues` per project, sorted by `new`, for the
@@ -82,19 +82,30 @@ merges reports.
 
 All loop-generated tracker items carry the loop label. Before creating
 anything, search the tracker for open loop-labeled issues covering the same
-root cause or the same recurring noise — update those instead of duplicating.
+fix or the same recurring noise — update those instead of duplicating.
 
-1. **One issue per confirmed root cause**, incident-record style: what
-   happened, who was affected (counts, orgs, support tickets if known), root
-   cause with file:line, introducing change, Sentry issue links, and
-   suggested next step (`/create-plan …`). Never start the fix.
-2. **One grouped hygiene issue** (create or update a standing one) for
-   env-noise findings: dev crons polluting prod, dead task types, misrouted
-   environments.
-3. **One sweep report issue per run**: the window, the volume shape, the full
-   classification table, links to the issues above, and what was explicitly
-   left un-investigated and why. This is the run's landing page and the next
-   run's "since" marker.
+**The unit of filing is one PR, not one incident.** Every issue the loop
+creates must be closable by a single PR; its title is the change, imperative
+("Guard team deletion when a phone number is assigned"), not the symptom.
+
+1. **One issue per fix.** If a root cause needs two changes (a revert now and
+   a redo later; a backend guard and a separate UI affordance), that is two
+   issues, cross-linked, each independently shippable. Body: root cause with
+   file:line and introducing change, evidence (Sentry links, affected
+   users/orgs, support tickets), acceptance criteria, and the suggested entry
+   point (`/create-plan TM-xxx` or straight `/do` for trivial ones). Never
+   start the fix.
+2. **Hygiene findings follow the same rule** — each fixable noise source
+   (a dev cron writing to prod Sentry, a dead task type still queued) is its
+   own small PR-sized issue. Noise that isn't ours to fix (third-party,
+   browser extensions) does NOT become an issue; it's recorded in the run
+   report and ignored in Sentry with a reason.
+3. **One standing loop-report issue** (create on first run, then reuse): each
+   run appends a comment with the window, volume shape, the full
+   classification table, links to the issues filed above, and what was left
+   un-investigated and why. The latest comment is the next run's "since"
+   marker. Runs never create per-run report issues — the tracker holds work,
+   not logs.
 
 ## Stage 5 — Annotate Sentry
 
