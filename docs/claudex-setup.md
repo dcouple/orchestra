@@ -48,7 +48,23 @@ The proxy override wins even when the client requests a different effort
 (verified from request logs). Do **not** set `CLAUDE_CODE_SUBAGENT_MODEL` in
 the alias — it forces one model onto all subagents and defeats the tiers.
 
-## Validating on a new machine
+## Context window: declare the real size, never `[1m]`
+
+GPT-5.6 Sol's real window is **~400k tokens total** — probed empirically
+through the proxy (2026-07): a 328k-input request succeeds, ~394k is rejected
+with "input exceeds the context window". Claude Code doesn't know this: it
+budgets non-Anthropic models at 200k by default (wasting almost half the
+window), and its `[1m]` model-ID suffix budgets 1M — which routes fine but
+would kill long orchestra runs at ~400k with a hard 400 before auto-compact
+ever triggers.
+
+The fix, already in the claudex alias: `CLAUDE_CODE_MAX_CONTEXT_TOKENS=380000`
+— a Claude Code override that sets the context budget for any model whose ID
+doesn't start with `claude-`. 380k leaves ~20k headroom under the ceiling.
+Verified: `/context` reports `42.2k / 380k`, and auto-compact + `/compact`
+work through the proxy, so long runs summarize and continue with nearly
+double the default working space. Custom suffixes like `[400k]` are not
+supported (silent fallback to 200k); the env var is the mechanism.
 
 From this repo's root (or any consumer repo):
 
