@@ -108,6 +108,13 @@ the local items with `status: ready` (`./tmp/*/item.md`) and ask the user
 which to run — never pick one silently. Skim `refs/`; read individual refs
 as the work calls for them.
 
+One preflight item is only checkable now that the item is loaded: when its
+verification criteria imply driving the running app (UI acceptance criteria,
+manual flows), confirm the repo `AGENTS.md`'s testing-accounts section exists
+and is filled — it is the verifier's credentials source. Missing or unfilled
+→ an immediate preflight follow-up note asking the human, so the gap
+surfaces now instead of when the verifier blocks mid-run.
+
 Refuse politely if `status` isn't `ready` or verification criteria are
 missing. Never create a branch — if on the default branch, stop and ask the
 user to set one up.
