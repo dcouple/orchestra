@@ -278,7 +278,7 @@ ANTHROPIC_DEFAULT_OPUS_MODEL=gpt-5.6-sol-medium \
 CLAUDE_CODE_MAX_CONTEXT_TOKENS=340000 \
 CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1 \
 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3 \
-ENABLE_TOOL_SEARCH=false \
+ENABLE_TOOL_SEARCH=true \
 claude --model gpt-5.6-sol'</span></code></pre>
   <p>Then reload the shell (<code>source ~/.zshrc</code> / <code>source ~/.bashrc</code>, or just open a new terminal). What each variable does:</p>
   <div class="table-wrap"><table>
@@ -289,7 +289,7 @@ claude --model gpt-5.6-sol'</span></code></pre>
     <tr><td><code>CLAUDE_CODE_MAX_CONTEXT_TOKENS</code></td><td>Declares the model's real context window (applies only to non-<code>claude-*</code> model IDs). Without it Claude Code assumes 200k, wasting nearly half the window; see the context-window section below.</td></tr>
     <tr><td><code>CLAUDE_CODE_ALWAYS_ENABLE_EFFORT</code></td><td>Enables reasoning-effort controls for non-Anthropic models.</td></tr>
     <tr><td><code>CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY</code></td><td>Caps parallel tool calls at 3 — the Codex backend handles bursts poorly.</td></tr>
-    <tr><td><code>ENABLE_TOOL_SEARCH</code></td><td>Off — deferred-tool discovery is unreliable on non-Claude models.</td></tr>
+    <tr><td><code>ENABLE_TOOL_SEARCH</code></td><td>Forced on — defers MCP tool schemas behind a search index instead of eager-loading them (~30k tokens reclaimed with a typical MCP setup). Verified: GPT-5.6 Sol discovers and calls deferred tools via ToolSearch through the proxy. Explicit <code>true</code> matters: auto-defer only kicks in above ~10% of the context budget.</td></tr>
   </table></div>
   <p class="why">Because the variables are inline in the alias, they apply to that invocation only. Plain <code>claude</code> keeps using your Anthropic login. Extra arguments pass through: <code>claudex --continue</code>, <code>claudex -p "…"</code> all work.</p>
 
