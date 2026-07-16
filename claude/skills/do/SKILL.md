@@ -165,7 +165,12 @@ loop — this run's effective review lanes per the dials above (zones 0–2:
 Codex + Claude in parallel; zone 3: Codex alone; `review_lanes:` override
 honored — on an epic too, where it outranks the always-dual Epics
 default; epics otherwise always both, per zones.md's Epics) — findings
-fixed into the plan — until you're satisfied
+fixed into the plan — until you're satisfied. A dual-lane pass dispatches
+both lanes in a single message — the Claude reviewer via the Agent tool,
+the Codex reviewer as a background Bash dispatch per the codex skill —
+then waits for both reports; running one lane to completion before
+starting the other serializes the pass and doubles its wall-clock.
+The loop continues until
 the plan is ready — same exit rule as the post-PR loop: a pass returning
 zero Must Fix from every lane (Codex tiers: P0/P1 count as Must Fix) ends
 it, Should Fixes folded in at your discretion with no re-review, one extra
@@ -289,11 +294,12 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 Reviews run against the open PR and fixes land on it — self-correction
 happens on the artifact, not before it exists.
 
-- Run the review lanes over the PR diff (zones 0–2: both reviewers;
-  zone 3: Codex alone; the item's explicit `review_lanes:` outranks the
-  zone default and, when set on the epic itself, even the Epics
-  always-dual default; epics otherwise always both — zones.md's Epics
-  override)
+- Run the review lanes over the PR diff (zones 0–2: both reviewers,
+  dispatched together in one message — Agent tool + background `codex exec`
+  — never serially; zone 3: Codex alone; the item's explicit
+  `review_lanes:` outranks the zone default and, when set on the epic
+  itself, even the Epics always-dual default; epics otherwise always
+  both — zones.md's Epics override)
   (correctness + security, `(security)` tags). A Codex report may arrive
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format — map it, never re-dispatch over format: P0/P1 ≡

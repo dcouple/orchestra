@@ -105,7 +105,9 @@ codex exec resume --last -o <scratchpad>/codex-implementer-fix<k>.md \
 ```
 
 Parallel dispatches (e.g. several code-researchers, or a reviewer alongside a
-Claude sub-agent) run as background Bash calls.
+Claude sub-agent) run as background Bash calls, issued in the same message as
+the sibling dispatch. A dual-lane review that runs `codex exec` in the
+foreground serializes the lanes and doubles the pass's wall-clock.
 
 **Success criteria**: exit 0 and the `-o` output file exists and is non-empty.
 
