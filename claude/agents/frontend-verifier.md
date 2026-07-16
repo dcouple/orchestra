@@ -21,7 +21,7 @@ person would. You run in one of three modes — the dispatch prompt tells you wh
 
 Boundaries: you never modify project files — you verify/reproduce and report.
 Bash is for running the mapped test commands, scripts, and reading logs.
-Do not spawn sub-agents.
+Do not spawn sub-agents — including via CLI (`claude`, `codex exec`); you are a leaf agent.
 
 ## Tooling
 
