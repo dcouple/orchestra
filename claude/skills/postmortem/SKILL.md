@@ -19,10 +19,11 @@ Compound learning on the last `/do` run — on **two** axes:
   the wrong outcome: a ticket the gate should have killed, a skill that fired
   at the wrong moment.)
 
-The completion artifact is `./tmp/<id>/postmortem.md`, published to the tracker
-the current repo's `AGENTS.md` `Work-item tracking` section configures
-(postmortems live with the repo the run happened in; no tracker configured →
-local-only), plus the proposed (never applied) system changes its findings support.
+The completion artifact is `./tmp/<id>/postmortem.md`, published **as comments
+on the run's anchors** — the work item it executed and the `/do` PR — never as
+a separate tracker issue (a postmortem is run metadata about existing work,
+not a work item; no tracker/anchor → local-only), plus the proposed (never
+applied) system changes its findings support.
 
 This skill changes nothing: no code fixes, no skill edits. If the code itself needs
 fixing, that goes through `/create-plan` then `/do`; the proposed system change is
@@ -104,33 +105,32 @@ guidance quotes are authoring notes, not output. Always fill the **Run operation
 section from step 2; fill the outcome sections only when step 3 found a gap (say
 "on-target" otherwise).
 
-Then publish it to the tracker the current repo's `AGENTS.md` `Work-item
-tracking` section configures — postmortems are kept with the repo the run
-happened in. If no tracker is configured, skip publishing: the postmortem
-stays in `./tmp/<id>/postmortem.md` and you tell the user so. When
-publishing, use this metadata:
-- **Label/tag**: `postmortem` (create it if the tracker supports labels and
-  it's missing)
-- **Anchor**: the artifact the postmortem is about — the `/do` PR if one
-  exists, else the published work item, else none (e.g. a failure inside
-  a `/create-*` run before anything was published)
-- **Title**: `Postmortem: <repo>#<anchor#> — <one-line gap>` (drop the
-  `<repo>#<anchor#>` part only when there is no anchor)
-- **Body**: the postmortem body (frontmatter stripped), ending with links to
-  the work item and the anchor PR/issue
+Then publish it **as comments on its anchors — never as a separate tracker
+issue or work item**. A postmortem is run metadata about existing work; a
+standalone issue orphans it from the thing it analyzes and pollutes the
+backlog with non-actionable items. The anchors:
+- **The work item** (tracker issue the run executed): post the postmortem
+  body as a comment there, following the repo's artifact-comment convention
+  (e.g. `ORCHESTRA-ARTIFACT` markers with `path="postmortem.md"`), so a
+  later pull harvests it with the other run artifacts.
+- **The `/do` PR** (when one exists): post the same body as a PR comment —
+  the reviewer arriving at the PR must see how the run ran without leaving
+  the page.
+- Neither exists (a failure inside a `/create-*` run before anything was
+  published) or no tracker is configured → the postmortem stays local in
+  `./tmp/<id>/postmortem.md` and you tell the user so.
 
-Record the published postmortem's URL in postmortem.md's "System change"
-section. Then
-**connect it back**: comment on the anchor PR/issue with a one-liner linking
-the postmortem issue, so the connection is visible from both sides — someone
-reading the PR/issue later must be able to find the postmortem without
-searching the issue list.
+Title the comment's first line `# Postmortem — <item> (<ops-only | full>)`
+so it's scannable in a long thread. Record the comment URLs in
+postmortem.md's "System changes" section. A second invocation on the same
+run (the deferred outcome half) posts a follow-up comment on the same
+anchors — it never edits or replaces the ops-only comment.
 
 **Success criteria**: `postmortem.md` exists with the Run operations section filled and
 (when the run fell short) the "why the gap happened" section naming the system cause (not
-just the code defect), the postmortem is published per the repo's tracker instructions with
-its URL recorded (or kept local and the user told, when no tracker is configured), and the
-anchor PR/issue (when one exists) carries a comment linking back to it.
+just the code defect); the postmortem body is a comment on the work item and on the
+anchor PR when they exist (local-only and the user told, otherwise); **no new tracker
+issue was created for it**; the comment URLs are recorded.
 
 ### 6. Propose system changes
 Propose the system changes the findings actually support — zero, one, or several:

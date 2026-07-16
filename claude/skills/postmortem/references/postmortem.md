@@ -2,8 +2,9 @@
 
 > Produced by `/postmortem` on a `/do` run — the Run operations half always, the outcome
 > half when the result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and
-> published to the tracker the repo's `AGENTS.md` `Work-item tracking` section configures,
-> tagged `postmortem` (see SKILL.md step 5 for the metadata; no tracker → stays local).
+> published **as comments on the run's work item and its PR** (see SKILL.md step 5;
+> never a separate tracker issue — a postmortem is run metadata, not a work item;
+> no tracker/anchor → stays local).
 > The point is **compound learning**: fix the root cause in *our system*
 > (skill / agent / template / criteria), so the same stall or gap can't recur.
 
@@ -69,6 +70,6 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `aggregation joins against.>`
 
 ## System changes
-`<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval`
+`<URLs of the postmortem comments on the work item and anchor PR (or "local-only"), plus the approval`
 `verdicts on the proposed changes once the human gives them — pending until then;`
 `an auto-run postmortem never waits for them>`
