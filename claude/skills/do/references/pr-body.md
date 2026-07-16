@@ -14,9 +14,10 @@
 > true now*; the comment it points to says *how we know*.
 >
 > Pre-open check (cheap mechanical catches): the Visual overview contains at
-> least one embedded image or the explicit `Visual overview: none — <reason>`
-> line; every capture the verify/QA reports enumerated is either embedded or
-> linked from the body (**a screenshot described in prose but embedded
+> least one embedded image plus, for user-visible changes,
+> `After-shots: landing with the QA drive` — or the explicit
+> `Visual overview: none — <reason>` line; every capture the verify/QA
+> reports enumerated is either embedded or linked from the body (**a screenshot described in prose but embedded
 > nowhere is a failed item**); every image URL resolves (a PR with a 404
 > diagram is a failed handoff) and none is a branch-relative raw URL; the
 > rendered markdown doesn't collapse headings/bullets/image into one
@@ -73,9 +74,11 @@ body proves.
 `Visual overview: none — <why the change has no visual surface>` (a docs-only
 edit, a dependency bump); an absent section with no such line fails the
 pre-open check. What fills it follows the surface: a user-visible change
-leads with **before/after screenshots** (before from the item's refs or
-reproduction evidence, after from the verify/QA captures — a visual redesign
-whose PR asks the reviewer to imagine the result is a failed handoff);
+leads with **before/after screenshots** — before from the item's refs or
+reproduction evidence at open; after-shots land with the QA drive's first
+body update, and until then the section carries the explicit line
+`After-shots: landing with the QA drive` (a visual redesign whose *final*
+PR asks the reviewer to imagine the result is a failed handoff);
 a flow-, boundary-, or lifecycle-shaped change leads with the **rendered
 before → after diagram** per the `excalidraw-pr-diagrams` skill — it teaches
 the change a reviewer hasn't learned yet. Both when both apply.
