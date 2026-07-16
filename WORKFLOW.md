@@ -69,13 +69,13 @@ consumer repos, so the skills' restatement is what actually executes.
 | --- | --- | --- |
 | Overseer (conducts `/do`, all judgment) | main session — Fable | |
 | Web research | Claude `web-researcher` — Sonnet | |
-| Verify frontend (drive the running app) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-plan |
+| Second voice (discussions, Must-Fix tie-breaks) | Claude `discussant` — Sonnet | persistent per discussion via SendMessage; always backgrounded |
+| App-driving QA (one run, post-PR: UI ACs + Manual tests, journey captures) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-plan |
 | Verify backend (tests/scripts) | **Codex** GPT-5.6 `low` | |
 | Explore codebase | **Codex** GPT-5.6 `low` | Claude `code-researcher` (Sonnet) as backup |
 | Reproduce & root-cause | **Codex** GPT-5.6 `low` | |
-| Write the diff — backend/ops | **Codex** GPT-5.6 `low` | |
-| Write the diff — frontend web/mobile (UI, styling, client state, user-facing copy) | Claude `frontend-implementer` — Opus | never routed through Codex |
-| Challenge the draft work item (Socratic gate) | Claude `socrates` — Opus | always invoked by all three `/create-*`; self-calibrates — fast-passes straightforward drafts, full challenge for epics/unargued items |
+| Write the diff — all surfaces, one dispatch per vertical slice | **Codex** GPT-5.6 `medium` | fix rounds resume the same session; repo statically green after every dispatch |
+| Challenge the draft work item (Socratic gate) | Claude `socrates` — Fable | always invoked by all three `/create-*`; self-calibrates — fast-passes straightforward drafts, full challenge for epics/unargued items |
 | Review the plan | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `low` + Claude `plan-reviewer` (Opus) | Must-Fix gate = union of both |
 | Review the diff + security | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `low` + Claude `code-reviewer` (Opus) | Must-Fix gate = union of both |
 
@@ -92,12 +92,10 @@ P2 ≡ Should Fix, P3 ≡ Nice to Have). Caps are ceilings, never quotas: a
 zero-Must-Fix pass ends the loop even with Should Fixes open (the Overseer
 applies those at its discretion, no re-review), and the only other trigger
 for an extra pass is the two lanes sharply diverging. The Overseer flags
-anything left unresolved at a cap in the wrap-up. Codex efforts are defaults — `low` for every
-role; the dispatcher may raise a reviewer to `medium` or `high` rarely, when the
-zone warrants it (zone 0 or an epic), with the reason stated in the
-dispatch — never above `high`. Frontend code
-and customer-facing copy never route through Codex — they're the
-`frontend-implementer`'s lane. `/do` and the three `/create-*` skills
+anything left unresolved at a cap in the wrap-up. Codex efforts are defaults — `medium` for the
+implementer, `low` for every other role; the dispatcher may raise a
+reviewer to `medium` or `high` rarely, when the zone warrants it (zone 0
+or an epic), with the reason stated in the dispatch — never above `high`. `/do` and the three `/create-*` skills
 are user-invoked only (`disable-model-invocation`) — the model never fires
 them on its own.
 
