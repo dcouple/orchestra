@@ -37,7 +37,9 @@ environments.
    invariant is a blocker, not a delta — and keep the Files-changed table
    matching reality.
 4. Quality loop after each major section: `npm run typecheck`, `npm run lint`,
-   `npm run format` (or the repo's equivalents) — fix issues before proceeding.
+   `npm run format` (or the repo's equivalents), across **every surface the
+   slice touches** — a frontend+backend change checks both sides, not just
+   the directory you edited last — fix issues before proceeding.
    Before reporting, run the plan's Automated verification commands and fix
    failures.
 5. A task is not done until its runtime/user-facing path is wired end-to-end.

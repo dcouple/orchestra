@@ -19,9 +19,8 @@ autonomously; the human returns at the PR.
 plan-reviewer, and code-reviewer run on Codex via the `codex` skill; each
 review runs the Codex and Claude reviewers in parallel and weighs both
 reports at zones 0–2; zone 3 runs the Codex lane alone. **All
-implementation runs on the Codex `implementer`** — backend/ops at the role
-table's default effort, frontend web/mobile (UI components, styling,
-client-side state, user-facing copy) at `medium`. The Claude
+implementation runs on the Codex `implementer`** at effort `medium`,
+every surface — backend/ops and frontend web/mobile alike. The Claude
 `frontend-verifier` is the app-driving QA agent: it runs **once per run,
 post-PR** (Step 5), never at the verify stage. web-researcher is a Claude
 sub-agent.
@@ -196,10 +195,13 @@ Never a reason to stop the run.
 ## Step 2: Implement
 
 Every implementation dispatch goes to the `codex` skill, role `implementer`
-(later fix rounds resume the same Codex session) — frontend work states the
-surface in the dispatch so the effort dial rises to `medium` per the role
-table. A mixed plan splits into separate
-dispatches — you sequence them. Give each the plan and the item (intent =
+(later fix rounds resume the same Codex session). **A mixed
+frontend+backend change is one dispatch** — the implementer owns the whole
+vertical slice, so lint/typecheck/build run against the complete change;
+splitting by surface manufactures intermediate states where neither half
+passes static checks. Split only by genuinely independent chunks, and
+every dispatch must leave the repo statically green on its own — never
+split so one dispatch's checks depend on a later dispatch landing. Give each the plan and the item (intent =
 source of truth for *why*). Resolve blockers yourself from the item/refs;
 apply the Autonomy & safety tiers — a red-tier action gets captured, noted,
 and notified, and the run continues; only a red gate that blocks everything

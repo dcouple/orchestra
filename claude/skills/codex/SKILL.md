@@ -17,14 +17,14 @@ this conversation — the prompt must carry everything the role needs.
 
 | Role | Model / effort | Sandbox | Session |
 | --- | --- | --- | --- |
-| `implementer` | `gpt-5.6-sol` / `low` (backend/ops) · `medium` (frontend web/mobile) | `--yolo` | persistent — resume for fix rounds |
+| `implementer` | `gpt-5.6-sol` / `medium` | `--yolo` | persistent — resume for fix rounds |
 | `backend-verifier` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `plan-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `code-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `code-researcher` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 
-Efforts are defaults: `low` for every role. The dispatcher may raise a reviewer to `medium` or
+Efforts are defaults: `medium` for the implementer, `low` for every other role. The dispatcher may raise a reviewer to `medium` or
 `high` — rarely, when the zone warrants it (zone 0, or an epic), with the
 reason stated in the dispatch; never above `high`, never by default. The investigator and
 backend-verifier act on the environment (tests, scripts, app boots), but
@@ -37,9 +37,8 @@ the dispatch. The operator authorizes this via the /do preflight harness
 check. Reviewer/researcher dispatches are still no-edit by charter (see
 Rules: one that edited files is a failed run) — the guarantee is the charter
 plus a diff check. The `implementer` role covers
-every surface: backend/ops at `low`, frontend web/mobile (UI components,
-styling, client-side state, customer-facing copy) at `medium` — the
-dispatch states the surface.
+every surface — backend/ops and frontend web/mobile alike, one effort
+(`medium`), one session per slice.
 
 ## Steps
 
