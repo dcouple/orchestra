@@ -22,7 +22,7 @@ Compound learning on the last `/do` run — on **two** axes:
 The completion artifact is `./tmp/<id>/postmortem.md`, published **as comments
 on the run's anchors** — the work item it executed and the `/do` PR — never as
 a separate tracker issue (a postmortem is run metadata about existing work,
-not a work item; no tracker/anchor → local-only), plus the proposed (never
+not a work item; local-only when neither anchor exists), plus the proposed (never
 applied) system changes its findings support.
 
 This skill changes nothing: no code fixes, no skill edits. If the code itself needs
@@ -116,9 +116,13 @@ backlog with non-actionable items. The anchors:
 - **The `/do` PR** (when one exists): post the same body as a PR comment —
   the reviewer arriving at the PR must see how the run ran without leaving
   the page.
-- Neither exists (a failure inside a `/create-*` run before anything was
-  published) or no tracker is configured → the postmortem stays local in
-  `./tmp/<id>/postmortem.md` and you tell the user so.
+- The two anchors are independent — post to every anchor that exists. A
+  local work item (no tracker configured) whose run still opened a PR gets
+  the postmortem on that PR; a tracked item whose run died before a PR gets
+  it on the work item alone. Only when **neither anchor exists** (e.g. a
+  failure inside a `/create-*` run before anything was published) does the
+  postmortem stay local in `./tmp/<id>/postmortem.md` — and you tell the
+  user so.
 
 Title the comment's first line `# Postmortem — <item> (<ops-only | full>)`
 so it's scannable in a long thread. Record the comment URLs in
@@ -129,7 +133,7 @@ anchors — it never edits or replaces the ops-only comment.
 **Success criteria**: `postmortem.md` exists with the Run operations section filled and
 (when the run fell short) the "why the gap happened" section naming the system cause (not
 just the code defect); the postmortem body is a comment on the work item and on the
-anchor PR when they exist (local-only and the user told, otherwise); **no new tracker
+anchor PR when they exist (local-only and the user told, only when neither exists); **no new tracker
 issue was created for it**; the comment URLs are recorded.
 
 ### 6. Propose system changes

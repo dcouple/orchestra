@@ -4,7 +4,7 @@
 > half when the result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and
 > published **as comments on the run's work item and its PR** (see SKILL.md step 5;
 > never a separate tracker issue — a postmortem is run metadata, not a work item;
-> no tracker/anchor → stays local).
+> stays local only when neither anchor exists).
 > The point is **compound learning**: fix the root cause in *our system*
 > (skill / agent / template / criteria), so the same stall or gap can't recur.
 
