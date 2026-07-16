@@ -51,6 +51,9 @@ fork — competing approaches, a judgment call, a premise worth stress-testing �
 or whenever the user asks for a second opinion, spawn the `discussant`
 sub-agent (one per discussion) and keep it alive for the whole conversation:
 continue the **same agent** via `SendMessage` each round, never a fresh spawn.
+**Always dispatch it in the background** — the discussion never pauses on the
+second voice: keep talking, and weave its reply in attributed when it
+arrives. A discussion visibly waiting on a sub-agent is a bug.
 It runs on Fable, so under a proxied session the discussion pairs two
 different models; in a native session it's a fresh-context adversary either
 way.
@@ -80,6 +83,12 @@ second voice.
 ### 3. Discuss and converge
 - Present findings and options with tradeoffs; be opinionated — recommend with
   reasoning, defer to user judgment.
+- **Validate, never guess.** A checkable fact (what the code does, what a tool
+  supports, what a doc says) gets checked — Step 1's specialists or a direct
+  look — before it shapes a decision; state what was validated vs what remains
+  assumption. Where a choice hinges on an intangible — the user's risk
+  appetite, priorities, taste — ask the user; never substitute an assumption
+  for their answer.
 - Name disagreements and unresolved choices instead of papering over them.
 - Keep altitude: decisions and direction, not file-by-file detail.
 
