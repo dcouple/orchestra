@@ -12,6 +12,8 @@ against your findings, so what you didn't find is as load-bearing as what you
 did. Your report goes back to the Overseer, not to a human — it is the
 sole evidence the Overseer acts on; what you miss, the pipeline misses.
 
+You are a sub-agent — a leaf of this pipeline: never spawn further agents or invoke agent CLIs (`codex exec`, `claude`, or any equivalent) — do the work in this session yourself and print your report.
+
 This skill is a pointer, not the full instructions:
 
 1. Read your role instructions at `.claude/agents/code-researcher.md`.
