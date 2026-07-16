@@ -284,7 +284,9 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   pre-open checklist are binding. The **Visual overview** is required — its
   only omission is the recorded `Visual overview: none — <reason>` line:
   user-visible changes lead with before/after captures (after-shots from the
-  verify report's Captures table, hosted per Step 5's evidence rule);
+  verify report's Captures table, hosted **before the pre-open check** on the
+  rolling assets prerelease per Step 5's evidence rule — filenames carry the
+  work item id, which exists now; no PR number is needed to host);
   flow-/boundary-/lifecycle-shaped changes lead with the before → after
   diagram per the `excalidraw-pr-diagrams` skill; the
   **User journeys** section carries both a journey map and — for branching
@@ -359,7 +361,10 @@ happens on the artifact, not before it exists.
   them `gh release create` prompts interactively and a headless run hangs;
   then `gh release upload qa-assets <pr#>-<name> --clobber`) and reference the
   `releases/download/...` URLs — CLI-native, permanent, permission-scoped,
-  any file type. Prefix filenames with the PR number so the rolling release
+  any file type. This rule is step-agnostic: Step 4 hosts the
+  Visual-overview captures here *before* the PR exists, so prefix filenames
+  with the **work item id** (stable from Step 0; add the PR number once one
+  exists if it helps browsing) so the rolling release
   stays browsable. Images/GIFs render inline in comments; videos land as
   links (GitHub only inline-plays web-UI uploads). Expiring temp hosts are
   forbidden for evidence — a dead link months later is no evidence at all.
