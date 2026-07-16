@@ -80,10 +80,7 @@ is missing or expired with the exact command to fix each: tracker + `gh`
 auth; the artifact-provider tool the repo's `AGENTS.md` names (e.g. a Notion
 CLI) if artifacts get published; the notify target (`.references/notify.md`);
 and the credentials/tooling verification will need (DB, cloud, test-mode API
-keys, a browser for computer-use — including the test account the repo's
-`AGENTS.md` testing-accounts section names; that section missing or
-unfilled when the plan needs app-driving is a preflight note asking the
-human, never a mid-run improvisation); and the **harness permission modes** —
+keys, a browser for computer-use); and the **harness permission modes** —
 the orchestrator session runs under `claude --dangerously-skip-permissions`
 and every codex dispatch uses `--yolo`; approvals must never gate an
 unattended run. Not in bypass mode → preflight note with the exact relaunch
@@ -110,6 +107,13 @@ only fill gaps. A local path is read directly. Invoked with no argument: list
 the local items with `status: ready` (`./tmp/*/item.md`) and ask the user
 which to run — never pick one silently. Skim `refs/`; read individual refs
 as the work calls for them.
+
+One preflight item is only checkable now that the item is loaded: when its
+verification criteria imply driving the running app (UI acceptance criteria,
+manual flows), confirm the repo `AGENTS.md`'s testing-accounts section exists
+and is filled — it is the verifier's credentials source. Missing or unfilled
+→ an immediate preflight follow-up note asking the human, so the gap
+surfaces now instead of when the verifier blocks mid-run.
 
 Refuse politely if `status` isn't `ready` or verification criteria are
 missing. Never create a branch — if on the default branch, stop and ask the
