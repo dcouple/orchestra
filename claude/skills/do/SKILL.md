@@ -312,8 +312,14 @@ happens on the artifact, not before it exists.
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format — map it, never re-dispatch over format: P0/P1 ≡
   Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the two lanes
-  disagree head-on about a Must Fix, the Overseer weighs both arguments
-  and rules.
+  disagree head-on about a Must Fix, get a second voice before ruling:
+  dispatch the `discussant` sub-agent (background) with both findings and
+  the disputed diff hunks, weigh its take alongside the lanes', then rule.
+  This is the one Overseer meta-call with no adversarial check and no
+  downstream net — a wrongly dismissed Must Fix ships, because the loop
+  ends on zero Must Fix. Every other judgment call (zone escalation,
+  readiness, research depth) stays single-voice — they're bounded or
+  self-correcting.
 - **Another pass runs only on a trigger — the caps are ceilings, never
   quotas** (cap 3 passes; zones 2–3: 1; epics always 3 passes,
   dual-lane unless the epic's own `review_lanes:` says otherwise —
