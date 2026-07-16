@@ -171,9 +171,23 @@ export class LinearGateway {
   }
 
   private async fetchAppToken(app: AppName, config: AppConfig, deadlineAt: number): Promise<string> {
+    try {
+      return await this.fetchAppTokenWithScope(app, config, deadlineAt, "read,write,app:assignable,app:mentionable,admin");
+    } catch (error) {
+      // Linear rejects `admin` for some client-credentials apps; without it the
+      // startup webhook re-enable is unavailable but everything else works.
+      if (error instanceof OAuthTokenError && error.status === 400 && /invalid scope/i.test(error.message)) {
+        this.logger.warn(JSON.stringify({ level: "warn", event: "oauth_admin_scope_rejected", app }));
+        return await this.fetchAppTokenWithScope(app, config, deadlineAt, "read,write,app:assignable,app:mentionable");
+      }
+      throw error;
+    }
+  }
+
+  private async fetchAppTokenWithScope(app: AppName, config: AppConfig, deadlineAt: number, scope: string): Promise<string> {
     const remaining = deadlineAt - this.now();
     if (remaining <= 0) throw new Error("OAuth token request deadline exceeded");
-    const body = new URLSearchParams({ grant_type: "client_credentials", scope: "read,write,app:assignable,app:mentionable,admin" });
+    const body = new URLSearchParams({ grant_type: "client_credentials", scope });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error("OAuth token request timed out")), remaining);
     timer.unref();
