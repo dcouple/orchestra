@@ -275,7 +275,7 @@ ANTHROPIC_AUTH_TOKEN=&lt;your-generated-key&gt; \
 ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5.6-sol-low \
 ANTHROPIC_DEFAULT_SONNET_MODEL=gpt-5.6-sol-low \
 ANTHROPIC_DEFAULT_OPUS_MODEL=gpt-5.6-sol-medium \
-CLAUDE_CODE_MAX_CONTEXT_TOKENS=340000 \
+CLAUDE_CODE_MAX_CONTEXT_TOKENS=250000 \
 CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1 \
 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3 \
 ENABLE_TOOL_SEARCH=true \
@@ -286,7 +286,7 @@ claude --model gpt-5.6-sol'</span></code></pre>
     <tr><td><code>ANTHROPIC_BASE_URL</code></td><td>Points Claude Code at the local proxy instead of Anthropic.</td></tr>
     <tr><td><code>ANTHROPIC_AUTH_TOKEN</code></td><td>Authenticates to the proxy with your generated key.</td></tr>
     <tr><td><code>ANTHROPIC_DEFAULT_HAIKU_MODEL</code><br><code>ANTHROPIC_DEFAULT_SONNET_MODEL</code><br><code>ANTHROPIC_DEFAULT_OPUS_MODEL</code></td><td>Remap every Claude model alias to an effort tier of GPT-5.6 Sol: haiku (background chores like session titles) and sonnet-pinned agents → <code>-low</code>; opus-pinned agents → <code>-medium</code>; the main session stays on the base name at high. Covers agent definitions that pin <code>model:</code> in frontmatter, so nothing in the session can accidentally try to reach Anthropic. Don't set <code>CLAUDE_CODE_SUBAGENT_MODEL</code> — it would force one model onto all subagents and defeat the tiers.</td></tr>
-    <tr><td><code>CLAUDE_CODE_MAX_CONTEXT_TOKENS</code></td><td>Declares the model's real context window (applies only to non-<code>claude-*</code> model IDs). Without it Claude Code assumes 200k, wasting nearly half the window; see the context-window section below.</td></tr>
+    <tr><td><code>CLAUDE_CODE_MAX_CONTEXT_TOKENS</code></td><td>Declares the model's effective context budget (applies only to non-<code>claude-*</code> model IDs) — ~250k, matching Codex's live-session cap; see the context-window section below.</td></tr>
     <tr><td><code>CLAUDE_CODE_ALWAYS_ENABLE_EFFORT</code></td><td>Enables reasoning-effort controls for non-Anthropic models.</td></tr>
     <tr><td><code>CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY</code></td><td>Caps parallel tool calls at 3 — the Codex backend handles bursts poorly.</td></tr>
     <tr><td><code>ENABLE_TOOL_SEARCH</code></td><td>Forced on — defers MCP tool schemas behind a search index instead of eager-loading them (~30k tokens reclaimed with a typical MCP setup). Verified: GPT-5.6 Sol discovers and calls deferred tools via ToolSearch through the proxy. Explicit <code>true</code> matters: auto-defer only kicks in above ~10% of the context budget.</td></tr>
@@ -318,9 +318,9 @@ claude --model gpt-5.6-sol'</span></code></pre>
   <p class="why">The only one-time actions are steps 01–07 themselves. If <code>claudex</code> ever fails after a reboot, the troubleshooting table below covers the two realistic causes: the service not running, or a stale shell.</p>
 
   <h2><span class="n">§</span> Context window: declare the real size, never <code>[1m]</code></h2>
-  <p>GPT-5.6 Sol's real window is <strong>~350–370k tokens total</strong> — probed empirically through the proxy: 328k input succeeds cold, ~349k passes, ~374k is rejected with "input exceeds the context window". Claude Code doesn't know this: by default it budgets non-Anthropic models at 200k (wasting almost half the window), and its <code>[1m]</code> model-ID suffix budgets 1M (long sessions would die at ~370k with a hard error before auto-compact ever triggers).</p>
-  <p>The fix is <code>CLAUDE_CODE_MAX_CONTEXT_TOKENS=340000</code> in the alias — a Claude Code override that sets the context budget for any model whose ID doesn't start with <code>claude-</code>. 340k sits safely below the verified pass points; <code>/context</code> confirms it (<code>53.1k / 340k</code>), and auto-compact + <code>/compact</code> are verified working through the proxy, so long sessions summarize and continue with nearly double the default working space.</p>
-  <p class="why">Don't "upgrade" this to <code>[1m]</code> — it routes fine and looks like it works, right up until a long run crosses ~370k and crashes. Custom suffixes like <code>[400k]</code> aren't supported (silent fallback to 200k); the env var is the supported mechanism.</p>
+  <p>The Codex models' window is <strong>400k tokens total, split ~272k input + 128k output/reasoning</strong> — and in live coding sessions the effective usable context caps around <strong>~258k</strong>. Raw single-shot probes accept more input (a 328k-input request with tiny output passes, because only the 400k total is checked), which is misleading: a real session that grows past ~258k starts hitting context errors. Claude Code doesn't know any of this — it budgets non-Anthropic models at 200k by default, and its <code>[1m]</code> model-ID suffix budgets 1M, which lets long sessions crash far before auto-compact would ever trigger.</p>
+  <p>The fix is <code>CLAUDE_CODE_MAX_CONTEXT_TOKENS=250000</code> in the alias — a Claude Code override that sets the context budget for any model whose ID doesn't start with <code>claude-</code>. 250k sits just under the ~258k effective cap, so auto-compact fires while sessions are still safely inside the window; <code>/context</code> confirms the budget (<code>30.9k / 250k</code>), and auto-compact + <code>/compact</code> are verified working through the proxy. (We ran 340k for a while on the strength of the raw probes — real sessions occasionally errored near the top; 250k matches how Codex itself caps live sessions.)</p>
+  <p class="why">Don't "upgrade" this to <code>[1m]</code> or past ~258k — bigger numbers route fine and look like they work, right up until a long run crosses the effective cap and dies mid-task. Custom suffixes like <code>[400k]</code> aren't supported (silent fallback to 200k); the env var is the supported mechanism.</p>
 
   <h2><span class="n">##</span> Troubleshooting</h2>
   <div class="table-wrap"><table>
