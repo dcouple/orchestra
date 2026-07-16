@@ -17,7 +17,7 @@ this conversation — the prompt must carry everything the role needs.
 
 | Role | Model / effort | Sandbox | Session |
 | --- | --- | --- | --- |
-| `implementer` | `gpt-5.6-sol` / `low` | `--yolo` | persistent — resume for fix rounds |
+| `implementer` | `gpt-5.6-sol` / `low` (backend/ops) · `medium` (frontend web/mobile) | `--yolo` | persistent — resume for fix rounds |
 | `backend-verifier` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `plan-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `code-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
@@ -36,9 +36,10 @@ unattended, and an approval prompt or approval-layer refusal mid-flight burns
 the dispatch. The operator authorizes this via the /do preflight harness
 check. Reviewer/researcher dispatches are still no-edit by charter (see
 Rules: one that edited files is a failed run) — the guarantee is the charter
-plus a diff check. The `implementer` role is
-for backend/ops work only — frontend web/mobile code and customer-facing
-copy go to the Claude `frontend-implementer` sub-agent, never through Codex.
+plus a diff check. The `implementer` role covers
+every surface: backend/ops at `low`, frontend web/mobile (UI components,
+styling, client-side state, customer-facing copy) at `medium` — the
+dispatch states the surface.
 
 ## Steps
 

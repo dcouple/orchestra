@@ -48,6 +48,10 @@ REMOVED_CLAUDE_SKILLS=(idea-duel dialectic)
 for name in "${REMOVED_CLAUDE_SKILLS[@]}"; do
   rm -rf "$CONSUMER/.claude/skills/$name"
 done
+REMOVED_CLAUDE_AGENTS=(frontend-implementer)
+for name in "${REMOVED_CLAUDE_AGENTS[@]}"; do
+  rm -f "$CONSUMER/.claude/agents/$name.md"
+done
 
 echo "synced orchestra -> $CONSUMER"
 git -C "$CONSUMER" status --short -- .claude/skills .claude/agents .codex/skills .references

@@ -18,11 +18,13 @@ autonomously; the human returns at the PR.
 **Sub-agents:** code-researcher, implementer, backend-verifier,
 plan-reviewer, and code-reviewer run on Codex via the `codex` skill; each
 review runs the Codex and Claude reviewers in parallel and weighs both
-reports at zones 0–2; zone 3 runs the Codex lane alone. Work routes by surface: backend/ops implementation and
-verification → Codex (implementer, backend-verifier); frontend web/mobile
-work (UI components, styling, client-side state, user-facing copy) → the
-Claude `frontend-implementer`, verified by the Claude `frontend-verifier`.
-web-researcher is a Claude sub-agent.
+reports at zones 0–2; zone 3 runs the Codex lane alone. **All
+implementation runs on the Codex `implementer`** — backend/ops at the role
+table's default effort, frontend web/mobile (UI components, styling,
+client-side state, user-facing copy) at `medium`. The Claude
+`frontend-verifier` is the app-driving QA agent: it runs **once per run,
+post-PR** (Step 5), never at the verify stage. web-researcher is a Claude
+sub-agent.
 
 ## Autonomy & safety (read first)
 
@@ -193,9 +195,10 @@ Never a reason to stop the run.
 
 ## Step 2: Implement
 
-Route each dispatch by surface: frontend work → the `frontend-implementer`
-sub-agent; backend/ops work → the `codex` skill, role `implementer` (later
-fix rounds resume the same Codex session). A mixed plan splits into separate
+Every implementation dispatch goes to the `codex` skill, role `implementer`
+(later fix rounds resume the same Codex session) — frontend work states the
+surface in the dispatch so the effort dial rises to `medium` per the role
+table. A mixed plan splits into separate
 dispatches — you sequence them. Give each the plan and the item (intent =
 source of truth for *why*). Resolve blockers yourself from the item/refs;
 apply the Autonomy & safety tiers — a red-tier action gets captured, noted,
@@ -219,12 +222,13 @@ codemods, per-file transforms):
 
 ## Step 3: Verify
 
-Prove every verification criterion — the `frontend-verifier` sub-agent for
-computer-use flows in the running app (dispatched per the zone's verifier
-dial for discretionary checks; an AC whose only possible proof needs the
-running app always gets the verifier, at any zone — acceptance evidence is
-never trimmed by a dial), the `codex`
-skill role `backend-verifier` for tests/scripts. Verification that must spawn
+Prove every command-shaped verification criterion — the `codex` skill role
+`backend-verifier` for tests/scripts. **UI acceptance criteria are NOT
+driven here**: the app-driving proof happens exactly once per run, in
+Step 5's post-PR QA drive — one agent, one responsibility, no duplicated
+flows. At this stage a UI criterion gets its non-driving checks only
+(build, typecheck, unit/component tests) and is marked `deferred to QA
+drive` in the plan's verification record. Verification that must spawn
 an AI session or feed repo context to an AI CLI routes to a **Claude**
 verifier dispatch, never Codex. Any ad-hoc Claude verifier dispatched outside
 the named agents (e.g. `general-purpose` for a live-app script check) passes
@@ -293,10 +297,12 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   notes, Residual risks), its body-state / comment-proof split, and its
   pre-open checklist are binding. The **Visual overview** is required — its
   only omission is the recorded `Visual overview: none — <reason>` line:
-  user-visible changes lead with before/after captures (after-shots from the
-  verify report's Captures table, hosted **before the pre-open check** on the
-  rolling assets prerelease per Step 5's evidence rule — filenames carry the
-  work item id, which exists now; no PR number is needed to host);
+  user-visible changes lead with the before-state and the diagram at open —
+  **after-shots land with the QA drive's first body update, minutes after
+  open** (the pre-open Visual overview says so explicitly:
+  `After-shots: landing with the QA drive`); anything already captured hosts
+  on the rolling assets prerelease per Step 5's evidence rule, filenames
+  keyed to the work item id;
   flow-/boundary-/lifecycle-shaped changes lead with the before → after
   diagram per the `excalidraw-pr-diagrams` skill; the
   **User journeys** section carries both a journey map and — for branching
@@ -340,13 +346,25 @@ happens on the artifact, not before it exists.
   inline comments below) — a Should Fix never triggers a re-review by
   itself.
 - When the loop ends — zero Must Fix, or the cap reached with
-  survivors flagged in the wrap-up — run the **QA pass per the zone's dial**
-  (`.references/zones.md`): zones 0–1 as the table says, zone 2 trimmed to
-  the command-shaped items (record `qa_pass: trimmed`), zone 3 skipped
-  (record `skipped`). When it runs: execute the PR
-  body's Manual tests checklist best-effort, highest risk tier first. The
-  `frontend-verifier` drives the running app and captures screenshots; the
-  `codex` skill role `backend-verifier` runs the command-shaped items. Both
+  survivors flagged in the wrap-up — run the **QA drive**. This is the
+  run's **single app-driving pass** (Step 3 defers all UI acceptance
+  criteria here): the `frontend-verifier` proves the deferred UI ACs *and*
+  executes the PR body's Manual tests checklist in one session, highest
+  risk tier first; the `codex` skill role `backend-verifier` runs the
+  command-shaped items. Zone dial (`.references/zones.md`): zones 0–1
+  full; zone 2 trimmed to the command-shaped items *plus* the deferred UI
+  ACs (record `qa_pass: trimmed`); zone 3 command-shaped items are skipped
+  (record `skipped`) — but **an AC whose only possible proof needs the
+  running app is driven at any zone; acceptance evidence is never trimmed
+  by a dial.** The frontend-verifier dispatch carries the QA-drive
+  contract: map every touched surface and user journey to **ordered,
+  step-named captures** (`01-<journey>-<state>.png`) covering meaningful
+  states — empty/default, filled, expanded, validation error,
+  loading/success, and one narrow viewport when responsive layout is in
+  scope; generate a unique test marker (`agent-e2e-<timestamp>`) and
+  verify external effects by **readback through connected tools** (a
+  network request proves the browser tried; the provider/connector query
+  proves the product received it). Both
   dispatches follow `.references/qa-verification.md` — external-system
   confirmation by unique marker, preflight, test-mode safety, cleanup.
   **The capture contract rides in every frontend-verifier/QA dispatch you
@@ -365,8 +383,17 @@ happens on the artifact, not before it exists.
   `— left to human: <reason>` on skipped ones) **and** fill the **QA results**
   summary line — items executed vs left to the human, plus any bug the pass
   found and its fix — changing nothing else. Then post the evidence as a PR
-  comment: each item with its quoted output or hosted-image screenshot URLs
-  (never committed files). Body carries state, comment carries proof — never
+  comment: each item with its quoted output or hosted-image screenshot
+  evidence (never committed files) — screenshots render **inline as grouped
+  preview galleries**, one `<details open>` block per journey/surface in
+  chronological step order, each capture labeled with what the reviewer
+  should notice (`<img width="420">` when using HTML); a bare list of
+  screenshot URLs is a failed handoff. The comment ends with an explicit
+  split: **passed automated** vs **remaining for the human**, so the
+  returning human's manual pass starts from the unchecked boxes and the
+  remainder list. The QA drive's after-shots also complete the body's
+  Visual overview (replacing its `After-shots: landing with the QA drive`
+  note). Body carries state, comment carries proof — never
   leave the results only in a comment when the body has a checklist and a QA
   results line to update.
 - **Hosting evidence media**: when the repo is on GitHub, host screenshots,
