@@ -73,8 +73,26 @@ briefs). Every message to it is a self-contained delta brief:
 - the specific question or position to challenge.
 
 Never reference conversation it hasn't been sent — if its reply shows a gap,
-the fix is a fuller brief, not a re-spawn. Before a decision locks, send the
-complete final picture for one closing challenge.
+the fix is a fuller brief, not a re-spawn. **A brief's factual claims must
+match the checkout the discussant will read** — verify the working tree
+carries the state the brief describes before dispatching (a discussant
+reading a stale branch fact-checks you, correctly). Before a decision locks,
+send the complete final picture for one closing challenge.
+
+**Multi-axis questions may seat a second discussant** — only with an
+explicitly distinct lens per voice (e.g. value/coverage vs cost/failure;
+undifferentiated duplicates converge into noise), and always dispatched in
+parallel, both in the same message, both backgrounded. A forwarding debate —
+relaying each voice's position into the other's thread for rebuttal — is
+reserved for a disagreement that survives the first round, runs its
+forwards in parallel too, and is capped at two forwarded rounds. (That
+single-round parallel lenses capture most of forwarding's value is an
+untested assumption — treat it as the default, not as proven.) For a long
+or multi-round discussion the Overseer *may* keep a notes file
+(`./tmp/discussions/<slug>-notes.md`) that every brief points at — single
+writer (the Overseer), carrying **facts and locked decisions only, never
+the Overseer's synthesis or steer** (steer turns two voices into one voice
+plus an echo); discussants read it, never write it.
 
 Relay its replies inline and attributed (e.g. **Discussant:** …), and push
 back on it when you disagree — the point is two independent positions in
