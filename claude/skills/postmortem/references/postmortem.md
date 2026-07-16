@@ -31,8 +31,10 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `summed turnaround gaps; the ranked in-run stalls (agent turn-ends that needed a "continue" nudge) with`
 `what each waited on; per-phase pacing from the commits; blocker inventory`
 `(AskUserQuestion gates, rate-limit hits, legitimate background-agent waits). Render the`
-`table as a Gantt timeline (HTML/SVG in refs/, screenshot embedded on the anchor PR and`
-`tracker issue — parallel vs sequential must read at a glance). Close with the single`
+`table as a Gantt timeline (HTML/SVG in refs/, screenshot embedded in the anchor-PR and`
+`work-item comments — parallel vs sequential must read at a glance). Image hosting must`
+`match the viewer: a private GitHub asset URL renders on the PR but NOT in an external`
+`tracker (Linear etc.) — upload the image natively to the tracker there. Close with the single`
 `change that would have removed the biggest stall. Per`
 `.references/run-operations-analysis.md.>`
 
