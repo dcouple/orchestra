@@ -69,7 +69,7 @@ consumer repos, so the skills' restatement is what actually executes.
 | --- | --- | --- |
 | Overseer (conducts `/do`, all judgment) | main session — Fable | |
 | Web research | Claude `web-researcher` — Sonnet | |
-| Second voice (discussions, Must-Fix tie-breaks) | Claude `discussant` — Sonnet | persistent per discussion via SendMessage; always backgrounded |
+| Second voice (Must-Fix tie-break consults) | Claude `discussant` — Sonnet | background dispatch when the review lanes disagree head-on |
 | App-driving QA (one run, post-PR: UI ACs + Manual tests, journey captures) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-plan |
 | Verify backend (tests/scripts) | **Codex** GPT-5.6 `low` | |
 | Explore codebase | **Codex** GPT-5.6 `low` | Claude `code-researcher` (Sonnet) as backup |
