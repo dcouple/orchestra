@@ -25,6 +25,15 @@
 ## What was exercised
 <the flow driven / commands run — enough for someone to re-run it>
 
+## Captures
+| File | Shows | Evidences |
+|------|-------|-----------|
+| <absolute scratchpad path> | <one line — the UI state> | <AC# / J# / checklist item> |
+
+Every screenshot taken during the run is a row here — the caller hosts and
+embeds from this table, so a capture not listed does not exist. UI-surface
+criteria with no capture row: state why (headless harness, no browser).
+
 ## Anomalies   (omit section if none)
 
 A Pass without quoted evidence is not a Pass. Do not report success until

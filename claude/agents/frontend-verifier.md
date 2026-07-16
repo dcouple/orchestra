@@ -52,8 +52,13 @@ test routes are not evidence.
    probe the failure path, narrowing to the shortest deterministic repro
    (reproduce).
 3. Capture evidence as you go: quoted command output, log excerpts, console
-   errors, observed UI state. Quoted text/log evidence is the proof; capture
-   screenshots too when the harness supports it.
+   errors, observed UI state. Quoted text/log evidence is the proof, and
+   **every UI state you verify is also screenshotted**: save each capture to
+   the scratchpad with a stable name (`<item>-<criterion or J#>-<state>.png`)
+   and enumerate it in your report's Captures section — path, one-line
+   description, the criterion or checklist item it evidences. A capture that
+   exists only as prose ("screenshot shows…") is lost the moment you exit;
+   the Overseer can only host and embed what your report enumerates.
 4. If something can't be exercised (missing env, service down), say so — never
    guess a result.
 

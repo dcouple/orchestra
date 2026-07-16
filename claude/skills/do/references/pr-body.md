@@ -13,12 +13,16 @@
 > never let state live only in a comment. A checkbox in the body says *what is
 > true now*; the comment it points to says *how we know*.
 >
-> Pre-open check (cheap mechanical catches): every image URL resolves (a PR
-> with a 404 diagram is a failed handoff); the rendered markdown doesn't
-> collapse headings/bullets/image into one paragraph (preview it); every AC
-> has a Verification line; every Manual test traces to a change that motivated
-> it; the closing keyword is present. Grep the draft for `path/to/`, `TBD`,
-> `<placeholder>`, and empty sections.
+> Pre-open check (cheap mechanical catches): the Visual overview contains at
+> least one embedded image or the explicit `Visual overview: none — <reason>`
+> line; every capture the verify/QA reports enumerated is either embedded or
+> linked from the body (**a screenshot described in prose but embedded
+> nowhere is a failed item**); every image URL resolves (a PR with a 404
+> diagram is a failed handoff) and none is a branch-relative raw URL; the
+> rendered markdown doesn't collapse headings/bullets/image into one
+> paragraph (preview it); every AC has a Verification line; every Manual test
+> traces to a change that motivated it; the closing keyword is present. Grep
+> the draft for `path/to/`, `TBD`, `<placeholder>`, and empty sections.
 
 ---
 
@@ -65,10 +69,16 @@ for *this* PR, tied to the item's intent. It's the contract the rest of the
 body proves.
 
 ### Visual overview
-Include when the change is flow-, boundary-, or lifecycle-shaped and the
-`excalidraw-pr-diagrams` skill is available. Lead with the **rendered
-before → after diagram** per that skill's PR standard — it teaches the change
-a reviewer hasn't learned yet.
+**Required in every PR body** — the only way to omit it is the explicit line
+`Visual overview: none — <why the change has no visual surface>` (a docs-only
+edit, a dependency bump); an absent section with no such line fails the
+pre-open check. What fills it follows the surface: a user-visible change
+leads with **before/after screenshots** (before from the item's refs or
+reproduction evidence, after from the verify/QA captures — a visual redesign
+whose PR asks the reviewer to imagine the result is a failed handoff);
+a flow-, boundary-, or lifecycle-shaped change leads with the **rendered
+before → after diagram** per the `excalidraw-pr-diagrams` skill — it teaches
+the change a reviewer hasn't learned yet. Both when both apply.
 
 - **When the flow branches**, the diagram contrasts the **old path against the
   new fork tree, with the after emphasized** (bolder strokes / fuller color /
@@ -78,8 +88,10 @@ a reviewer hasn't learned yet.
 - Follow the diagram with **before/after screenshots** of the actual behavior
   when the change is user-visible — *before* from the item's refs or the
   reproduction evidence, *after* from the verify captures.
-- All images are **hosted-image URLs** (or the repo's committed-asset
-  convention where one exists), never a broken relative path. Keep the
+- All images are **hosted-image URLs** on the repo's rolling assets
+  prerelease or the tracker's native upload (or the repo's committed-asset
+  convention where one exists) — never a broken relative path and **never a
+  branch-relative raw URL**, which dies when the branch is deleted. Keep the
   `.excalidraw` source in `./tmp/<id>/refs/`.
 
 ### User journeys
