@@ -108,6 +108,13 @@ the local items with `status: ready` (`./tmp/*/item.md`) and ask the user
 which to run — never pick one silently. Skim `refs/`; read individual refs
 as the work calls for them.
 
+One preflight item is only checkable now that the item is loaded: when its
+verification criteria imply driving the running app (UI acceptance criteria,
+manual flows), confirm the repo `AGENTS.md`'s testing-accounts section exists
+and is filled — it is the verifier's credentials source. Missing or unfilled
+→ an immediate preflight follow-up note asking the human, so the gap
+surfaces now instead of when the verifier blocks mid-run.
+
 Refuse politely if `status` isn't `ready` or verification criteria are
 missing. Never create a branch — if on the default branch, stop and ask the
 user to set one up.
@@ -222,7 +229,10 @@ an AI session or feed repo context to an AI CLI routes to a **Claude**
 verifier dispatch, never Codex. Any ad-hoc Claude verifier dispatched outside
 the named agents (e.g. `general-purpose` for a live-app script check) passes
 an explicit `model` (default `opus`) — never inherit the session model
-silently. The plan's Automated subsection is the
+silently — and its prompt carries the leaf-agent line (you are a sub-agent;
+never spawn agents or invoke agent CLIs — `claude`, `codex exec`, or any
+equivalent): the named agents get it from their charters, but an uncharted
+type only knows what your dispatch tells it. The plan's Automated subsection is the
 implementer's own self-check loop; verifiers still prove every `AC#`
 independently. Include the change type's rubric from
 `.references/rubrics/` in each verifier dispatch (see
@@ -309,8 +319,14 @@ happens on the artifact, not before it exists.
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format — map it, never re-dispatch over format: P0/P1 ≡
   Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the two lanes
-  disagree head-on about a Must Fix, the Overseer weighs both arguments
-  and rules.
+  disagree head-on about a Must Fix, get a second voice before ruling:
+  dispatch the `discussant` sub-agent (background) with both findings and
+  the disputed diff hunks, weigh its take alongside the lanes', then rule.
+  This is the one Overseer meta-call with no adversarial check and no
+  downstream net — a wrongly dismissed Must Fix ships, because the loop
+  ends on zero Must Fix. Every other judgment call (zone escalation,
+  readiness, research depth) stays single-voice — they're bounded or
+  self-correcting.
 - **Another pass runs only on a trigger — the caps are ceilings, never
   quotas** (cap 3 passes; zones 2–3: 1; epics always 3 passes,
   dual-lane unless the epic's own `review_lanes:` says otherwise —

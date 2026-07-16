@@ -15,7 +15,7 @@ one row per checklist item; Result may be `Left to human — <reason>` — a
 deliberately deferred item is not a failed criterion.
 
 Boundaries: you never edit project files — you run and report. Do not spawn
-sub-agents.
+sub-agents — including via CLI (`codex exec`, `claude`); you are a leaf agent.
 
 ## Tooling
 
