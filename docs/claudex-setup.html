@@ -202,15 +202,35 @@ host: <span class="a">"127.0.0.1"</span>
 api-keys:
   - <span class="a">"&lt;paste the openssl output here&gt;"</span>
 
-<span class="c"># 3. add near the bottom — forces high reasoning effort on every request</span>
+<span class="c"># 3. add near the bottom — expose effort-tier variants of the model and</span>
+<span class="c">#    force a reasoning effort per tier</span>
+oauth-model-alias:
+  codex:
+    - name: <span class="a">"gpt-5.6-sol"</span>
+      alias: <span class="a">"gpt-5.6-sol-low"</span>
+      fork: <span class="a">true</span>
+    - name: <span class="a">"gpt-5.6-sol"</span>
+      alias: <span class="a">"gpt-5.6-sol-medium"</span>
+      fork: <span class="a">true</span>
+
 payload:
   override:
     - models:
-        - name: <span class="a">"gpt-*"</span>
+        - name: <span class="a">"gpt-5.6-sol"</span>
           protocol: <span class="a">"codex"</span>
       params:
-        <span class="a">"reasoning.effort"</span>: <span class="a">"high"</span></code></pre>
-  <p class="why">The <code>reasoning.effort</code> override is belt-and-suspenders: Claude Code also passes effort through, but this guarantees high reasoning at the proxy no matter what the client sends.</p>
+        <span class="a">"reasoning.effort"</span>: <span class="a">"high"</span>
+    - models:
+        - name: <span class="a">"gpt-5.6-sol-low"</span>
+          protocol: <span class="a">"codex"</span>
+      params:
+        <span class="a">"reasoning.effort"</span>: <span class="a">"low"</span>
+    - models:
+        - name: <span class="a">"gpt-5.6-sol-medium"</span>
+          protocol: <span class="a">"codex"</span>
+      params:
+        <span class="a">"reasoning.effort"</span>: <span class="a">"medium"</span></code></pre>
+  <p class="why">This creates three client-visible names for the same upstream model, each pinned to a reasoning effort at the proxy — no matter what the client sends. The point: the main session (the orchestrator) runs <code>gpt-5.6-sol</code> at high, while agents and background calls remapped to <code>-low</code>/<code>-medium</code> (step 06) get cheaper effort automatically. Verified: the proxy's override wins even when the client requests a different effort.</p>
 
   <h2><span class="n">03</span> Start it as a startup service</h2>
   <p>Run once; after this the proxy starts itself at every boot/login, forever. <span class="check">Set-and-forget</span> — you never start it manually again (see step 08).</p>
@@ -245,17 +265,16 @@ systemctl --user restart cliproxyapi</code></pre>
   <h2><span class="n">05</span> Verify the proxy sees the models</h2>
   <pre><code>curl -s http://127.0.0.1:8317/v1/models \
   -H "Authorization: Bearer &lt;your-generated-key&gt;" | python3 -m json.tool</code></pre>
-  <p>You should see <code>gpt-5.6-sol</code> in the list (plus <code>gpt-5.6-luna</code>, <code>gpt-5.5</code>, and friends). An empty <code>data: []</code> means step 04 didn't complete.</p>
+  <p>You should see <code>gpt-5.6-sol</code> in the list, plus your <code>gpt-5.6-sol-low</code> and <code>gpt-5.6-sol-medium</code> forks from step 02 (and <code>gpt-5.6-luna</code>, <code>gpt-5.5</code>, and friends). An empty <code>data: []</code> means step 04 didn't complete.</p>
 
   <h2><span class="n">06</span> Add the alias</h2>
   <p>Append to your shell's rc file — <code>~/.zshrc</code> for zsh (macOS default), <code>~/.bashrc</code> for bash (most Linux/WSL defaults); <code>echo $SHELL</code> tells you which. Substitute your generated key from step 02:</p>
   <pre><code><span class="c"># claudex — Claude Code harness driving GPT-5.6 Sol via CLIProxyAPI</span>
 alias claudex=<span class="a">'ANTHROPIC_BASE_URL=http://127.0.0.1:8317 \
 ANTHROPIC_AUTH_TOKEN=&lt;your-generated-key&gt; \
-ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5.6-sol \
-ANTHROPIC_DEFAULT_SONNET_MODEL=gpt-5.6-sol \
-ANTHROPIC_DEFAULT_OPUS_MODEL=gpt-5.6-sol \
-CLAUDE_CODE_SUBAGENT_MODEL=gpt-5.6-sol \
+ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5.6-sol-low \
+ANTHROPIC_DEFAULT_SONNET_MODEL=gpt-5.6-sol-low \
+ANTHROPIC_DEFAULT_OPUS_MODEL=gpt-5.6-sol-medium \
 CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1 \
 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3 \
 ENABLE_TOOL_SEARCH=false \
@@ -265,8 +284,7 @@ claude --model gpt-5.6-sol'</span></code></pre>
     <tr><th>Variable</th><th>Purpose</th></tr>
     <tr><td><code>ANTHROPIC_BASE_URL</code></td><td>Points Claude Code at the local proxy instead of Anthropic.</td></tr>
     <tr><td><code>ANTHROPIC_AUTH_TOKEN</code></td><td>Authenticates to the proxy with your generated key.</td></tr>
-    <tr><td><code>ANTHROPIC_DEFAULT_HAIKU_MODEL</code><br><code>ANTHROPIC_DEFAULT_SONNET_MODEL</code><br><code>ANTHROPIC_DEFAULT_OPUS_MODEL</code></td><td>Remap every Claude model alias to GPT-5.6 Sol — background/small-model calls <em>and</em> agent definitions that pin <code>model: sonnet</code> or <code>model: opus</code> in their frontmatter. Nothing in the session can accidentally try to reach Anthropic.</td></tr>
-    <tr><td><code>CLAUDE_CODE_SUBAGENT_MODEL</code></td><td>Spawned subagents use the same model.</td></tr>
+    <tr><td><code>ANTHROPIC_DEFAULT_HAIKU_MODEL</code><br><code>ANTHROPIC_DEFAULT_SONNET_MODEL</code><br><code>ANTHROPIC_DEFAULT_OPUS_MODEL</code></td><td>Remap every Claude model alias to an effort tier of GPT-5.6 Sol: haiku (background chores like session titles) and sonnet-pinned agents → <code>-low</code>; opus-pinned agents → <code>-medium</code>; the main session stays on the base name at high. Covers agent definitions that pin <code>model:</code> in frontmatter, so nothing in the session can accidentally try to reach Anthropic. Don't set <code>CLAUDE_CODE_SUBAGENT_MODEL</code> — it would force one model onto all subagents and defeat the tiers.</td></tr>
     <tr><td><code>CLAUDE_CODE_ALWAYS_ENABLE_EFFORT</code></td><td>Enables reasoning-effort controls for non-Anthropic models.</td></tr>
     <tr><td><code>CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY</code></td><td>Caps parallel tool calls at 3 — the Codex backend handles bursts poorly.</td></tr>
     <tr><td><code>ENABLE_TOOL_SEARCH</code></td><td>Off — deferred-tool discovery is unreliable on non-Claude models.</td></tr>
@@ -284,7 +302,7 @@ claude --model gpt-5.6-sol'</span></code></pre>
     <li><strong>No Anthropic API charges</strong> — requests never touch Anthropic.</li>
     <li><strong>No OpenAI API charges</strong> — it's not an API key, it's your subscription login.</li>
   </ul>
-  <p class="why">The effort shown in the banner is Claude Code's client-side setting — change it in-session with <code>/effort</code>. Either way, the proxy's <code>reasoning.effort</code> override from step 02 forces high on every request upstream.</p>
+  <p class="why">The effort shown in the banner is Claude Code's client-side setting — change it in-session with <code>/effort</code>. Either way, the proxy's per-tier <code>reasoning.effort</code> overrides from step 02 win upstream: base model high, <code>-medium</code> medium, <code>-low</code> low, regardless of what the client sends.</p>
 
   <h2><span class="n">08</span> Nothing to re-do after a restart</h2>
   <p>Every piece of this setup is persistent. After a reboot, opening a terminal and typing <code>claudex</code> just works — there is no daily ritual.</p>
