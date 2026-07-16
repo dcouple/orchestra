@@ -178,6 +178,10 @@ both lanes in a single message — the Claude reviewer via the Agent tool,
 the Codex reviewer as a background Bash dispatch per the codex skill —
 then waits for both reports; running one lane to completion before
 starting the other serializes the pass and doubles its wall-clock.
+A head-on Must Fix disagreement between the lanes here gets the same
+second-voice consult as the post-PR loop: a background `discussant`
+dispatch with both findings and the disputed plan section, weighed
+alongside the lanes' arguments before you rule.
 The loop continues until
 the plan is ready — same exit rule as the post-PR loop: a pass returning
 zero Must Fix from every lane (Codex tiers: P0/P1 count as Must Fix) ends
