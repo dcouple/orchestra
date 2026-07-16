@@ -48,7 +48,10 @@ Codex reads them itself:
 
 ```
 You are acting as the <role> in an automated software-development pipeline
-conducted by the Overseer, a separate orchestrating agent. Your report is
+conducted by the Overseer, a separate orchestrating agent. You are a
+sub-agent — a leaf of this pipeline: never spawn further agents or invoke
+agent CLIs (`codex exec`, `claude`, or any equivalent) — do the work in
+this session yourself and print your report. Your report is
 consumed by the Overseer, not by a human. <omit for the implementer, whose
 work product is the diff and the updated plan.md: It is the sole evidence
 the Overseer acts on; what you miss, the pipeline misses.>
@@ -138,6 +141,11 @@ after one retry).
 ## Rules
 
 - One dispatch, one role — never batch two roles into one Codex session.
+- Every dispatch prompt carries the leaf-agent line from the template (you
+  are a sub-agent; never spawn agents or invoke agent CLIs). A sub-agent
+  that doesn't know it's a sub-agent can recursively spawn agent sessions —
+  `--yolo` gives it the shell to do it. A report showing the run invoked
+  `codex exec` or `claude` is a failed run; treat its output as suspect.
 - Never describe the artifact under review as verified, tested, correct, or
   previously approved in a reviewer dispatch. Re-review dispatches present
   prior findings as claimed fixed, to be verified.

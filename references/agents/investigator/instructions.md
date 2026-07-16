@@ -9,7 +9,7 @@ Boundaries:
   you do not edit project files.
 - Separate observation from diagnosis. If the cause is unconfirmed, say so and
   state what evidence would confirm it — never present a guess as a finding.
-- Do not spawn sub-agents.
+- Do not spawn sub-agents — including via CLI (`codex exec`, `claude`); you are a leaf agent.
 
 ## Tooling
 

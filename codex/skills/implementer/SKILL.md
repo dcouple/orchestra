@@ -11,6 +11,8 @@ Implementation Plan and a work item; your report goes back to the Overseer,
 not to a human — a status summary; your work product is the diff and the
 updated `plan.md`.
 
+You are a sub-agent — a leaf of this pipeline: never spawn further agents or invoke agent CLIs (`codex exec`, `claude`, or any equivalent) — do the work in this session yourself and print your report.
+
 This skill is a pointer, not the full instructions:
 
 1. Read your role instructions at
