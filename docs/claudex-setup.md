@@ -51,21 +51,22 @@ the alias — it forces one model onto all subagents and defeats the tiers.
 
 ## Context window: declare the real size, never `[1m]`
 
-GPT-5.6 Sol's real window is **~350–370k tokens total** — probed empirically
-through the proxy (2026-07): 328k input succeeds cold, ~349k passes, ~374k is
-rejected with "input exceeds the context window". Claude Code doesn't know this: it
-budgets non-Anthropic models at 200k by default (wasting almost half the
-window), and its `[1m]` model-ID suffix budgets 1M — which routes fine but
-would kill long orchestra runs at ~370k with a hard 400 before auto-compact
-ever triggers.
+The Codex models' window is **400k tokens total, split ~272k input + 128k
+output/reasoning** — and live coding sessions cap effective usable context
+around **~258k**. Raw single-shot probes are misleading: a 328k-input request
+with tiny output passes (only the 400k total is checked), but a real session
+growing past ~258k starts hitting context errors — we ran a 340k budget on
+the strength of those probes and saw exactly that. Claude Code budgets
+non-Anthropic models at 200k by default, and its `[1m]` suffix budgets 1M,
+which lets long runs crash far before auto-compact triggers.
 
-The fix, already in the claudex alias: `CLAUDE_CODE_MAX_CONTEXT_TOKENS=340000`
+The fix, already in the claudex alias: `CLAUDE_CODE_MAX_CONTEXT_TOKENS=250000`
 — a Claude Code override that sets the context budget for any model whose ID
-doesn't start with `claude-`. 340k sits safely below the verified pass points.
-Verified: `/context` reports `53.1k / 340k`, and auto-compact + `/compact`
-work through the proxy, so long runs summarize and continue with nearly
-double the default working space. Custom suffixes like `[400k]` are not
-supported (silent fallback to 200k); the env var is the mechanism.
+doesn't start with `claude-`. 250k sits just under the ~258k effective cap,
+so auto-compact fires while sessions are still safely inside the window.
+Verified: `/context` reports `30.9k / 250k`, and auto-compact + `/compact`
+work through the proxy. Custom suffixes like `[400k]` are not supported
+(silent fallback to 200k); the env var is the mechanism.
 
 ## Validating on a new machine
 
