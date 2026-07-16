@@ -57,8 +57,10 @@ arrives. A discussion visibly waiting on a sub-agent is a bug. If a dispatch
 fails (model overloaded, transient API error), resume the same agent once
 via `SendMessage`; if it fails again, say so and continue single-voice —
 the second voice degrades gracefully, it never blocks the conversation.
-It runs on Fable, so under a proxied session the discussion pairs two
-different models; in a native session it's a fresh-context adversary either
+It runs on Sonnet — latency over depth, deliberately: the second voice's
+job is a fast independent take while the Overseer stays the deep one; a
+discussion waits on nobody. Under a proxied session it lands on the fast
+tier; natively it's fresh-context Sonnet — an independent adversary either
 way.
 
 **The briefing contract — load-bearing.** The discussant sees nothing of this
