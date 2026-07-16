@@ -17,7 +17,7 @@ invokes the matching `/create-*` skill; this skill's job ends at clarity.
 
 Don't edit source files, propose diffs to apply, or write documents, specs, tickets,
 or verification criteria unless the user explicitly asks for one mid-discussion.
-Capture belongs to the `/create-*` skills. The one exception is Step 3's
+Capture belongs to the `/create-*` skills. The one exception is Step 4's
 decision log — a record of what was decided, not a deliverable.
 
 ## Steps
@@ -45,7 +45,39 @@ independent dispatches in parallel.
 **Success criteria**: every claim you make about the codebase, ecosystem, or defect
 traces to a sub-agent finding or user statement, not a guess.
 
-### 2. Discuss and converge
+### 2. Keep a second voice in the thread
+Every discussion can consult two models instead of one. At the first genuine
+fork — competing approaches, a judgment call, a premise worth stress-testing —
+or whenever the user asks for a second opinion, spawn the `discussant`
+sub-agent (one per discussion) and keep it alive for the whole conversation:
+continue the **same agent** via `SendMessage` each round, never a fresh spawn.
+It runs on Fable, so under a proxied session the discussion pairs two
+different models; in a native session it's a fresh-context adversary either
+way.
+
+**The briefing contract — load-bearing.** The discussant sees nothing of this
+thread; it knows only what your messages carry (plus its own memory of prior
+briefs). Every message to it is a self-contained delta brief:
+
+- where the discussion stands now, and what changed since the last brief;
+- the exact file paths it should read before opining (it has Read/Grep/Glob);
+- any finding, constraint, or user statement the question depends on;
+- the specific question or position to challenge.
+
+Never reference conversation it hasn't been sent — if its reply shows a gap,
+the fix is a fuller brief, not a re-spawn. Before a decision locks, send the
+complete final picture for one closing challenge.
+
+Relay its replies inline and attributed (e.g. **Discussant:** …), and push
+back on it when you disagree — the point is two independent positions in
+front of the user, who arbitrates. Don't route research legwork to it; that's
+Step 1's specialists.
+
+**Success criteria**: any decision the discussion locks was challenged by the
+discussant against the full, current picture — or the user declined the
+second voice.
+
+### 3. Discuss and converge
 - Present findings and options with tradeoffs; be opinionated — recommend with
   reasoning, defer to user judgment.
 - Name disagreements and unresolved choices instead of papering over them.
@@ -54,7 +86,7 @@ traces to a sub-agent finding or user statement, not a guess.
 **Success criteria**: the user says the question is answered, the direction is clear,
 or they're ready to capture a work item.
 
-### 3. Log the decisions, then hand off
+### 4. Log the decisions, then hand off
 When the discussion converges, write the decision log to
 `./tmp/discussions/YYYY-MM-DD-<slug>.md`: the decisions made and why, the
 direction chosen and over what alternatives, constraints the user stated,
