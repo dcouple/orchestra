@@ -98,9 +98,12 @@ names):
   single source for the section spine, the body-state / comment-proof split,
   and the pre-open checklist. Right-size to an ad-hoc change:
   **Summary** (from the final `intent.md`), **Verification**, and **Residual
-  risks** are usually the whole body; **Visual overview** only when a diagram
-  teaches something prose can't (keep its `.excalidraw` source in
-  `./tmp/pr-<branch>/`); **User journeys**, **Manual tests**, **QA results**,
+  risks** are usually the whole body; **Visual overview** follows
+  pr-body.md's requirement — user-visible change → before/after captures,
+  flow-shaped change → rendered diagram (keep its `.excalidraw` source in
+  `./tmp/pr-<branch>/`), neither → the explicit
+  `Visual overview: none — <reason>` line, never a silent omission;
+  **User journeys**, **Manual tests**, **QA results**,
   and **Deploy notes** appear only when the change actually has branches,
   human-runnable flows, or deploy steps.
 - Two additions specific to this skill's gated path: fold the **gate

@@ -281,9 +281,14 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   `references/pr-body.md` — its section spine (Summary/What-Why-How, Visual
   overview, User journeys, Verification, Manual tests, QA results, Deploy
   notes, Residual risks), its body-state / comment-proof split, and its
-  pre-open checklist are binding. The **Visual overview** leads with the
-  before → after diagram per the `excalidraw-pr-diagrams` skill (when
-  available and the change is flow-/boundary-/lifecycle-shaped); the
+  pre-open checklist are binding. The **Visual overview** is required — its
+  only omission is the recorded `Visual overview: none — <reason>` line:
+  user-visible changes lead with before/after captures (after-shots from the
+  verify report's Captures table, hosted **before the pre-open check** on the
+  rolling assets prerelease per Step 5's evidence rule — filenames carry the
+  work item id, which exists now; no PR number is needed to host);
+  flow-/boundary-/lifecycle-shaped changes lead with the before → after
+  diagram per the `excalidraw-pr-diagrams` skill; the
   **User journeys** section carries both a journey map and — for branching
   flows — a fork map cross-tagged into the Manual tests; the deploy-notes
   scan above feeds the **Deploy notes** section. Link the tracker with its
@@ -328,6 +333,16 @@ happens on the artifact, not before it exists.
   `codex` skill role `backend-verifier` runs the command-shaped items. Both
   dispatches follow `.references/qa-verification.md` — external-system
   confirmation by unique marker, preflight, test-mode safety, cleanup.
+  **The capture contract rides in every frontend-verifier/QA dispatch you
+  write** — the sub-agent only knows what its prompt says, so state it:
+  screenshot every UI state verified, save to the scratchpad, enumerate
+  each in the report's Captures table (path · what it shows · AC#/J#). A
+  report claiming a UI pass with an empty Captures table is incomplete —
+  one re-ask for the enumeration before accepting it. Then **every
+  enumerated capture gets hosted and embedded** — after-shots into the
+  body's Visual overview, per-item evidence into the QA proof comment; a
+  screenshot that exists only as prose in a report is a dropped handoff,
+  the exact failure this contract exists to prevent.
   Report at two altitudes, into the PR body first per `references/pr-body.md`
   (the body is the live dashboard, not a comment): with `gh pr edit
   --body-file`, flip the Manual-tests `[ ]`→`[x]` on passed items (append
@@ -346,7 +361,10 @@ happens on the artifact, not before it exists.
   them `gh release create` prompts interactively and a headless run hangs;
   then `gh release upload qa-assets <pr#>-<name> --clobber`) and reference the
   `releases/download/...` URLs — CLI-native, permanent, permission-scoped,
-  any file type. Prefix filenames with the PR number so the rolling release
+  any file type. This rule is step-agnostic: Step 4 hosts the
+  Visual-overview captures here *before* the PR exists, so prefix filenames
+  with the **work item id** (stable from Step 0; add the PR number once one
+  exists if it helps browsing) so the rolling release
   stays browsable. Images/GIFs render inline in comments; videos land as
   links (GitHub only inline-plays web-UI uploads). Expiring temp hosts are
   forbidden for evidence — a dead link months later is no evidence at all.
