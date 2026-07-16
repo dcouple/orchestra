@@ -40,7 +40,8 @@ guide), and the alias maps each Claude model alias onto a tier:
 | Claude Code asks for | Routed to | Effort | Used by |
 | --- | --- | --- | --- |
 | the `--model` (main loop) | `gpt-5.6-sol` | high | the orchestrator session itself |
-| `opus` (frontmatter pins) | `gpt-5.6-sol-medium` | medium | socrates, code-reviewer, plan-reviewer, frontend-implementer |
+| `opus` (frontmatter pins) | `gpt-5.6-sol-medium` | medium | code-reviewer, plan-reviewer, frontend-implementer |
+| `fable` (frontmatter pins) | `gpt-5.6-sol-xhigh` | xhigh | socrates — the Socratic gate gets the strongest tier |
 | `sonnet` (frontmatter pins) | `gpt-5.6-sol-low` | low | code-researcher, web-researcher, frontend-verifier |
 | `haiku` (background chores) | `gpt-5.6-sol-low` | low | session titles, other harness trivia |
 
