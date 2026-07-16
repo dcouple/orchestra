@@ -353,10 +353,10 @@ happens on the artifact, not before it exists.
   risk tier first; the `codex` skill role `backend-verifier` runs the
   command-shaped items. Zone dial (`.references/zones.md`): zones 0–1
   full; zone 2 trimmed to the command-shaped items *plus* the deferred UI
-  ACs (record `qa_pass: trimmed`); zone 3 command-shaped items are skipped
-  (record `skipped`) — but **an AC whose only possible proof needs the
-  running app is driven at any zone; acceptance evidence is never trimmed
-  by a dial.** The frontend-verifier dispatch carries the QA-drive
+  ACs (record `qa_pass: trimmed`); zone 3 skips both the command-shaped
+  items and the Manual-tests execution (record `skipped`) — but **an AC
+  whose only possible proof needs the running app is driven at any zone,
+  zone 3 included; acceptance evidence is never trimmed by a dial.** The frontend-verifier dispatch carries the QA-drive
   contract: map every touched surface and user journey to **ordered,
   step-named captures** (`01-<journey>-<state>.png`) covering meaningful
   states — empty/default, filled, expanded, validation error,
@@ -393,7 +393,14 @@ happens on the artifact, not before it exists.
   returning human's manual pass starts from the unchecked boxes and the
   remainder list. The QA drive's after-shots also complete the body's
   Visual overview (replacing its `After-shots: landing with the QA drive`
-  note). Body carries state, comment carries proof — never
+  note). **A bug the QA drive surfaces is never report-and-ship:** loop
+  its fix to the implementer, then run one **scoped review pass over the
+  fix's diff alone** — the zone's review lanes, additional to the review
+  loop's cap — before the QA results line closes. The QA drive runs after
+  the review loop exits, so without this pass a behavioral fix born from
+  app-driving evidence (exactly the client-state bug a diff-reading
+  reviewer can't see) would ship un-reviewed. Body carries state, comment
+  carries proof — never
   leave the results only in a comment when the body has a checklist and a QA
   results line to update.
 - **Hosting evidence media**: when the repo is on GitHub, host screenshots,
