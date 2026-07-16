@@ -222,7 +222,10 @@ an AI session or feed repo context to an AI CLI routes to a **Claude**
 verifier dispatch, never Codex. Any ad-hoc Claude verifier dispatched outside
 the named agents (e.g. `general-purpose` for a live-app script check) passes
 an explicit `model` (default `opus`) — never inherit the session model
-silently. The plan's Automated subsection is the
+silently — and its prompt carries the leaf-agent line (you are a sub-agent;
+never spawn agents or invoke agent CLIs — `claude`, `codex exec`, or any
+equivalent): the named agents get it from their charters, but an uncharted
+type only knows what your dispatch tells it. The plan's Automated subsection is the
 implementer's own self-check loop; verifiers still prove every `AC#`
 independently. Include the change type's rubric from
 `.references/rubrics/` in each verifier dispatch (see
