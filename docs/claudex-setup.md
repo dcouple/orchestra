@@ -50,21 +50,23 @@ the alias — it forces one model onto all subagents and defeats the tiers.
 
 ## Context window: declare the real size, never `[1m]`
 
-GPT-5.6 Sol's real window is **~400k tokens total** — probed empirically
-through the proxy (2026-07): a 328k-input request succeeds, ~394k is rejected
-with "input exceeds the context window". Claude Code doesn't know this: it
+GPT-5.6 Sol's real window is **~350–370k tokens total** — probed empirically
+through the proxy (2026-07): 328k input succeeds cold, ~349k passes, ~374k is
+rejected with "input exceeds the context window". Claude Code doesn't know this: it
 budgets non-Anthropic models at 200k by default (wasting almost half the
 window), and its `[1m]` model-ID suffix budgets 1M — which routes fine but
-would kill long orchestra runs at ~400k with a hard 400 before auto-compact
+would kill long orchestra runs at ~370k with a hard 400 before auto-compact
 ever triggers.
 
-The fix, already in the claudex alias: `CLAUDE_CODE_MAX_CONTEXT_TOKENS=380000`
+The fix, already in the claudex alias: `CLAUDE_CODE_MAX_CONTEXT_TOKENS=340000`
 — a Claude Code override that sets the context budget for any model whose ID
-doesn't start with `claude-`. 380k leaves ~20k headroom under the ceiling.
-Verified: `/context` reports `42.2k / 380k`, and auto-compact + `/compact`
+doesn't start with `claude-`. 340k sits safely below the verified pass points.
+Verified: `/context` reports `53.1k / 340k`, and auto-compact + `/compact`
 work through the proxy, so long runs summarize and continue with nearly
 double the default working space. Custom suffixes like `[400k]` are not
 supported (silent fallback to 200k); the env var is the mechanism.
+
+## Validating on a new machine
 
 From this repo's root (or any consumer repo):
 
