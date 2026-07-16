@@ -80,7 +80,10 @@ is missing or expired with the exact command to fix each: tracker + `gh`
 auth; the artifact-provider tool the repo's `AGENTS.md` names (e.g. a Notion
 CLI) if artifacts get published; the notify target (`.references/notify.md`);
 and the credentials/tooling verification will need (DB, cloud, test-mode API
-keys, a browser for computer-use); and the **harness permission modes** —
+keys, a browser for computer-use — including the test account the repo's
+`AGENTS.md` testing-accounts section names; that section missing or
+unfilled when the plan needs app-driving is a preflight note asking the
+human, never a mid-run improvisation); and the **harness permission modes** —
 the orchestrator session runs under `claude --dangerously-skip-permissions`
 and every codex dispatch uses `--yolo`; approvals must never gate an
 unattended run. Not in bypass mode → preflight note with the exact relaunch
