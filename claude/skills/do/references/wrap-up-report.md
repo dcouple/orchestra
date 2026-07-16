@@ -48,7 +48,7 @@ findings: {plan: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: 
            post_pr: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}}}
 verifiers: {frontend: <ran|skipped>, qa_pass: <ran|trimmed|skipped>}
 qa_findings: <n>
-wall_clock: <h:mm, run start to wrap-up>
+wall_clock: <h:mm, run start to wrap-up — computed from timestamps (dispatch output mtimes, commit times, PR createdAt), never estimated from memory; the postmortem re-derives this and a mismatch is a finding>
 deviations: <none | "escalated <z>→<z-1>: reason">
 pr_size: {files_changed: <n>, additions: <n>, deletions: <n>}  # gh pr view --json changedFiles,additions,deletions
 tokens:                # per source; "unknown" is honest, a guess is not

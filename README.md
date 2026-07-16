@@ -54,9 +54,9 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 4. **Idempotent.** The sync is a full mirror (`rsync --delete`); running it
    twice produces zero diff. Nothing in the synced dirs is written to at
    runtime.
-5. **Postmortems** are filed, tagged `postmortem`, in the tracker configured
-   by the repo where the run happened (local-only when none is configured);
-   proposed system changes are applied here in orchestra.
+5. **Postmortems** are posted as comments on the run's work item and PR —
+   never as separate tracker issues (local-only when no tracker/anchor
+   exists); proposed system changes are applied here in orchestra.
 
 ## Adding a consumer repo
 

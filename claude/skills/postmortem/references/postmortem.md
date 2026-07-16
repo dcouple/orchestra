@@ -2,8 +2,9 @@
 
 > Produced by `/postmortem` on a `/do` run — the Run operations half always, the outcome
 > half when the result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and
-> published to the tracker the repo's `AGENTS.md` `Work-item tracking` section configures,
-> tagged `postmortem` (see SKILL.md step 5 for the metadata; no tracker → stays local).
+> published **as comments on the run's work item and its PR** (see SKILL.md step 5;
+> never a separate tracker issue — a postmortem is run metadata, not a work item;
+> stays local only when neither anchor exists).
 > The point is **compound learning**: fix the root cause in *our system*
 > (skill / agent / template / criteria), so the same stall or gap can't recur.
 
@@ -30,8 +31,10 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `summed turnaround gaps; the ranked in-run stalls (agent turn-ends that needed a "continue" nudge) with`
 `what each waited on; per-phase pacing from the commits; blocker inventory`
 `(AskUserQuestion gates, rate-limit hits, legitimate background-agent waits). Render the`
-`table as a Gantt timeline (HTML/SVG in refs/, screenshot embedded on the anchor PR and`
-`tracker issue — parallel vs sequential must read at a glance). Close with the single`
+`table as a Gantt timeline (HTML/SVG in refs/, screenshot embedded in the anchor-PR and`
+`work-item comments — parallel vs sequential must read at a glance). Image hosting must`
+`match the viewer: a private GitHub asset URL renders on the PR but NOT in an external`
+`tracker (Linear etc.) — upload the image natively to the tracker there. Close with the single`
 `change that would have removed the biggest stall. Per`
 `.references/run-operations-analysis.md.>`
 
@@ -69,6 +72,6 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `aggregation joins against.>`
 
 ## System changes
-`<URL of this postmortem in the repo's tracker (or "local-only"), plus the approval`
+`<URLs of the postmortem comments on the work item and anchor PR (or "local-only"), plus the approval`
 `verdicts on the proposed changes once the human gives them — pending until then;`
 `an auto-run postmortem never waits for them>`
