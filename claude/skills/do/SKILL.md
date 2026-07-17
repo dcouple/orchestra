@@ -77,9 +77,9 @@ hard stop, and run completion — never on green-tier progress.
 **Preflight first — surface everything human-actionable up front,** so the
 run doesn't discover a missing dependency at hour six and stall. Check what
 this run will need end-to-end and, in **one** message to the human, list what
-is missing or expired with the exact command to fix each: tracker + `gh`
-auth; the artifact-provider tool the repo's `AGENTS.md` names (e.g. a Notion
-CLI) if artifacts get published; the notify target (`.references/notify.md`);
+is missing or expired with the exact command to fix each: `gh` auth; the
+artifact-provider tool the repo's `AGENTS.md` names (e.g. a Notion CLI) if
+artifacts get published; the notify target (`.references/notify.md`);
 and the credentials/tooling verification will need (DB, cloud, test-mode API
 keys, a browser for computer-use); and the **harness permission modes** —
 the orchestrator session runs under `claude --dangerously-skip-permissions`
@@ -109,12 +109,23 @@ the local items with `status: ready` (`./tmp/*/item.md`) and ask the user
 which to run — never pick one silently. Skim `refs/`; read individual refs
 as the work calls for them.
 
-One preflight item is only checkable now that the item is loaded: when its
-verification criteria imply driving the running app (UI acceptance criteria,
-manual flows), confirm the repo `AGENTS.md`'s testing-accounts section exists
-and is filled — it is the verifier's credentials source. Missing or unfilled
-→ an immediate preflight follow-up note asking the human, so the gap
-surfaces now instead of when the verifier blocks mid-run.
+Two preflight items are only checkable now that the item is loaded:
+
+- Follow `.references/tracker-lifecycle.md`. **YOU MUST** validate current
+  `linear_issues`, then build and retain two operation sets: current `completes`
+  issues needing team-specific `In Review`, and exact `Fixes TEAM-123`
+  candidates parsed from the persisted bodies of all paginated prior merged PRs
+  in this GitHub repository, each needing team-specific resolved `Done`.
+  Discover access and status readiness per operation; one missing status does
+  not disable the other set. If Linear is needed but unauthenticated, **YOU
+  MUST** ask for authentication here only. Mark unresolved operations
+  `unavailable` and continue; after Step 0, tracker work stays non-blocking and
+  **YOU MUST NOT** prompt for tracker authentication.
+- When verification criteria imply driving the running app (UI acceptance
+  criteria, manual flows), confirm the repo `AGENTS.md`'s testing-accounts
+  section exists and is filled — it is the verifier's credentials source.
+  Missing or unfilled → an immediate preflight follow-up note asking the human,
+  so the gap surfaces now instead of when the verifier blocks mid-run.
 
 Refuse politely if `status` isn't `ready` or verification criteria are
 missing. Never create a branch — if on the default branch, stop and ask the
@@ -313,8 +324,10 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   diagram per the `excalidraw-pr-diagrams` skill; the
   **User journeys** section carries both a journey map and — for branching
   flows — a fork map cross-tagged into the Manual tests; the deploy-notes
-  scan above feeds the **Deploy notes** section. Link the tracker with its
-  closing keyword (e.g. `Closes #<n>` for a GitHub issue).
+  scan above feeds the **Deploy notes** section. Follow
+  `.references/tracker-lifecycle.md` for provider closing lines. After `gh pr
+  create`, **YOU MUST** retrieve the persisted body, verify and repair the
+  expected closing-line set, and read it back before leaving Step 4.
 
 ## Step 5: Post-PR review + QA
 
@@ -408,7 +421,8 @@ happens on the artifact, not before it exists.
   reviewer can't see) would ship un-reviewed. Body carries state, comment
   carries proof — never
   leave the results only in a comment when the body has a checklist and a QA
-  results line to update.
+  results line to update. After every body update, **YOU MUST** preserve and
+  verify the persisted closing-line set per `.references/tracker-lifecycle.md`.
 - **Hosting evidence media**: when the repo is on GitHub, host screenshots,
   GIFs, and videos as assets on a rolling `qa-assets` **prerelease**
   (once per repo: `gh release create qa-assets --prerelease
@@ -449,9 +463,15 @@ happens on the artifact, not before it exists.
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
   instructions.
+- Immediately before the `awaiting-human-review` label, **YOU MUST** run the
+  shared contract's current-item handoff set and report each `In Review`
+  operation as `verified`, `already-correct`, `failed`, or `unavailable`.
 - Label the PR `awaiting-human-review` (create the label if missing) —
   commits after this label's timestamp are the run's post-review rework
   metric (`.references/zones.md`, The record).
+- Before the final report, **YOU MUST** run the shared contract's retained
+  merged-PR hygiene set and report each `Done` operation as `verified`,
+  `already-correct`, `failed`, or `unavailable`.
 - Report to the user: **lead with the PR link**, then a short **Human action
   required** block *before* the prose summary — ordered by urgency and split
   into **✅ done for you** (green-tier actions the run already applied — e.g.
