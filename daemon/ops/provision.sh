@@ -59,13 +59,18 @@ if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
   install -d -m 0755 /opt/pnpm
   curl -fsSL https://get.pnpm.io/install.sh \
     | env PNPM_VERSION=11.8.0 PNPM_HOME=/opt/pnpm SHELL=/bin/bash sh -
-  ln -sfn /opt/pnpm/pnpm /usr/local/bin/pnpm
+  # pnpm's launcher resolves its real binary relative to $0, so a symlink
+  # breaks it — wrap instead. The installer places it under $PNPM_HOME/bin.
+  printf '#!/bin/sh\nexec /opt/pnpm/bin/pnpm "$@"\n' > /usr/local/bin/pnpm
+  chmod 0755 /usr/local/bin/pnpm
 fi
 
 CODEX_VERSION="0.101.0"
 if ! command -v codex >/dev/null || [[ "$(codex --version)" != *"${CODEX_VERSION}"* ]]; then
-  PNPM_HOME=/opt/pnpm pnpm add --global "@openai/codex@${CODEX_VERSION}"
-  ln -sfn /opt/pnpm/codex /usr/local/bin/codex
+  env PNPM_HOME=/opt/pnpm PATH="/opt/pnpm/bin:${PATH}" \
+    pnpm add --global "@openai/codex@${CODEX_VERSION}"
+  printf '#!/bin/sh\nexec /opt/pnpm/bin/codex "$@"\n' > /usr/local/bin/codex
+  chmod 0755 /usr/local/bin/codex
 fi
 
 if [[ "${INSTALL_ANDROID:-0}" == "1" ]]; then
