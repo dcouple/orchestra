@@ -11,7 +11,7 @@ SOURCE_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git gnupg rsync sqlite3 ufw
+apt-get install -y ca-certificates curl git gnupg libatomic1 rsync sqlite3 ufw
 
 GH_VERSION="2.76.2"
 ARCH="$(dpkg --print-architecture)"
