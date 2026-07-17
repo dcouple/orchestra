@@ -19,11 +19,9 @@ line-level review that ran before it; the reverse is not true.
 You are the Overseer. PR conventions (labels, title format, required body
 sections, milestones) are the repo's to define: read the project's root
 `AGENTS.md` and any contributing/PR docs it names before creating the PR.
-Where the repo documents nothing, the defaults below apply. Tracker mapping and
-PR closing references follow `.references/tracker-lifecycle.md`. This skill does
-not own `/do`'s Linear lifecycle preflight or status transitions: **YOU MUST
-NOT** add a late authentication gate or block PR preparation on tracker access;
-report unavailable tracker work and continue.
+Where the repo documents nothing, the defaults below apply. Tracker links and
+PR closing lines follow `.references/tracker-lifecycle.md`; this skill does not
+run `/do`'s readiness or status lifecycle and does not prompt for tracker auth.
 
 ## Step 1: Preflight
 
@@ -114,17 +112,13 @@ names):
   outcomes** (Socrates verdict, review passes used, build gate) into
   Verification, and seed **Residual risks** from the review findings you
   chose not to take.
-- **YOU MUST** apply `.references/tracker-lifecycle.md` to explicit tracker
-  links from $ARGUMENTS or the conversation. Mapping authority is the explicit
-  issue number or Linear identifier, never title similarity. Completing GitHub
-  issues use `Closes #123`; completing Linear issues use exact standalone
-  `Fixes TEAM-123`; multiple items get one line each; related-only links do not
-  close; no explicit tracker link means no tracker line.
+- Apply `.references/tracker-lifecycle.md` to explicit tracker links from
+  $ARGUMENTS or the conversation: `Closes #123` for completing GitHub issues,
+  standalone `Fixes TEAM-123` for completing Linear issues, one line each.
 - Create with `gh pr create` against the default branch, applying the
   Step 5 labels (and milestone, when the repo's conventions call for one).
-  Then **YOU MUST retrieve the persisted PR body**, verify every expected
-  closing line, repair missing lines, and retrieve it again before reporting.
-  Repeat that persisted-body verification after any later body edit.
+  **YOU MUST** retrieve the persisted body, verify and repair its expected
+  closing lines, and read it back before reporting and after later edits.
 
 ## Step 7: Report
 

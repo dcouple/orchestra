@@ -16,11 +16,8 @@ the `Work-item tracking` section of the project's `AGENTS.md` (or
    `item.md` and the `refs/` files however the destination supports, so
    the published item carries everything a remote `/do` needs. Record
    every URL the destination returns in `item.md` frontmatter (e.g.
-   `github:`, `tracker:`) so `/do` can pull from it. A tracker lifecycle is
-   activated only by this explicit link; connector availability alone does not
-   link an item. For Linear, preserve the canonical URL, identifier, and intent
-   as one entry in an always-list representation — do not use ambiguous
-   parallel scalar/list fields or replace identity with a title:
+   `github:`, `tracker:`) so `/do` can pull from it. For Linear, record each
+   explicit link as one entry in an always-list:
 
    ```yaml
    linear_issues:
@@ -29,12 +26,10 @@ the `Work-item tracking` section of the project's `AGENTS.md` (or
        relationship: completes
    ```
 
-   `relationship` is exactly `completes` or `relates`. **YOU MUST** parse the
-   identifier from the canonical Linear URL returned by publication and store
-   that exact value in the paired `identifier` field; never copy or accept an
-   independently supplied identifier. The parsed identifier is the authority
-   for later direct fetches and status mutations; only `completes` entries
-   generate exact standalone `Fixes TEAM-123` PR lines.
+   `relationship` is exactly `completes` or `relates`. **YOU MUST** derive the
+   paired identifier from the canonical URL returned by Linear. The identifier
+   is the later lookup key; only `completes` entries generate standalone
+   `Fixes TEAM-123` lines.
 3. If the section is missing or gives no publishing instructions, publish
    nowhere: the work item is complete as local files under `./tmp/<id>/`.
    Tell the user nothing was published and where the files live.

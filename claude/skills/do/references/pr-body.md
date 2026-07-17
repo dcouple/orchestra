@@ -22,10 +22,9 @@
 > diagram is a failed handoff) and none is a branch-relative raw URL; the
 > rendered markdown doesn't collapse headings/bullets/image into one
 > paragraph (preview it); every AC has a Verification line; every Manual test
-> traces to a change that motivated it; every expected provider-specific
-> closing line from `.references/tracker-lifecycle.md` is present. Grep the
-> draft for `path/to/`, `TBD`, `<placeholder>`, and empty sections. After create
-> and every edit, retrieve the persisted body and verify those lines again.
+> traces to a change that motivated it; expected closing lines follow
+> `.references/tracker-lifecycle.md`. Grep the draft for `path/to/`, `TBD`,
+> `<placeholder>`, and empty sections.
 
 ---
 
@@ -214,14 +213,11 @@ seams tested instead of end-to-end, follow-ups deferred. One line each, honest.
 ### Metadata & closing
 Apply the repo's issue/PR metadata convention (type + area labels, milestone
 where the repo requires it — read the repo's issues-and-PRs doc; it is not
-this file's job to define them). **YOU MUST** follow
-`.references/tracker-lifecycle.md`: mapping comes only from explicit links;
-completing GitHub issues use `Closes #123`; completing Linear issues use exact
-standalone `Fixes TEAM-123`; multiple items get one standalone line each;
-related-only references are non-closing; no tracker means no tracker line.
-Build the expected line set before creation. After creation and every body edit,
-retrieve the persisted PR body, verify every expected line, repair missing
-lines, and read back again. QA edits must preserve them.
+this file's job to define them). Follow `.references/tracker-lifecycle.md`:
+completing GitHub issues use `Closes #123`; completing Linear issues use
+standalone `Fixes TEAM-123`; multiple items get one line each; related-only or
+absent tracker links add no closing line. After creation and every body edit,
+**YOU MUST** verify and repair the expected lines in the persisted body.
 
 ---
 
@@ -244,10 +240,8 @@ Run before opening, and again after any body edit in Step 5:
       handed off (`⛔ run at deploy`); verification-blocking findings marked as
       prerequisites.
 - [ ] No secret values anywhere in the body or a comment.
-- [ ] Explicit tracker links classified as completing or related-only; no title
-      matching or inferred mapping.
-- [ ] Provider cases correct: GitHub `Closes #123`; Linear exact standalone
-      `Fixes TEAM-123`; multiple completing items one line each; related-only
-      references non-closing; no tracker reference means no tracker line.
-- [ ] After creation or edit, persisted body retrieved; every expected closing
-      line verified, repaired if missing, and read back again.
+- [ ] Closing lines match `.references/tracker-lifecycle.md`: GitHub
+      `Closes #123`; Linear standalone `Fixes TEAM-123`; one per completing
+      issue; none for related-only or absent tracker links.
+- [ ] After creation or edit, persisted body retrieved and expected lines
+      verified, repaired, and read back.

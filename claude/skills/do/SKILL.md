@@ -111,32 +111,16 @@ as the work calls for them.
 
 Two preflight items are only checkable now that the item is loaded:
 
-- Follow `.references/tracker-lifecycle.md`. Determine explicit tracker links
-  from the invocation, `item.md` frontmatter, and the published item; connector
-  availability alone is not a link. For every explicitly linked Linear issue,
-  **YOU MUST** parse the identifier from its canonical URL and require an exact
-  match with the paired `identifier` field before any PR line, fetch, or
-  mutation. On mismatch, **YOU MUST NOT** guess, search, fetch either candidate,
-  emit a closing line, or mutate either candidate; report the mismatch, record
-  that entry's lifecycle as `unavailable`, and continue non-blockingly. Exact
-  duplicate records may deduplicate. If the same identifier has a conflicting
-  URL or relationship, **YOU MUST** mark all conflicting entries `unavailable`
-  and must not guess, search, fetch, emit a closing line, or mutate for that
-  identifier; report the conflict and continue non-blockingly. This does not
-  alter hygiene dedupe for identical IDs parsed from valid merged-PR `Fixes`
-  lines. For each matching, non-conflicting entry, preserve its canonical URL
-  and identifier, direct-fetch by that identifier, resolve its team, and confirm
-  that team's `In Review` and resolved `Done` statuses exist. This identity
-  check occurs only here in
-  Step 0 and adds no later prompt. If the connector is present but
-  unauthenticated, **YOU MUST ask for authentication now, in Step 0, and only
-  now**, before autonomous execution begins. If authentication, access, issue
-  identity, or either required status remains unresolved, record Linear
-  lifecycle work as `unavailable` and continue. Once execution starts, **YOU
-  MUST NOT** prompt for tracker authentication again; every tracker mutation,
-  readback, verification, and hygiene action is non-blocking and its failure is
-  reported without stopping implementation, review, verification, QA, PR work,
-  handoff, or completion.
+- Follow `.references/tracker-lifecycle.md`. **YOU MUST** validate current
+  `linear_issues`, then build and retain two operation sets: current `completes`
+  issues needing team-specific `In Review`, and exact `Fixes TEAM-123`
+  candidates parsed from the persisted bodies of all paginated prior merged PRs
+  in this GitHub repository, each needing team-specific resolved `Done`.
+  Discover access and status readiness per operation; one missing status does
+  not disable the other set. If Linear is needed but unauthenticated, **YOU
+  MUST** ask for authentication here only. Mark unresolved operations
+  `unavailable` and continue; after Step 0, tracker work stays non-blocking and
+  **YOU MUST NOT** prompt for tracker authentication.
 - When verification criteria imply driving the running app (UI acceptance
   criteria, manual flows), confirm the repo `AGENTS.md`'s testing-accounts
   section exists and is filled — it is the verifier's credentials source.
@@ -340,14 +324,10 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   diagram per the `excalidraw-pr-diagrams` skill; the
   **User journeys** section carries both a journey map and — for branching
   flows — a fork map cross-tagged into the Manual tests; the deploy-notes
-  scan above feeds the **Deploy notes** section. **YOU MUST** follow
-  `.references/tracker-lifecycle.md` to map only explicit completing tracker
-  links and emit the provider-correct closing lines (`Closes #123` for GitHub;
-  exact standalone `Fixes TEAM-123` for Linear; one line per completing item;
-  related-only links never close; no link means no tracker line). After `gh pr
-  create`, **YOU MUST retrieve the persisted PR body**, verify every expected
-  closing line, repair any missing lines, and retrieve it again before leaving
-  Step 4. A successful create command or local body file is not proof.
+  scan above feeds the **Deploy notes** section. Follow
+  `.references/tracker-lifecycle.md` for provider closing lines. After `gh pr
+  create`, **YOU MUST** retrieve the persisted body, verify and repair the
+  expected closing-line set, and read it back before leaving Step 4.
 
 ## Step 5: Post-PR review + QA
 
@@ -441,10 +421,8 @@ happens on the artifact, not before it exists.
   reviewer can't see) would ship un-reviewed. Body carries state, comment
   carries proof — never
   leave the results only in a comment when the body has a checklist and a QA
-  results line to update. Every body update **YOU MUST** preserve the expected
-  tracker closing lines and then retrieve the persisted body from GitHub to
-  verify them; repair and read back any missing line before continuing, per
-  `.references/tracker-lifecycle.md`.
+  results line to update. After every body update, **YOU MUST** preserve and
+  verify the persisted closing-line set per `.references/tracker-lifecycle.md`.
 - **Hosting evidence media**: when the repo is on GitHub, host screenshots,
   GIFs, and videos as assets on a rolling `qa-assets` **prerelease**
   (once per repo: `gh release create qa-assets --prerelease
@@ -485,31 +463,15 @@ happens on the artifact, not before it exists.
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
   instructions.
-- At the actual human handoff — automated review and QA are complete, and
-  immediately before the `awaiting-human-review` label — **YOU MUST** follow
-  `.references/tracker-lifecycle.md`: for each explicitly linked Linear issue
-  whose relationship is `completes`, direct-fetch by identifier, attempt its
-  team-specific `In Review` transition when needed, read it back, and report
-  `verified`, `already-correct`, `failed`, or Step-0 `unavailable`. Never map
-  by title.
-  This is non-blocking: no tracker failure or missing access may delay the
-  label, handoff, wrap-up, or completion, and **YOU MUST NOT** prompt for
-  authentication here.
+- Immediately before the `awaiting-human-review` label, **YOU MUST** run the
+  shared contract's current-item handoff set and report each `In Review`
+  operation as `verified`, `already-correct`, `failed`, or `unavailable`.
 - Label the PR `awaiting-human-review` (create the label if missing) —
   commits after this label's timestamp are the run's post-review rework
   metric (`.references/zones.md`, The record).
-- Before the final report, **YOU MUST** run the shared contract's idempotent,
-  non-blocking merged-PR hygiene for the current GitHub repository: enumerate
-  merged PR candidates through all GitHub pagination, with no silent
-  default-page cap; parse persisted bodies only with the exact case-sensitive
-  standalone-line grammar `^Fixes ([A-Z][A-Z0-9]*-[0-9]+)\r?$`, rejecting
-  bullets, prefixes, suffixes, backticks, trailing text, multiple IDs, and
-  alternate verbs; deduplicate; direct-fetch only those identifiers; never scan
-  a Linear workspace or match titles; move non-Done issues to each team's
-  resolved `Done`; read back and report `verified`, `already-correct`, `failed`,
-  or `unavailable`. The current PR is normally open, so this repairs prior
-  merged PRs. Listing, fetch, status, mutation, or readback failures never block
-  handoff or completion.
+- Before the final report, **YOU MUST** run the shared contract's retained
+  merged-PR hygiene set and report each `Done` operation as `verified`,
+  `already-correct`, `failed`, or `unavailable`.
 - Report to the user: **lead with the PR link**, then a short **Human action
   required** block *before* the prose summary — ordered by urgency and split
   into **✅ done for you** (green-tier actions the run already applied — e.g.
