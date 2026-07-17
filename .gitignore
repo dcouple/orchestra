@@ -1,2 +1,7 @@
 .DS_Store
 tmp/
+node_modules/
+daemon/dist/
+daemon/*.db*
+.env*
+.pnpm-store/

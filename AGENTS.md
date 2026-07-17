@@ -11,14 +11,21 @@ consumer-specific names, paths, or IDs.
 
 ## Commands
 
-No build, tests, or lint — this repo is Markdown, HTML templates, and two
-bash scripts.
+The skill system is Markdown, HTML templates, and bash. The orchestra-only
+Linear webhook daemon is a Node 22 / pnpm 11 TypeScript package.
 
 ```bash
 # sync into a consumer repo checkout:
 scripts/sync.sh <path-to-consumer-repo>
 # mirror into user-level ~/.claude and ~/.codex dirs:
 scripts/sync-user.sh
+
+# daemon checks (run from daemon/):
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build
+pnpm test
+bash -n ops/provision.sh
 ```
 
 ## Architecture
@@ -26,6 +33,9 @@ scripts/sync-user.sh
 See the Layout table in `README.md`. Canonical sources live in
 `claude/skills/`, `claude/agents/`, `codex/skills/`, and `references/`;
 `scripts/sync.sh` mirrors them into consumers' dot-directories.
+
+`daemon/` is an orchestra-only service package. Neither sync script includes
+it, and daemon code must never be placed in a synced directory.
 
 This repo is also a consumer of itself: `.claude/skills`, `.claude/agents`,
 `.codex/skills`, and `.references` are **symlinks** to those canonical
