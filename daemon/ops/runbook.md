@@ -54,10 +54,12 @@ port 443.
 
 In Linear, create `bloom-planner` and `bloom-implementer` separately. For each app:
 
-1. Enable client-credentials tokens and request comma-separated scopes
-   `read,write,app:assignable,app:mentionable,admin`; use `actor=app`. A workspace admin
-   must authorize the installation. The `admin` scope is required for startup webhook
-   re-enable.
+1. Enable client-credentials tokens; use `actor=app`. A workspace admin must authorize
+   the installation. The daemon requests scopes
+   `read,write,app:assignable,app:mentionable,admin` at token time; Linear currently
+   rejects the `admin` scope on client_credentials (observed live 2026-07) and the daemon
+   automatically retries without it. Without `admin`, startup webhook re-enable is
+   unavailable — re-enable a disabled webhook manually in the app's settings.
 2. Enable webhooks, select **Agent session events**, and use respectively
    `https://linear-agent.example.com/webhook/planner` or `/webhook/implementer`.
    On bloom-implementer also enable the **Issues** category. If Linear requires a separate
@@ -104,6 +106,7 @@ SESSION_CONCURRENCY=2
 KEEPALIVE_MS=900000
 ATTACHMENTS_ENABLED=1
 ATTACHMENT_HOSTS=uploads.linear.app
+# NTFY_URL=https://ntfy.sh/<unguessable-topic>
 ```
 
 The daemon requests 30-day client-credentials app tokens with
