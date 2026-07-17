@@ -64,6 +64,24 @@ github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the c
 > Publish every work item as a self-contained GitHub issue: `item.md` is
 > the issue body; `refs/` files ride as marker-delimited issue comments.
 
+Example — publish to Linear (replace or delete):
+
+```yaml
+tracker: linear
+linear_team: <team key or team ID>
+```
+
+> Publish each work item to that team and record `linear_issues` in `item.md`
+> frontmatter as an always-list of objects pairing `url`, the exact
+> URL-derived `identifier`, and `relationship: completes | relates`; follow
+> `.references/tracker-lifecycle.md`. Do not hard-code workflow status IDs here:
+> `/do` discovers the linked issue's team and that team's current `In Review`
+> and resolved `Done` statuses at runtime. Document any workspace-specific
+> artifact attachment steps this repo requires.
+
+Configure one tracker example, not both. A connector being installed does not
+link an item; the published URL/identifier is the explicit link.
+
 ## Run notifications
 
 Optional. Lets a long autonomous run (`/do`) push a notification to your phone

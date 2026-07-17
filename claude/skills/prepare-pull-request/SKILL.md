@@ -19,7 +19,11 @@ line-level review that ran before it; the reverse is not true.
 You are the Overseer. PR conventions (labels, title format, required body
 sections, milestones) are the repo's to define: read the project's root
 `AGENTS.md` and any contributing/PR docs it names before creating the PR.
-Where the repo documents nothing, the defaults below apply.
+Where the repo documents nothing, the defaults below apply. Tracker mapping and
+PR closing references follow `.references/tracker-lifecycle.md`. This skill does
+not own `/do`'s Linear lifecycle preflight or status transitions: **YOU MUST
+NOT** add a late authentication gate or block PR preparation on tracker access;
+report unavailable tracker work and continue.
 
 ## Step 1: Preflight
 
@@ -109,10 +113,18 @@ names):
 - Two additions specific to this skill's gated path: fold the **gate
   outcomes** (Socrates verdict, review passes used, build gate) into
   Verification, and seed **Residual risks** from the review findings you
-  chose not to take. `Closes #<n>` when the PR resolves an issue (from
-  $ARGUMENTS or the conversation), per the repo's tracker convention.
+  chose not to take.
+- **YOU MUST** apply `.references/tracker-lifecycle.md` to explicit tracker
+  links from $ARGUMENTS or the conversation. Mapping authority is the explicit
+  issue number or Linear identifier, never title similarity. Completing GitHub
+  issues use `Closes #123`; completing Linear issues use exact standalone
+  `Fixes TEAM-123`; multiple items get one line each; related-only links do not
+  close; no explicit tracker link means no tracker line.
 - Create with `gh pr create` against the default branch, applying the
   Step 5 labels (and milestone, when the repo's conventions call for one).
+  Then **YOU MUST retrieve the persisted PR body**, verify every expected
+  closing line, repair missing lines, and retrieve it again before reporting.
+  Repeat that persisted-body verification after any later body edit.
 
 ## Step 7: Report
 
