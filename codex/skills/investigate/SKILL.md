@@ -9,6 +9,7 @@ Find the root cause before proposing a fix.
 
 Rules:
 - Do not make code changes unless the user explicitly approves diagnostic logging.
+- Remove all diagnostic logging and temporary investigation edits before the final report, even when the user approved adding them.
 - Do not guess. Support every conclusion with evidence from code, logs, or commands.
 
 Workflow:

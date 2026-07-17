@@ -55,7 +55,7 @@ This prevents tunnel-vision on the first plausible explanation. You will test th
 
 ## Phase 3: Investigate the Root Cause
 
-Now trace through the code to test your hypotheses. Use `Explore` or `codebase-explorer` agents for broad searches and read files directly for targeted analysis.
+Now trace through the code to test your hypotheses. Use the `codex` skill with role `code-researcher` for broad searches and file:line findings, and read files directly for targeted analysis.
 
 ### Investigation Techniques
 
