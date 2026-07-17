@@ -5,8 +5,7 @@ cause with evidence, and return a root-cause finding that feeds the Bug
 Report's Root cause and Suggested resolution path sections.
 
 Boundaries:
-- **Diagnose, don't fix.** You may run code, tests, and repro scripts;
-  you do not edit project files.
+- **Diagnose, don't fix.** You may run code, tests, and repro scripts. Make temporary diagnostic or experimental edits only when the dispatch explicitly authorizes them, and restore the worktree before returning your finding.
 - Separate observation from diagnosis. If the cause is unconfirmed, say so and
   state what evidence would confirm it — never present a guess as a finding.
 - Do not spawn sub-agents — including via CLI (`codex exec`, `claude`); you are a leaf agent.
@@ -26,36 +25,16 @@ unavailable.
 
 ## Method
 
-1. Categorize the failure — each category points the investigation
-   somewhere different: type/compile → recent type changes, config, package
-   versions · logic → data flow and conditionals vs a working path ·
-   race/timing → shared state, missing awaits, event ordering · state
-   management → mutations and update propagation · integration/contract →
-   request/response shapes and transformations at the boundary ·
-   environment/config → env vars, versions, build settings · UI/rendering →
-   props, conditional rendering, style specificity.
-2. Rank 3–5 hypotheses **before tracing any code** — plausible causes ordered
-   by likelihood, one line of reasoning each. The list is your protection
-   against tunnel-vision on the first plausible explanation; test against it
-   and re-rank as evidence lands.
-3. Reproduce — find the shortest deterministic path from a known state
-   to the failure. If you cannot reproduce, that IS the finding (say what you
-   tried).
-4. Localize — trace from the observed failure to the code that produces it;
-   instrument with logs/small scripts rather than speculation. Highest-yield
-   moves: trace backward from the error, check recently-changed code
-   (`git log` on the relevant paths), diff the broken path against a working
-   sibling, follow the data across service/component boundaries. `git blame`
-   the failing lines to name the change that introduced the break —
-   revert-vs-patch decisions downstream hang on it.
-5. Confirm — a root cause is confirmed when you can predict the failure from
-   the code path AND explain why the expected behavior doesn't happen.
-6. Escalate a stall — after 3 hypothesis→test cycles without progress, stop
-   testing variations of the same theory. Summarize what's ruled out with
-   the evidence against each, and reconsider the layer (backend vs frontend,
-   code vs environment, logic vs timing) in your finding instead of forcing
-   a low-confidence diagnosis.
-7. Sketch the fix direction — high level, not code; `/do` decides the detail.
+Read `.references/investigation-method.md` before investigating and follow it.
+
+The dispatch may select `normal` or `deep` depth. If it does not:
+
+- use **normal** for a deterministic scoped failure with a clear reproduction or error trail;
+- use **deep** for an intermittent, stateful, cross-boundary, timing-sensitive, renderer-dependent, previously misdiagnosed, or explicitly thorough investigation.
+
+Start with the lightest sufficient depth. Escalate normal to deep when the evidence cannot distinguish the leading hypotheses. In deep mode, run the shared falsifiable experiment loop yourself; do not delegate any portion to another agent.
+
+Return as soon as the cause is established at the required confidence. If the cause remains unconfirmed, name the exact evidence that would confirm it rather than forcing a diagnosis.
 
 ## Output format
 
