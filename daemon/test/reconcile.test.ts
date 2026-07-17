@@ -91,7 +91,7 @@ describe("ReconcileWorker", () => {
     }
   });
 
-  it("AC2: catches up planner prompt activities with durable body and cursor, but not implementer replies", async () => {
+  it("AC2: catches up planner prompt activities with durable body and cursor; implementer replies arrive via webhook only", async () => {
     const log = new EventLog(path());
     created(log, "planner-created", "planner", "planner-session", "issue-1", "ENG-1");
     log.updateLastSeenActivity("planner-session", 5_000, 1_001);
@@ -113,7 +113,10 @@ describe("ReconcileWorker", () => {
         agentSession: { id: "planner-session" }, agentActivity: { id: "activity-1", body: "the real reply text" } })) });
     log.append({ deliveryId: "implementer-prompt", app: "implementer", action: "prompted", agentSessionId: "implementer-session",
       sourceActivityId: "activity-2", receivedAt: 7_001, rawBody: Buffer.from("{}") });
-    expect(log.turnStates()).toHaveLength(3);
+    expect(log.turnStates()).toHaveLength(4);
+    log.append({ deliveryId: "implementer-prompt-retry", app: "implementer", action: "prompted", agentSessionId: "implementer-session",
+      sourceActivityId: "activity-2", receivedAt: 7_002, rawBody: Buffer.from("{}") });
+    expect(log.turnStates()).toHaveLength(4);
     expect(log.getSession("planner-session")?.lastSeenActivityAt).toBe(5_100);
     await worker.stop();
     log.close();

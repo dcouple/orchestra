@@ -52,13 +52,13 @@ describe("EventLog", () => {
     log.close();
   });
 
-  it("fans out planner and implementer created turns, but implementer prompted is ignored", () => {
+  it("fans out planner and implementer turns for both created and prompted events", () => {
     const log = new EventLog(path());
     log.append(event());
     log.append(event({ deliveryId: "delivery-2", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
     log.append(event({ deliveryId: "delivery-3", app: "implementer", agentSessionId: "implementer-session" }));
     log.append(event({ deliveryId: "delivery-4", app: "implementer", agentSessionId: "implementer-session", action: "prompted" }));
-    expect(log.turnStates()).toHaveLength(3);
+    expect(log.turnStates()).toHaveLength(4);
     expect(log.claimNextTurn(1100)).toMatchObject({ kind: "created", issueId: "issue-uuid-1" });
     expect(log.claimNextTurn(1100)).toBeUndefined();
     log.finishTurn(1, "response", "done", 1200);

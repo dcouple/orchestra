@@ -106,13 +106,16 @@ export class SessionWorker {
     const worktree = await this.worktrees.ensureWorktree(identifier);
     this.log.updateSessionWorktree(turn.linearSessionId, worktree.path, worktree.branch, this.now());
     const implementer = session.mode === "implementer";
-    let prompt = implementer ? `/do ${identifier}` : this.composePrompt(turn, identifier);
-    if (!implementer && this.config.attachmentsEnabled) prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
+    const resuming = turn.kind === "prompted" && !!session.claudeSessionId;
+    let prompt = implementer && !resuming ? `/do ${identifier}` : this.composePrompt(turn, identifier);
+    if ((!implementer || resuming) && this.config.attachmentsEnabled) prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
     this.log.setTurnPrompt(turn.id, prompt);
     const postProgress = (id: string, content: ProgressContent) => this.gateway.postActivity(
       turn.app, turn.linearSessionId, id, content, true, this.now() + 10_000);
     const progress = new ProgressQueue(postProgress, this.now, this.logger);
-    progress.push({ type: "thought", body: implementer ? "implementation started — running /do" : "session started — reading the ticket" });
+    progress.push({ type: "thought", body: implementer
+      ? (resuming ? "resuming implementation session" : "implementation started — running /do")
+      : "session started — reading the ticket" });
     const keepalive = setInterval(() => {
       if (this.now() - progress.lastSuccess >= this.config.keepaliveMs)
         progress.push({ type: "thought", body: implementer ? "still working on implementation" : "still working on this turn" });
@@ -121,7 +124,7 @@ export class SessionWorker {
     const mcpConfigJson = JSON.stringify({ mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp",
       headers: { Authorization: `Bearer ${this.config.linearApiKey}` } } } });
     const result = await runTurn({ cwd: worktree.path, prompt,
-        ...(!implementer && turn.kind === "prompted" && session.claudeSessionId ? { resumeSessionId: session.claudeSessionId } : {}),
+        ...(resuming ? { resumeSessionId: session.claudeSessionId! } : {}),
         argv: this.config.claudeArgv, permissionMode: implementer ? this.config.doPermissionMode : this.config.claudePermissionMode,
         maxTurns: implementer ? this.config.doMaxTurns : this.config.claudeMaxTurns,
         ...(implementer && this.config.doMaxBudgetUsd !== undefined ? { maxBudgetUsd: this.config.doMaxBudgetUsd } : {}),
@@ -275,10 +278,38 @@ export class SessionWorker {
     this.log.markExternalUrlFailed(row.id,result.error);
     this.logger.error(jsonLog({ event:"external_url_delivery_failed", id:row.id, error:result.error }));
   }
+  // One-way push notification (ntfy) when an agent posts a terminal response
+  // or error, so a human hears about questions without watching Linear.
+  private notifyTerminal(activity: TurnActivityRow): void {
+    const url = this.config.ntfyUrl;
+    if (!url) return;
+    const session = this.log.getSession(activity.linearSessionId);
+    const app = activity.app === "implementer" ? "bloom-implementer" : "bloom-planner";
+    const issue = session?.issueIdentifier ?? session?.issueId ?? "unknown issue";
+    const title = `${app} ${activity.kind === "error" ? "error" : "replied"}: ${issue}`;
+    const body = activity.body.length > 500 ? `${activity.body.slice(0, 500)}…` : activity.body;
+    void fetch(url, {
+      method: "POST",
+      headers: {
+        Title: title.replace(/[^\x20-\x7e]/g, "?"),
+        Priority: activity.kind === "error" ? "high" : "default",
+        Tags: activity.kind === "error" ? "rotating_light" : "speech_balloon",
+      },
+      body,
+    }).then(response => {
+      if (!response.ok) this.logger.error(jsonLog({ event: "notify_failed", status: response.status }));
+    }).catch(error => this.logger.error(jsonLog({ event: "notify_failed", error: String(error) })));
+  }
+
   private async postTerminal(activity: TurnActivityRow): Promise<void> {
     const result = await this.gateway.postActivity(activity.app, activity.linearSessionId, activity.activityId,
       { type: activity.kind, body: activity.body }, false, this.now() + 10_000);
-    if (result.ok) { this.log.markTurnActivityPosted(activity.turnId, this.now()); this.options.onTurnComplete?.(); return; }
+    if (result.ok) {
+      this.log.markTurnActivityPosted(activity.turnId, this.now());
+      this.notifyTerminal(activity);
+      this.options.onTurnComplete?.();
+      return;
+    }
     if (result.retriable && this.now() < activity.createdAt + 30 * 60_000) {
       const nextAttemptAt = this.now() + Math.max(result.retryAfterMs ?? 0, 1_000);
       this.log.markTurnActivityRetry(activity.turnId, nextAttemptAt);

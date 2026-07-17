@@ -7,7 +7,9 @@ per-issue git worktrees. Planner turns stream Claude progress to Linear, persist
 activities for retry, and resume the stored Claude session on follow-up prompts. Implementer
 assignments run a fresh, unattended literal `/do <identifier>` turn in the same issue worktree,
 durably attach an opened PR to the Linear session, and clean up clean worktrees after completed
-Issue webhooks. Dirty worktrees are retained and reported to the session.
+Issue webhooks. Follow-up replies to an implementer session resume its stored Claude session
+the same way planner prompts do, so a human can answer an implementer's question mid-stream.
+Dirty worktrees are retained and reported to the session.
 
 ## Local checks
 
@@ -59,6 +61,11 @@ enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the dat
 `DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),
 `SESSION_CONCURRENCY` (2), `KEEPALIVE_MS` (900000), `ATTACHMENTS_ENABLED` (1), and
 `ATTACHMENT_HOSTS` (`uploads.linear.app`). Set `SESSIONS_ENABLED=0` for ingress-only runs.
+Set `NTFY_URL` to an ntfy topic URL (e.g. `https://ntfy.sh/<topic>`) to push a one-way
+notification whenever an agent posts a terminal response or error — errors post at high
+priority. Unset means no notifications. A public ntfy topic is readable by anyone who knows
+its name; the notification body carries the agent's reply text, so pick an unguessable topic
+and never put secrets in issues if you use one.
 
 See `ops/runbook.md` for host provisioning, OAuth registration, credentials, hardening,
 deployment, smoke tests, and recovery.

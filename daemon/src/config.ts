@@ -36,6 +36,7 @@ export interface Config {
   linearApiKey?: string;
   attachmentsEnabled: boolean;
   attachmentHosts: string[];
+  ntfyUrl?: string;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -115,6 +116,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionConcurrency: positiveInteger(env, "SESSION_CONCURRENCY", 2),
     keepaliveMs: positiveInteger(env, "KEEPALIVE_MS", 900_000),
     ...(linearApiKey ? { linearApiKey } : {}),
+    ...(env.NTFY_URL?.trim() ? { ntfyUrl: env.NTFY_URL.trim() } : {}),
     attachmentsEnabled: enabled(env, "ATTACHMENTS_ENABLED"),
     attachmentHosts: (env.ATTACHMENT_HOSTS?.trim() || "uploads.linear.app").split(",").map(host => host.trim()).filter(Boolean),
   };

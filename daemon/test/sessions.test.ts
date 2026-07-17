@@ -102,6 +102,37 @@ describe("SessionWorker", () => {
     expect(log.getSession("implementer-session")?.worktreePath).toContain("ENG-99");
     expect(log.externalUrlStates()[0]).toMatchObject({status:"posted",url:"https://github.com/dcouple/example/pull/42"});log.close();
   });
+  it("implementer prompted turn resumes the stored Claude session with the reply text", async () => {
+    const {dir,log,config}=setup(); const poster=new Poster(); process.env.CLAUDE_FAKE_ARGS_FILE=join(dir,"args.jsonl");
+    process.env.CLAUDE_FAKE_MODE="do-pr"; appendImplementer(log,"i1","implementer-session");
+    const worker=new SessionWorker(log,poster as unknown as LinearGateway,config,{pollMs:10,reconcileMs:20});worker.start();
+    await waitFor(()=>log.turnStates()[0]?.status==="done");
+    process.env.CLAUDE_FAKE_MODE="happy";
+    log.append({deliveryId:"i2",app:"implementer",action:"prompted",agentSessionId:"implementer-session",receivedAt:Date.now(),
+      rawBody:Buffer.from(JSON.stringify({action:"prompted",agentActivity:{body:"yes, use option B"},agentSession:{id:"implementer-session"}}))});
+    worker.trigger(); await waitFor(()=>log.turnStates()[1]?.status==="done"); await worker.stop();
+    const starts=readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE,"utf8").trim().split("\n").map(line=>JSON.parse(line)).filter(row=>row.phase==="start");
+    expect(starts[1].args).toContain("--resume");
+    expect(starts[1].args[starts[1].args.indexOf("--resume")+1]).toBe("claude-do-session");
+    expect(starts[1].args.slice(starts[1].args.indexOf("-p"),starts[1].args.indexOf("--output-format"))).toEqual(["-p","yes, use option B"]);
+    expect(starts[1].cwd).toBe(starts[0].cwd); log.close();
+  });
+  it("posts an ntfy notification when a terminal activity is delivered", async () => {
+    const {log,config}=setup(); const poster=new Poster();
+    const received: Array<{title:string|undefined;priority:string|undefined;body:string}> = [];
+    const server=createServer((req,res)=>{let body="";req.on("data",chunk=>body+=chunk);
+      req.on("end",()=>{received.push({title:req.headers.title as string,priority:req.headers.priority as string,body});res.end("ok");});});
+    await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+    const ntfyUrl=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
+    append(log,"d1","session","created");
+    const worker=new SessionWorker(log,poster as unknown as LinearGateway,{...config,ntfyUrl},{pollMs:10,reconcileMs:20});worker.start();
+    await waitFor(()=>log.turnStates()[0]?.status==="done"&&received.length===1);
+    await worker.stop(); server.close(); log.close();
+    expect(received[0].title).toContain("bloom-planner replied");
+    expect(received[0].title).toContain("ENG-42");
+    expect(received[0].priority).toBe("default");
+    expect(received[0].body).toBe("planner answer");
+  });
   it("AC1/AC2/AC3-contract: creates worktree, posts response, then resumes in the same cwd", async () => {
     const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");

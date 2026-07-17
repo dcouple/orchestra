@@ -233,7 +233,7 @@ export class EventLog {
           event.agentSessionId ?? null, event.sourceActivityId ?? null, event.issueId ?? null, event.issueIdentifier ?? null, event.type ?? null,
           event.stateType ?? null, event.receivedAt, event.rawBody);
       if (result.changes === 0) return false;
-      const createsTurn = event.agentSessionId && (event.action === "created" || (event.app === "planner" && event.action === "prompted"));
+      const createsTurn = event.agentSessionId && (event.action === "created" || event.action === "prompted");
       if (createsTurn) {
         const existing = this.db.prepare("SELECT issue_id issueId, issue_identifier issueIdentifier FROM sessions WHERE linear_session_id=?")
           .get(event.agentSessionId) as { issueId: string | null; issueIdentifier: string | null } | undefined;
@@ -279,7 +279,7 @@ export class EventLog {
   private turnSourceKey(event: AppendEvent): string | null {
     if (!event.agentSessionId) return null;
     if (event.action === "created") return `created:${event.agentSessionId}`;
-    if (event.app === "planner" && event.action === "prompted" && event.sourceActivityId) {
+    if (event.action === "prompted" && event.sourceActivityId) {
       return `prompt:${event.agentSessionId}:${event.sourceActivityId}`;
     }
     return null;
