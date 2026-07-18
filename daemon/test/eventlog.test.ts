@@ -43,6 +43,28 @@ describe("EventLog", () => {
     log.close();
   });
 
+  it.each(["auth", "continue", "select", "stop", "future-value"])("never creates a prompt turn for signal %s", signal => {
+    const log = new EventLog(path());
+    log.append(event());
+    const result = log.append(event({ deliveryId: `signal-${signal}`, action: "prompted", sourceActivityId: `activity-${signal}`, signal }));
+    expect(log.turnStates()).toHaveLength(1);
+    expect(result.stop).toEqual(signal === "stop" ? { agentSessionId: "session-1", app: "planner" } : undefined);
+    log.close();
+  });
+
+  it("stop cancels pending turns and stages one idempotent acknowledgment", () => {
+    const log = new EventLog(path());
+    log.append(event());
+    log.append(event({ deliveryId: "pending", action: "prompted", sourceActivityId: "prompt-1" }));
+    const stop = event({ deliveryId: "stop-1", action: "prompted", sourceActivityId: "stop-activity", signal: "stop" });
+    expect(log.append(stop).stop).toEqual({ agentSessionId: "session-1", app: "planner" });
+    log.append(event({ ...stop, deliveryId: "stop-2" }));
+    expect(log.turnStates().map(turn => turn.status)).toEqual(["interrupted", "interrupted"]);
+    expect(log.stopAckStates()).toHaveLength(1);
+    expect(log.pendingStopAcks(1000)[0]).toMatchObject({ linearSessionId: "session-1", status: "pending" });
+    log.close();
+  });
+
   it("keeps distinct real prompts without activity ids as separate turns", () => {
     const log = new EventLog(path());
     log.append(event());

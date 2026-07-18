@@ -122,6 +122,22 @@ describe("ReconcileWorker", () => {
     log.close();
   });
 
+  it("AC5: replays a body-less stop signal without synthesizing a prompt and advances the cursor", async () => {
+    const log = new EventLog(path()); created(log, "created", "planner", "planner-session");
+    log.updateLastSeenActivity("planner-session", 5_000, 1_001);
+    const gateway = new FakeGateway(); gateway.activities.set("planner-session", [
+      { id: "stop-activity", body: "", signal: "stop", createdAt: 5_100 },
+    ]);
+    const onStop = vi.fn();
+    const worker = new ReconcileWorker(log, gateway as unknown as LinearGateway, config(),
+      { onStop, logger: { log: vi.fn(), error: vi.fn() }, now: () => 6_000 });
+    await worker.trigger();
+    expect(log.turnStates()).toHaveLength(1); expect(log.stopAckStates()).toHaveLength(1);
+    expect(log.getSession("planner-session")?.lastSeenActivityAt).toBe(5_100);
+    expect(onStop).toHaveBeenCalledWith("planner-session");
+    await worker.stop(); log.close();
+  });
+
   it("does not replay pre-upgrade created or prompted turns after source-key migration", async () => {
     const dbPath = path();
     const old = new Database(dbPath);

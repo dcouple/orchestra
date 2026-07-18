@@ -15,6 +15,7 @@ export interface AppendEvent {
   rawBody: Buffer;
   type?: string | undefined;
   stateType?: string | undefined;
+  signal?: string | undefined;
 }
 
 export interface SessionRow {
@@ -36,6 +37,9 @@ export interface TurnActivityRow {
 export interface ExternalUrlRow { id: number; linearSessionId: string; app: AppName; label: string; url: string; attempts: number; nextAttemptAt: number; createdAt: number; }
 export interface CleanupJobRow { id: number; issueId: string; issueIdentifier: string; linearSessionId: string; app: AppName; status: string; attempts: number; createdAt: number; claimedAt: number | null; notifyActivityId: string; }
 export interface CleanupNotificationRow { jobId: number; app: AppName; linearSessionId: string; activityId: string; body: string; attempts: number; nextAttemptAt: number; createdAt: number; }
+export interface StopAckRow { sourceActivityId: string; eventId: number; app: AppName; linearSessionId: string; activityId: string; body: string; status: "pending" | "posted" | "failed"; attempts: number; nextAttemptAt: number; createdAt: number; }
+
+const STOP_ACK_BODY = "Stopped at your request. Send a follow-up message to continue.";
 
 export interface AckRow {
   eventId: number;
@@ -154,6 +158,13 @@ export class EventLog {
         activity_id TEXT NOT NULL UNIQUE, body TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','posted','failed')),
         attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, error TEXT
       );
+      CREATE TABLE IF NOT EXISTS stop_acks (
+        source_activity_id TEXT PRIMARY KEY, event_id INTEGER NOT NULL REFERENCES events(id),
+        app TEXT NOT NULL CHECK(app IN ('planner','implementer')), linear_session_id TEXT NOT NULL,
+        activity_id TEXT NOT NULL UNIQUE, body TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','posted','failed')), attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+      );
     `);
     this.migrateEventColumns();
     this.migrateSessionColumns();
@@ -168,6 +179,7 @@ export class EventLog {
     if (!columns.has("state_type")) this.db.prepare("ALTER TABLE events ADD COLUMN state_type TEXT").run();
     if (!columns.has("issue_identifier")) this.db.prepare("ALTER TABLE events ADD COLUMN issue_identifier TEXT").run();
     if (!columns.has("source_activity_id")) this.db.prepare("ALTER TABLE events ADD COLUMN source_activity_id TEXT").run();
+    if (!columns.has("signal")) this.db.prepare("ALTER TABLE events ADD COLUMN signal TEXT").run();
   }
 
   private migrateSessionColumns(): void {
@@ -223,16 +235,30 @@ export class EventLog {
     if (!columns.has("progress_barrier")) this.db.prepare("ALTER TABLE turn_activities ADD COLUMN progress_barrier INTEGER NOT NULL DEFAULT 0").run();
   }
 
-  append(event: AppendEvent): { inserted: boolean; deliveryId: string } {
+  append(event: AppendEvent): { inserted: boolean; deliveryId: string; stop?: { agentSessionId: string; app: AppName } } {
     const deliveryId = event.deliveryId?.trim() || `sha256:${createHash("sha256").update(event.rawBody).digest("hex")}`;
     const run = this.db.transaction(() => {
       const result = this.db.prepare(`INSERT OR IGNORE INTO events
-        (delivery_id, webhook_id, app, action, agent_session_id, source_activity_id, issue_id, issue_identifier, type, state_type, received_at, raw_body)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        (delivery_id, webhook_id, app, action, agent_session_id, source_activity_id, issue_id, issue_identifier, type, state_type, signal, received_at, raw_body)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(deliveryId, event.webhookId ?? null, event.app, event.action ?? null,
           event.agentSessionId ?? null, event.sourceActivityId ?? null, event.issueId ?? null, event.issueIdentifier ?? null, event.type ?? null,
-          event.stateType ?? null, event.receivedAt, event.rawBody);
-      if (result.changes === 0) return false;
+          event.stateType ?? null, event.signal ?? null, event.receivedAt, event.rawBody);
+      if (result.changes === 0) return { inserted: false } as const;
+      const eventId = Number(result.lastInsertRowid);
+      if (event.action === "prompted" && event.agentSessionId && event.signal) {
+        if (event.signal === "stop") {
+          this.db.prepare(`UPDATE turns SET status='interrupted', error='stopped by user', finished_at=?
+            WHERE linear_session_id=? AND status='pending'`).run(event.receivedAt, event.agentSessionId);
+          this.db.prepare(`INSERT OR IGNORE INTO stop_acks
+            (source_activity_id,event_id,app,linear_session_id,activity_id,body,status,next_attempt_at,created_at)
+            VALUES (?,?,?,?,?,?,'pending',?,?)`).run(event.sourceActivityId ?? deliveryId, eventId, event.app,
+              event.agentSessionId, randomUUID(), STOP_ACK_BODY, event.receivedAt, event.receivedAt);
+          this.db.prepare("UPDATE sessions SET last_seen_at=? WHERE linear_session_id=?").run(event.receivedAt, event.agentSessionId);
+          return { inserted: true, stop: { agentSessionId: event.agentSessionId, app: event.app } } as const;
+        }
+        return { inserted: true } as const;
+      }
       const createsTurn = event.agentSessionId && (event.action === "created" || event.action === "prompted");
       if (createsTurn) {
         const existing = this.db.prepare("SELECT issue_id issueId, issue_identifier issueIdentifier FROM sessions WHERE linear_session_id=?")
@@ -261,19 +287,20 @@ export class EventLog {
         const turnResult = this.db.prepare(`INSERT OR IGNORE INTO turns
           (event_id, linear_session_id, issue_id, source_key, kind, status)
           VALUES (?, ?, ?, ?, ?, 'pending')`)
-          .run(Number(result.lastInsertRowid), event.agentSessionId, issueId, sourceKey, event.action);
+          .run(eventId, event.agentSessionId, issueId, sourceKey, event.action);
         if (event.action === "created" && turnResult.changes > 0) {
           this.db.prepare(`INSERT INTO acks (event_id, activity_id, status, next_attempt_at, deadline_at)
             VALUES (?, ?, 'pending', ?, ?)`)
-            .run(Number(result.lastInsertRowid), randomUUID(), event.receivedAt, event.receivedAt + 10_000);
+            .run(eventId, randomUUID(), event.receivedAt, event.receivedAt + 10_000);
         }
       }
       if (event.type === "Issue" && event.stateType === "completed" && event.issueId && event.issueIdentifier) {
         this.enqueueCleanup(event.issueId, event.issueIdentifier, event.receivedAt);
       }
-      return true;
+      return { inserted: true } as const;
     });
-    return { inserted: run(), deliveryId };
+    const result = run();
+    return { ...result, deliveryId };
   }
 
   private turnSourceKey(event: AppendEvent): string | null {
@@ -359,6 +386,9 @@ export class EventLog {
   clearTurnProgressBarrier(turnId: number): void {
     this.db.prepare("UPDATE turn_activities SET progress_barrier=0 WHERE turn_id=?").run(turnId);
   }
+  markTurnStopped(turnId: number, now = Date.now()): void {
+    this.db.prepare("UPDATE turns SET status='interrupted', error='stopped by user', finished_at=? WHERE id=?").run(now, turnId);
+  }
   interruptStaleRunning(now = Date.now()): number[] {
     return this.db.transaction(() => {
       this.db.prepare("UPDATE turn_activities SET progress_barrier=0 WHERE progress_barrier=1").run();
@@ -408,6 +438,26 @@ export class EventLog {
   }
   turnStates(): Array<{ id: number; status: string; issueId: string; kind: string; prompt: string | null }> {
     return this.db.prepare("SELECT id, status, issue_id issueId, kind, prompt FROM turns ORDER BY id").all() as Array<{ id: number; status: string; issueId: string; kind: string; prompt: string | null }>;
+  }
+
+  pendingStopAcks(now = Date.now()): StopAckRow[] {
+    return this.db.prepare(`SELECT source_activity_id sourceActivityId,event_id eventId,app,
+      linear_session_id linearSessionId,activity_id activityId,body,status,attempts,
+      next_attempt_at nextAttemptAt,created_at createdAt FROM stop_acks
+      WHERE status='pending' AND next_attempt_at<=? ORDER BY created_at`).all(now) as StopAckRow[];
+  }
+  markStopAckPosted(sourceActivityId: string): void {
+    this.db.prepare("UPDATE stop_acks SET status='posted',attempts=attempts+1 WHERE source_activity_id=?").run(sourceActivityId);
+  }
+  markStopAckRetry(sourceActivityId: string, nextAttemptAt: number): void {
+    this.db.prepare("UPDATE stop_acks SET attempts=attempts+1,next_attempt_at=? WHERE source_activity_id=?").run(nextAttemptAt, sourceActivityId);
+  }
+  markStopAckFailed(sourceActivityId: string): void {
+    this.db.prepare("UPDATE stop_acks SET status='failed',attempts=attempts+1 WHERE source_activity_id=?").run(sourceActivityId);
+  }
+  stopAckStates(): Array<{ sourceActivityId: string; linearSessionId: string; status: string; body: string; attempts: number }> {
+    return this.db.prepare(`SELECT source_activity_id sourceActivityId,linear_session_id linearSessionId,status,body,attempts
+      FROM stop_acks ORDER BY created_at`).all() as Array<{ sourceActivityId: string; linearSessionId: string; status: string; body: string; attempts: number }>;
   }
 
   stageExternalUrl(linearSessionId: string, app: AppName, label: string, url: string, now = Date.now()): void {

@@ -147,7 +147,11 @@ describe("LinearGateway", () => {
         nodes: [{ __typename: "AgentActivity", id: "activity-1", createdAt: iso, updatedAt: iso, archivedAt: null,
           ephemeral: false, signal: null, signalMetadata: null, sourceMetadata: null, sourceComment: null,
           user: { id: "user-1" }, agentSession: { id: "session-1" },
-          content: { __typename: "AgentActivityPromptContent", type: "prompt", body: "reply text" } }],
+          content: { __typename: "AgentActivityPromptContent", type: "prompt", body: "reply text" } },
+          { __typename: "AgentActivity", id: "activity-stop", createdAt: iso, updatedAt: iso, archivedAt: null,
+            ephemeral: false, signal: "stop", signalMetadata: null, sourceMetadata: null, sourceComment: null,
+            user: { id: "user-1" }, agentSession: { id: "session-1" },
+            content: { __typename: "AgentActivityPromptContent", type: "prompt", body: "" } }],
         pageInfo: pageInfo() } } } } };
     });
     const eventLog = log();
@@ -156,7 +160,10 @@ describe("LinearGateway", () => {
       implementer: { name: "implementer", webhookSecret: "i", staticToken: "token-i" },
     }, api.graphqlUrl, api.tokenUrl);
     await expect(gateway.listSessionActivitiesSince("planner", "session-1", Date.parse("2026-07-14T11:59:00.000Z"), Date.now() + 1000))
-      .resolves.toEqual([{ id: "activity-1", body: "reply text", createdAt: Date.parse(iso) }]);
+      .resolves.toEqual([
+        { id: "activity-1", body: "reply text", createdAt: Date.parse(iso) },
+        { id: "activity-stop", body: "", signal: "stop", createdAt: Date.parse(iso) },
+      ]);
     expect(api.requests[1]?.body.variables).toMatchObject({ id: "session-1", first: 100,
       filter: { type: { eq: "prompt" }, createdAt: { gte: "2026-07-14T11:59:00.000Z" } } });
     await api.close(); eventLog.close();

@@ -22,6 +22,7 @@ export interface AgentPromptActivity {
   id: string;
   body: string;
   createdAt: number;
+  signal?: string;
 }
 export interface WebhookEnsureResult { matched: boolean; updated: boolean; }
 interface Logger { warn(...args: unknown[]): void; }
@@ -376,8 +377,9 @@ export class LinearGateway {
         });
         for (const node of connection.nodes) {
           const body = activityBody(node);
-          if (!body) continue;
-          activities.push({ id: node.id, body, createdAt: node.createdAt.getTime() });
+          const signal = typeof node.signal === "string" ? node.signal : undefined;
+          if (!body && !signal) continue;
+          activities.push({ id: node.id, body: body ?? "", createdAt: node.createdAt.getTime(), ...(signal ? { signal } : {}) });
         }
         after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? undefined : undefined;
       } while (after);

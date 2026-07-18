@@ -27,9 +27,9 @@ function setup() {
       implementer: { name: "implementer", webhookSecret: "implementer-secret", staticToken: "i" },
     },
   };
-  const onInserted = vi.fn();
-  const server = new WebhookServer({ config, log, onInserted, logger: { log: vi.fn(), error: vi.fn() } });
-  return { config, log, server, onInserted };
+  const onInserted = vi.fn(); const onStop = vi.fn();
+  const server = new WebhookServer({ config, log, onInserted, onStop, logger: { log: vi.fn(), error: vi.fn() } });
+  return { config, log, server, onInserted, onStop };
 }
 
 function signed(body: string, secret = "planner-secret", delivery = "delivery-1") {
@@ -111,6 +111,17 @@ describe("webhook HTTP integration", () => {
     expect((await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(prompted, "planner-secret", "prompt-1"), body: prompted })).status).toBe(200);
     expect((await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(prompted, "planner-secret", "prompt-2"), body: prompted })).status).toBe(200);
     expect(log.turnStates().map(turn => turn.kind)).toEqual(["created", "prompted"]);
+    await server.close(); log.close();
+  });
+
+  it("extracts a signed stop signal without creating a turn and fires onStop", async () => {
+    const { log, server, onStop } = setup(); const address = await server.listen();
+    const body = JSON.stringify({ webhookTimestamp: Date.now(), action: "prompted",
+      agentActivity: { id: "stop-activity", signal: "stop" }, agentSession: { id: "session" } });
+    const response = await fetch(`http://127.0.0.1:${address.port}/webhook/planner`,
+      { method: "POST", headers: signed(body, "planner-secret", "stop-delivery"), body });
+    expect(response.status).toBe(200); expect(log.turnStates()).toHaveLength(0);
+    expect(log.stopAckStates()).toHaveLength(1); expect(onStop).toHaveBeenCalledWith("session");
     await server.close(); log.close();
   });
 
