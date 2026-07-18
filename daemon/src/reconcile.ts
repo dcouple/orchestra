@@ -7,6 +7,7 @@ export interface ReconcileWorkerOptions {
   now?: () => number;
   logger?: Logger;
   onInserted?: () => void;
+  onStop?: (agentSessionId: string) => void;
 }
 
 type ReconcileGateway = Pick<LinearGateway,
@@ -104,8 +105,9 @@ export class ReconcileWorker {
       }
       let maxSeen = session.lastSeenActivityAt ?? 0;
       for (const activity of activities) {
-        const inserted = this.appendPrompted(session, activity);
-        if (inserted) this.options.onInserted?.();
+        const result = this.appendPrompted(session, activity);
+        if (result.inserted) this.options.onInserted?.();
+        if (result.stop) this.options.onStop?.(result.stop.agentSessionId);
         maxSeen = Math.max(maxSeen, activity.createdAt);
       }
       if (maxSeen > (session.lastSeenActivityAt ?? 0)) {
@@ -135,7 +137,7 @@ export class ReconcileWorker {
     }).inserted;
   }
 
-  private appendPrompted(session: SessionRow, activity: AgentPromptActivity): boolean {
+  private appendPrompted(session: SessionRow, activity: AgentPromptActivity): ReturnType<EventLog["append"]> {
     const raw = {
       action: "prompted",
       agentSession: {
@@ -145,6 +147,7 @@ export class ReconcileWorker {
       },
       agentActivity: {
         id: activity.id,
+        signal: activity.signal,
         body: activity.body,
         createdAt: new Date(activity.createdAt).toISOString(),
         content: { type: "prompt", body: activity.body },
@@ -156,11 +159,12 @@ export class ReconcileWorker {
       action: "prompted",
       agentSessionId: session.linearSessionId,
       sourceActivityId: activity.id,
+      signal: activity.signal,
       issueId: session.issueId ?? undefined,
       issueIdentifier: session.issueIdentifier ?? undefined,
       receivedAt: this.now(),
       rawBody: Buffer.from(JSON.stringify(raw)),
-    }).inserted;
+    });
   }
 
   async stop(): Promise<void> {

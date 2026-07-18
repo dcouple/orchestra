@@ -10,6 +10,7 @@ export interface WebhookServerOptions {
   config: Config;
   log: EventLog;
   onInserted?: () => void;
+  onStop?: (agentSessionId: string) => void;
   logger?: Pick<Console, "log" | "error">;
 }
 
@@ -83,6 +84,7 @@ export class WebhookServer {
         action: stringField(verified.payload.action),
         agentSessionId: isIssue ? undefined : stringField(session?.id),
         sourceActivityId: isIssue ? undefined : stringField(agentActivity?.id),
+        signal: isIssue ? undefined : stringField(agentActivity?.signal),
         issueId: isIssue ? stringField(issue?.id) : stringField(session?.issueId) ?? stringField(issue?.id),
         issueIdentifier: stringField(issue?.identifier),
         webhookId: stringField(verified.payload.webhookId),
@@ -91,10 +93,11 @@ export class WebhookServer {
       };
       const result = this.options.log.append(event);
       this.logger.log(JSON.stringify({ event: "webhook", deliveryId: result.deliveryId, app,
-        action: event.action ?? null, sessionId: event.agentSessionId ?? null, issueId: event.issueId ?? null,
+        action: event.action ?? null, signal: event.signal ?? null, sessionId: event.agentSessionId ?? null, issueId: event.issueId ?? null,
         inserted: result.inserted }));
       this.json(response, 200, { ok: true });
       if (result.inserted) this.options.onInserted?.();
+      if (result.stop) this.options.onStop?.(result.stop.agentSessionId);
     } catch (error) {
       this.logger.error(JSON.stringify({ level: "error", event: "request_failed", error: error instanceof Error ? error.message : String(error) }));
       if (!response.headersSent) this.json(response, 500, { error: "internal_error" }); else response.end();

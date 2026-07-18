@@ -14,8 +14,9 @@ const worker = new AckWorker(log, gateway);
 const cleanupWorker = config.sessionsEnabled ? new CleanupWorker(log,gateway,config.worktreesRoot,config.targetRepoPath!) : undefined;
 const sessionWorker = config.sessionsEnabled ? new SessionWorker(log, gateway, config, {onTurnComplete:()=>void cleanupWorker?.trigger()}) : undefined;
 const triggerWorkers = () => { worker.trigger(); sessionWorker?.trigger(); void cleanupWorker?.trigger(); };
-const reconcileWorker = hasLinearApiCreds() ? new ReconcileWorker(log, gateway, config, { onInserted: triggerWorkers }) : undefined;
-const server = new WebhookServer({ config, log, onInserted: triggerWorkers });
+const onStop = (id: string) => sessionWorker?.stopSession(id);
+const reconcileWorker = hasLinearApiCreds() ? new ReconcileWorker(log, gateway, config, { onInserted: triggerWorkers, onStop }) : undefined;
+const server = new WebhookServer({ config, log, onInserted: triggerWorkers, onStop });
 
 worker.start();
 sessionWorker?.start();

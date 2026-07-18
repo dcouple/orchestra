@@ -3,7 +3,7 @@ import { mkdir, open, realpath, unlink } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { Config } from "./config.js";
 import { runTurn, type ClaudeEvent } from "./claude.js";
-import type { EventLog, ExternalUrlRow, TurnActivityRow, TurnRow } from "./eventlog.js";
+import type { EventLog, ExternalUrlRow, StopAckRow, TurnActivityRow, TurnRow } from "./eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
 import { WorktreeManager } from "./worktrees.js";
 
@@ -63,7 +63,8 @@ export class SessionWorker {
   private stopped = false;
   private draining = false;
   private activityDrain: Promise<void> | undefined;
-  private readonly active = new Map<number, { promise: Promise<void>; controller: AbortController }>();
+  private readonly active = new Map<number, { promise: Promise<void>; controller: AbortController; linearSessionId: string }>();
+  private readonly stopRequested = new Set<number>();
   private readonly now: () => number;
   private readonly logger: Logger;
   private readonly worktrees: WorktreeManager;
@@ -89,12 +90,17 @@ export class SessionWorker {
         const turn = this.log.claimNextTurn(this.now()); if (!turn) break;
         const controller = new AbortController();
         const promise = this.process(turn, controller.signal).catch(error => {
+          if (this.stopRequested.has(turn.id)) {
+            this.log.markTurnStopped(turn.id, this.now());
+            this.logger.log(jsonLog({ event: "session_turn_stopped", turnId: turn.id, linearSessionId: turn.linearSessionId }));
+            return;
+          }
           this.logger.error(jsonLog({ event: "session_turn_unhandled", turnId: turn.id,
             linearSessionId: turn.linearSessionId, issueId: turn.issueId, attempts: turn.attempts, error: String(error) }));
           const role = turn.app === "implementer" ? "Implementer" : "Planner";
           try { this.log.finishTurn(turn.id, "error", `${role} turn failed: ${error instanceof Error ? error.message : String(error)}`, this.now()); } catch {}
-        }).finally(() => { this.active.delete(turn.id); void this.triggerActivityDrain(); void this.drain(); });
-        this.active.set(turn.id, { promise, controller });
+        }).finally(() => { this.stopRequested.delete(turn.id); this.active.delete(turn.id); void this.triggerActivityDrain(); void this.drain(); });
+        this.active.set(turn.id, { promise, controller, linearSessionId: turn.linearSessionId });
       }
     } finally { this.draining = false; }
   }
@@ -139,6 +145,14 @@ export class SessionWorker {
       });
     clearInterval(keepalive);
     const finishedAt = this.now();
+    if (this.stopRequested.has(turn.id)) {
+      this.log.markTurnStopped(turn.id, finishedAt);
+      this.logger.log(jsonLog({ event: "session_turn_stopped", turnId: turn.id, linearSessionId: turn.linearSessionId }));
+      await progress.cancelAndWait();
+      this.log.touchSession(turn.linearSessionId, this.now());
+      this.log.clearTurnProgressBarrier(turn.id);
+      return;
+    }
     if (implementer && result.resultText) {
       const url = this.extractPullRequestUrl(result.resultText);
       if (url) this.log.stageExternalUrl(turn.linearSessionId, turn.app, "Pull Request", url, finishedAt);
@@ -266,8 +280,27 @@ export class SessionWorker {
   }
   private async drainActivities(): Promise<void> {
     if (this.stopped) return;
+    for (const ack of this.log.pendingStopAcks(this.now())) {
+      if ([...this.active.values()].some(active => active.linearSessionId === ack.linearSessionId)) continue;
+      await this.postStopAck(ack);
+    }
     for (const activity of this.log.pendingTurnActivities(this.now())) await this.postTerminal(activity);
     for (const external of this.log.pendingExternalUrls(this.now())) await this.postExternalUrl(external);
+  }
+  private async postStopAck(ack: StopAckRow): Promise<void> {
+    const result = await this.gateway.postActivity(ack.app, ack.linearSessionId, ack.activityId,
+      { type: "response", body: ack.body }, false, this.now() + 10_000);
+    if (result.ok) { this.log.markStopAckPosted(ack.sourceActivityId); return; }
+    if (result.retriable && this.now() < ack.createdAt + 30 * 60_000) {
+      const nextAttemptAt = this.now() + Math.max(result.retryAfterMs ?? 0, 1_000);
+      this.log.markStopAckRetry(ack.sourceActivityId, nextAttemptAt);
+      this.logger.error(jsonLog({ event: "stop_ack_retry_scheduled", sourceActivityId: ack.sourceActivityId,
+        linearSessionId: ack.linearSessionId, attempts: ack.attempts + 1, next_attempt_at: nextAttemptAt, error: result.error }));
+      return;
+    }
+    this.log.markStopAckFailed(ack.sourceActivityId);
+    this.logger.error(jsonLog({ event: "stop_ack_delivery_failed", sourceActivityId: ack.sourceActivityId,
+      linearSessionId: ack.linearSessionId, attempts: ack.attempts + 1, error: result.error }));
   }
   private async postExternalUrl(row: ExternalUrlRow): Promise<void> {
     const result = await this.gateway.setSessionExternalUrl(row.app,row.linearSessionId,row.label,row.url,this.now()+10_000);
@@ -320,6 +353,14 @@ export class SessionWorker {
     this.log.markTurnActivityFailed(activity.turnId, `terminal_activity_delivery_failed: ${result.error}`, this.now());
     this.logger.error(jsonLog({ event: "terminal_activity_delivery_failed", turnId: activity.turnId,
       linearSessionId: activity.linearSessionId, attempts: activity.attempts + 1, error: result.error }));
+  }
+  stopSession(linearSessionId: string): void {
+    for (const [turnId, active] of this.active) {
+      if (active.linearSessionId !== linearSessionId) continue;
+      this.stopRequested.add(turnId);
+      active.controller.abort();
+    }
+    void this.triggerActivityDrain();
   }
   async stop(): Promise<void> {
     this.stopped = true; if (this.timer) clearInterval(this.timer); if (this.reconcileTimer) clearInterval(this.reconcileTimer);
