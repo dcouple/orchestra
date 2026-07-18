@@ -94,25 +94,35 @@ per the rule above, existence checked), and every input the role needs —
 nothing assumed from this conversation.
 
 ### 2. Execute
-Run via Bash (timeout 600000 ms), from the repo root:
+Run every dispatch as a background Bash call from the repo root. The watchdog
+is the dispatch's wall-clock bound. Use a 900-second cap for `--ephemeral`
+roles and a 2700-second cap for the implementer. Redirect stdin because Codex
+can read an open idle stdin pipe and hang even when given a positional prompt.
 
 ```bash
-# effort / --ephemeral per the role table; --yolo for every role
-codex exec -m gpt-5.6-sol -c model_reasoning_effort="<effort>" --yolo \
+# cap: 900 for --ephemeral roles, 2700 for the implementer
+perl -e 'alarm shift; exec @ARGV' <cap> \
+  codex exec -m gpt-5.6-sol -c model_reasoning_effort="<effort>" --yolo \
   [--ephemeral] --skip-git-repo-check -C <repo root> \
-  -o <scratchpad>/codex-<role>-<n>.md "<prompt>"
+  -o <scratchpad>/codex-<role>-<n>.md "<prompt>" </dev/null
+```
 
-# implementer fix round — keep its session context
-codex exec resume --last -o <scratchpad>/codex-implementer-fix<k>.md \
-  "<combined review findings + fix instructions>"
+For an implementer fix round, keep its session context:
+
+```bash
+perl -e 'alarm shift; exec @ARGV' 2700 \
+  codex exec resume --last -o <scratchpad>/codex-implementer-fix<k>.md \
+  "<combined review findings + fix instructions>" </dev/null
 ```
 
 Parallel dispatches (e.g. several code-researchers, or a reviewer alongside a
-Claude sub-agent) run as background Bash calls, issued in the same message as
-the sibling dispatch. A dual-lane review that runs `codex exec` in the
-foreground serializes the lanes and doubles the pass's wall-clock.
+Claude sub-agent) are issued in the same message as the sibling dispatch. A
+dual-lane review that does not issue the background calls together serializes
+the lanes and doubles the pass's wall-clock.
 
 **Success criteria**: exit 0 and the `-o` output file exists and is non-empty.
+Exit 142 is the watchdog's SIGALRM reap signature: it is a classified failure,
+not a success, and step 3 handles it.
 
 ### 3. Return the report
 Read the output file. Check the status line the format requires (reviewers:
@@ -132,8 +142,11 @@ report verbatim to the caller, prefixed with one line:
 `CODEX <role>: <status line> · tokens <n | unknown>` — the Overseer sums
 these per role into the wrap-up's run record.
 
-If the run errored, timed out, or the report lacks its status line after one
-retry, return the error plus whatever output exists to the caller.
+Exit 142 (a SIGALRM watchdog reap) classifies the dispatch as a hung run. Retry
+a hung, errored, timed-out, or status-line-missing run once: make a fresh
+dispatch for an ephemeral role, or use `resume --last` for the implementer so
+its session context survives. After that retry, return the error plus whatever
+output exists to the caller.
 
 **Success criteria**: caller received a well-formed report (or the error
 after one retry).
