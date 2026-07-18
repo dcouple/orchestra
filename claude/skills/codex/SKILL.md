@@ -101,7 +101,7 @@ can read an open idle stdin pipe and hang even when given a positional prompt.
 
 ```bash
 # cap: 900 for --ephemeral roles, 2700 for the implementer
-perl -e 'alarm shift; exec @ARGV' <cap> \
+perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' <cap> \
   codex exec -m gpt-5.6-sol -c model_reasoning_effort="<effort>" --yolo \
   [--ephemeral] --skip-git-repo-check -C <repo root> \
   -o <scratchpad>/codex-<role>-<n>.md "<prompt>" </dev/null
@@ -110,7 +110,7 @@ perl -e 'alarm shift; exec @ARGV' <cap> \
 For an implementer fix round, keep its session context:
 
 ```bash
-perl -e 'alarm shift; exec @ARGV' 2700 \
+perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' 2700 \
   codex exec resume --last -o <scratchpad>/codex-implementer-fix<k>.md \
   "<combined review findings + fix instructions>" </dev/null
 ```
