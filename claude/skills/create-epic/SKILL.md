@@ -1,8 +1,7 @@
 ---
 name: create-epic
-description: Captures a discussed multi-phase workstream as an Epic Spec work item ready for /do. For a single-outcome change use /create-plan instead.
+description: Captures a discussed multi-phase workstream as an Epic Spec work item ready for /do. Use when a conversation has converged on a multi-phase workstream that has no work item yet — whether the user asks to capture it or convergence makes capture the obvious next step. Do not invoke for a passing idea, an unconverged thread, or work that already has an item. For a single-outcome change use /create-plan instead.
 argument-hint: "[epic title or one-line summary]"
-disable-model-invocation: true
 ---
 
 # Create Epic
