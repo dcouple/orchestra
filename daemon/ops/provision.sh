@@ -65,7 +65,7 @@ if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
   chmod 0755 /usr/local/bin/pnpm
 fi
 
-CODEX_VERSION="0.101.0"
+CODEX_VERSION="0.144.5"
 if ! command -v codex >/dev/null || [[ "$(codex --version)" != *"${CODEX_VERSION}"* ]]; then
   env PNPM_HOME=/opt/pnpm PATH="/opt/pnpm/bin:${PATH}" \
     pnpm add --global "@openai/codex@${CODEX_VERSION}"
