@@ -118,19 +118,38 @@ describe("SessionWorker", () => {
     expect(starts[1].cwd).toBe(starts[0].cwd); log.close();
   });
   it("AC1-AC4: aborts a running turn, posts one stop ack, and resumes on the next prompt", async () => {
-    const { dir, log, config } = setup(); const poster = new Poster();
+    let releaseProgress!: () => void;
+    const progressGate = new Promise<void>(resolve => { releaseProgress = resolve; });
+    class GatedPoster extends Poster {
+      isActive?: () => boolean; activeAtTerminal: boolean | undefined;
+      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+        const result = super.postActivity(app, session, id, content, ephemeral);
+        if (ephemeral) await progressGate;
+        else this.activeAtTerminal = this.isActive?.();
+        return result;
+      }
+    }
+    const { dir, log, config } = setup(); const poster = new GatedPoster();
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_MODE = "slow";
-    process.env.CLAUDE_FAKE_DELAY_MS = "10000";
+    process.env.CLAUDE_FAKE_DELAY_MS = "1000";
     append(log, "created", "stop-session", "created");
-    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 });
+    poster.isActive = () => (worker as unknown as { active: Map<number, unknown> }).active.size > 0;
+    worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "running" && log.getSession("stop-session")?.claudeSessionId === "claude-session-1");
     const result = log.append({ deliveryId: "stop", app: "planner", action: "prompted", agentSessionId: "stop-session",
       sourceActivityId: "stop-activity", signal: "stop", receivedAt: Date.now(), rawBody: Buffer.from("{}") });
     worker.stopSession(result.stop!.agentSessionId);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(poster.posts.some(post => !post.ephemeral && post.session === "stop-session")).toBe(false);
+    releaseProgress();
     await waitFor(() => log.turnStates()[0]?.status === "interrupted" && log.stopAckStates()[0]?.status === "posted");
     expect(poster.posts.filter(post => !post.ephemeral)).toEqual([expect.objectContaining({
       session: "stop-session", content: { type: "response", body: "Stopped at your request. Send a follow-up message to continue." },
     })]);
+    expect(poster.activeAtTerminal).toBe(false);
+    const terminalIndex = poster.posts.findIndex(post => !post.ephemeral && post.session === "stop-session");
+    expect(poster.posts.slice(terminalIndex + 1).some(post => post.ephemeral && post.session === "stop-session")).toBe(false);
     process.env.CLAUDE_FAKE_MODE = "happy"; append(log, "after-stop", "stop-session", "prompted"); worker.trigger();
     await waitFor(() => log.turnStates()[1]?.status === "done"); await worker.stop();
     const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
@@ -174,6 +193,17 @@ describe("SessionWorker", () => {
     expect(failedLogger.entries()).toContainEqual(expect.objectContaining({ event: "stop_ack_delivery_failed",
       sourceActivityId: "failed-stop-activity", attempts: 1 }));
     await failedWorker.stop(); second.log.close();
+  });
+  it("marks a stop-requested turn interrupted when the runner rejects", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger(); config.claudeArgv = [];
+    append(log, "reject-stop", "reject-session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "running"); worker.stopSession("reject-session");
+    await waitFor(() => log.turnStates()[0]?.status === "interrupted");
+    expect(logger.entries()).toContainEqual(expect.objectContaining({ event: "session_turn_stopped", linearSessionId: "reject-session" }));
+    expect(logger.entries().some(entry => entry.event === "session_turn_unhandled")).toBe(false);
+    expect(poster.posts.some(post => !post.ephemeral)).toBe(false);
+    await worker.stop(); log.close();
   });
   it("posts an ntfy notification when a terminal activity is delivered", async () => {
     const {log,config}=setup(); const poster=new Poster();

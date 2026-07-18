@@ -65,6 +65,25 @@ describe("EventLog", () => {
     log.close();
   });
 
+  it("does not re-fire a webhook stop replayed by reconciliation while a follow-up is running", () => {
+    const log = new EventLog(path());
+    log.append(event()); const first = log.claimNextTurn(1001)!; log.markTurnStopped(first.id, 1002);
+    expect(log.append(event({ deliveryId: "webhook-stop", action: "prompted", sourceActivityId: "stop-source", signal: "stop" })).stop)
+      .toEqual({ agentSessionId: "session-1", app: "planner" });
+    log.append(event({ deliveryId: "follow-up", action: "prompted", sourceActivityId: "follow-up-source" }));
+    const followUp = log.claimNextTurn(1003)!; expect(followUp.status).toBe("running");
+    const replay = log.append(event({ deliveryId: "reconcile:prompt:session-1:stop-source", action: "prompted",
+      sourceActivityId: "stop-source", signal: "stop" }));
+    expect(replay.inserted).toBe(true); expect(replay.stop).toBeUndefined();
+    expect(log.turnStates().find(turn => turn.id === followUp.id)?.status).toBe("running");
+    expect(log.stopAckStates()).toHaveLength(1);
+    expect(log.append(event({ deliveryId: "second-stop", action: "prompted",
+      sourceActivityId: "second-stop-source", signal: "stop" })).stop)
+      .toEqual({ agentSessionId: "session-1", app: "planner" });
+    expect(log.stopAckStates()).toHaveLength(2);
+    log.close();
+  });
+
   it("keeps distinct real prompts without activity ids as separate turns", () => {
     const log = new EventLog(path());
     log.append(event());

@@ -90,6 +90,11 @@ export class SessionWorker {
         const turn = this.log.claimNextTurn(this.now()); if (!turn) break;
         const controller = new AbortController();
         const promise = this.process(turn, controller.signal).catch(error => {
+          if (this.stopRequested.has(turn.id)) {
+            this.log.markTurnStopped(turn.id, this.now());
+            this.logger.log(jsonLog({ event: "session_turn_stopped", turnId: turn.id, linearSessionId: turn.linearSessionId }));
+            return;
+          }
           this.logger.error(jsonLog({ event: "session_turn_unhandled", turnId: turn.id,
             linearSessionId: turn.linearSessionId, issueId: turn.issueId, attempts: turn.attempts, error: String(error) }));
           const role = turn.app === "implementer" ? "Implementer" : "Planner";
@@ -275,7 +280,10 @@ export class SessionWorker {
   }
   private async drainActivities(): Promise<void> {
     if (this.stopped) return;
-    for (const ack of this.log.pendingStopAcks(this.now())) await this.postStopAck(ack);
+    for (const ack of this.log.pendingStopAcks(this.now())) {
+      if ([...this.active.values()].some(active => active.linearSessionId === ack.linearSessionId)) continue;
+      await this.postStopAck(ack);
+    }
     for (const activity of this.log.pendingTurnActivities(this.now())) await this.postTerminal(activity);
     for (const external of this.log.pendingExternalUrls(this.now())) await this.postExternalUrl(external);
   }

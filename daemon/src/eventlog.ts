@@ -248,12 +248,13 @@ export class EventLog {
       const eventId = Number(result.lastInsertRowid);
       if (event.action === "prompted" && event.agentSessionId && event.signal) {
         if (event.signal === "stop") {
-          this.db.prepare(`UPDATE turns SET status='interrupted', error='stopped by user', finished_at=?
-            WHERE linear_session_id=? AND status='pending'`).run(event.receivedAt, event.agentSessionId);
-          this.db.prepare(`INSERT OR IGNORE INTO stop_acks
+          const ackResult = this.db.prepare(`INSERT OR IGNORE INTO stop_acks
             (source_activity_id,event_id,app,linear_session_id,activity_id,body,status,next_attempt_at,created_at)
             VALUES (?,?,?,?,?,?,'pending',?,?)`).run(event.sourceActivityId ?? deliveryId, eventId, event.app,
               event.agentSessionId, randomUUID(), STOP_ACK_BODY, event.receivedAt, event.receivedAt);
+          if (ackResult.changes === 0) return { inserted: true } as const;
+          this.db.prepare(`UPDATE turns SET status='interrupted', error='stopped by user', finished_at=?
+            WHERE linear_session_id=? AND status='pending'`).run(event.receivedAt, event.agentSessionId);
           this.db.prepare("UPDATE sessions SET last_seen_at=? WHERE linear_session_id=?").run(event.receivedAt, event.agentSessionId);
           return { inserted: true, stop: { agentSessionId: event.agentSessionId, app: event.app } } as const;
         }
