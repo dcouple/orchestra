@@ -73,8 +73,9 @@ mistaken for product behavior.
 Screenshots and clips are evidence, not repo content — never commit them.
 Upload to whatever host the environment provides and inline the URLs in
 the PR comment so previews render where the reviewer reads. Durable +
-scriptable: a rolling GitHub release (`gh release create pr-assets` once,
-then `gh release upload pr-assets <img>` — asset URLs render inline and
+scriptable: the rolling `qa-assets` prerelease (once per repo:
+`gh release create qa-assets --prerelease`, then
+`gh release upload qa-assets <img>` — asset URLs render inline and
 outlive the review). GitHub user-attachment URLs are just as durable but
 have no API (browser-only); a project upload endpoint or temporary image
 host works too. When only a temporary host is available, note its
@@ -99,7 +100,8 @@ frame-addressable evidence each report row cites; the video is the
 continuity check and the artifact a reviewer actually watches.
 
 Publish videos like any other evidence (see Evidence hosting) — the rolling
-release gives a durable link (`gh release upload pr-assets <journey>.mp4`).
+`qa-assets` prerelease gives a durable link
+(`gh release upload qa-assets <journey>.mp4`).
 One platform caveat goes in the report: GitHub renders an inline video
 player only for files a human uploads through the web UI, so link the
 hosted mp4 next to the journey's stills *and* enumerate the local file
@@ -107,8 +109,10 @@ paths — the human can drag-drop those files wherever inline playback
 matters. When a connected work tracker accepts file attachments by API,
 attach the videos there too.
 
-A video is also machine-scannable evidence: per-frame stats
-(`ffprobe -f lavfi "movie=<video>,fps=5,signalstats"`, watching `YAVG`)
+A video is also machine-scannable evidence: per-frame luma stats
+(`ffprobe -f lavfi "movie=<video>,fps=5,signalstats" -show_entries
+frame=pts_time -show_entries frame_tags=lavfi.signalstats.YAVG -of
+default=noprint_wrappers=1`, watching `YAVG` — ~235 is a blank white frame)
 locate blank-frame bands, flashes, and dead time without a realtime watch —
 when a band becomes a finding, cite its timestamp range in the report.
 

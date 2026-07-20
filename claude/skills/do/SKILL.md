@@ -396,8 +396,8 @@ happens on the artifact, not before it exists.
   is incomplete — one re-ask for the enumeration before accepting it. Then
   **every enumerated capture gets hosted and embedded** — after-shots into
   the body's Visual overview, per-item evidence into the QA proof comment;
-  journey videos get hosted for a durable link (the rolling `pr-assets`
-  release works) and linked next to their journey's gallery with the local
+  journey videos get hosted for a durable link (the rolling `qa-assets`
+  prerelease below) and linked next to their journey's gallery with the local
   path noted, since inline video players require a human web-UI upload; a
   capture that exists only as prose in a report is a dropped handoff, the
   exact failure this contract exists to prevent.
