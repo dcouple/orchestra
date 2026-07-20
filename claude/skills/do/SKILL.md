@@ -388,14 +388,19 @@ happens on the artifact, not before it exists.
   confirmation by unique marker, preflight, test-mode safety, cleanup.
   **The capture contract rides in every frontend-verifier/QA dispatch you
   write** — the sub-agent only knows what its prompt says, so state it:
-  screenshot every UI state verified, save to the scratchpad, enumerate
-  each in the report's Captures table (path · what it shows · AC#/J#). A
-  report claiming a UI pass with an empty Captures table is incomplete —
-  one re-ask for the enumeration before accepting it. Then **every
-  enumerated capture gets hosted and embedded** — after-shots into the
-  body's Visual overview, per-item evidence into the QA proof comment; a
-  screenshot that exists only as prose in a report is a dropped handoff,
-  the exact failure this contract exists to prevent.
+  screenshot every UI state verified, record a video of every journey
+  driven through a scriptable driver (one review-encoded mp4 per journey —
+  `.references/qa-verification.md` § Journey videos), save all to the
+  scratchpad, enumerate each in the report's Captures table (path · what it
+  shows · AC#/J#). A report claiming a UI pass with an empty Captures table
+  is incomplete — one re-ask for the enumeration before accepting it. Then
+  **every enumerated capture gets hosted and embedded** — after-shots into
+  the body's Visual overview, per-item evidence into the QA proof comment;
+  journey videos get hosted for a durable link (the rolling `pr-assets`
+  release works) and linked next to their journey's gallery with the local
+  path noted, since inline video players require a human web-UI upload; a
+  capture that exists only as prose in a report is a dropped handoff, the
+  exact failure this contract exists to prevent.
   Report at two altitudes, into the PR body first per `references/pr-body.md`
   (the body is the live dashboard, not a comment): with `gh pr edit
   --body-file`, flip the Manual-tests `[ ]`→`[x]` on passed items (append

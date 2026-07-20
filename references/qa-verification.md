@@ -81,6 +81,37 @@ host works too. When only a temporary host is available, note its
 expiry next to the link and keep the textual evidence (quoted output, ids)
 self-sufficient without the image.
 
+## Journey videos
+
+When a journey is driven by a scriptable browser driver (Playwright-style),
+record it as a video alongside the stills — thirty seconds of continuous UI
+catches what discrete screenshots structurally cannot: layout jumps,
+white flashes, missing loading states, janky transitions. Record at the
+driver level (e.g. Playwright's `recordVideo` on the context) so the video
+is a free byproduct of the drive, never a second pass for the camera; one
+video per journey, named for it.
+
+Encode for human review before publishing: H.264 mp4 with `yuv420p` (the
+pixel format every browser and OS player accepts), sped to ~1.25× — raw
+automation pacing reads slow, and 2× is too fast to follow. Videos
+complement stills, never replace them: the per-step captures stay the
+frame-addressable evidence each report row cites; the video is the
+continuity check and the artifact a reviewer actually watches.
+
+Publish videos like any other evidence (see Evidence hosting) — the rolling
+release gives a durable link (`gh release upload pr-assets <journey>.mp4`).
+One platform caveat goes in the report: GitHub renders an inline video
+player only for files a human uploads through the web UI, so link the
+hosted mp4 next to the journey's stills *and* enumerate the local file
+paths — the human can drag-drop those files wherever inline playback
+matters. When a connected work tracker accepts file attachments by API,
+attach the videos there too.
+
+A video is also machine-scannable evidence: per-frame stats
+(`ffprobe -f lavfi "movie=<video>,fps=5,signalstats"`, watching `YAVG`)
+locate blank-frame bands, flashes, and dead time without a realtime watch —
+when a band becomes a finding, cite its timestamp range in the report.
+
 ## Cleanup
 
 Kill the listeners, processes, and temp state the run started; leftovers

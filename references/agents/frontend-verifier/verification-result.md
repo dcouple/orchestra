@@ -31,8 +31,11 @@
 | <absolute scratchpad path> | <one line — the UI state> | <AC# / J# / checklist item> |
 
 Every screenshot taken during the run is a row here — the caller hosts and
-embeds from this table, so a capture not listed does not exist. UI-surface
-criteria with no capture row: state why (headless harness, no browser).
+embeds from this table, so a capture not listed does not exist. Journey
+videos are rows too (`<journey>.mp4` — one line: journey + duration); mark
+video rows so the caller knows they host as links/attachments, not inline
+embeds. UI-surface criteria with no capture row: state why (headless
+harness, no browser).
 
 ## Anomalies   (omit section if none)
 
