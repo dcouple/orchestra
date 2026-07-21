@@ -64,17 +64,16 @@ if [[ ! -x /var/lib/linear-agent-daemon/.local/bin/claude ]]; then
     'curl -fsSL https://claude.ai/install.sh | bash'
 fi
 
-# Claude Code's Bash sandbox (seccomp) kills Chrome with SIGSYS; excludedCommands
-# runs google-chrome outside the sandbox so sessions can rasterize HTML mock-ups.
+# The VM is single-purpose isolation; Claude Code's Bash sandbox (whose seccomp
+# filter kills Chrome with SIGSYS) is disabled so sessions behave like a local
+# developer machine and can run headless Chrome, etc.
 if [[ ! -f /var/lib/linear-agent-daemon/.claude/settings.json ]]; then
   install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/.claude
   install -o linear-daemon -g linear-daemon -m 0644 /dev/null /var/lib/linear-agent-daemon/.claude/settings.json
   cat > /var/lib/linear-agent-daemon/.claude/settings.json <<'EOF'
 {
   "sandbox": {
-    "excludedCommands": [
-      "google-chrome *"
-    ]
+    "enabled": false
   }
 }
 EOF
