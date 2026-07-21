@@ -40,6 +40,11 @@ if (mode === "assistant-rate-limit") {
 }
 if (mode === "api-retry-recovered")
   emit({ type: "system", subtype: "api_retry", session_id: session, attempt: 1, max_retries: 2, error: "overloaded", error_status: 529 });
+if (mode === "non-capacity-api-error") {
+  emit({ type: "result", subtype: "error_during_execution", terminal_reason: "api_error", is_error: true,
+    errors: [{ type: "authentication_error" }, { type: "api_error" }], result: "request failed", session_id: session });
+  process.exit(1);
+}
 if (mode === "crash") process.exit(7);
 if (mode === "no-result") process.exit(0);
 if (mode === "hang") {
