@@ -192,10 +192,12 @@ these per role into the wrap-up's run record.
 Exit 142 (a SIGALRM watchdog reap) classifies the dispatch as a hung run. Retry
 a hung, errored, timed-out, or status-line-missing run once: make a fresh
 dispatch for an ephemeral role, or use `resume --last` for the implementer so
-its session context survives. A retry that is also reaped routes the work to a
-Claude sub-agent dispatch instead of a third Codex one — a workload that
-wedged twice stays wedged; otherwise return the error plus whatever output
-exists to the caller. A report of `listen EPERM` (the sandbox denied loopback
+its session context survives. A retry that is also reaped never gets a third
+Codex dispatch — a workload that wedged twice stays wedged: reviewer,
+researcher, and verifier work routes to a Claude sub-agent dispatch instead;
+the implementer has no Claude counterpart, so a twice-reaped implementer
+returns the error plus whatever output exists to the caller. Otherwise return
+the error plus whatever output exists after the single retry. A report of `listen EPERM` (the sandbox denied loopback
 binds) is a completed run, not a failure: accept the edits and run the blocked
 check at the Overseer, or hand it to the next verifier dispatch, instead of
 re-dispatching.
