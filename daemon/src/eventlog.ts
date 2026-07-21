@@ -360,6 +360,16 @@ export class EventLog {
       FROM sessions WHERE app='planner' AND mode='planner' ORDER BY last_seen_at`)
       .all() as SessionRow[];
   }
+  sessionsWithWorktrees(): SessionRow[] {
+    return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
+      issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
+      mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt
+      FROM sessions WHERE worktree_path IS NOT NULL ORDER BY last_seen_at`).all() as SessionRow[];
+  }
+  hasOpenTurn(linearSessionId: string): boolean {
+    return this.db.prepare(`SELECT 1 FROM turns WHERE linear_session_id=?
+      AND status IN ('pending','running') LIMIT 1`).get(linearSessionId) !== undefined;
+  }
   updateLastSeenActivity(linearSessionId: string, seenAt: number, now = Date.now()): void {
     this.db.prepare(`UPDATE sessions SET last_seen_activity_at=MAX(COALESCE(last_seen_activity_at, 0), ?), last_seen_at=?
       WHERE linear_session_id=?`).run(seenAt, now, linearSessionId);
@@ -367,6 +377,9 @@ export class EventLog {
   updateSessionWorktree(linearSessionId: string, path: string, branch: string, now = Date.now()): void {
     this.db.prepare(`UPDATE sessions SET worktree_path=?, branch=?, last_seen_at=? WHERE linear_session_id=?`)
       .run(path, branch, now, linearSessionId);
+  }
+  clearSessionWorktrees(issueIdentifier: string): void {
+    this.db.prepare("UPDATE sessions SET worktree_path=NULL WHERE issue_identifier=?").run(issueIdentifier);
   }
   updateClaudeSessionId(linearSessionId: string, id: string, now = Date.now()): void {
     this.db.prepare(`UPDATE sessions SET claude_session_id=?, last_seen_at=? WHERE linear_session_id=?`).run(id, now, linearSessionId);
@@ -437,8 +450,11 @@ export class EventLog {
         END, error=?, finished_at=? WHERE id=?`).run(error, now, turnId);
     })();
   }
-  turnStates(): Array<{ id: number; status: string; issueId: string; kind: string; prompt: string | null }> {
-    return this.db.prepare("SELECT id, status, issue_id issueId, kind, prompt FROM turns ORDER BY id").all() as Array<{ id: number; status: string; issueId: string; kind: string; prompt: string | null }>;
+  turnStates(): Array<{ id: number; linearSessionId: string; status: string; issueId: string; sourceKey: string | null; kind: string; prompt: string | null }> {
+    return this.db.prepare(`SELECT id, linear_session_id linearSessionId, status, issue_id issueId,
+      source_key sourceKey, kind, prompt FROM turns ORDER BY id`).all() as Array<{
+        id: number; linearSessionId: string; status: string; issueId: string; sourceKey: string | null; kind: string; prompt: string | null;
+      }>;
   }
 
   pendingStopAcks(now = Date.now()): StopAckRow[] {

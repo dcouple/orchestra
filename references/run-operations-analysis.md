@@ -68,8 +68,9 @@ Parse the transcripts and derive:
      usage; the harness also prints a `subagent_tokens` total in every
      completion notification — cross-check the two.
   3. **Codex dispatches**: `codex exec` prints a `tokens used` total at
-     end-of-run — for background dispatches it sits in the task's stdout
-     output file (grep for the line after `tokens used`); per-turn
+     end-of-run — it sits in the dispatch's sibling `.log` under the
+     `.codex-dispatches/<owner>/` marker convention (grep for the line after
+     `tokens used`); per-turn
      granularity lives in `~/.codex/sessions/<date>/rollout-*.jsonl` as
      `token_count` events (input / cached_input / output / reasoning).
   **Cost**: tokens × the per-model price table, with cache reads/writes priced

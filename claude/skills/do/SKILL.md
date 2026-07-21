@@ -30,14 +30,15 @@ sub-agent.
 This run is meant to finish unattended — started at night, reviewed in the
 morning. Three rules make that safe:
 
-- **A phase or step boundary is not a turn boundary.** Never end your turn
-  with work remaining and wait to be told "continue" — chain straight into
-  the next step. Sub-agents run in the background and re-invoke you when they
-  finish; that is not a reason to stop. If you are ever about to yield with
-  work left (a long external wait, a tool that re-invokes you later),
-  schedule a self-wakeup (`ScheduleWakeup`) so the run resumes on its own
-  instead of idling until a human nudges it. Idle-waiting-on-a-nudge is the
-  single biggest waste in a /do run; treat it as a bug.
+- **A phase or step boundary is not a turn boundary.** Chain straight into the
+  next step while work is ready. A detached Codex dispatch may remain
+  outstanding when a turn ends: its completion marker survives, turn-start
+  pickup recovers its report, and the daemon auto-resumes the run. Claude-lane
+  Agent-tool background sub-agents cannot be detached and die with the parent
+  process, so they must be awaited within the turn. If you are ever about to
+  yield with work left while waiting on external state, schedule a self-wakeup
+  (`ScheduleWakeup`) so the run resumes on its own instead of idling until a
+  human nudges it. Idle-waiting on a human nudge is a pipeline bug.
 - **Action tiers decide what you may do alone. When unsure which tier an
   action is, it is red — always err toward caution.**
   - **Green — do it unattended:** code, tests, docs, new files, and
@@ -191,8 +192,9 @@ honored — on an epic too, where it outranks the always-dual Epics
 default; epics otherwise always both, per zones.md's Epics) — findings
 fixed into the plan — until you're satisfied. A dual-lane pass dispatches
 both lanes in a single message — the Claude reviewer via the Agent tool,
-the Codex reviewer as a background Bash dispatch per the codex skill —
-then waits for both reports; running one lane to completion before
+the Codex reviewer as a detached dispatch per the codex skill — then awaits
+the Agent-tool sub-agent within the turn and picks up the Codex report from its
+marker; running one lane to completion before
 starting the other serializes the pass and doubles its wall-clock.
 A head-on Must Fix disagreement between the lanes here gets the same
 second-voice consult as the post-PR loop: a background `discussant`
@@ -340,7 +342,7 @@ Reviews run against the open PR and fixes land on it — self-correction
 happens on the artifact, not before it exists.
 
 - Run the review lanes over the PR diff (zones 0–2: both reviewers,
-  dispatched together in one message — Agent tool + background `codex exec`
+  dispatched together in one message — Agent tool + detached `codex exec`
   — never serially; zone 3: Codex alone; the item's explicit
   `review_lanes:` outranks the zone default and, when set on the epic
   itself, even the Epics always-dual default; epics otherwise always

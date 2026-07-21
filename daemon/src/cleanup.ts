@@ -30,14 +30,14 @@ export class CleanupWorker {
     try {
       const session=this.log.sessionByIssueIdentifier(job.issueIdentifier);
       if(!session?.worktreePath || !(await this.worktrees.isPresent(session.worktreePath))) {
-        await this.worktrees.remove(job.issueIdentifier); this.log.markCleanupDone(job.id); return;
+        await this.worktrees.remove(job.issueIdentifier); this.log.clearSessionWorktrees(job.issueIdentifier); this.log.markCleanupDone(job.id); return;
       }
       if(await this.worktrees.isClean(session.worktreePath)) {
         if(!this.log.hasExternalUrl(job.linearSessionId)) {
           this.log.retainCleanup(job.id,`Worktree retained because no pull request was recorded; possible unpushed work is preserved: ${session.worktreePath}`,this.now());
           return;
         }
-        await this.worktrees.remove(job.issueIdentifier); this.log.markCleanupDone(job.id);
+        await this.worktrees.remove(job.issueIdentifier); this.log.clearSessionWorktrees(job.issueIdentifier); this.log.markCleanupDone(job.id);
       }
       else this.log.retainCleanup(job.id,`Worktree retained because it is dirty: ${session.worktreePath}`,this.now());
     } catch(error) {

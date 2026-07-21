@@ -23,6 +23,7 @@ describe("WorktreeManager", () => {
     expect(first.branch).toBe("agents/ENG-42"); expect(first.path).toBe(join(setup.root, "ENG-42"));
     const exclude = git(["rev-parse", "--git-path", "info/exclude"], first.path).trim();
     expect(readFileSync(isAbsolute(exclude) ? exclude : join(first.path, exclude), "utf8")).toContain("/.linear-attachments/");
+    expect(readFileSync(isAbsolute(exclude) ? exclude : join(first.path, exclude), "utf8")).toContain("/.codex-dispatches/");
     expect(await manager.ensureWorktree("ENG-42")).toEqual(first);
   });
   it("uses an existing unregistered branch", async () => {
@@ -34,9 +35,11 @@ describe("WorktreeManager", () => {
     git(["clone", setup.origin, join(setup.root, "ENG-99")]);
     await expect(new WorktreeManager(setup.root, setup.repo).ensureWorktree("ENG-99")).rejects.toThrow(/foreign repository/);
   });
-  it("removes clean worktrees with ignored attachments and their branch", async()=>{
+  it("removes clean worktrees with ignored transient dispatch data and their branch", async()=>{
     const setup=repository(); const manager=new WorktreeManager(setup.root,setup.repo); const tree=await manager.ensureWorktree("ENG-44");
     mkdirSync(join(tree.path,".linear-attachments")); writeFileSync(join(tree.path,".linear-attachments","file"),"x");
+    mkdirSync(join(tree.path,".codex-dispatches","session"), { recursive: true });
+    writeFileSync(join(tree.path,".codex-dispatches","session","dispatch.done"),"0");
     expect(await manager.isClean(tree.path)).toBe(true); await manager.remove("ENG-44");
     expect(existsSync(tree.path)).toBe(false); expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-44"],setup.repo)).toThrow();
   });
