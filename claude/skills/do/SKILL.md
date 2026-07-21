@@ -111,10 +111,11 @@ as the work calls for them.
 
 These preflight items are only checkable now that the item is loaded:
 
-- Read the item's **Dependencies** section when present. Check each listed
-  dependency and fold human-actionable gaps into the single preflight message
-  before it is sent when feasible; otherwise surface them in an immediate
-  preflight follow-up, as with a missing testing-accounts section below.
+- Read the item's **Dependencies** section when present and check each
+  listed dependency. When the item was already local, this runs before the
+  preflight message goes out, so the gaps fold into that single message;
+  for a fetched item, surface them in an immediate preflight follow-up, as
+  with a missing testing-accounts section below.
 - Follow `.references/tracker-lifecycle.md`. **YOU MUST** validate current
   `linear_issues`, then build and retain two operation sets: current `completes`
   issues needing team-specific `In Review`, and exact `Fixes TEAM-123`
