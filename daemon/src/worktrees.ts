@@ -39,6 +39,7 @@ export class WorktreeManager {
         await this.validate(path);
         if (!(await this.isClean(path))) throw new Error(`Refusing to remove dirty worktree: ${path}`);
         await rm(resolve(path, ".linear-attachments"), { recursive: true, force: true });
+        await rm(resolve(path, ".codex-dispatches"), { recursive: true, force: true });
         await this.git(["worktree", "remove", path], this.repo);
       }
       try { await this.git(["branch", "-D", `agents/${identifier}`], this.repo); }
@@ -55,7 +56,7 @@ export class WorktreeManager {
       await this.validate(path);
       const actual = (await this.git(["branch", "--show-current"], path)).trim();
       if (actual !== branch) throw new Error(`Existing worktree uses unexpected branch ${actual || "(detached)"}: ${path}`);
-      await this.excludeAttachments(path);
+      await this.excludeTransientDirectories(path);
       return { path, branch };
     }
     await this.git(["fetch", "origin"], this.repo);
@@ -66,7 +67,7 @@ export class WorktreeManager {
       : ["worktree", "add", path, "-b", branch, head];
     await this.git(args, this.repo);
     await this.validate(path);
-    await this.excludeAttachments(path);
+    await this.excludeTransientDirectories(path);
     return { path, branch };
   }
 
@@ -87,15 +88,16 @@ export class WorktreeManager {
     if (common !== expected) throw new Error(`Existing worktree belongs to a foreign repository: ${path}`);
   }
 
-  private async excludeAttachments(path: string): Promise<void> {
+  private async excludeTransientDirectories(path: string): Promise<void> {
     const raw = (await this.git(["rev-parse", "--git-path", "info/exclude"], path)).trim();
     const exclude = isAbsolute(raw) ? raw : resolve(path, raw);
     await mkdir(resolve(exclude, ".."), { recursive: true });
     let contents = "";
     try { contents = await readFile(exclude, "utf8"); } catch {}
-    if (!contents.split(/\r?\n/).includes("/.linear-attachments/")) {
-      await writeFile(exclude, `${contents}${contents && !contents.endsWith("\n") ? "\n" : ""}/.linear-attachments/\n`);
-    }
+    const lines = contents.split(/\r?\n/);
+    const additions = ["/.linear-attachments/", "/.codex-dispatches/"].filter(entry => !lines.includes(entry));
+    if (additions.length) await writeFile(exclude,
+      `${contents}${contents && !contents.endsWith("\n") ? "\n" : ""}${additions.join("\n")}\n`);
   }
 
   private async exists(path: string): Promise<boolean> { try { await stat(path); return true; } catch { return false; } }

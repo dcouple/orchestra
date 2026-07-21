@@ -94,35 +94,74 @@ per the rule above, existence checked), and every input the role needs —
 nothing assumed from this conversation.
 
 ### 2. Execute
-Run every dispatch as a background Bash call from the repo root. The watchdog
-is the dispatch's wall-clock bound. Use a 900-second cap for `--ephemeral`
-roles and a 2700-second cap for the implementer. Redirect stdin because Codex
-can read an open idle stdin pipe and hang even when given a positional prompt.
+At every turn start, before launching new work, inspect
+`.codex-dispatches/${ORCHESTRA_DISPATCH_OWNER:-local}/*.done`. Pick up each
+completed report, then delete all files with that dispatch's basename after
+consuming it. Delete-on-consume is load-bearing: markers otherwise persist and
+the daemon deliberately enqueues at most one resume per marker.
+
+Launch every dispatch fully detached from the harness, from the repo root. The
+owner directory is `.codex-dispatches/$ORCHESTRA_DISPATCH_OWNER` when the daemon
+sets that variable to the Linear session UUID, and `.codex-dispatches/local`
+otherwise. Prepare it once per worktree:
 
 ```bash
-# cap: 900 for --ephemeral roles, 2700 for the implementer
+own="${ORCHESTRA_DISPATCH_OWNER:-local}"; dir=".codex-dispatches/$own"
+mkdir -p "$dir"
+exclude="$(git rev-parse --git-path info/exclude)"
+grep -qxF '/.codex-dispatches/' "$exclude" 2>/dev/null || printf '/.codex-dispatches/\n' >> "$exclude"
+```
+
+For each launch choose
+`<name>=<role>-<epoch>-$$-<sequence>`, where the caller sequence is unique among
+concurrent launches. Write the prompt to `<name>.prompt` with a quoted heredoc,
+then write this launcher as `<name>.sh` (substitute the concrete paths and
+arguments while writing it):
+
+```bash
+#!/usr/bin/env bash
 perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' <cap> \
   codex exec -m gpt-5.6-sol -c model_reasoning_effort="<effort>" --yolo \
   [--ephemeral] --skip-git-repo-check -C <repo root> \
-  -o <scratchpad>/codex-<role>-<n>.md "<prompt>" </dev/null
+  -o <owner dir>/<name>.md "$(cat <owner dir>/<name>.prompt)" </dev/null
+status=$?
+echo "$status" > <owner dir>/<name>.done
 ```
 
-For an implementer fix round, keep its session context:
+Use a 900-second `<cap>` for `--ephemeral` roles and 2700 for the implementer.
+Redirect stdin as shown because Codex can hang on an open idle pipe. Detach the
+launcher itself with Perl's portable `setsid` (macOS has no `setsid` binary):
+
+```bash
+nohup perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec failed: $!"' \
+  bash <owner dir>/<name>.sh > <owner dir>/<name>.log 2>&1 & disown
+```
+
+For an implementer fix round, use the same launcher and marker write, replacing
+its command with the following so session context survives:
 
 ```bash
 perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' 2700 \
-  codex exec resume --last -o <scratchpad>/codex-implementer-fix<k>.md \
-  "<combined review findings + fix instructions>" </dev/null
+  codex exec resume --last -o <owner dir>/<name>.md \
+  "$(cat <owner dir>/<name>.prompt)" </dev/null
+status=$?
+echo "$status" > <owner dir>/<name>.done
 ```
 
-Parallel dispatches (e.g. several code-researchers, or a reviewer alongside a
-Claude sub-agent) are issued in the same message as the sibling dispatch. A
-dual-lane review that does not issue the background calls together serializes
-the lanes and doubles the pass's wall-clock.
+The marker convention is: `<name>.md` is the final report, `<name>.log` is
+durable stdout/stderr including the `tokens used` summary, and `<name>.done`
+contains exactly the exit code. The `.done` file is written even for failures,
+including watchdog exit 142. A tracked wait loop may poll only the marker for
+in-turn pickup; its death at turn end is harmless because the detached Codex
+process survives and turn-start pickup covers recovery.
 
-**Success criteria**: exit 0 and the `-o` output file exists and is non-empty.
-Exit 142 is the watchdog's SIGALRM reap signature: it is a classified failure,
-not a success, and step 3 handles it.
+Parallel dispatches (e.g. several code-researchers, or a reviewer alongside a
+Claude sub-agent) are launched together. A dual-lane review that does not issue
+the detached launches together serializes the lanes and doubles wall-clock.
+
+**Success criteria**: `.done` exists, contains 0, and the sibling `.md` exists
+and is non-empty. Exit 142 is the watchdog's SIGALRM reap signature: it is a
+classified failure, not a success, and step 3 handles it.
 
 ### 3. Return the report
 Read the output file. Check the status line the format requires (reviewers:
@@ -134,10 +173,10 @@ burn a retry or re-dispatch over format · implementer:
 `**Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT` ·
 code-researcher: `**Bottom line:**` · investigator: `**Root cause:**` with a
 confidence word · backend-verifier: `**Verdict:**` pass|fail). Capture the
-token usage `codex exec` prints in its end-of-run summary — for a background
-dispatch it's in the task's stdout output file (the line after `tokens used`);
-per-turn detail lives in `~/.codex/sessions/<date>/rollout-*.jsonl`
-`token_count` events. `unknown` is only legal after checking both. Return the
+token usage `codex exec` prints in its end-of-run summary from the dispatch's
+sibling `.log` file (the line after `tokens used`); per-turn detail lives in
+`~/.codex/sessions/<date>/rollout-*.jsonl` `token_count` events. `unknown` is
+only legal after checking both. Return the
 report verbatim to the caller, prefixed with one line:
 `CODEX <role>: <status line> · tokens <n | unknown>` — the Overseer sums
 these per role into the wrap-up's run record.

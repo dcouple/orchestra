@@ -1,6 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -14,10 +14,12 @@ import { SessionWorker } from "../src/sessions.js";
 const dirs: string[] = [];
 const oldMode = process.env.CLAUDE_FAKE_MODE;
 const oldArgs = process.env.CLAUDE_FAKE_ARGS_FILE;
+const oldEnv = process.env.CLAUDE_FAKE_ENV_FILE;
 const oldDelay = process.env.CLAUDE_FAKE_DELAY_MS;
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   if (oldMode === undefined) delete process.env.CLAUDE_FAKE_MODE; else process.env.CLAUDE_FAKE_MODE = oldMode;
   if (oldArgs === undefined) delete process.env.CLAUDE_FAKE_ARGS_FILE; else process.env.CLAUDE_FAKE_ARGS_FILE = oldArgs;
+  if (oldEnv === undefined) delete process.env.CLAUDE_FAKE_ENV_FILE; else process.env.CLAUDE_FAKE_ENV_FILE = oldEnv;
   if (oldDelay === undefined) delete process.env.CLAUDE_FAKE_DELAY_MS; else process.env.CLAUDE_FAKE_DELAY_MS = oldDelay; });
 function git(args: string[], cwd?: string): void { execFileSync("git", args, { cwd, stdio: "ignore" }); }
 function setup() {
@@ -116,6 +118,73 @@ describe("SessionWorker", () => {
     expect(starts[1].args[starts[1].args.indexOf("--resume")+1]).toBe("claude-do-session");
     expect(starts[1].args.slice(starts[1].args.indexOf("-p"),starts[1].args.indexOf("--output-format"))).toEqual(["-p","yes, use option B"]);
     expect(starts[1].cwd).toBe(starts[0].cwd); log.close();
+  });
+  it("dispatch marker auto-resumes its owner once and passes the owner environment", async () => {
+    const state = setup(); const { dir, config } = state; let log = state.log;
+    const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "env.jsonl");
+    process.env.CLAUDE_FAKE_MODE = "do-pr";
+    appendImplementer(log, "implementer", "implementer-session");
+    let worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    await worker.stop();
+    const worktree = log.getSession("implementer-session")!.worktreePath!;
+    log.close();
+    mkdirSync(join(worktree, ".codex-dispatches", "implementer-session"), { recursive: true });
+    writeFileSync(join(worktree, ".codex-dispatches", "implementer-session", "x-1.done"), "0\n");
+    process.env.CLAUDE_FAKE_MODE = "happy";
+    log = new EventLog(config.dbPath);
+    worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[1]?.status === "done");
+    expect(log.turnStates()[1]).toMatchObject({ linearSessionId: "implementer-session", kind: "prompted",
+      sourceKey: "prompt:implementer-session:dispatch:x-1.done", prompt: expect.stringContaining(".codex-dispatches/implementer-session/x-1.done") });
+    worker.trigger(); await new Promise(resolve => setTimeout(resolve, 50));
+    expect(log.turnStates()).toHaveLength(2);
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts[1].args).toContain("--resume");
+    const envs = readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    expect(envs.every(row => row.env.ORCHESTRA_DISPATCH_OWNER === "implementer-session")).toBe(true);
+    expect(logger.entries().filter(entry => entry.event === "dispatch_marker_resume")).toHaveLength(1);
+    await worker.stop(); log.close();
+  });
+  it("does not enqueue a marker while its owner has a running turn", async () => {
+    const { log, config } = setup(); const poster = new Poster();
+    process.env.CLAUDE_FAKE_MODE = "slow"; process.env.CLAUDE_FAKE_DELAY_MS = "500";
+    appendImplementer(log, "implementer", "active-session");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "running" && !!log.getSession("active-session")?.worktreePath);
+    const worktree = log.getSession("active-session")!.worktreePath!;
+    mkdirSync(join(worktree, ".codex-dispatches", "active-session"), { recursive: true });
+    writeFileSync(join(worktree, ".codex-dispatches", "active-session", "active.done"), "0\n");
+    worker.trigger(); await new Promise(resolve => setTimeout(resolve, 100));
+    expect(log.turnStates()).toHaveLength(1);
+    await worker.stop(); log.close();
+  });
+  it("scopes shared-worktree markers to the owning session", async () => {
+    const { log, config } = setup(); const poster = new Poster();
+    append(log, "planner", "planner-session", "created");
+    appendImplementer(log, "implementer", "implementer-session");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates().length === 2 && log.turnStates().every(turn => turn.status === "done"));
+    const worktree = log.getSession("implementer-session")!.worktreePath!;
+    mkdirSync(join(worktree, ".codex-dispatches", "implementer-session"), { recursive: true });
+    writeFileSync(join(worktree, ".codex-dispatches", "implementer-session", "owned.done"), "0\n");
+    worker.trigger(); await waitFor(() => log.turnStates().length === 3 && log.turnStates()[2]?.status === "done");
+    expect(log.turnStates().filter(turn => turn.linearSessionId === "planner-session")).toHaveLength(1);
+    expect(log.turnStates()[2]?.linearSessionId).toBe("implementer-session");
+    await worker.stop(); log.close();
+  });
+  it("ignores a missing worktree during dispatch scanning", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    appendImplementer(log, "implementer", "missing-session");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    log.updateSessionWorktree("missing-session", join(dir, "missing-worktree"), "agents/missing");
+    worker.trigger(); await new Promise(resolve => setTimeout(resolve, 50));
+    expect(log.turnStates()).toHaveLength(1);
+    expect(logger.entries().some(entry => entry.event === "dispatch_scan_failed")).toBe(false);
+    await worker.stop(); log.close();
   });
   it("AC1-AC4: aborts a running turn, posts one stop ack, and resumes on the next prompt", async () => {
     let releaseProgress!: () => void;

@@ -31,7 +31,7 @@ function childEnv(extra: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
     if (value === undefined) return;
     if (key === "PATH" || key === "HOME" || key === "USER" || key === "LOGNAME" || key === "TMPDIR" || key === "TEMP" || key === "TMP" || key === "LANG"
       || key.startsWith("LC_") || key.startsWith("ANTHROPIC_") || key.startsWith("CLAUDE_") || key === "LINEAR_API_KEY"
-      || key === "GH_TOKEN" || key === "GITHUB_TOKEN") {
+      || key === "GH_TOKEN" || key === "GITHUB_TOKEN" || key === "ORCHESTRA_DISPATCH_OWNER") {
       allowed[key] = value;
     }
   };
