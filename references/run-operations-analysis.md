@@ -78,9 +78,9 @@ Parse the transcripts and derive:
      `tokens used`); per-turn
      granularity lives in `~/.codex/sessions/<date>/rollout-*.jsonl` as
      `token_count` events (input / cached_input / output / reasoning).
-  **Cost**: tokens × the per-model price table, with cache reads/writes priced
-  at their own rates — the transcripts carry the model id, so mixed-model runs
-  attribute correctly. Cross-check the wrap-up's `tokens:` block against what
+  **Cost**: tokens × the rates in `model-prices.md` (this directory), summed
+  per token class with cache reads/writes at their own rates — the transcripts
+  carry the model id, so mixed-model runs attribute correctly. Cross-check the wrap-up's `tokens:` block against what
   you computed; report both when they disagree. Pair tokens with the
   review-pass findings: **tokens spent per pass vs Must Fixes that pass
   caught** is the single best signal for right-sizing the loop.
@@ -142,10 +142,15 @@ operational leak outweighs any outcome gap.
 **Timeline visualization (render it, attach it).** Turn the per-step table
 into a Gantt: one row per dispatch (plus an Overseer row for the main loop's
 own working segments) over the fixed time axis, phase bands behind, so
-parallel-vs-sequential reads at a glance. Build it as a small self-contained
-HTML/SVG page, render a screenshot headless, and **embed the PNG where the
+parallel-vs-sequential reads at a glance. Start from the postmortem skill's
+`references/run-timeline-template.html` — fill its `RUN` object with the
+scripted data (phases, dispatches with tokens and yield, idle gaps); the
+stats, axis, chart height, and accessible table derive from it. Render the
+PNG with the sibling `render-timeline.sh` (tries Chrome/Chromium, then
+installed Playwright; on `NO_RENDERER` attach the HTML and note the missing
+PNG — never improvise a renderer mid-run) and **embed the PNG where the
 humans already look** — the anchor PR (host on the repo's rolling `qa-assets`
 prerelease, `<pr#>-run-timeline.png`) and the tracker issue — rather than
 only linking an external page. Each bar carries its token count (label or
-tooltip), so the timeline shows spend as well as time. The HTML source lives
-in `./tmp/<id>/refs/` alongside the postmortem.
+tooltip), so the timeline shows spend as well as time. The filled HTML
+source lives in `./tmp/<id>/refs/` alongside the postmortem.
