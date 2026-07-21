@@ -160,5 +160,5 @@ nothing outside `./tmp/<id>/` was modified; the run never paused for approval.
 ```
 Suggested next steps:
 - `/create-plan [defect]` then `/do ./tmp/<id>/item.md` — fix the code gap itself
-- Apply the approved system change in a normal editing session, then commit it
+- `/adopt-proposals` — sweep published postmortems and land the approved system changes
 ```
