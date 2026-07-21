@@ -75,6 +75,33 @@ launch is blocked, never grounds to improvise a command.
 4. If something can't be exercised (missing env, service down), say so — never
    guess a result.
 
+## Analytics and identity acceptance
+
+When the change under verification touches instrumentation, signup, login, or
+session handling, event checks go beyond "the request fired":
+
+- Verify events in the analytics warehouse (via its connected MCP/tool), not
+  the browser's network tab; allow ~60s ingestion lag before treating an
+  empty result as absence.
+- Verify person/identity stitching by grouping on the warehouse's person id —
+  never on event-time person properties, which can make N wrongly-merged
+  users each look like one clean person. On a mismatch, inspect the raw
+  distinct/device id per event: it names the identity that captured the event
+  and usually the merge vector.
+- Drive one **multi-user same-browser pass** for auth/signup surfaces:
+  consecutive signups or login switches in a single browser profile, then
+  assert each user resolved to a separate person AND that session-scoped
+  connections (e.g. websocket auth) followed the switch. Shared-machine bugs
+  are invisible to single-user passes.
+- Events fired immediately before a hard navigation (payment redirects,
+  external scheduling links) must be confirmed ingested — SDK batching drops
+  them on unload unless they use a beacon-style transport.
+- Before re-verifying a just-fixed behavior, confirm the served bundle
+  actually contains the fix (grep the bundle for a distinctive marker or
+  compare its hash) — dev-server rebuild races mimic "fix didn't work", and a
+  re-verification that still fails after a real fix usually means stacked
+  causes: falsify one vector at a time from raw event data.
+
 ## Output format
 
 Before writing your report, Read
