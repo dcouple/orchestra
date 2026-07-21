@@ -16,7 +16,7 @@ export function renderViewer(id: string, files: readonly string[]): string {
 :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; --line: color-mix(in srgb, CanvasText 18%, transparent); --sidebar-w: 280px; }
 * { box-sizing: border-box; }
 body { margin: 0; height: 100vh; display: grid; grid-template-columns: var(--sidebar-w) 1fr; background: Canvas; color: CanvasText; }
-body.collapsed { grid-template-columns: 0 1fr; }
+body.collapsed { grid-template-columns: 1fr; }
 body.collapsed nav { display: none; }
 nav { position: relative; overflow: auto; border-right: 1px solid var(--line); padding: 1rem .75rem; min-width: 0; }
 nav h1 { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; margin: 0 .5rem .75rem; opacity: .65; }
