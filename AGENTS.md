@@ -65,7 +65,7 @@ never commit it.
 ```yaml
 tracker: github
 github_repo: dcouple/orchestra
-# artifact_host: https://<daemon-host>
+artifact_host: https://linear-agent.bloomapi.com
 ```
 
 > Publish every work item as a self-contained GitHub issue: `item.md` is
