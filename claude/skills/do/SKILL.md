@@ -386,7 +386,12 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   on the rolling assets prerelease per Step 5's evidence rule, filenames
   keyed to the work item id;
   flow-/boundary-/lifecycle-shaped changes lead with the before → after
-  diagram per the `excalidraw-pr-diagrams` skill; the
+  diagram per the `excalidraw-pr-diagrams` skill — and for a change with
+  **no user-visible surface**, the diagram lands with the QA drive's first
+  body update instead of blocking PR open: open with
+  `Visual overview: diagram landing with the first body update`, author the
+  diagram while the post-PR lanes run, and embed it before the QA results
+  close; the
   **User journeys** section carries both a journey map and — for branching
   flows — a fork map cross-tagged into the Manual tests; the deploy-notes
   scan above feeds the **Deploy notes** section. Follow

@@ -15,8 +15,10 @@
 >
 > Pre-open check (cheap mechanical catches): the Visual overview contains at
 > least one embedded image plus, for user-visible changes,
-> `After-shots: landing with the QA drive` — or the explicit
-> `Visual overview: none — <reason>` line; every capture the verify/QA
+> `After-shots: landing with the QA drive` — or one of the explicit lines
+> `Visual overview: none — <reason>` /
+> `Visual overview: diagram landing with the first body update`
+> (no-user-visible-surface changes only); every capture the verify/QA
 > reports enumerated is either embedded or linked from the body (**a screenshot described in prose but embedded
 > nowhere is a failed item**); every image URL resolves (a PR with a 404
 > diagram is a failed handoff) and none is a branch-relative raw URL; the
@@ -84,7 +86,11 @@ body update, and until then the section carries the explicit line
 PR asks the reviewer to imagine the result is a failed handoff);
 a flow-, boundary-, or lifecycle-shaped change leads with the **rendered
 before → after diagram** per the `excalidraw-pr-diagrams` skill — it teaches
-the change a reviewer hasn't learned yet. Both when both apply.
+the change a reviewer hasn't learned yet. Both when both apply. A change
+with **no user-visible surface** may instead open with the line
+`Visual overview: diagram landing with the first body update` — the diagram
+is authored while the post-PR review lanes run and embedded with the QA
+drive's first body update, never delaying PR open.
 
 - **When the flow branches**, the diagram contrasts the **old path against the
   new fork tree, with the after emphasized** (bolder strokes / fuller color /
