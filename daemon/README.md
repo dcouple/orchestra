@@ -67,12 +67,14 @@ existing bundle. Both accept a JSON manifest whose file contents are base64 enco
 ```
 
 Writes require `Authorization: Bearer <ARTIFACT_TOKEN>`. `GET /a/<id>/` is an
-unauthenticated, self-contained viewer; `GET /a/<id>/<path>` serves raw files. There is no
-bundle-listing route. `ARTIFACTS_DIR` defaults to an `artifacts` directory beside the
-database, and `ARTIFACT_MAX_BODY_BYTES` defaults to 32 MiB. Provisioning creates the default
-directory under `/var/lib/linear-agent-daemon`, outside the deployed application tree, so
-content survives provision and deploy reruns. It is not backed up yet; loss of the VM disk
-loses stored bundles.
+unauthenticated, self-contained viewer; `GET /a/<id>/index.json` returns the live version's
+file paths as a no-cache JSON array, and `GET /a/<id>/<path>` serves raw files. The name
+`index.json` is reserved at the bundle root. Nothing above the unguessable `/a/<id>/` URL
+enumerates bundles. `ARTIFACTS_DIR` defaults to an `artifacts` directory beside the database,
+and `ARTIFACT_MAX_BODY_BYTES` defaults to 32 MiB. Provisioning creates the default directory
+under `/var/lib/linear-agent-daemon`, outside the deployed application tree, so content
+survives provision and deploy reruns. It is not backed up yet; loss of the VM disk loses
+stored bundles.
 
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),

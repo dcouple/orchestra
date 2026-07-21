@@ -186,6 +186,15 @@ export class WebhookServer {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Length": Buffer.byteLength(html), "Cache-Control": "no-cache" });
       response.end(html); return;
     }
+    const indexMatch = /^\/a\/([^/]+)\/index\.json$/.exec(pathname);
+    if (indexMatch) {
+      const id = safeDecode(indexMatch[1]!);
+      const files = id && store.isValidId(id) ? await store.list(id) : [];
+      if (!id || files.length === 0) { this.earlyJson(request, response, 404, { error: "not_found" }); return; }
+      const body = JSON.stringify(files.sort());
+      response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body), "Cache-Control": "no-cache" });
+      response.end(body); return;
+    }
     const rawMatch = /^\/a\/([^/]+)\/(.+)$/.exec(pathname);
     if (!rawMatch) { this.earlyJson(request, response, 404, { error: "not_found" }); return; }
     const id = safeDecode(rawMatch[1]!);

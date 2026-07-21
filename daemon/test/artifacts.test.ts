@@ -1,8 +1,10 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
-import { createConnection } from "node:net";
+import { createConnection, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArtifactStore } from "../src/artifacts.js";
 import { loadConfig } from "../src/config.js";
@@ -38,6 +40,26 @@ function manifest(files: Array<{ path: string; content: string | Buffer }>): str
 
 function auth(token = "artifact-secret"): Record<string, string> {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
+
+async function freePort(): Promise<number> {
+  const server = createNetServer();
+  await new Promise<void>((resolveListen, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolveListen);
+  });
+  const port = (server.address() as { port: number }).port;
+  await new Promise<void>(resolveClose => server.close(() => resolveClose()));
+  return port;
+}
+
+async function waitForHealth(port: number, child: ChildProcess): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (child.exitCode !== null) throw new Error(`child exited before health check: ${child.exitCode}`);
+    try { if ((await fetch(`http://127.0.0.1:${port}/healthz`)).ok) return; } catch { /* starting */ }
+    await new Promise(resolveWait => setTimeout(resolveWait, 25));
+  }
+  throw new Error("child daemon did not become healthy");
 }
 
 async function expectJsonError(response: Response, status: number, error: string): Promise<void> {
@@ -95,6 +117,72 @@ describe("artifact viewer", () => {
 });
 
 describe("artifact HTTP integration", () => {
+  it("AC1: lists a known bundle without exposing a bundle enumeration route", async () => {
+    const { log, server } = setup(); const address = await server.listen();
+    const created = await fetch(`http://127.0.0.1:${address.port}/a`, { method: "POST", headers: auth(),
+      body: manifest([{ path: "refs/z.md", content: "z" }, { path: "item.md", content: "item" },
+        { path: "refs/a.md", content: "a" }]) });
+    const id = /\/a\/([^/]+)\/$/.exec(((await created.json()) as { url: string }).url)![1]!;
+    const index = await fetch(`http://127.0.0.1:${address.port}/a/${id}/index.json`);
+    expect(index.status).toBe(200);
+    expect(index.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    await expect(index.json()).resolves.toEqual(["item.md", "refs/a.md", "refs/z.md"]);
+    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/AAAAAAAAAAAAAAAAAAAAAA/index.json`), 404, "not_found");
+    const malformed = await rawGet(address.port, "/a/%ZZ/index.json");
+    expect(malformed.status).toBe(404); expect(JSON.parse(malformed.body)).toEqual({ error: "not_found" });
+    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a`), 404, "not_found");
+    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/`), 404, "not_found");
+    await server.close(); log.close();
+  });
+
+  it("AC2: index refetch lists only the replacement version", async () => {
+    const { log, server } = setup(); const address = await server.listen();
+    const created = await fetch(`http://127.0.0.1:${address.port}/a`, { method: "POST", headers: auth(),
+      body: manifest([{ path: "item.md", content: "old" }, { path: "refs/old.md", content: "old" }]) });
+    const id = /\/a\/([^/]+)\/$/.exec(((await created.json()) as { url: string }).url)![1]!;
+    const replaced = await fetch(`http://127.0.0.1:${address.port}/a/${id}`, { method: "PUT", headers: auth(),
+      body: manifest([{ path: "item.md", content: "new" }, { path: "plan.md", content: "plan" }]) });
+    expect(replaced.status).toBe(200);
+    const index = await fetch(`http://127.0.0.1:${address.port}/a/${id}/index.json`);
+    expect(index.headers.get("cache-control")).toBe("no-cache");
+    await expect(index.json()).resolves.toEqual(["item.md", "plan.md"]);
+    await server.close(); log.close();
+  });
+
+  it("AC3: spawned daemon pull contract reconstructs every file byte-identically", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "artifact-child-")); dirs.push(dir);
+    const port = await freePort();
+    const files = [
+      { path: "item.md", content: Buffer.from("# Item\n") },
+      { path: "refs/discussion.md", content: Buffer.from("decision\n") },
+      { path: "refs/blob.bin", content: Buffer.from([0x00, 0xff, 0x80, 0x41, 0x0a]) },
+    ];
+    const env = { ...process.env, PORT: String(port), BIND_ADDR: "127.0.0.1", DB_PATH: join(dir, "events.db"),
+      DAEMON_TEST_MODE: "1", SESSIONS_ENABLED: "0", WEBHOOK_BASE_URL: `http://127.0.0.1:${port}`,
+      PLANNER_WEBHOOK_SECRET: "planner-secret", PLANNER_LINEAR_TOKEN: "p",
+      IMPLEMENTER_WEBHOOK_SECRET: "implementer-secret", IMPLEMENTER_LINEAR_TOKEN: "i",
+      ARTIFACT_TOKEN: "test-token" };
+    const child = spawn(process.execPath, [resolve("dist/index.js")], { env, stdio: "ignore" });
+    try {
+      await waitForHealth(port, child);
+      const created = await fetch(`http://127.0.0.1:${port}/a`, { method: "POST", headers: auth("test-token"),
+        body: manifest(files) });
+      expect(created.status).toBe(201);
+      const bundleUrl = ((await created.json()) as { url: string }).url;
+      const index = await fetch(`${bundleUrl}index.json`);
+      expect(index.status).toBe(200);
+      const paths = await index.json() as string[];
+      expect(paths).toEqual(files.map(file => file.path).sort());
+      for (const path of paths) {
+        const response = await fetch(`${bundleUrl}${path}`);
+        expect(response.status).toBe(200);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(files.find(file => file.path === path)!.content);
+      }
+    } finally {
+      if (child.exitCode === null) { child.kill("SIGTERM"); await once(child, "exit"); }
+    }
+  }, 15_000);
+
   it("AC1/AC3/AC4: creates a multi-file bundle with a server id and serves the viewer", async () => {
     const { artifactsDir, log, server, logger } = setup(); const address = await server.listen();
     const body = manifest([

@@ -68,8 +68,10 @@ github_repo: dcouple/orchestra
 artifact_host: https://linear-agent.bloomapi.com
 ```
 
-> Publish every work item as a self-contained GitHub issue: `item.md` is
-> the issue body; `refs/` files ride as marker-delimited issue comments.
+> Publish a lean GitHub issue body containing the full frontmatter, an Intent
+> summary, and an `Artifact bundle: <url>` link. The bundle is the complete
+> artifact transport. Post no marker comments; marker comments remain only for
+> legacy items published before this configured contract.
 
 ## Boundaries
 
