@@ -45,15 +45,27 @@ pr: <one PR for the whole epic — phases commit sequentially>
 ### Phase 1 — `<name>`
 - **Scope:** `<what's in>`
 - **Out of scope:** `<what's not>`
-- **Key files/modules:** `<starting points, one clause each>`
+- **Proposed approach:** `<broad implementation shape, with orienting file/module pointers inline>`
 - **Verification:** `<embed shared/verification-criteria.md for this phase>`
 
 ### Phase 2 — `<name>`
 `<repeat the block per phase. Each block is self-contained so /do can pick the`
-`phase up alone — verification criteria live here, never in the table.>`
+`phase up alone — verification criteria live here, never in the table. Proposed approach is`
+`advisory: /do may deviate where the code disagrees, recording why in plan.md; reviewers never`
+`treat deviation as Must Fix. Locked calls stay in Key architecture decisions. Write it only from`
+`what the conversation established — never dispatch research to fill it — naming areas to touch,`
+`functionality to reuse, and repurpose/refactor opportunities with file pointers inline. Use 3–5`
+`bullets or a short paragraph, not file-by-file lists, steps, or sequences. If genuinely unknown,`
+`one honest sentence deferring to /do's plan stage is valid.>`
 
 ## Cross-cutting concerns
 `<security · observability · migration — anything true across phases>`
+
+## Dependencies
+`<Omit section if none. List epic-level human work required (credentials, account setup, approvals,`
+`purchases), external services/APIs newly depended on, and notable new third-party packages. Add a`
+`Dependency gate callout inside a phase block only when one gates that phase. The phase table's`
+`Depends on column remains for internal phase ordering only, not these external/human dependencies.>`
 
 ## Justification
 - `<claim challenged in the Socratic gate>` — `<the reason that held>`

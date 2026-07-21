@@ -109,8 +109,13 @@ the local items with `status: ready` (`./tmp/*/item.md`) and ask the user
 which to run — never pick one silently. Skim `refs/`; read individual refs
 as the work calls for them.
 
-Two preflight items are only checkable now that the item is loaded:
+These preflight items are only checkable now that the item is loaded:
 
+- Read the item's **Dependencies** section when present and check each
+  listed dependency. When the item was already local, this runs before the
+  preflight message goes out, so the gaps fold into that single message;
+  for a fetched item, surface them in an immediate preflight follow-up, as
+  with a missing testing-accounts section below.
 - Follow `.references/tracker-lifecycle.md`. **YOU MUST** validate current
   `linear_issues`, then build and retain two operation sets: current `completes`
   issues needing team-specific `In Review`, and exact `Fixes TEAM-123`

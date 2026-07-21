@@ -29,10 +29,22 @@ pr: <url or # — filled when /do opens it>
 `design — no file lists or pseudo-code. If the model can reasonably decide it, omit it.`
 `Number them (D1, D2…) if there's more than one — reviews cite them by ID.>`
 
-## Starting points (non-exhaustive)
-- `<file/module>` — `<why it's relevant, one clause>`
+## Proposed approach
+- `<area to touch + broad approach, with an orienting file/module pointer inline>`
+- `<existing functionality to reuse + where it lives>`
+- `<repurpose or refactor opportunity + relevant pointer>`
 
-`<2–4 pointers that orient /do without dictating design. Omit section if unknown.>`
+`<Advisory only: /do may deviate where the code disagrees, recording why in plan.md;`
+`reviewers never treat deviation as Must Fix. Locked calls stay in Key architecture directions.`
+`Write only from what the conversation established — never dispatch research to fill this.`
+`Name areas to touch, functionality to reuse, and repurpose/refactor opportunities, carrying`
+`orienting file pointers inline. Use 3–5 bullets or a short paragraph, never file-by-file lists,`
+`steps, or sequences. If genuinely unknown, write one honest sentence deferring to /do's plan stage.>`
+
+## Dependencies
+`<Omit section if none. List human work required (credentials, account setup, approvals, purchases),`
+`external services/APIs newly depended on, and notable new third-party packages. /do's preflight`
+`reads this section to surface human-actionable items before launch.>`
 
 ## Verification criteria
 `<embed shared/verification-criteria.md — acceptance in EARS + how verify proves it>`
