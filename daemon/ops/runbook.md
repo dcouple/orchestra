@@ -120,6 +120,19 @@ KEEPALIVE_MS=900000
 ATTACHMENTS_ENABLED=1
 ATTACHMENT_HOSTS=uploads.linear.app
 # NTFY_URL=https://ntfy.sh/<unguessable-topic>
+
+# Langfuse Cloud via Claude Code native OpenTelemetry tracing
+CLAUDE_CODE_ENABLE_TELEMETRY=1
+CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
+OTEL_TRACES_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=https://us.cloud.langfuse.com/api/public/otel
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64(pk-lf-…:sk-lf-…)>"
+OTEL_METRICS_EXPORTER=none
+OTEL_LOGS_EXPORTER=none
+OTEL_LOG_USER_PROMPTS=1
+OTEL_LOG_ASSISTANT_RESPONSES=1
+OTEL_LOG_TOOL_DETAILS=1
 ```
 
 The harness settings are independent and accept only `claude` or `claudex`; both default
@@ -129,6 +142,15 @@ capacity fallback, so both `FABLE_BIN` and `CLAUDEX_BIN` must be usable for full
 Changes affect only new sessions: established prompts, daemon restarts, and implementer fix
 rounds resume the persisted harness and session ID. If an established or selected Claudex
 session has no `CLAUDEX_BIN`, it fails closed and keeps its durable state.
+
+Langfuse's OTLP endpoint ingests traces only. Keep metrics and logs explicitly disabled;
+otherwise exporter defaults can repeatedly send unsupported signals to Langfuse's 404/400
+endpoints. `OTEL_EXPORTER_OTLP_HEADERS` is secret material: keep it only in the mode-0600
+env file, never in argv or logs. With this configuration, prompts, tool details, and
+span-carried identity attributes (`user.email`, `user.id`, and `organization.id`) leave the
+VM for Langfuse Cloud. Assistant responses are currently log-only in Claude Code and do not
+reach Langfuse, even though the response flag remains enabled for forward compatibility.
+Restart `linear-agent-daemon` after changing any of these values.
 
 The daemon requests 30-day client-credentials app tokens with
 `read,write,app:assignable,app:mentionable,admin` and persists their expiry in SQLite. It
@@ -609,10 +631,12 @@ artifact path. Do not run the emulator smoke from an automated implementation ag
 | CLIProxyAPI Claude OAuth pool | 2 / `linear-daemon` | provider-reported files under `~/.cli-proxy-api/`, `0600` | Both founders' Claude subscriptions, subject to viability probe | Revoke Anthropic authorization, rerun `proxy-accounts.sh add claude` |
 | CLIProxyAPI local API + management keys | 2 / root + `linear-daemon` group | `/etc/linear-agent-daemon/cliproxyapi.env` and generated `.yaml`, `0640` | Loopback proxy and loopback management API only | Stop services, replace both env values, rerun provisioner, restart |
 | `LINEAR_API_KEY` for spawned sessions | 2 / `linear-daemon` | env, `0600` | Scoped bot access | Revoke in Linear, replace env |
+| Langfuse OTLP authorization header | 2 / `linear-daemon` | env, `0600` | One Langfuse Cloud project | Rotate project keys, replace env, restart |
 
 Install founder subscription OAuth only through the documented interactive proxy flow; never
 copy raw token values or unrelated personal credentials onto the host. All other credentials
-are installed only in their owning phase.
+are installed only in their owning phase. Install the Langfuse OTLP authorization header only
+when telemetry is enabled, and keep it in the mode-`0600` daemon env file.
 
 ## Browser verification rollout and rollback
 

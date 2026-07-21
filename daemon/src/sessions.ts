@@ -220,6 +220,24 @@ export class SessionWorker {
       headers: { Authorization: `Bearer ${this.config.linearApiKey}` } } } });
     const requestFile = implementer && !resuming && this.config.browserEnabled && session.browserRequired !== 1
       ? await createBrowserRequest(this.config, turn.linearSessionId) : undefined;
+    const telemetryConfigured = process.env.OTEL_EXPORTER_OTLP_ENDPOINT !== undefined
+      || process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT !== undefined;
+    const telemetryEnv: NodeJS.ProcessEnv = {};
+    if (telemetryConfigured) {
+      const ownedKeys = new Set(["linear.session_id", "linear.issue", "turn.id"]);
+      const baseAttributes = (process.env.OTEL_RESOURCE_ATTRIBUTES ?? "").split(",").flatMap(fragment => {
+        const pair = fragment.trim();
+        const separator = pair.indexOf("=");
+        if (!pair || separator < 1) return [];
+        const key = pair.slice(0, separator).trim();
+        if (!key || key.includes("=") || ownedKeys.has(key)) return [];
+        return [`${key}=${pair.slice(separator + 1)}`];
+      });
+      telemetryEnv.OTEL_RESOURCE_ATTRIBUTES = [...baseAttributes,
+        `linear.session_id=${encodeURIComponent(turn.linearSessionId)}`,
+        `linear.issue=${encodeURIComponent(identifier)}`,
+         `turn.id=${encodeURIComponent(String(turn.id))}`].join(",");
+    }
     const durableProfile = session.profile ?? "sol";
     if (session.profile === null && !this.legacyProfileLogged.has(turn.linearSessionId)) {
       this.legacyProfileLogged.add(turn.linearSessionId);
@@ -232,7 +250,8 @@ export class SessionWorker {
       env: { LINEAR_API_KEY: this.config.linearApiKey!, GH_TOKEN: process.env.GH_TOKEN,
         GITHUB_TOKEN: process.env.GITHUB_TOKEN,
         ...(requestFile ? { ORCHESTRA_BROWSER_REQUEST_FILE: requestFile } : {}),
-        ...(DISPATCH_OWNER_PATTERN.test(turn.linearSessionId) ? { ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId } : {}) }, signal,
+        ...(DISPATCH_OWNER_PATTERN.test(turn.linearSessionId) ? { ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId } : {}),
+        ...telemetryEnv }, signal,
       onEvent: (event: ClaudeEvent) => progress.push(event.type === "text"
         ? { type: "thought", body: event.text } : toolUseContent(event)),
     };

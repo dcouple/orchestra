@@ -77,19 +77,34 @@ describe("runTurn", () => {
   });
   it("passes only the child allowlist and keeps bearer tokens out of argv", async () => {
     const dir = cwd(); const envFile = join(dir, "env.jsonl");
-    const result = await runTurn(options({ cwd: dir, mcpConfigJson: JSON.stringify({ token: "secret-token" }),
-      maxBudgetUsd:12.5, env: { CLAUDE_FAKE_ENV_FILE: envFile, LINEAR_API_KEY: "linear-key", GH_TOKEN:"github-key", PLANNER_WEBHOOK_SECRET: "webhook-secret",
-        PLANNER_LINEAR_CLIENT_SECRET: "client-secret", IMPLEMENTER_LINEAR_CLIENT_SECRET: "other-secret" } }));
-    expect(result.ok).toBe(true);
-    const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { args: string[]; env: Record<string, string> };
-    expect(row.env.LINEAR_API_KEY).toBe("linear-key");
-    expect(row.env.GH_TOKEN).toBe("github-key");
-    expect(row.env.PLANNER_WEBHOOK_SECRET).toBeUndefined();
-    expect(row.env.PLANNER_LINEAR_CLIENT_SECRET).toBeUndefined();
-    expect(row.env.IMPLEMENTER_LINEAR_CLIENT_SECRET).toBeUndefined();
-    expect(row.args).toContain("--mcp-config");
-    expect(row.args).toEqual(expect.arrayContaining(["--max-budget-usd","12.5"]));
-    expect(JSON.stringify(row.args)).not.toContain("secret-token");
+    const oldHeaders = process.env.OTEL_EXPORTER_OTLP_HEADERS;
+    const oldControl = process.env.OTEL_X;
+    process.env.OTEL_EXPORTER_OTLP_HEADERS = "process-header";
+    process.env.OTEL_X = "process-control";
+    try {
+      const result = await runTurn(options({ cwd: dir, mcpConfigJson: JSON.stringify({ token: "secret-token" }),
+        maxBudgetUsd:12.5, env: { CLAUDE_FAKE_ENV_FILE: envFile, LINEAR_API_KEY: "linear-key", GH_TOKEN:"github-key",
+          OTEL_RESOURCE_ATTRIBUTES: "service.namespace=daemon", OTEL_X: "extra-control", PLANNER_WEBHOOK_SECRET: "webhook-secret",
+          PLANNER_LINEAR_CLIENT_SECRET: "client-secret", IMPLEMENTER_LINEAR_CLIENT_SECRET: "other-secret" } }));
+      expect(result.ok).toBe(true);
+      const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { args: string[]; env: Record<string, string> };
+      expect(row.env.LINEAR_API_KEY).toBe("linear-key");
+      expect(row.env.GH_TOKEN).toBe("github-key");
+      expect(row.env.OTEL_EXPORTER_OTLP_HEADERS).toBe("process-header");
+      expect(row.env.OTEL_RESOURCE_ATTRIBUTES).toBe("service.namespace=daemon");
+      expect(row.env.OTEL_X).toBeUndefined();
+      expect(row.env.PLANNER_WEBHOOK_SECRET).toBeUndefined();
+      expect(row.env.PLANNER_LINEAR_CLIENT_SECRET).toBeUndefined();
+      expect(row.env.IMPLEMENTER_LINEAR_CLIENT_SECRET).toBeUndefined();
+      expect(row.args).toContain("--mcp-config");
+      expect(row.args).toEqual(expect.arrayContaining(["--max-budget-usd","12.5"]));
+      expect(JSON.stringify(row.args)).not.toContain("secret-token");
+      expect(JSON.stringify(row.args)).not.toContain("process-header");
+    } finally {
+      if (oldHeaders === undefined) delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+      else process.env.OTEL_EXPORTER_OTLP_HEADERS = oldHeaders;
+      if (oldControl === undefined) delete process.env.OTEL_X; else process.env.OTEL_X = oldControl;
+    }
   });
   it("passes only the named browser handshake and attempt context", async () => {
     const dir = cwd(); const envFile = join(dir, "env.jsonl");

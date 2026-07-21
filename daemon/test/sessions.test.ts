@@ -21,12 +21,21 @@ const oldDelay = process.env.CLAUDE_FAKE_DELAY_MS;
 const oldDispatchOwner = process.env.ORCHESTRA_DISPATCH_OWNER;
 const ownerOne = "a0000000-0000-0000-0000-000000000001";
 const ownerTwo = "a0000000-0000-0000-0000-000000000002";
+const otelTestKeys = ["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER_OTLP_HEADERS",
+  "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+  "OTEL_TRACES_EXPORTER", "OTEL_METRICS_EXPORTER", "OTEL_LOGS_EXPORTER", "OTEL_RESOURCE_ATTRIBUTES", "OTEL_SERVICE_NAME",
+  "OTEL_BSP_SCHEDULE_DELAY", "OTEL_METRIC_EXPORT_INTERVAL", "OTEL_LOGS_EXPORT_INTERVAL", "OTEL_LOG_USER_PROMPTS",
+  "OTEL_LOG_ASSISTANT_RESPONSES", "OTEL_LOG_TOOL_DETAILS", "OTEL_LOG_TOOL_CONTENT", "OTEL_X"] as const;
+const oldOtelEnv = Object.fromEntries(otelTestKeys.map(key => [key, process.env[key]])) as Record<string, string | undefined>;
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   if (oldMode === undefined) delete process.env.CLAUDE_FAKE_MODE; else process.env.CLAUDE_FAKE_MODE = oldMode;
   if (oldArgs === undefined) delete process.env.CLAUDE_FAKE_ARGS_FILE; else process.env.CLAUDE_FAKE_ARGS_FILE = oldArgs;
   if (oldEnv === undefined) delete process.env.CLAUDE_FAKE_ENV_FILE; else process.env.CLAUDE_FAKE_ENV_FILE = oldEnv;
   if (oldDelay === undefined) delete process.env.CLAUDE_FAKE_DELAY_MS; else process.env.CLAUDE_FAKE_DELAY_MS = oldDelay;
-  if (oldDispatchOwner === undefined) delete process.env.ORCHESTRA_DISPATCH_OWNER; else process.env.ORCHESTRA_DISPATCH_OWNER = oldDispatchOwner; });
+  if (oldDispatchOwner === undefined) delete process.env.ORCHESTRA_DISPATCH_OWNER; else process.env.ORCHESTRA_DISPATCH_OWNER = oldDispatchOwner;
+  for (const key of otelTestKeys) {
+    if (oldOtelEnv[key] === undefined) delete process.env[key]; else process.env[key] = oldOtelEnv[key];
+  } });
 function git(args: string[], cwd?: string): void { execFileSync("git", args, { cwd, stdio: "ignore" }); }
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "sessions-")); dirs.push(dir);
@@ -90,6 +99,20 @@ function turnUsage(dbPath: string, id = 1): Record<string, unknown> {
 }
 async function waitFor(predicate: () => boolean, timeout = 4000): Promise<void> {
   const end = Date.now() + timeout; while (!predicate()) { if (Date.now() > end) throw new Error("timed out"); await new Promise(resolve => setTimeout(resolve, 20)); }
+}
+async function capturedTurnEnv(endpoint: "base" | "traces" | "none", baseAttributes?: string,
+    session = "linear-session"): Promise<Record<string, string>> {
+  const { dir, log, config } = setup(); const poster = new Poster();
+  process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "env.jsonl");
+  for (const key of otelTestKeys) delete process.env[key];
+  if (endpoint === "base") process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://example.test/otel";
+  if (endpoint === "traces") process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://example.test/otel/v1/traces";
+  if (baseAttributes !== undefined) process.env.OTEL_RESOURCE_ATTRIBUTES = baseAttributes;
+  append(log, `otel-${endpoint}`, session, "created");
+  const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 });
+  worker.start(); await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop(); log.close();
+  const row = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim()) as { env: Record<string, string> };
+  return row.env;
 }
 async function freePort(): Promise<number> {
   const server = createNetServer(); await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -379,6 +402,43 @@ describe("SessionWorker", () => {
       profile: "fable", runtime: "claude", launcher: "FABLE_BIN" });
     expect(poster.posts.map(post => activityBody(post.content)).filter(Boolean).join("\n")).toContain("FABLE_BIN");
     log.close();
+  });
+  it("stamps encoded Linear correlation attributes when the base OTLP endpoint is configured", async () => {
+    const env = await capturedTurnEnv("base", undefined, "linear session,=id");
+    expect(env.OTEL_RESOURCE_ATTRIBUTES)
+      .toBe("linear.session_id=linear%20session%2C%3Did,linear.issue=ENG-42,turn.id=1");
+  });
+  it("merges operator resource attributes while daemon correlation keys win", async () => {
+    const env = await capturedTurnEnv("base",
+      "service.namespace=daemon,linear.session_id=spoofed,linear.issue=wrong,turn.id=999,custom=a=b");
+    expect(env.OTEL_RESOURCE_ATTRIBUTES)
+      .toBe("service.namespace=daemon,custom=a=b,linear.session_id=linear-session,linear.issue=ENG-42,turn.id=1");
+  });
+  it("drops malformed operator resource attributes before appending the daemon stamp", async () => {
+    const env = await capturedTurnEnv("base", "garbage,linear.session_id = spoof,ok=1,,=bad");
+    expect(env.OTEL_RESOURCE_ATTRIBUTES)
+      .toBe("ok=1,linear.session_id=linear-session,linear.issue=ENG-42,turn.id=1");
+  });
+  it("stamps correlation attributes when only the traces OTLP endpoint is configured", async () => {
+    const env = await capturedTurnEnv("traces");
+    expect(env.OTEL_RESOURCE_ATTRIBUTES)
+      .toBe("linear.session_id=linear-session,linear.issue=ENG-42,turn.id=1");
+  });
+  it("AC4: preserves the pre-OTel child environment when telemetry is absent", async () => {
+    const env = await capturedTurnEnv("none");
+    const expectedPrefixes = Object.freeze(["LC_", "ANTHROPIC_", "CLAUDE_"] as const);
+    const expectedKeys = Object.freeze(["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "LANG",
+      "LINEAR_API_KEY", "GH_TOKEN", "GITHUB_TOKEN",
+      ...Object.keys(process.env).filter(key => expectedPrefixes.some(prefix => key.startsWith(prefix)))]);
+    const expected = Object.fromEntries(expectedKeys.flatMap(key => {
+      const value = key === "LINEAR_API_KEY" ? "linear-key" : process.env[key];
+      return value === undefined ? [] : [[key, value]];
+    }));
+    const { __CF_USER_TEXT_ENCODING: macOsInjectedEncoding, ...daemonControlledEnv } = env;
+    expect(daemonControlledEnv).toEqual(expected);
+    if (process.platform === "darwin") expect(macOsInjectedEncoding).toEqual(expect.any(String));
+    else expect(macOsInjectedEncoding).toBeUndefined();
+    expect(Object.keys(env).filter(key => key.startsWith("OTEL_"))).toEqual([]);
   });
   it("persists and logs usage for a completed turn", async () => {
     const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();

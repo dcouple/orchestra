@@ -40,6 +40,27 @@ function nonnegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
+const OTEL_CHILD_ENV_KEYS: ReadonlySet<string> = new Set([
+  "OTEL_EXPORTER_OTLP_ENDPOINT",
+  "OTEL_EXPORTER_OTLP_PROTOCOL",
+  "OTEL_EXPORTER_OTLP_HEADERS",
+  "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+  "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
+  "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+  "OTEL_TRACES_EXPORTER",
+  "OTEL_METRICS_EXPORTER",
+  "OTEL_LOGS_EXPORTER",
+  "OTEL_RESOURCE_ATTRIBUTES",
+  "OTEL_SERVICE_NAME",
+  "OTEL_BSP_SCHEDULE_DELAY",
+  "OTEL_METRIC_EXPORT_INTERVAL",
+  "OTEL_LOGS_EXPORT_INTERVAL",
+  "OTEL_LOG_USER_PROMPTS",
+  "OTEL_LOG_ASSISTANT_RESPONSES",
+  "OTEL_LOG_TOOL_DETAILS",
+  "OTEL_LOG_TOOL_CONTENT",
+]);
+
 function childEnv(extra: NodeJS.ProcessEnv | undefined, trusted: Record<string, string> | undefined): NodeJS.ProcessEnv {
   const allowed: NodeJS.ProcessEnv = {};
   const include = (key: string, value: string | undefined): void => {
@@ -47,7 +68,7 @@ function childEnv(extra: NodeJS.ProcessEnv | undefined, trusted: Record<string, 
     if (key === "PATH" || key === "HOME" || key === "USER" || key === "LOGNAME" || key === "TMPDIR" || key === "TEMP" || key === "TMP" || key === "LANG"
       || key.startsWith("LC_") || key.startsWith("ANTHROPIC_") || key.startsWith("CLAUDE_") || key === "LINEAR_API_KEY"
       || key === "GH_TOKEN" || key === "GITHUB_TOKEN" || key === "ORCHESTRA_DISPATCH_OWNER"
-      || key.startsWith("ORCHESTRA_BROWSER_")) {
+      || key.startsWith("ORCHESTRA_BROWSER_") || OTEL_CHILD_ENV_KEYS.has(key)) {
       allowed[key] = value;
     }
   };
