@@ -143,12 +143,16 @@ its command with the following so session context survives:
 
 ```bash
 perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' 2700 \
-  codex exec resume --last -o <owner dir>/<name>.md \
+  codex exec resume --last --yolo -C <repo root> -o <owner dir>/<name>.md \
   "$(cat <owner dir>/<name>.prompt)" </dev/null
 status=$?
 echo "$status" > <owner dir>/<name>.done.tmp && \
   mv <owner dir>/<name>.done.tmp <owner dir>/<name>.done
 ```
+
+A resume dispatch carries `--yolo` and `-C` exactly like a fresh one — a
+resumed session that loses either flag runs sandboxed from the wrong root
+and blocks the very tests the fix round must run.
 
 The marker convention is: `<name>.md` is the final report, `<name>.log` is
 durable stdout/stderr including the `tokens used` summary, and `<name>.done`
@@ -178,7 +182,9 @@ confidence word · backend-verifier: `**Verdict:**` pass|fail). Capture the
 token usage `codex exec` prints in its end-of-run summary from the dispatch's
 sibling `.log` file (the line after `tokens used`); per-turn detail lives in
 `~/.codex/sessions/<date>/rollout-*.jsonl` `token_count` events. `unknown` is
-only legal after checking both. Return the
+only legal after checking both. For a resumed session the printed figure is
+**cumulative**: record the delta from the previous dispatch's figure as the
+round's cost and the final figure as the role total. Return the
 report verbatim to the caller, prefixed with one line:
 `CODEX <role>: <status line> · tokens <n | unknown>` — the Overseer sums
 these per role into the wrap-up's run record.
@@ -186,8 +192,13 @@ these per role into the wrap-up's run record.
 Exit 142 (a SIGALRM watchdog reap) classifies the dispatch as a hung run. Retry
 a hung, errored, timed-out, or status-line-missing run once: make a fresh
 dispatch for an ephemeral role, or use `resume --last` for the implementer so
-its session context survives. After that retry, return the error plus whatever
-output exists to the caller.
+its session context survives. A retry that is also reaped routes the work to a
+Claude sub-agent dispatch instead of a third Codex one — a workload that
+wedged twice stays wedged; otherwise return the error plus whatever output
+exists to the caller. A report of `listen EPERM` (the sandbox denied loopback
+binds) is a completed run, not a failure: accept the edits and run the blocked
+check at the Overseer, or hand it to the next verifier dispatch, instead of
+re-dispatching.
 
 **Success criteria**: caller received a well-formed report (or the error
 after one retry).
