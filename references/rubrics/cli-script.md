@@ -9,7 +9,12 @@
 4. Bad input handled: a malformed argument/file produces a clear error, not
    a stack trace. Evidence: the error output.
 5. Help text (`--help`) matches actual behavior after the change.
+6. Critical assertions use explicit failure branches
+   (`if ! cmp …; then …; exit 1; fi`) — never a bare `[[ ]]`/`grep` whose
+   `set -e` behavior varies by Bash version; macOS-targeted suites also run
+   under `/bin/bash` 3.2. Evidence: the assertion source + the 3.2 run.
 
 Known failure modes: exit 0 on partial failure (CI gates on the code, not
 the log); depends on the author's shell env; destructive default with no
-dry run.
+dry run; assertions that pass on modern Bash but false-pass under macOS
+`/bin/bash` 3.2.

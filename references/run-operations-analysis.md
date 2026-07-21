@@ -62,11 +62,16 @@ Parse the transcripts and derive:
      `cache_read_input_tokens`, `cache_creation_input_tokens`) plus
      `message.model` — bucket them by timestamp into the per-step windows and
      report output and cache read/write separately (cache reads usually
-     dominate raw volume and price differently).
+     dominate raw volume and price differently). Group assistant events by
+     `message.id` and keep only the final usage snapshot per id before
+     summing — the harness writes multiple streaming snapshots for one
+     message, and summing every line double-counts the request.
   2. **Claude sub-agents**: each dispatch has its own transcript at
      `<session-dir>/subagents/agent-<id>.jsonl` with the same per-event
-     usage; the harness also prints a `subagent_tokens` total in every
-     completion notification — cross-check the two.
+     usage (same `message.id` dedup applies); the harness also prints a
+     `subagent_tokens` total in every completion notification — a
+     final-context cross-check, not billing usage; the transcript's
+     deduplicated sum is the number of record.
   3. **Codex dispatches**: `codex exec` prints a `tokens used` total at
      end-of-run — it sits in the dispatch's sibling `.log` under the
      `.codex-dispatches/<owner>/` marker convention (grep for the line after

@@ -240,7 +240,9 @@ wherever the *item* and the repo disagree, name the conflict in the plan's
 Known mismatches with how the plan resolves it — and record what you
 imported or dropped in the plan's Reconciliation notes.
 
-Research beyond that as the item actually needs — you judge. If the item
+Research beyond that as the item actually needs — you judge. A change
+touching Windows-runner CI reads `.references/ci-windows-runners.md` at
+plan time and carries it into the implementer dispatch. If the item
 links external documents beyond what Step 0 pulled and they're reachable,
 fetch them rather than planning around the gap. Then write
 `./tmp/<id>/plan.md` following this skill's `references/implementation-plan.md` —
@@ -357,7 +359,12 @@ verifier reports it has no testing instructions for the app, or can't test
 for lack of credentials, environment, or tooling, don't retry or improvise a
 workaround — stop the verify loop and ask the user for the missing
 instructions or access. When verification needs the running app, apply Step
-0's `AGENTS.md`-sourced launch rule and stop what the pipeline started.
+0's `AGENTS.md`-sourced launch rule and stop what the pipeline started. A
+service the verification needs alive runs detached (nohup + pidfile under
+`./tmp/<id>/`), never inside a tool-lifetime-bounded background task — a
+harness timeout that reaps a server mid-evidence poisons the next boot with
+orphans. Tear down the recorded pids explicitly, and when freeing ports
+kill only pids enumerated before the next launch.
 
 **Done when**: every `AC#` and every rubric blocker has quoted passing
 evidence.
@@ -449,7 +456,9 @@ comment) before ending — a returned report is never parked for a later turn.
   derived from zone unless the epic's own `review_lanes:` says otherwise).
   Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** — loop those findings back to the matching
-  implementer, push the fixes, re-review; (b) the two lanes' reports
+  implementer, stage the fix commit from `git status --short` (everything
+  modified outside `./tmp/`), never a remembered file list, push the
+  fixes, re-review; (b) the two lanes' reports
   **diverge sharply** (little overlap in what they caught, or conflicting
   overall verdicts) — one extra pass to confirm convergence. **A pass with
   zero Must Fix from every lane ends the loop**, even with Should Fixes
@@ -539,7 +548,9 @@ comment) before ending — a returned report is never parked for a later turn.
   links (GitHub only inline-plays web-UI uploads). Expiring temp hosts are
   forbidden for evidence — a dead link months later is no evidence at all.
   On a private repo, note that inline rendering may fail for viewers
-  without repo access; the links still work.
+  without repo access; the links still work — and unauthenticated fetches
+  (curl, markdown proxies) get 404s from `releases/download/...` URLs, so
+  verify an upload via its API asset id, never a bare curl.
 - After the loop and QA, post surviving Should Fix / Nice to Have findings
   as line-anchored inline PR comments (`gh api` reviews, event `COMMENT` —
   never `REQUEST_CHANGES`: the loop owns Must Fix, and capped survivors are
@@ -551,7 +562,9 @@ comment) before ending — a returned report is never parked for a later turn.
 - Assemble the dial record's **run record** before writing: `gh pr view
   --json changedFiles,additions,deletions` for `pr_size`; per-role Codex
   tokens summed from the dispatches' `CODEX <role>: … · tokens <n>` lines;
-  Claude sub-agent tokens from the harness's task summaries where shown;
+  Claude main-loop and sub-agent tokens scripted from the session
+  transcript JSONL (group by `message.id`, keep the final usage snapshot
+  per id; harness task summaries are a cross-check only);
   the `agents` roster (role, model, effort, dispatches, duration, tokens)
   and `spend_ratio`. Record `unknown` where a source didn't expose a
   number — never estimate. This record is what the postmortem and the
