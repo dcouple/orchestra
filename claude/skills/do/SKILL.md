@@ -91,19 +91,20 @@ proceed. A missing green-tier dependency is a preflight note, not a
 stop — the human clears it while you work; only a dependency the run truly
 cannot start without stops Step 0.
 
-Sync JS/TS dependencies once per run in every directory with its own recognized
-lockfile, deduplicating nested workspace members covered by a root lockfile:
-`pnpm-lock.yaml` → `pnpm install --frozen-lockfile --ignore-scripts`;
-`package-lock.json` → `npm ci --ignore-scripts`; `yarn.lock` → check
-`yarn --version`, then use `yarn install --frozen-lockfile --ignore-scripts`
-for `1.*` or otherwise `YARN_ENABLE_SCRIPTS=0 yarn install --immutable`.
-This is idempotent and `--ignore-scripts` is unconditional. A missing
-manager or non-zero sync emits an **environment note** in the preflight message
-or run chat naming the workspace and manager; continue according to the
-autonomy tiers and carry a persistent note into the wrap-up/PR notes. If a
-later stage fails on a missing build artifact from a scripts-suppressed package,
-emit the same named environment note for that package — never continue silently
-or improvise a script run.
+Make the worktree's environment ready — installing dependencies and running
+the development app inside its own worktree are the pipeline's deliberate,
+logged actions, whatever the platform. In every workspace that declares
+dependencies, run the project's own idempotent install (a no-op when the
+tree is already current), detecting the toolchain from the repo's
+`AGENTS.md`/manifests rather than assuming one — always in the toolchain's
+reproducible mode (locked versions) and with lifecycle scripts suppressed
+where the toolchain supports it. A missing toolchain or failed install
+emits an **environment note** in the preflight message or run chat naming
+the workspace and tool; continue per the action tiers and carry a
+persistent note into the wrap-up/PR notes. If a later stage fails on an
+artifact a suppressed install step would have produced, emit the same named
+environment note for that package — never continue silently or improvise a
+workaround.
 
 Then **Load:**
 
