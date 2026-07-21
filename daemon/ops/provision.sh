@@ -29,6 +29,15 @@ if ! command -v node >/dev/null || [[ "$(node --version)" != v22.* ]]; then
   apt-get install -y nodejs
 fi
 
+# Headless rasterizer for agent sessions (screenshot HTML mock-ups before
+# attaching to Linear): google-chrome --headless=new --no-sandbox --screenshot=…
+if ! command -v google-chrome >/dev/null; then
+  tmp="$(mktemp -d)"
+  curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o "${tmp}/chrome.deb"
+  apt-get install -y "${tmp}/chrome.deb"
+  rm -rf "${tmp}"
+fi
+
 if ! command -v caddy >/dev/null; then
   install -d -m 0755 /usr/share/keyrings
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
