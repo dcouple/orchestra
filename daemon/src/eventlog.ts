@@ -153,7 +153,8 @@ export class EventLog {
         usage_cache_creation_tokens INTEGER,
         usage_cache_read_tokens INTEGER,
         cost_usd REAL,
-        model TEXT
+        model TEXT,
+        trace_id TEXT
       );
       CREATE TABLE IF NOT EXISTS turn_activities (
         turn_id INTEGER PRIMARY KEY REFERENCES turns(id),
@@ -236,6 +237,7 @@ export class EventLog {
     if (!columns.has("usage_cache_read_tokens")) this.db.prepare("ALTER TABLE turns ADD COLUMN usage_cache_read_tokens INTEGER").run();
     if (!columns.has("cost_usd")) this.db.prepare("ALTER TABLE turns ADD COLUMN cost_usd REAL").run();
     if (!columns.has("model")) this.db.prepare("ALTER TABLE turns ADD COLUMN model TEXT").run();
+    if (!columns.has("trace_id")) this.db.prepare("ALTER TABLE turns ADD COLUMN trace_id TEXT").run();
     this.backfillCreatedTurnSourceKeys();
     if (addedSourceKey) this.seedActivityCursorsForSourceKeyMigration(Date.now());
     this.db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_source_key ON turns(source_key)").run();
@@ -474,6 +476,9 @@ export class EventLog {
       ON CONFLICT(provider) DO UPDATE SET status='cooldown', reason=excluded.reason,
       cooldown_until=excluded.cooldown_until, updated_at=excluded.updated_at`)
       .run(provider, reason, cooldownUntil, updatedAt);
+  }
+  setTurnTraceId(turnId: number, traceId: string): void {
+    this.db.prepare("UPDATE turns SET trace_id=? WHERE id=?").run(traceId, turnId);
   }
   touchSession(linearSessionId: string, now = Date.now()): void {
     this.db.prepare("UPDATE sessions SET last_seen_at=? WHERE linear_session_id=?").run(now, linearSessionId);

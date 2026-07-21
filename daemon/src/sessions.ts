@@ -7,6 +7,7 @@ import { BROWSER_RELAUNCH_SENTINEL, browserAttemptEnv, browserWasRequested, clea
   createBrowserAttempt, createBrowserRequest, mergeMcpConfig, removeBrowserRequest } from "./browser.js";
 import type { EventLog, ExternalUrlRow, StopAckRow, TurnActivityRow, TurnRow } from "./eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
+import { mintTraceContext, postTurnSpans } from "./otel.js";
 import { WorktreeManager } from "./worktrees.js";
 
 interface Logger { log(...args: unknown[]): void; error(...args: unknown[]): void; }
@@ -223,6 +224,7 @@ export class SessionWorker {
     const telemetryConfigured = process.env.OTEL_EXPORTER_OTLP_ENDPOINT !== undefined
       || process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT !== undefined;
     const telemetryEnv: NodeJS.ProcessEnv = {};
+    const traceContext = telemetryConfigured ? mintTraceContext() : undefined;
     if (telemetryConfigured) {
       const ownedKeys = new Set(["linear.session_id", "linear.issue", "turn.id"]);
       const baseAttributes = (process.env.OTEL_RESOURCE_ATTRIBUTES ?? "").split(",").flatMap(fragment => {
@@ -236,7 +238,9 @@ export class SessionWorker {
       telemetryEnv.OTEL_RESOURCE_ATTRIBUTES = [...baseAttributes,
         `linear.session_id=${encodeURIComponent(turn.linearSessionId)}`,
         `linear.issue=${encodeURIComponent(identifier)}`,
-         `turn.id=${encodeURIComponent(String(turn.id))}`].join(",");
+        `turn.id=${encodeURIComponent(String(turn.id))}`].join(",");
+      telemetryEnv.TRACEPARENT = traceContext!.traceparent;
+      this.log.setTurnTraceId(turn.id, traceContext!.traceId);
     }
     const durableProfile = session.profile ?? "sol";
     if (session.profile === null && !this.legacyProfileLogged.has(turn.linearSessionId)) {
@@ -412,8 +416,25 @@ export class SessionWorker {
       ...(result.usage.costUsd !== undefined ? { costUsd: result.usage.costUsd } : {}),
       ...(result.usage.model !== undefined ? { model: result.usage.model } : {}),
     } : {};
+    const postTelemetry = (status: "response" | "error"): void => {
+      if (!traceContext) return;
+      void postTurnSpans({
+        traceContext,
+        linearSessionId: turn.linearSessionId,
+        issue: identifier,
+        turnId: turn.id,
+        status,
+        startedAt: turn.startedAt ?? turn.receivedAt,
+        finishedAt,
+        ...(result.resultText !== undefined ? { resultText: result.resultText } : {}),
+      }).then(postResult => {
+        if (!postResult.ok) this.logger.error(jsonLog({ event: "telemetry_span_post_failed", turnId: turn.id, error: postResult.error }));
+      }).catch(error => this.logger.error(jsonLog({ event: "telemetry_span_post_failed", turnId: turn.id,
+        error: error instanceof Error ? error.message : String(error) })));
+    };
     if (result.ok) {
       this.log.finishTurn(turn.id, "response", result.resultText || "Turn completed.", finishedAt, randomUUID(), true, result.usage);
+      postTelemetry("response");
       this.logger.log(jsonLog({ event: "session_turn_completed", turnId: turn.id, issueIdentifier: identifier,
         linearSessionId: turn.linearSessionId, attempts: turn.attempts,
         durationMs: Math.max(0, finishedAt - (turn.startedAt ?? turn.receivedAt)), ...usageLog }));
@@ -425,6 +446,7 @@ export class SessionWorker {
         ? `Claude hit a usage limit (${fallbackCause})${fallbackAttempted ? `; Claudex fallback failed: ${runtimeDetail}` : ""}`
         : runtimeDetail;
       this.log.finishTurn(turn.id, "error", `${implementer ? "Implementer" : "Planner"} turn failed: ${detail}`, finishedAt, randomUUID(), true, result.usage);
+      postTelemetry("error");
       this.logger.error(jsonLog({ event: "session_turn_failed", turnId: turn.id, issueIdentifier: identifier,
         linearSessionId: turn.linearSessionId, attempts: turn.attempts, durationMs: Math.max(0, finishedAt - (turn.startedAt ?? turn.receivedAt)),
         error: detail, ...(result.stderrTail ? { stderrTail: result.stderrTail } : {}), ...usageLog }));

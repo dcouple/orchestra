@@ -6,7 +6,7 @@ import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent, TerminalContent } from "../src/linear.js";
@@ -105,8 +105,8 @@ async function capturedTurnEnv(endpoint: "base" | "traces" | "none", baseAttribu
   const { dir, log, config } = setup(); const poster = new Poster();
   process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "env.jsonl");
   for (const key of otelTestKeys) delete process.env[key];
-  if (endpoint === "base") process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://example.test/otel";
-  if (endpoint === "traces") process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://example.test/otel/v1/traces";
+  if (endpoint === "base") process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:1/otel";
+  if (endpoint === "traces") process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "http://127.0.0.1:1/otel/v1/traces";
   if (baseAttributes !== undefined) process.env.OTEL_RESOURCE_ATTRIBUTES = baseAttributes;
   append(log, `otel-${endpoint}`, session, "created");
   const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 });
@@ -424,7 +424,87 @@ describe("SessionWorker", () => {
     expect(env.OTEL_RESOURCE_ATTRIBUTES)
       .toBe("linear.session_id=linear-session,linear.issue=ENG-42,turn.id=1");
   });
+  it("persists a gated trace context and posts linked turn and response spans", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster();
+    const received: Array<Record<string, unknown>> = [];
+    const server = createServer((request, response) => {
+      let raw = ""; request.setEncoding("utf8"); request.on("data", chunk => { raw += chunk; });
+      request.on("end", () => { received.push(JSON.parse(raw) as Record<string, unknown>); response.end(); });
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    for (const key of otelTestKeys) delete process.env[key];
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "trace-env.jsonl");
+    append(log, "trace-gated", "trace-session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 });
+    worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done" && received.length === 1);
+    const child = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim()) as { env: Record<string, string> };
+    expect(child.env.TRACEPARENT).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+    const [, traceId, rootSpanId] = child.env.TRACEPARENT!.split("-");
+    const db = new Database(config.dbPath, { readonly: true });
+    expect(db.prepare("SELECT trace_id traceId FROM turns WHERE id=1").get()).toEqual({ traceId });
+    db.close();
+    const resourceSpans = received[0]!.resourceSpans as Array<{ scopeSpans: Array<{ spans: Array<Record<string, unknown>> }> }>;
+    const [turnSpan, responseSpan] = resourceSpans[0]!.scopeSpans[0]!.spans;
+    expect(turnSpan).toMatchObject({ traceId, spanId: rootSpanId, name: "daemon.turn" });
+    expect(responseSpan).toMatchObject({ traceId, parentSpanId: rootSpanId, name: "daemon.assistant_response" });
+    expect(responseSpan!.attributes).toContainEqual({ key: "response.content", value: { stringValue: "planner answer" } });
+    await worker.stop(); await new Promise<void>(resolve => server.close(() => resolve())); log.close();
+  });
+  it("does not post daemon-authored spans for a stopped gated turn", async () => {
+    const { log, config } = setup(); const poster = new Poster(); let requests = 0;
+    const server = createServer((_request, response) => { requests++; response.end(); });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    for (const key of otelTestKeys) delete process.env[key];
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    process.env.CLAUDE_FAKE_MODE = "slow"; process.env.CLAUDE_FAKE_DELAY_MS = "1000";
+    append(log, "trace-stopped", "trace-stop-session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 });
+    worker.start(); await waitFor(() => log.turnStates()[0]?.status === "running"
+      && log.getSession("trace-stop-session")?.claudeSessionId === "claude-session-1");
+    worker.stopSession("trace-stop-session");
+    await waitFor(() => log.turnStates()[0]?.status === "interrupted");
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(requests).toBe(0);
+    await worker.stop(); await new Promise<void>(resolve => server.close(() => resolve())); log.close();
+  });
+  it("keeps terminal delivery healthy when the collector returns HTTP 500", async () => {
+    let releaseTerminal!: () => void;
+    const terminalGate = new Promise<void>(resolve => { releaseTerminal = resolve; });
+    let terminalAttempted = false;
+    class GatedTerminalPoster extends Poster {
+      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+        if (!ephemeral) { terminalAttempted = true; await terminalGate; }
+        return super.postActivity(app, session, id, content, ephemeral);
+      }
+    }
+    const { log, config } = setup(); const poster = new GatedTerminalPoster(); const logger = new CapturingLogger();
+    const server = createServer((_request, response) => response.writeHead(500).end("private collector response body"));
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    for (const key of otelTestKeys) delete process.env[key];
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    append(log, "trace-http-500", "trace-http-500-session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config,
+      { pollMs: 10, reconcileMs: 20, logger });
+    worker.start(); await waitFor(() => terminalAttempted);
+    try {
+      expect(log.turnStates()[0]?.status).toBe("awaiting_activity");
+    } finally { releaseTerminal(); }
+    await waitFor(() => log.turnStates()[0]?.status === "done"
+      && logger.entries().some(entry => entry.event === "telemetry_span_post_failed"));
+    expect(poster.posts).toContainEqual(expect.objectContaining({
+      session: "trace-http-500-session", ephemeral: false, content: { type: "response", body: "planner answer" },
+    }));
+    expect(logger.entries()).toContainEqual(expect.objectContaining({
+      event: "session_turn_completed", turnId: 1, attempts: 1,
+    }));
+    expect(logger.entries()).toContainEqual({ event: "telemetry_span_post_failed", turnId: 1, error: "http 500" });
+    expect(logger.lines.join("\n")).not.toContain("private collector response body");
+    await worker.stop(); await new Promise<void>(resolve => server.close(() => resolve())); log.close();
+  });
   it("AC4: preserves the pre-OTel child environment when telemetry is absent", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
     const env = await capturedTurnEnv("none");
     const expectedPrefixes = Object.freeze(["LC_", "ANTHROPIC_", "CLAUDE_"] as const);
     const expectedKeys = Object.freeze(["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "LANG",
@@ -439,6 +519,8 @@ describe("SessionWorker", () => {
     if (process.platform === "darwin") expect(macOsInjectedEncoding).toEqual(expect.any(String));
     else expect(macOsInjectedEncoding).toBeUndefined();
     expect(Object.keys(env).filter(key => key.startsWith("OTEL_"))).toEqual([]);
+    expect(env.TRACEPARENT).toBeUndefined();
+    expect(fetchSpy).not.toHaveBeenCalled(); fetchSpy.mockRestore();
   });
   it("persists and logs usage for a completed turn", async () => {
     const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();

@@ -260,15 +260,15 @@ describe("EventLog", () => {
     }));
     expect(columns).toContain("source_key");
     expect(columns).toEqual(expect.arrayContaining(["usage_input_tokens", "usage_output_tokens",
-      "usage_cache_creation_tokens", "usage_cache_read_tokens", "cost_usd", "model"]));
+      "usage_cache_creation_tokens", "usage_cache_read_tokens", "cost_usd", "model", "trace_id"]));
     expect(indexes).toContainEqual({ name: "idx_turns_source_key", unique: 1 });
     expect(db.prepare(`SELECT linear_session_id linearSessionId, prompt, status,
       usage_input_tokens inputTokens, usage_output_tokens outputTokens,
       usage_cache_creation_tokens cacheCreationTokens, usage_cache_read_tokens cacheReadTokens,
-      cost_usd costUsd, model FROM turns WHERE id=1`).get()).toEqual({
+      cost_usd costUsd, model, trace_id traceId FROM turns WHERE id=1`).get()).toEqual({
       linearSessionId: "old-session", prompt: "old prompt", status: "done",
       inputTokens: null, outputTokens: null, cacheCreationTokens: null, cacheReadTokens: null,
-      costUsd: null, model: null,
+      costUsd: null, model: null, traceId: null,
     });
     db.close();
     log.close();

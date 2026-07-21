@@ -125,6 +125,22 @@ describe("runTurn", () => {
     const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { env: Record<string, string> };
     expect(row.env.ENABLE_TOOL_SEARCH).toBe("true");
   });
+  it("admits TRACEPARENT only from the per-call environment", async () => {
+    const dir = cwd(); const extraFile = join(dir, "extra-env.jsonl"); const processFile = join(dir, "process-env.jsonl");
+    const oldTraceparent = process.env.TRACEPARENT;
+    process.env.TRACEPARENT = `00-${"1".repeat(32)}-${"2".repeat(16)}-01`;
+    try {
+      await runTurn(options({ cwd: dir, env: { CLAUDE_FAKE_ENV_FILE: extraFile,
+        TRACEPARENT: `00-${"a".repeat(32)}-${"b".repeat(16)}-01` } }));
+      const extra = JSON.parse(readFileSync(extraFile, "utf8").trim()) as { env: Record<string, string> };
+      expect(extra.env.TRACEPARENT).toBe(`00-${"a".repeat(32)}-${"b".repeat(16)}-01`);
+      await runTurn(options({ cwd: dir, env: { CLAUDE_FAKE_ENV_FILE: processFile } }));
+      const inherited = JSON.parse(readFileSync(processFile, "utf8").trim()) as { env: Record<string, string> };
+      expect(inherited.env.TRACEPARENT).toBeUndefined();
+    } finally {
+      if (oldTraceparent === undefined) delete process.env.TRACEPARENT; else process.env.TRACEPARENT = oldTraceparent;
+    }
+  });
   it("drains noisy stderr and returns a bounded tail on failure", async () => {
     const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: "stderr-fail" } }));
     expect(result.ok).toBe(false);

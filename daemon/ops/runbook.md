@@ -148,9 +148,53 @@ otherwise exporter defaults can repeatedly send unsupported signals to Langfuse'
 endpoints. `OTEL_EXPORTER_OTLP_HEADERS` is secret material: keep it only in the mode-0600
 env file, never in argv or logs. With this configuration, prompts, tool details, and
 span-carried identity attributes (`user.email`, `user.id`, and `organization.id`) leave the
-VM for Langfuse Cloud. Assistant responses are currently log-only in Claude Code and do not
-reach Langfuse, even though the response flag remains enabled for forward compatibility.
-Restart `linear-agent-daemon` after changing any of these values.
+VM for Langfuse Cloud. The daemon also re-exports each assistant response over a second
+channel, in the `daemon.assistant_response` span's `response.content` attribute. Restart
+`linear-agent-daemon` after changing any of these values.
+
+### Codex telemetry
+
+Codex tracing is opt-in during provisioning. Pass the full traces endpoint (including
+`/v1/traces`), which is deliberately different from Claude's base OTLP endpoint above:
+
+```bash
+sudo CODEX_OTEL_ENDPOINT=https://us.cloud.langfuse.com/api/public/otel/v1/traces \
+  DAEMON_HOST=linear-agent.example.com ops/provision.sh "$PWD"
+```
+
+The provisioner owns only the `[otel]` section of
+`/var/lib/linear-agent-daemon/.codex/config.toml`, preserves all other Codex settings,
+validates the result as TOML, and installs it mode `0600` for `linear-daemon`. It manages:
+
+```toml
+[otel]
+environment = "prod"
+log_user_prompt = true
+trace_exporter = { otlp-http = { endpoint = "https://us.cloud.langfuse.com/api/public/otel/v1/traces", protocol = "binary" } }
+```
+
+The config is secret-free. Codex's exporter reads authorization from the same
+`OTEL_EXPORTER_OTLP_HEADERS` / `OTEL_EXPORTER_OTLP_TRACES_HEADERS` values in the daemon's
+mode-`0600` env file; those values flow through Claude's Bash subprocess environment. Do
+not put the authorization header in `config.toml`. For clarity: Claude receives the base
+`https://…/api/public/otel` endpoint and appends the signal path, while Codex requires the
+full `https://…/api/public/otel/v1/traces` path in its managed config.
+
+The recorded phase-3 `traceparent-experiment.md` proves Codex 0.144.6 continues an inbound
+W3C `TRACEPARENT`. The daemon mints and stores one trace context per turn; Claude's
+interaction and Bash tool spans, then each Bash-dispatched `codex exec`, continue that same
+trace. A Codex root span's `parentSpanId` joins it one-to-one to its Claude Bash tool span;
+the tool detail supplies the role while the Codex subtree supplies start/end timestamps and
+per-dispatch token attributes. Those fields make the run Gantt constructible from one trace.
+
+After persisting terminal turn state, the daemon asynchronously posts `daemon.turn` and,
+when response text exists, its child `daemon.assistant_response` to that trace. Collector
+failures never change turn status; investigate the body-free
+`telemetry_span_post_failed` journal event. Codex currently emits verbose infrastructure
+spans (often hundreds per run), so measure Langfuse unit consumption against the Hobby
+allowance of 50,000 units/month during the first week. Codex OTel metrics remain unavailable
+because of the upstream `openai/codex#12913` gap; SQLite and the existing harvest remain the
+accounting source.
 
 The daemon requests 30-day client-credentials app tokens with
 `read,write,app:assignable,app:mentionable,admin` and persists their expiry in SQLite. It

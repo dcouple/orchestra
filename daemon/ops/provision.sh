@@ -220,7 +220,7 @@ if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
   chmod 0755 /usr/local/bin/pnpm
 fi
 
-CODEX_VERSION="0.144.5"
+CODEX_VERSION="0.144.6"
 if ! command -v codex >/dev/null || [[ "$(codex --version)" != *"${CODEX_VERSION}"* ]]; then
   env PNPM_HOME=/opt/pnpm PATH="/opt/pnpm/bin:${PATH}" \
     pnpm add --global "@openai/codex@${CODEX_VERSION}"
@@ -236,6 +236,55 @@ if ! command -v playwright-mcp >/dev/null || [[ "$(playwright-mcp --version)" !=
 fi
 printf '#!/bin/sh\nexec /opt/pnpm/bin/playwright-mcp "$@"\n' > /usr/local/bin/playwright-mcp
 chmod 0755 /usr/local/bin/playwright-mcp
+
+if [[ -n "${CODEX_OTEL_ENDPOINT:-}" ]]; then
+  CODEX_OTEL_ENDPOINT_PATTERN='^https://[A-Za-z0-9._~:/?&=%+-]+$'
+  if [[ ! "${CODEX_OTEL_ENDPOINT}" =~ ${CODEX_OTEL_ENDPOINT_PATTERN} ]]; then
+    echo "invalid CODEX_OTEL_ENDPOINT: require one https:// URL line without whitespace, quotes, backslashes, or TOML metacharacters" >&2
+    exit 1
+  fi
+  CODEX_CONFIG_DIR="/var/lib/linear-agent-daemon/.codex"
+  CODEX_CONFIG_PATH="${CODEX_CONFIG_DIR}/config.toml"
+  install -d -o linear-daemon -g linear-daemon -m 0750 "${CODEX_CONFIG_DIR}"
+  CODEX_CONFIG_TMP="$(mktemp "${CODEX_CONFIG_DIR}/config.toml.XXXXXX")"
+  trap 'rm -f "${CODEX_CONFIG_TMP}"' EXIT
+  python3 - "${CODEX_CONFIG_PATH}" "${CODEX_CONFIG_TMP}" "${CODEX_OTEL_ENDPOINT}" <<'PY'
+import pathlib
+import re
+import sys
+
+source_path = pathlib.Path(sys.argv[1])
+target_path = pathlib.Path(sys.argv[2])
+endpoint = sys.argv[3]
+source = source_path.read_text() if source_path.exists() else ""
+managed = (
+    '[otel]\n'
+    'environment = "prod"\n'
+    'log_user_prompt = true\n'
+    f'trace_exporter = {{ otlp-http = {{ endpoint = "{endpoint}", protocol = "binary" }} }}\n'
+)
+lines = source.splitlines(keepends=True)
+start = next((index for index, line in enumerate(lines) if re.match(r"^\s*\[otel\]\s*(?:#.*)?$", line.rstrip("\r\n"))), None)
+if start is None:
+    separator = "" if not source or source.endswith(("\n", "\r")) else "\n"
+    updated = source + separator + managed
+else:
+    end = next((index for index in range(start + 1, len(lines))
+                if re.match(r"^\s*\[\[?[^]]+\]\]?\s*(?:#.*)?$", lines[index].rstrip("\r\n"))), len(lines))
+    updated = "".join(lines[:start]) + managed + "".join(lines[end:])
+target_path.write_text(updated)
+PY
+  if ! python3 -c 'import pathlib, sys, tomllib; tomllib.loads(pathlib.Path(sys.argv[1]).read_text())' "${CODEX_CONFIG_TMP}"; then
+    echo "generated Codex config is invalid TOML; existing config left unchanged" >&2
+    exit 1
+  fi
+  if [[ ! -f "${CODEX_CONFIG_PATH}" ]] || ! cmp -s "${CODEX_CONFIG_TMP}" "${CODEX_CONFIG_PATH}"; then
+    install -o linear-daemon -g linear-daemon -m 0600 "${CODEX_CONFIG_TMP}" "${CODEX_CONFIG_PATH}"
+  fi
+  chown linear-daemon:linear-daemon "${CODEX_CONFIG_PATH}"
+  chmod 0600 "${CODEX_CONFIG_PATH}"
+  rm -f "${CODEX_CONFIG_TMP}"; trap - EXIT
+fi
 
 if [[ "${INSTALL_ANDROID:-0}" == "1" ]]; then
   ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-35}"
