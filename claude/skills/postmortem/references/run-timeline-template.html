@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- Run-timeline template — fill the RUN object at the top of the script;
+     everything else (stats, axis, chart height, table) derives from it.
+     Render to PNG with render-timeline.sh in this directory. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Run timeline</title>
+<style>
+:root{--page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--blue:#2a78d6;--orange:#eb6834;--aqua:#1baf7a;--violet:#7b5bd6;--critical:#d03b3b;--phase:#cde2fb;--gap:#f8dddd;--border:rgba(11,11,11,.10)}
+@media(prefers-color-scheme:dark){:root{--page:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--blue:#3987e5;--orange:#d95926;--aqua:#199e70;--violet:#8f73e0;--critical:#d03b3b;--phase:#182b43;--gap:#3d1d1d;--border:rgba(255,255,255,.10)}}
+*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.viz-root{width:1600px;margin:0 auto;padding:34px 42px 38px}.head{display:flex;justify-content:space-between;gap:32px;align-items:flex-start;margin-bottom:20px}.eyebrow{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}.title{font-size:30px;line-height:1.15;margin:6px 0 7px;letter-spacing:-.02em}.sub{font-size:16px;color:var(--ink2);max-width:930px;line-height:1.45}.stats{display:flex;gap:10px}.stat{min-width:135px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px}.stat b{display:block;font-size:23px;font-weight:700}.stat span{font-size:12px;color:var(--muted)}.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 18px 14px;box-shadow:0 1px 0 var(--border)}svg{display:block;width:100%;height:auto}.legend{display:flex;gap:20px;align-items:center;margin:0 4px 12px;color:var(--ink2);font-size:13px}.key{display:inline-flex;gap:7px;align-items:center}.sw{width:18px;height:8px;border-radius:4px}.sw.blue{background:var(--blue)}.sw.orange{background:var(--orange)}.sw.aqua{background:var(--aqua)}.sw.violet{background:var(--violet)}.sw.gap{background:var(--gap);border:1px solid var(--critical)}.note{margin:12px 3px 0;color:var(--ink2);font-size:13px;line-height:1.45}.table-wrap{margin-top:18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}.table-title{padding:13px 16px;border-bottom:1px solid var(--grid);font-weight:700;font-size:14px}table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--grid)}th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}tr:last-child td{border-bottom:0}.right{text-align:right}.pill{display:inline-block;padding:2px 7px;border-radius:999px;background:var(--phase);color:var(--ink2)}.tooltip{position:fixed;pointer-events:none;opacity:0;background:var(--ink);color:var(--surface);padding:8px 10px;border-radius:7px;font-size:12px;line-height:1.4;z-index:10;max-width:280px;transition:opacity .08s}.bar{cursor:default}.bar:focus{outline:none;stroke:var(--ink);stroke-width:3px}@media(max-width:1600px){.viz-root{width:100%}}
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <div class="head">
+    <div><div class="eyebrow" id="eyebrow"></div><h1 class="title" id="title"></h1><div class="sub" id="sub"></div></div>
+    <div class="stats" id="stats"></div>
+  </div>
+  <div class="card">
+    <div class="legend"><span class="key"><i class="sw blue"></i>Review / verify</span><span class="key"><i class="sw orange"></i>Implement</span><span class="key"><i class="sw aqua"></i>QA</span><span class="key"><i class="sw violet"></i>Research</span><span class="key"><i class="sw gap"></i>Idle / stall</span></div>
+    <svg id="gantt" role="img" aria-labelledby="chart-title chart-desc"><title id="chart-title">Run timeline</title><desc id="chart-desc">Gantt chart of the run: phase bands, one bar per dispatch, hatched bands for idle stalls.</desc></svg>
+    <div class="note"><strong>Reading the chart:</strong> pale vertical bands are pipeline phases; colored bars are exact dispatch runtimes with token labels, so color is never the only identity channel. Hatched red bands are not model runtime — they are the run sitting idle.</div>
+  </div>
+  <div class="table-wrap"><div class="table-title">Exact dispatch record</div><table><thead><tr><th>Dispatch</th><th>Start</th><th>End</th><th>Duration</th><th class="right">Tokens</th><th>Yield</th></tr></thead><tbody id="rows"></tbody></table></div>
+</div>
+<div id="tip" class="tooltip" role="tooltip"></div>
+<script>
+// ── REPLACE this RUN object with the run's data (ISO-8601 UTC timestamps).
+//    kinds: review | implement | qa | research. tokens may be null (renders "unknown").
+//    gaps: idle stalls only — never productive background waits.
+const RUN={
+ meta:{eyebrow:'<item> · /do operations · UTC',
+       title:'<span> run: <one-line verdict>',
+       sub:'<two-sentence narrative of where the time went>',
+       stats:[{b:'<active span>',s:'agent-active · <pct>%'},
+              {b:'<idle span>',s:'human-idle · <pct>%'},
+              {b:'<n>',s:'sub-agent tokens'}]},
+ start:'2026-01-01T00:00:00Z', end:'2026-01-01T01:00:00Z',
+ phases:[['Plan','2026-01-01T00:00:00Z','2026-01-01T00:20:00Z'],
+         ['Implement','2026-01-01T00:20:00Z','2026-01-01T00:40:00Z'],
+         ['Wrap-up','2026-01-01T00:40:00Z','2026-01-01T01:00:00Z']],
+ jobs:[{name:'Plan reviewer',kind:'review',start:'2026-01-01T00:05:00Z',end:'2026-01-01T00:07:00Z',tokens:33242,yield:'4 findings'}],
+ gaps:[{start:'2026-01-01T00:45:00Z',end:'2026-01-01T00:50:00Z',label:'idle — waited for a human nudge'}]
+};
+// ── Everything below derives from RUN; edit only for a deliberate design change.
+const START=Date.parse(RUN.start), END=Date.parse(RUN.end), SPAN=END-START;
+document.getElementById('eyebrow').textContent=RUN.meta.eyebrow;
+document.getElementById('title').textContent=RUN.meta.title;
+document.getElementById('sub').textContent=RUN.meta.sub;
+document.getElementById('stats').innerHTML=RUN.meta.stats.map(s=>`<div class="stat"><b>${s.b}</b><span>${s.s}</span></div>`).join('');
+const svg=document.getElementById('gantt'), NS='http://www.w3.org/2000/svg', tip=document.getElementById('tip');
+const W=1480,L=245,R=32,T=76,B=48,rowH=49,plotW=W-L-R;
+const H=T+54+RUN.jobs.length*rowH+B+10; svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const x=t=>L+(Date.parse(t)-START)/SPAN*plotW;
+const el=(tag,attrs={},text='')=>{const n=document.createElementNS(NS,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;return n};
+const defs=el('defs'); const pat=el('pattern',{id:'hatch',width:8,height:8,patternUnits:'userSpaceOnUse',patternTransform:'rotate(45)'});pat.append(el('rect',{width:8,height:8,fill:css('--gap')}));pat.append(el('line',{x1:0,y1:0,x2:0,y2:8,stroke:css('--critical'),'stroke-width':2}));defs.append(pat);svg.append(defs);
+// phase bands
+RUN.phases.forEach((p,i)=>{const px=x(p[1]),pw=x(p[2])-px;svg.append(el('rect',{x:px,y:T-28,width:pw,height:H-T-B+28,fill:i%2?css('--surface'):css('--phase'),opacity:i%2?.55:.72}));svg.append(el('text',{x:px+8,y:T-38,fill:css('--muted'),'font-size':11,'font-weight':700},p[0].toUpperCase()));});
+// grid and time ticks (~10 ticks, snapped to 1/5/10/15/30/60 min)
+const stepMin=[1,5,10,15,30,60,120].find(s=>SPAN/(s*60000)<=12)||240;
+for(let tm=START;tm<=END;tm+=stepMin*60000){const px=L+(tm-START)/SPAN*plotW;svg.append(el('line',{x1:px,y1:T-28,x2:px,y2:H-B,stroke:css('--grid'),'stroke-width':1}));svg.append(el('text',{x:px,y:H-18,fill:css('--muted'),'font-size':11,'text-anchor':'middle'},new Date(tm).toISOString().slice(11,16)));}
+// overseer row: active spans interleaved with hatched gap bands
+svg.append(el('text',{x:12,y:T+18,fill:css('--ink'),'font-size':13,'font-weight':700},'Overseer / main loop'));
+const cuts=[RUN.start,...RUN.gaps.flatMap(g=>[g.start,g.end]),RUN.end];
+for(let i=0;i<cuts.length-1;i+=2){svg.append(el('rect',{class:'bar',tabindex:0,x:x(cuts[i]),y:T,width:Math.max(0,x(cuts[i+1])-x(cuts[i])),height:18,rx:4,fill:css('--blue'),'data-tip':'Agent-active'}));}
+RUN.gaps.forEach(g=>{const gx0=x(g.start),gw=x(g.end)-gx0;svg.append(el('rect',{x:gx0,y:T,width:gw,height:18,fill:'url(#hatch)',stroke:css('--critical'),'stroke-width':1,'data-tip':`${g.label} · ${duration(g.start,g.end)}`}));svg.append(el('text',{x:gx0+6,y:T+14,fill:css('--critical'),'font-size':10,'font-weight':800},`${duration(g.start,g.end)} IDLE`));const gx=(gx0+gx0+gw)/2;svg.append(el('line',{x1:gx,y1:T+23,x2:gx,y2:T+45,stroke:css('--critical'),'stroke-width':2}));svg.append(el('text',{x:gx,y:T+51,fill:css('--critical'),'font-size':11,'font-weight':700,'text-anchor':'middle'},g.label));});
+// dispatch rows
+const color=k=>k==='implement'?css('--orange'):k==='qa'?css('--aqua'):k==='research'?css('--violet'):css('--blue');
+RUN.jobs.forEach((j,i)=>{const y=T+54+i*rowH;svg.append(el('text',{x:12,y:y+15,fill:css('--ink2'),'font-size':12},j.name));const sx=x(j.start),ex=x(j.end),w=Math.max(5,ex-sx);const tok=j.tokens==null?'unknown':j.tokens.toLocaleString();svg.append(el('rect',{class:'bar',tabindex:0,x:sx,y,width:w,height:18,rx:4,fill:color(j.kind),'data-tip':`${j.name}\n${fmt(j.start)}–${fmt(j.end)} UTC · ${duration(j.start,j.end)}\n${tok} tokens · ${j.yield}`}));svg.append(el('text',{x:ex+6,y:y+14,fill:css('--ink2'),'font-size':10},`${tok} · ${duration(j.start,j.end)}`));});
+// hover/focus tooltips
+svg.querySelectorAll('[data-tip]').forEach(n=>{const show=e=>{tip.textContent=n.dataset.tip;tip.style.opacity=1;tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY+12)+'px'};n.addEventListener('mousemove',show);n.addEventListener('mouseenter',show);n.addEventListener('mouseleave',()=>tip.style.opacity=0);n.addEventListener('focus',()=>{const b=n.getBoundingClientRect();show({clientX:b.left+b.width/2,clientY:b.top})});n.addEventListener('blur',()=>tip.style.opacity=0)});
+function fmt(s){return new Date(s).toISOString().slice(11,19)}
+function duration(a,b){const sec=Math.round((Date.parse(b)-Date.parse(a))/1000);return sec>=60?`${Math.floor(sec/60)}m${String(sec%60).padStart(2,'0')}s`:`${sec}s`}
+// accessible table
+const tbody=document.getElementById('rows');RUN.jobs.forEach(j=>{const tr=document.createElement('tr');tr.innerHTML=`<td><span class="pill">${j.name}</span></td><td>${fmt(j.start)}</td><td>${fmt(j.end)}</td><td>${duration(j.start,j.end)}</td><td class="right">${j.tokens==null?'unknown':j.tokens.toLocaleString()}</td><td>${j.yield}</td>`;tbody.append(tr)});
+</script>
+</body>
+</html>
