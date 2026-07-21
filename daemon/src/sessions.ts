@@ -120,7 +120,12 @@ export class SessionWorker {
     const worktree = await this.worktrees.ensureWorktree(identifier);
     this.log.updateSessionWorktree(turn.linearSessionId, worktree.path, worktree.branch, this.now());
     const implementer = session.mode === "implementer";
-    const resuming = turn.kind === "prompted" && !!session.claudeSessionId;
+    const runtimeDegraded = session.runtime === "claudex" && !this.config.claudexArgv;
+    const runtime = runtimeDegraded ? "claude" : session.runtime;
+    if (runtimeDegraded) this.logger.error(jsonLog({ event: "session_runtime_degraded", turnId: turn.id,
+      linearSessionId: turn.linearSessionId, configuredRuntime: "claudex", effectiveRuntime: "claude",
+      reason: "CLAUDEX_BIN is not configured" }));
+    const resuming = turn.kind === "prompted" && !!session.claudeSessionId && !runtimeDegraded;
     let prompt = implementer && !resuming ? `/do ${identifier}` : this.composePrompt(turn, identifier);
     if ((!implementer || resuming) && this.config.attachmentsEnabled) prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
     this.log.setTurnPrompt(turn.id, prompt);
@@ -147,18 +152,17 @@ export class SessionWorker {
       onEvent: (event: ClaudeEvent) => progress.push(event.type === "text"
         ? { type: "thought", body: event.text } : toolUseContent(event)),
     };
-    const runtime = session.runtime;
-    const runtimeArgv = runtime === "claudex" ? this.config.claudexArgv : this.config.claudeArgv;
-    if (!runtimeArgv) throw new Error("Claudex runtime is active but CLAUDEX_BIN is not configured");
+    const runtimeArgv = runtime === "claudex" ? this.config.claudexArgv! : this.config.claudeArgv;
+    const cleanupRejectedRun = async (error: unknown): Promise<never> => {
+      clearInterval(keepalive);
+      await progress.cancelAndWait();
+      throw error;
+    };
     let result = await runTurn({ ...common, prompt,
         ...(resuming ? { resumeSessionId: session.claudeSessionId! } : {}), argv: runtimeArgv,
         ...(runtime === "claudex" && this.config.claudexEnv ? { trustedEnv: this.config.claudexEnv } : {}),
-        onSessionId: id => this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()),
-      }).catch(async error => {
-        clearInterval(keepalive);
-        await progress.cancelAndWait();
-        throw error;
-      });
+        onSessionId: id => { if (!runtimeDegraded) this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()); },
+      }).catch(cleanupRejectedRun);
     let fallbackCause: string | undefined;
     let fallbackAttempted = false;
     if (!result.ok && result.capacityEvidence.length && runtime === "claude")
@@ -177,7 +181,7 @@ export class SessionWorker {
       const fallbackResult = await runTurn({ ...common, prompt: retryPrompt, argv: this.config.claudexArgv,
         ...(this.config.claudexEnv ? { trustedEnv: this.config.claudexEnv } : {}),
         onSessionId: id => { fallbackSessionId = id; },
-      });
+      }).catch(cleanupRejectedRun);
       result = fallbackResult;
       if (fallbackResult.ok && !this.stopRequested.has(turn.id))
         this.log.recordRuntimeFallback(turn.linearSessionId, fallbackSessionId, fallbackCause, this.now());

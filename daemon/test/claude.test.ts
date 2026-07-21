@@ -47,6 +47,11 @@ describe("runTurn", () => {
     const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: "api-retry-recovered" } }));
     expect(result.ok).toBe(true); expect(result.capacityEvidence).toContain("api_retry:overloaded");
   });
+  it("does not classify generic API result errors as capacity", async () => {
+    const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: "non-capacity-api-error" } }));
+    expect(result).toMatchObject({ ok: false, sawResult: true, exitCode: 1 });
+    expect(result.capacityEvidence).toEqual([]);
+  });
   it("classifies ENOENT and abort signal death", async () => {
     expect(await runTurn(options({ argv: ["/missing/claude"] }))).toMatchObject({ ok: false, sawResult: false });
     const controller = new AbortController();

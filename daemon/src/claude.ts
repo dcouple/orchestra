@@ -68,7 +68,6 @@ function collectCapacityEvidence(event: Record<string, unknown>, evidence: Set<s
       const type = record(raw)?.type;
       if (type === "rate_limit_error" || type === "overloaded_error") evidence.add(`result:${type}`);
     }
-    if (event.subtype === "api_error" || event.terminal_reason === "api_error") evidence.add("result:api_error");
   }
   if (event.type === "assistant" && event.error === "rate_limit") evidence.add("assistant:rate_limit");
 }
