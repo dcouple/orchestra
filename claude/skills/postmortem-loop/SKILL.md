@@ -59,7 +59,8 @@ without it.
 ### 4. Apply
 Make each approved cluster's edit in the canonical file, worded per the
 repo's conventions (concise positive rules; evidence and rationale go in
-the commit message). One commit per cluster
+the commit message). A cluster that is environment knowledge rather than a
+rule change lands in `references/known-issues/` (see its README). One commit per cluster
 (`skills: <what changed> (postmortem adoption)`); one PR for the sweep via
 the normal branch flow.
 

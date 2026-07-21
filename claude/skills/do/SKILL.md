@@ -241,8 +241,9 @@ Known mismatches with how the plan resolves it — and record what you
 imported or dropped in the plan's Reconciliation notes.
 
 Research beyond that as the item actually needs — you judge. A change
-touching Windows-runner CI reads `.references/ci-windows-runners.md` at
-plan time and carries it into the implementer dispatch. If the item
+touching an environment listed in `.references/known-issues/` (e.g.
+Windows-runner CI) reads the matching page at plan time and carries it
+into the implementer dispatch. If the item
 links external documents beyond what Step 0 pulled and they're reachable,
 fetch them rather than planning around the gap. Then write
 `./tmp/<id>/plan.md` following this skill's `references/implementation-plan.md` —

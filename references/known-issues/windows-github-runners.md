@@ -1,8 +1,7 @@
-# CI on Windows GitHub runners — known issues
+# CI on Windows GitHub runners
 
-Read at plan time by any run whose CI touches `windows-latest`, and carried
-into the implementer dispatch. These are runner-environment facts, not
-project bugs; each one re-derived live costs a full CI round-trip.
+Environment facts for `windows-latest` GitHub runners — consult per this
+directory's README; each fact re-derived live costs a full CI round-trip.
 
 - **corepack is unusable.** The hosted toolcache shim shadows npm-prefix
   installs, and stale bundled signing keys fail with `Cannot find matching
