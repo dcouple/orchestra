@@ -1,8 +1,8 @@
 # Linear agent daemon provisioning and operations
 
 Provisioning and OAuth registration are human-controlled deploy gates. Do not run this
-runbook from an automated agent. Real Linear, Claude, and systemd acceptance is not closed
-until the live smoke checks below are captured.
+runbook from an automated agent. Real Linear, Claude Code through CLIProxyAPI, and systemd
+acceptance is not closed until the live smoke checks below are captured.
 
 ## Host and DNS
 
@@ -26,12 +26,14 @@ Copy this `daemon/` directory to the host, then run the idempotent provisioner a
 
 ```bash
 cd daemon
-bash -n ops/provision.sh
+bash -n ops/provision.sh ops/claudex
 sudo DAEMON_HOST=linear-agent.example.com ops/provision.sh "$PWD"
 ```
 
-It installs Node 22, pnpm 11.8, Git, pinned GitHub CLI and Codex CLI releases, Claude Code, Caddy, UFW, the dedicated `linear-daemon` user, and the
-systemd unit. It also installs the `sqlite3` CLI used by the smoke checks. It deploys with
+It installs Node 22, pnpm 11.8, Git, pinned GitHub CLI, Codex CLI, and CLIProxyAPI releases,
+the Claude Code harness, a real `claudex` executable, Caddy, UFW, the dedicated
+`linear-daemon` user, and the daemon/proxy systemd units. It also installs the `sqlite3` CLI
+used by the smoke checks. It deploys with
 `pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod`. Caddy terminates TLS,
 enforces a 1 MB request-body cap, and proxies only to the daemon's loopback listener.
 
@@ -40,8 +42,9 @@ for NodeSource and pnpm so the script remains runnable on a clean host. Before p
 use, fetch the scripts once, review and pin their checksums in your deployment notes where
 practical, and rely on the pinned pnpm version plus `pnpm install --frozen-lockfile` for the
 application dependency graph. Caddy packages are installed from the signed Cloudsmith apt
-repository. The Claude native installer is another vendor `curl | bash` path: review and
-checksum the downloaded installer before production provisioning when practical.
+repository. CLIProxyAPI is pinned by release and SHA-256 for both supported architectures.
+The Claude native installer is another vendor `curl | bash` path: review and checksum the
+downloaded installer before production provisioning when practical.
 
 The default firewall permits only SSH and HTTPS. Linear currently publishes these webhook
 source IPs: `35.231.147.226`, `35.243.134.228`, `34.140.253.14`, `34.38.87.206`,
@@ -96,7 +99,7 @@ SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/bloom-mono
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
 LINEAR_API_KEY=...
-CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
+CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_MAX_TURNS=100
 DO_PERMISSION_MODE=bypassPermissions
@@ -150,16 +153,39 @@ sudo chmod 600 /var/lib/linear-agent-daemon/.git-credentials
 ```
 
 Use a fine-grained PAT or GitHub App installation token limited to the target repository.
-The `read -s` flow keeps the token out of shell history and process argv. Install the
-dedicated Anthropic credential as `linear-daemon` using the current Claude Code headless
-authentication procedure, and put the scoped `LINEAR_API_KEY` only in the mode-0600 env
-file. Confirm `sudo -u linear-daemon -H claude --version` and that `git remote -v` is HTTPS.
-The target repository must contain its own `AGENTS.md` work-item tracker configuration; the
-daemon guarantees `/do` runs on its required non-default `agents/<identifier>` branch.
+The `read -s` flow keeps the token out of shell history and process argv. The provisioner
+installs the Claude Code harness but does not authenticate it with Anthropic. Instead, it
+creates a loopback-only CLIProxyAPI service and a `claudex` executable that routes the
+harness and every subagent through GPT-5.6 Sol via OpenAI Codex OAuth. The main loop uses
+high reasoning; Claude model pins map to low, medium, or xhigh proxy aliases, and Claude Code
+compacts against a 250k context budget. The proxy API key is generated once in
+`/etc/linear-agent-daemon/cliproxyapi.env`; do not copy it into the main daemon env file.
 
-Authenticate GitHub and Codex for the service user, then verify them from the systemd user
-context. Use only the repository-scoped bot token. `GH_TOKEN`/`GITHUB_TOKEN` may instead be
-placed in the mode-0600 env file and is passed to `/do` without webhook/OAuth secrets.
+Complete the one-time Codex OAuth flow as `linear-daemon`. On a headless host, open the
+printed URL on another device and paste the resulting callback URL or authorization code as
+prompted. Credentials must land under the service user's HOME:
+
+```bash
+sudo -u linear-daemon -H /usr/local/bin/cliproxyapi \
+  -config /etc/linear-agent-daemon/cliproxyapi.yaml \
+  --codex-login --no-browser
+sudo -u linear-daemon -H sh -c \
+  'test -n "$(find "$HOME/.cli-proxy-api" -maxdepth 1 -name "codex-*.json" -print -quit)"'
+sudo systemctl restart cliproxyapi linear-agent-daemon
+sudo -u linear-daemon -H /var/lib/linear-agent-daemon/.local/bin/claudex \
+  -p "Reply with exactly: claudex works."
+```
+
+The final command must return exactly `claudex works.`. A warning that claude.ai connectors
+are disabled is expected because the local proxy token replaces Claude authentication for
+that process. Confirm that `git remote -v` is HTTPS. The target repository must contain its
+own `AGENTS.md` work-item tracker configuration; the daemon guarantees `/do` runs on its
+required non-default `agents/<identifier>` branch.
+
+Authenticate GitHub and the standalone Codex CLI for the service user, then verify them from
+the systemd user context. Use only the repository-scoped bot token.
+`GH_TOKEN`/`GITHUB_TOKEN` may instead be placed in the mode-0600 env file and is passed to
+`/do` without webhook/OAuth secrets.
 
 ```bash
 sudo -u linear-daemon -H gh auth login --git-protocol https
@@ -173,18 +199,36 @@ sudo -u linear-daemon -H gh pr create --repo dcouple/bloom-mono --draft --fill -
 ## Host checks
 
 ```bash
-cd /opt/linear-agent-daemon && bash -n ops/provision.sh
-sudo systemd-analyze verify /etc/systemd/system/linear-agent-daemon.service
+cd /opt/linear-agent-daemon && bash -n ops/provision.sh ops/claudex
+sudo systemd-analyze verify \
+  /etc/systemd/system/cliproxyapi.service \
+  /etc/systemd/system/linear-agent-daemon.service
 sudo caddy validate --config /etc/caddy/Caddyfile
 sudo ufw status verbose
 sshd -T | grep -i passwordauthentication
-sudo stat -c '%a %U %G' /etc/linear-agent-daemon/env
-sudo ss -ltnp | grep -E ':(443|8787) '
-systemctl status linear-agent-daemon caddy
+sudo stat -c '%a %U %G' \
+  /etc/linear-agent-daemon/env \
+  /etc/linear-agent-daemon/cliproxyapi.env \
+  /etc/linear-agent-daemon/cliproxyapi.yaml
+sudo ss -ltnp | grep -E ':(443|8317|8787) '
+systemctl status cliproxyapi linear-agent-daemon caddy
 ```
 
-Expected: env mode/owner `600 linear-daemon linear-daemon`, port 8787 on `127.0.0.1`
-only, Caddy on 443, password authentication `no`, and both services active.
+Expected: the daemon env is `600 linear-daemon linear-daemon`; proxy secret/config files are
+`640 root linear-daemon`; ports 8317 and 8787 listen on `127.0.0.1` only; Caddy listens on
+443; password authentication is `no`; and all three services are active. Verify the proxy's
+model inventory without exposing its key in process argv:
+
+```bash
+sudo -u linear-daemon -H sh -c '. /etc/linear-agent-daemon/cliproxyapi.env
+  printf "header = \\"Authorization: Bearer %s\\"\\n" "${CLIPROXY_API_KEY}" \
+    | curl -fsS -K - http://127.0.0.1:8317/v1/models \
+    | python3 -m json.tool' | grep -F 'gpt-5.6-sol'
+```
+
+The inventory should include `gpt-5.6-sol` plus the `-low`, `-medium`, and `-xhigh`
+aliases. An empty `data` array means the Codex OAuth flow did not complete for
+`linear-daemon`.
 
 The SQLite database is secret material because it stores raw webhook payloads and OAuth
 access tokens. Keep `/var/lib/linear-agent-daemon` owned by `linear-daemon:linear-daemon`
@@ -321,19 +365,25 @@ artifact path. Do not run the emulator smoke from an automated implementation ag
 | Two OAuth client IDs/secrets | 1 / `linear-daemon` | env, `0600` | Agent scopes only | Rotate secret or revoke app; update and restart |
 | SQLite event/token database | 1 / `linear-daemon` | `/var/lib/linear-agent-daemon/events.db*`, `0600`/dir `0750` | Raw payloads and OAuth access tokens | Encrypt backups; delete per retention; revoke OAuth apps if exposed |
 | Bot git/gh identity + HTTPS credential | 2–3 / `linear-daemon` | `~/.gitconfig`, `~/.git-credentials` or env, `0600` | One repository, least privilege | Revoke PAT/App token and replace |
-| Codex authentication | 3 / `linear-daemon` | provider config under service HOME, `0600` | Dedicated bot project | Revoke provider token, replace |
+| Standalone Codex CLI authentication | 3 / `linear-daemon` | provider config under service HOME, `0600` | Dedicated bot project | Revoke provider token, replace |
+| CLIProxyAPI Codex OAuth | 2 / `linear-daemon` | `~/.cli-proxy-api/codex-*.json`, `0600` | Dedicated ChatGPT/Codex account | Revoke OpenAI authorization, rerun `--codex-login` |
+| CLIProxyAPI local API key | 2 / root + `linear-daemon` group | `/etc/linear-agent-daemon/cliproxyapi.env` and `.yaml`, `0640` | Loopback proxy only | Stop services, replace env value, rerun provisioner, restart |
 | `LINEAR_API_KEY` for spawned sessions | 2 / `linear-daemon` | env, `0600` | Scoped bot access | Revoke in Linear, replace env |
-| Anthropic authentication | 2 / `linear-daemon` | provider config, `0600` | Dedicated bot billing/project | Revoke provider token, replace |
 
-Never install personal credentials on the host. The latter three credentials are inventory
-only in phase 1 and are not installed until their owning phases.
+Never install personal credentials on the host. These credentials are inventory only in phase
+1 and are not installed until their owning phases.
 
 ## Logs and recovery
 
 ```bash
 journalctl -u linear-agent-daemon -f
+journalctl -u cliproxyapi --since today
 journalctl -u caddy --since today
 ```
+
+The daemon orders itself after CLIProxyAPI and wants it started, but does not stop when the
+proxy briefly restarts. This keeps webhook ingestion online; any in-flight Claude turn that
+fails during the outage is recorded normally and can be resumed after the proxy recovers.
 
 Logs contain delivery/session/issue IDs but no raw webhook bodies or tokens. Back up
 `/var/lib/linear-agent-daemon/events.db` using SQLite's backup mechanism. The service uses

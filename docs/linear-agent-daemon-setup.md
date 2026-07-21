@@ -24,8 +24,9 @@ either agent resume the same Claude session.
 - Admin access to the Linear workspace where the agents will live.
 - A GitHub bot identity with a fine-grained PAT scoped to the target
   repository (contents + pull-requests write).
-- Anthropic (Claude Code) and OpenAI (Codex CLI) accounts for the agent
-  sessions to bill against.
+- An OpenAI account with Codex access (ChatGPT Plus/Pro) for both the
+  `claudex` proxy and standalone Codex CLI lanes. The provisioner installs
+  Claude Code as the harness; it does not require Anthropic authentication.
 - A target repository that meets the requirements in
   [Target repository requirements](#target-repository-requirements).
 
@@ -39,10 +40,11 @@ cd daemon
 sudo DAEMON_HOST=linear-agent.example.com ops/provision.sh "$PWD"
 ```
 
-This installs Node 22, pnpm, git, the GitHub and Codex CLIs, Claude Code,
-Caddy (TLS termination, 1 MB body cap, loopback-only proxy to the
-daemon), UFW (SSH + HTTPS only), the dedicated low-privilege
-`linear-daemon` user, and the systemd unit. Follow the **Host and DNS**
+This installs Node 22, pnpm, git, the GitHub and Codex CLIs, the Claude
+Code harness, pinned CLIProxyAPI, a real `claudex` executable, Caddy (TLS
+termination, 1 MB body cap, loopback-only proxy to the daemon), UFW (SSH +
+HTTPS only), the dedicated low-privilege `linear-daemon` user, and both
+systemd units. Follow the **Host and DNS**
 and **Host checks** sections of `daemon/ops/runbook.md` for the SSH
 hardening steps and post-provision verification commands.
 
@@ -140,11 +142,17 @@ commands; the checklist is:
 
 1. Bot git identity + GitHub fine-grained PAT (HTTPS credential store,
    mode 600), verified with a dry-run push and one disposable draft PR.
-2. `claude` authenticated as the service user (headless flow), verified
-   with `sudo -u linear-daemon -H claude --version` and a trivial `-p`
-   turn.
-3. `codex` authenticated, verified with `codex exec --version`.
-4. The Linear API key — only ever in the env file below.
+2. CLIProxyAPI's one-time OpenAI Codex OAuth completed as `linear-daemon`
+   with `--codex-login --no-browser`; credentials must appear under
+   `/var/lib/linear-agent-daemon/.cli-proxy-api/`.
+3. `claudex` verified with a trivial `-p` turn that returns through
+   GPT-5.6 Sol. No Anthropic login is installed on this host.
+4. The standalone `codex` CLI authenticated and verified with
+   `codex exec --version`.
+5. The Linear API key — only ever in the env file below.
+
+The runbook's **Planner credentials and repository** section contains the
+exact OAuth, model-list, and `claudex` smoke commands.
 
 ## 5. Configure and start
 
@@ -167,7 +175,7 @@ LINEAR_API_KEY=...
 SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/<repo>
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
-CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
+CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_MAX_TURNS=100
 DO_PERMISSION_MODE=bypassPermissions
