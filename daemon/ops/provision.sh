@@ -29,6 +29,15 @@ if ! command -v node >/dev/null || [[ "$(node --version)" != v22.* ]]; then
   apt-get install -y nodejs
 fi
 
+# Headless rasterizer for agent sessions (screenshot HTML mock-ups before
+# attaching to Linear): google-chrome --headless=new --no-sandbox --screenshot=…
+if ! command -v google-chrome >/dev/null; then
+  tmp="$(mktemp -d)"
+  curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o "${tmp}/chrome.deb"
+  apt-get install -y "${tmp}/chrome.deb"
+  rm -rf "${tmp}"
+fi
+
 if ! command -v caddy >/dev/null; then
   install -d -m 0755 /usr/share/keyrings
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
@@ -53,6 +62,21 @@ fi
 if [[ ! -x /var/lib/linear-agent-daemon/.local/bin/claude ]]; then
   runuser -u linear-daemon -- env HOME=/var/lib/linear-agent-daemon bash -c \
     'curl -fsSL https://claude.ai/install.sh | bash'
+fi
+
+# The VM is single-purpose isolation; Claude Code's Bash sandbox (whose seccomp
+# filter kills Chrome with SIGSYS) is disabled so sessions behave like a local
+# developer machine and can run headless Chrome, etc.
+if [[ ! -f /var/lib/linear-agent-daemon/.claude/settings.json ]]; then
+  install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/.claude
+  install -o linear-daemon -g linear-daemon -m 0644 /dev/null /var/lib/linear-agent-daemon/.claude/settings.json
+  cat > /var/lib/linear-agent-daemon/.claude/settings.json <<'EOF'
+{
+  "sandbox": {
+    "enabled": false
+  }
+}
+EOF
 fi
 
 if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
