@@ -146,9 +146,12 @@ parallel-vs-sequential reads at a glance. Start from the postmortem skill's
 `references/run-timeline-template.html` — fill its `RUN` object with the
 scripted data (phases, dispatches with tokens and yield, idle gaps); the
 stats, axis, chart height, and accessible table derive from it. Render the
-PNG with the sibling `render-timeline.sh` (tries Chrome/Chromium, then
-installed Playwright; on `NO_RENDERER` attach the HTML and note the missing
-PNG — never improvise a renderer mid-run) and **embed the PNG where the
+PNG with the sibling `render-timeline.sh` (cross-platform: discovers
+Chrome/Chromium/Edge on macOS, Linux, or Windows, then installed
+Playwright; `--check` reports the renderer a machine will use — cheap to
+run at preflight on any box that publishes postmortems; on `NO_RENDERER`
+attach the HTML and note the missing PNG — never improvise a renderer
+mid-run) and **embed the PNG where the
 humans already look** — the anchor PR (host on the repo's rolling `qa-assets`
 prerelease, `<pr#>-run-timeline.png`) and the tracker issue — rather than
 only linking an external page. Each bar carries its token count (label or
