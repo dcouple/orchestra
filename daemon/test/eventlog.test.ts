@@ -175,7 +175,11 @@ describe("EventLog", () => {
     log.updateClaudeSessionId("session-1", "claude-1", 1002);
     log.append(event({ deliveryId: "delivery-2", action: "prompted", issueId: undefined, issueIdentifier: undefined }));
     expect(log.getSession("session-1")).toMatchObject({ issueId: "issue-uuid-1", issueIdentifier: "ENG-42",
-      worktreePath: "/worktree", branch: "agents/ENG-42", claudeSessionId: "claude-1" });
+      worktreePath: "/worktree", branch: "agents/ENG-42", claudeSessionId: "claude-1", runtime: "claude", fallbackCause: null });
+    log.clearClaudeSessionId("session-1", 1003);
+    expect(log.getSession("session-1")?.claudeSessionId).toBeNull();
+    log.recordRuntimeFallback("session-1", "claudex-1", "rate_limit_event:rejected", 1004);
+    expect(log.getSession("session-1")).toMatchObject({ runtime: "claudex", fallbackCause: "rate_limit_event:rejected", claudeSessionId: "claudex-1" });
     expect(log.claimNextTurn(1100)?.id).toBe(1);
     expect(log.interruptStaleRunning(1200)).toEqual([1]);
     expect(log.pendingTurnActivities(1200)[0]).toMatchObject({ kind: "error", turnId: 1 });
@@ -185,7 +189,7 @@ describe("EventLog", () => {
     expect(log.claimNextTurn(1301)).toMatchObject({ id: 2, kind: "prompted" });
     log.close();
     const reopened = new EventLog(dbPath);
-    expect(reopened.getSession("session-1")?.claudeSessionId).toBe("claude-1");
+    expect(reopened.getSession("session-1")).toMatchObject({ runtime: "claudex", claudeSessionId: "claudex-1" });
     reopened.close();
   });
 

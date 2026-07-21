@@ -23,8 +23,8 @@ be zone 2. `/do` derives its dials from the zone.
 | Zone | Review lanes | Loop caps (plan / post-PR) | Frontend verifier | End QA pass | Research |
 |---|---|---|---|---|---|
 | 0 | dual (Codex + Claude), always | 3 / 3 | yes, when UI is touched | always | full (dossier) |
-| 1 | dual | 3 / 3 | when user-visible | always — full checklist when user-visible, command-shaped otherwise | full (dossier) |
-| 2 | dual | 1 / 1 | only when reproduction needs the running app | command-shaped items only | direct (no dossier) |
+| 1 | single — Codex | 3 / 3 | when user-visible | always — full checklist when user-visible, command-shaped otherwise | full (dossier) |
+| 2 | single — Codex | 1 / 1 | only when reproduction needs the running app | command-shaped items only | direct (no dossier) |
 | 3 | **single — Codex** | 1 / 1 | no | no | direct |
 
 Wherever the table drops to one lane, **Codex is the lane that stays**.
@@ -83,9 +83,8 @@ reachable as `unknown`.
 
 ## Epics
 
-An epic is always **full machinery**: dossier, dual lanes, cap 3. The zone still
-gates the frontend-verifier and QA dials per phase, and still rides in every
-record. This override outranks every zone-derived lane/cap clause in the skills —
-an epic at any zone runs dual lanes at cap 3. Skills reference it here.
-The one thing that outranks even this is an explicit `review_lanes:` on the
-epic itself — a human's written choice beats any policy default.
+An epic is always **full machinery**: dossier and cap 3. Its review lanes follow
+the zone rule: dual at zone 0, single Codex at zones 1–3. The zone still gates
+the frontend-verifier and QA dials per phase, and still rides in every record.
+Skills reference this override here. An explicit `review_lanes:` on the epic
+itself outranks the zone default in either direction.

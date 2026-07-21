@@ -120,7 +120,12 @@ export class SessionWorker {
     const worktree = await this.worktrees.ensureWorktree(identifier);
     this.log.updateSessionWorktree(turn.linearSessionId, worktree.path, worktree.branch, this.now());
     const implementer = session.mode === "implementer";
-    const resuming = turn.kind === "prompted" && !!session.claudeSessionId;
+    const runtimeDegraded = session.runtime === "claudex" && !this.config.claudexArgv;
+    const runtime = runtimeDegraded ? "claude" : session.runtime;
+    if (runtimeDegraded) this.logger.error(jsonLog({ event: "session_runtime_degraded", turnId: turn.id,
+      linearSessionId: turn.linearSessionId, configuredRuntime: "claudex", effectiveRuntime: "claude",
+      reason: "CLAUDEX_BIN is not configured" }));
+    const resuming = turn.kind === "prompted" && !!session.claudeSessionId && !runtimeDegraded;
     let prompt = implementer && !resuming ? `/do ${identifier}` : this.composePrompt(turn, identifier);
     if ((!implementer || resuming) && this.config.attachmentsEnabled) prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
     this.log.setTurnPrompt(turn.id, prompt);
@@ -137,22 +142,50 @@ export class SessionWorker {
     keepalive.unref();
     const mcpConfigJson = JSON.stringify({ mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp",
       headers: { Authorization: `Bearer ${this.config.linearApiKey}` } } } });
-    const result = await runTurn({ cwd: worktree.path, prompt,
-        ...(resuming ? { resumeSessionId: session.claudeSessionId! } : {}),
-        argv: this.config.claudeArgv, permissionMode: implementer ? this.config.doPermissionMode : this.config.claudePermissionMode,
-        maxTurns: implementer ? this.config.doMaxTurns : this.config.claudeMaxTurns,
-        ...(implementer && this.config.doMaxBudgetUsd !== undefined ? { maxBudgetUsd: this.config.doMaxBudgetUsd } : {}),
-        mcpConfigJson, env: { LINEAR_API_KEY: this.config.linearApiKey!, GH_TOKEN: process.env.GH_TOKEN,
-          GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-          ...(DISPATCH_OWNER_PATTERN.test(turn.linearSessionId) ? { ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId } : {}) }, signal,
-        onSessionId: id => this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()),
-        onEvent: event => progress.push(event.type === "text"
-          ? { type: "thought", body: event.text } : toolUseContent(event)),
-      }).catch(async error => {
-        clearInterval(keepalive);
-        await progress.cancelAndWait();
-        throw error;
-      });
+    const common = {
+      cwd: worktree.path, permissionMode: implementer ? this.config.doPermissionMode : this.config.claudePermissionMode,
+      maxTurns: implementer ? this.config.doMaxTurns : this.config.claudeMaxTurns,
+      ...(implementer && this.config.doMaxBudgetUsd !== undefined ? { maxBudgetUsd: this.config.doMaxBudgetUsd } : {}),
+      mcpConfigJson, env: { LINEAR_API_KEY: this.config.linearApiKey!, GH_TOKEN: process.env.GH_TOKEN,
+        GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+        ...(DISPATCH_OWNER_PATTERN.test(turn.linearSessionId) ? { ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId } : {}) }, signal,
+      onEvent: (event: ClaudeEvent) => progress.push(event.type === "text"
+        ? { type: "thought", body: event.text } : toolUseContent(event)),
+    };
+    const runtimeArgv = runtime === "claudex" ? this.config.claudexArgv! : this.config.claudeArgv;
+    const cleanupRejectedRun = async (error: unknown): Promise<never> => {
+      clearInterval(keepalive);
+      await progress.cancelAndWait();
+      throw error;
+    };
+    let result = await runTurn({ ...common, prompt,
+        ...(resuming ? { resumeSessionId: session.claudeSessionId! } : {}), argv: runtimeArgv,
+        ...(runtime === "claudex" && this.config.claudexEnv ? { trustedEnv: this.config.claudexEnv } : {}),
+        onSessionId: id => { if (!runtimeDegraded) this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()); },
+      }).catch(cleanupRejectedRun);
+    let fallbackCause: string | undefined;
+    let fallbackAttempted = false;
+    if (!result.ok && result.capacityEvidence.length && runtime === "claude")
+      fallbackCause = result.capacityEvidence.join(", ");
+    if (fallbackCause && this.config.claudexArgv && !this.stopRequested.has(turn.id)) {
+      fallbackAttempted = true;
+      this.log.clearClaudeSessionId(turn.linearSessionId, this.now());
+      progress.push({ type: "thought", body: `Claude capacity limit detected (${fallbackCause}); retrying once with Claudex.` });
+      this.logger.log(jsonLog({ event: "session_capacity_fallback", turnId: turn.id, issueIdentifier: identifier,
+        linearSessionId: turn.linearSessionId, originalRuntime: "claude", fallbackRuntime: "claudex", evidence: result.capacityEvidence }));
+      const fallbackContext = `Runtime fallback context: original runtime claude; fallback runtime claudex; classified cause ${fallbackCause}; effective review lanes are single/Codex-only regardless of any dual request.`;
+      const retryPrompt = implementer
+        ? `/do ${identifier}\n\nResume where we left off.\n\n${fallbackContext}`
+        : `${prompt}\n\nResume where we left off.\n\n${fallbackContext}`;
+      let fallbackSessionId: string | undefined;
+      const fallbackResult = await runTurn({ ...common, prompt: retryPrompt, argv: this.config.claudexArgv,
+        ...(this.config.claudexEnv ? { trustedEnv: this.config.claudexEnv } : {}),
+        onSessionId: id => { fallbackSessionId = id; },
+      }).catch(cleanupRejectedRun);
+      result = fallbackResult;
+      if (fallbackResult.ok && !this.stopRequested.has(turn.id))
+        this.log.recordRuntimeFallback(turn.linearSessionId, fallbackSessionId, fallbackCause, this.now());
+    }
     clearInterval(keepalive);
     const finishedAt = this.now();
     if (this.stopRequested.has(turn.id)) {
@@ -174,8 +207,12 @@ export class SessionWorker {
         linearSessionId: turn.linearSessionId, attempts: turn.attempts,
         durationMs: Math.max(0, finishedAt - (turn.startedAt ?? turn.receivedAt)) }));
     } else {
-      const detail = result.spawnError ?? (result.permissionDenials.length ? "Claude permission was denied" :
-        result.signal ? `Claude exited on ${result.signal}` : !result.sawResult ? "Claude exited without a result" : `Claude exited with code ${result.exitCode}`);
+      const failedRuntime = fallbackAttempted ? "Claudex" : runtime === "claudex" ? "Claudex" : "Claude";
+      const runtimeDetail = result.spawnError ?? (result.permissionDenials.length ? `${failedRuntime} permission was denied` :
+        result.signal ? `${failedRuntime} exited on ${result.signal}` : !result.sawResult ? `${failedRuntime} exited without a result` : `${failedRuntime} exited with code ${result.exitCode}`);
+      const detail = fallbackCause
+        ? `Claude hit a usage limit (${fallbackCause})${fallbackAttempted ? `; Claudex fallback failed: ${runtimeDetail}` : ""}`
+        : runtimeDetail;
       this.log.finishTurn(turn.id, "error", `${implementer ? "Implementer" : "Planner"} turn failed: ${detail}`, finishedAt, randomUUID(), true);
       this.logger.error(jsonLog({ event: "session_turn_failed", turnId: turn.id, issueIdentifier: identifier,
         linearSessionId: turn.linearSessionId, attempts: turn.attempts, durationMs: Math.max(0, finishedAt - (turn.startedAt ?? turn.receivedAt)),

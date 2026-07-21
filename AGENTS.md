@@ -28,6 +28,12 @@ pnpm test
 bash -n ops/provision.sh ops/claudex
 ```
 
+## Live daemon diagnostics
+
+The user-level `~/.zshrc` alias `bloom-deamon` connects to the Bloom daemon
+host for live service-log inspection. Its canonical target command is
+`gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a`.
+
 ## Architecture
 
 See the Layout table in `README.md`. Canonical sources live in

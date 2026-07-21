@@ -21,7 +21,8 @@ describe("loadConfig", () => {
     expect(config.reconcileRequestTimeoutMs).toBe(10_000);
     expect(config.apps.planner.staticToken).toBe("pt");
     expect(config.sessionsEnabled).toBe(false);
-    expect(config.claudeArgv).toEqual(["claudex"]);
+    expect(config.claudeArgv).toEqual(["claude"]);
+    expect(config.claudexArgv).toBeUndefined();
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
   });
   it("forces production do-mode autonomy and parses its budget",()=>{
@@ -40,6 +41,18 @@ describe("loadConfig", () => {
   });
   it("names missing variables", () => {
     expect(() => loadConfig({ ...base, PLANNER_WEBHOOK_SECRET: "" })).toThrow("PLANNER_WEBHOOK_SECRET");
+  });
+  it("parses and validates the optional Claudex runtime", () => {
+    expect(loadConfig({ ...base, CLAUDEX_BIN: "claude --model gpt-5.6-sol",
+      CLAUDEX_ENV: '{"ANTHROPIC_BASE_URL":"http://proxy","ENABLE_TOOL_SEARCH":"true"}' }))
+      .toMatchObject({ claudexArgv: ["claude", "--model", "gpt-5.6-sol"],
+        claudexEnv: { ANTHROPIC_BASE_URL: "http://proxy", ENABLE_TOOL_SEARCH: "true" } });
+    expect(() => loadConfig({ ...base, CLAUDEX_BIN: "   " })).toThrow("CLAUDEX_BIN must not be empty");
+    expect(() => loadConfig({ ...base, CLAUDEX_ENV: "{}" })).toThrow("requires CLAUDEX_BIN");
+    expect(() => loadConfig({ ...base, CLAUDEX_BIN: "claude", CLAUDEX_ENV: "[]" })).toThrow("JSON object");
+    expect(() => loadConfig({ ...base, CLAUDEX_BIN: "claude", CLAUDEX_ENV: '{"X":1}' })).toThrow("string values");
+    expect(() => loadConfig({ ...base, CLAUDEX_BIN: "claude", CLAUDEX_ENV: "{" })).toThrow("valid JSON");
+    expect(() => loadConfig({ ...base, CLAUDEX_BIN: "claude", CLAUDEX_ENV: "   " })).toThrow("valid JSON");
   });
   it("requires client credentials without the test-only token override", () => {
     const env = { ...base }; delete (env as Partial<typeof base>).DAEMON_TEST_MODE;

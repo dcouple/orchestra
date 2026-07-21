@@ -636,4 +636,158 @@ describe("SessionWorker", () => {
     expect(poster.posts.at(-1)?.ephemeral).toBe(false);
     await worker.stop(); log.close();
   });
+  it.each(["rate-limit-rejected", "out-of-credits", "api-retry-exhausted", "result-429"])(
+    "AC3/AC4: starts on Claude and retries %s exactly once on Claudex", async mode => {
+      const { dir, log, config } = setup(); const poster = new Poster();
+      process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_MODE = mode;
+      config.claudexArgv = [...config.claudeArgv, "--claudex-runtime"];
+      config.claudexEnv = { CLAUDE_FAKE_MODE: "happy" };
+      append(log, "d1", "session", "created");
+      const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+      await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop();
+      const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+        .map(line => JSON.parse(line)).filter(row => row.phase === "start");
+      expect(starts).toHaveLength(2); expect(starts[0].args).not.toContain("--claudex-runtime");
+      expect(starts[1].args).toContain("--claudex-runtime"); expect(starts[1].args).not.toContain("--resume");
+      expect(log.getSession("session")).toMatchObject({ runtime: "claudex", fallbackCause: expect.any(String) });
+      log.close();
+    });
+  it("AC5/AC6/AC8: resumed /do fallback is fresh, records the downgrade, and persists Claudex", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_MODE = "do-pr";
+    config.claudexArgv = [...config.claudeArgv, "--claudex-runtime"];
+    config.claudexEnv = { CLAUDE_FAKE_MODE: "happy", ENABLE_TOOL_SEARCH: "true" };
+    appendImplementer(log, "i1", "implementer-session");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    process.env.CLAUDE_FAKE_MODE = "capacity-after-session";
+    log.append({ deliveryId: "i2", app: "implementer", action: "prompted", agentSessionId: "implementer-session", receivedAt: Date.now(),
+      rawBody: Buffer.from(JSON.stringify({ action: "prompted", agentActivity: { body: "continue" }, agentSession: { id: "implementer-session" } })) });
+    worker.trigger(); await waitFor(() => log.turnStates()[1]?.status === "done");
+    process.env.CLAUDE_FAKE_MODE = "crash";
+    log.append({ deliveryId: "i3", app: "implementer", action: "prompted", agentSessionId: "implementer-session", receivedAt: Date.now(),
+      rawBody: Buffer.from(JSON.stringify({ action: "prompted", agentActivity: { body: "next" }, agentSession: { id: "implementer-session" } })) });
+    worker.trigger(); await waitFor(() => log.turnStates()[2]?.status === "done"); await worker.stop();
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+      .map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(4);
+    const retryArgs = starts[2].args as string[]; expect(retryArgs).toContain("--claudex-runtime"); expect(retryArgs).not.toContain("--resume");
+    const retryPrompt = retryArgs[retryArgs.indexOf("-p") + 1];
+    expect(retryPrompt).toContain("/do ENG-42\n\nResume where we left off.");
+    expect(retryPrompt).toContain("original runtime claude; fallback runtime claudex");
+    expect(retryPrompt).toContain("effective review lanes are single/Codex-only regardless of any dual request");
+    expect(starts[3].args).toEqual(expect.arrayContaining(["--claudex-runtime", "--resume", "claude-session-1"]));
+    expect(log.getSession("implementer-session")).toMatchObject({ runtime: "claudex", claudeSessionId: "claude-session-1" });
+    expect(poster.posts.filter(post => post.ephemeral && activityBody(post.content)?.includes("retrying once with Claudex"))).toHaveLength(1);
+    expect(logger.entries().filter(entry => entry.event === "session_capacity_fallback")).toHaveLength(1);
+    log.close();
+  });
+  it.each([
+    ["error-result-exit", "Planner turn failed: Claude exited with code 11"],
+    ["denied", "Planner turn failed: Claude permission was denied"],
+    ["no-result", "Planner turn failed: Claude exited without a result"],
+    ["non-capacity-api-error", "Planner turn failed: Claude exited with code 1"],
+  ])("AC7: %s stays on Claude and preserves its terminal classification", async (mode, detail) => {
+    const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_MODE = mode;
+    config.claudexArgv = [...config.claudeArgv, "--claudex-runtime"]; config.claudexEnv = { CLAUDE_FAKE_MODE: "happy" };
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed"); await worker.stop();
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+      .map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(1); expect(starts[0].args).not.toContain("--claudex-runtime");
+    expect(poster.posts.filter(post => !post.ephemeral).map(post => activityBody(post.content))).toEqual([detail]);
+    expect(logger.entries().filter(entry => entry.event === "session_capacity_fallback")).toHaveLength(0);
+    expect(logger.entries().filter(entry => entry.event === "session_turn_failed"))
+      .toEqual([expect.objectContaining({ attempts: 1, error: detail.replace("Planner turn failed: ", "") })]);
+    expect(log.getSession("session")).toMatchObject({ runtime: "claude", fallbackCause: null }); log.close();
+  });
+  it("AC7: signal death stays on Claude and preserves the queued terminal classification", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_MODE = "hang";
+    config.claudexArgv = [...config.claudeArgv, "--claudex-runtime"]; config.claudexEnv = { CLAUDE_FAKE_MODE: "happy" };
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "running" && readdirSync(dir).includes("args.jsonl"));
+    await worker.stop();
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+      .map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(1); expect(starts[0].args).not.toContain("--claudex-runtime");
+    expect(log.pendingTurnActivities().map(activity => activity.body))
+      .toEqual(["Planner turn failed: Claude exited on SIGTERM"]);
+    expect(logger.entries().filter(entry => entry.event === "session_capacity_fallback")).toHaveLength(0);
+    expect(logger.entries().filter(entry => entry.event === "session_turn_failed"))
+      .toEqual([expect.objectContaining({ attempts: 1, error: "Claude exited on SIGTERM" })]);
+    expect(log.getSession("session")).toMatchObject({ runtime: "claude", fallbackCause: null }); log.close();
+  });
+  it("AC7: missing Claude binary does not start Claudex and preserves the spawn failure", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    const argsFile = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_ARGS_FILE = argsFile;
+    config.claudeArgv = [join(dir, "missing-claude")];
+    config.claudexArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--claudex-runtime"];
+    config.claudexEnv = { CLAUDE_FAKE_MODE: "happy" };
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed"); await worker.stop();
+    expect(readdirSync(dir)).not.toContain("args.jsonl");
+    const terminals = poster.posts.filter(post => !post.ephemeral).map(post => activityBody(post.content));
+    expect(terminals).toHaveLength(1); expect(terminals[0]).toContain("Planner turn failed: spawn"); expect(terminals[0]).toContain("ENOENT");
+    expect(logger.entries().filter(entry => entry.event === "session_capacity_fallback")).toHaveLength(0);
+    expect(logger.entries().filter(entry => entry.event === "session_turn_failed"))
+      .toEqual([expect.objectContaining({ attempts: 1, error: expect.stringMatching(/^spawn .* ENOENT$/) })]);
+    expect(log.getSession("session")).toMatchObject({ runtime: "claude", fallbackCause: null }); log.close();
+  });
+  it("reports a sanitized usage limit when fallback is unavailable", async () => {
+    const { log, config } = setup(); const poster = new Poster(); process.env.CLAUDE_FAKE_MODE = "rate-limit-rejected";
+    append(log, "d1", "session", "created"); const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed"); await worker.stop();
+    expect(log.turnStates()[0]?.status).toBe("failed");
+    expect(poster.posts.some(post => !post.ephemeral && activityBody(post.content)?.includes("Claude hit a usage limit"))).toBe(true);
+    log.close();
+  });
+  it("cleans up progress and keepalive when the Claudex fallback runner rejects", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "rate-limit-rejected";
+    config.claudexArgv = []; config.keepaliveMs = 10;
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    const postsAtTerminal = poster.posts.length;
+    expect(poster.posts.at(-1)?.ephemeral).toBe(false);
+    await new Promise(resolve => setTimeout(resolve, 120));
+    expect(poster.posts).toHaveLength(postsAtTerminal);
+    expect(logger.entries().find(entry => entry.event === "session_turn_unhandled"))
+      .toMatchObject({ attempts: 1, error: expect.stringContaining("Claude argv is empty") });
+    await worker.stop(); log.close();
+  });
+  it("degrades a persisted Claudex session to a fresh Claude turn when CLAUDEX_BIN is removed", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    log.recordRuntimeFallback("session", "persisted-claudex-id", "prior capacity", Date.now());
+    append(log, "d2", "session", "prompted"); worker.trigger();
+    await waitFor(() => log.turnStates()[1]?.status === "done"); await worker.stop();
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+      .map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(2); expect(starts[1].args).not.toContain("--resume");
+    expect(logger.entries().find(entry => entry.event === "session_runtime_degraded"))
+      .toMatchObject({ configuredRuntime: "claudex", effectiveRuntime: "claude", reason: "CLAUDEX_BIN is not configured" });
+    expect(log.getSession("session")).toMatchObject({ runtime: "claudex", claudeSessionId: "persisted-claudex-id" });
+    log.close();
+  });
+  it("discards a failed fallback session id and retries Claude fresh next turn", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_MODE = "rate-limit-rejected";
+    config.claudexArgv = [...config.claudeArgv, "--claudex-runtime"]; config.claudexEnv = { CLAUDE_FAKE_MODE: "capacity-after-session" };
+    append(log, "d1", "session", "created"); const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    expect(log.getSession("session")).toMatchObject({ runtime: "claude", claudeSessionId: null });
+    process.env.CLAUDE_FAKE_MODE = "happy"; append(log, "d2", "session", "prompted"); worker.trigger();
+    await waitFor(() => log.turnStates()[1]?.status === "done"); await worker.stop();
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts[2].args).not.toContain("--resume"); expect(starts[2].args).not.toContain("--claudex-runtime"); log.close();
+  });
 });
