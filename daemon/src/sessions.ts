@@ -9,10 +9,12 @@ import { WorktreeManager } from "./worktrees.js";
 
 interface Logger { log(...args: unknown[]): void; error(...args: unknown[]): void; }
 export interface SessionWorkerOptions {
-  pollMs?: number; reconcileMs?: number; now?: () => number; logger?: Logger;
+  pollMs?: number; reconcileMs?: number; dispatchScanMs?: number; now?: () => number; logger?: Logger;
   attachmentTestAllowHttp?: boolean; attachmentTimeoutMs?: number;
   onTurnComplete?: () => void;
 }
+
+const DISPATCH_OWNER_PATTERN = /^[0-9a-fA-F][0-9a-fA-F-]{7,63}$/;
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -60,6 +62,7 @@ class ProgressQueue {
 export class SessionWorker {
   private timer?: NodeJS.Timeout;
   private reconcileTimer?: NodeJS.Timeout;
+  private dispatchTimer?: NodeJS.Timeout;
   private stopped = false;
   private draining = false;
   private activityDrain: Promise<void> | undefined;
@@ -78,9 +81,11 @@ export class SessionWorker {
   start(): void {
     this.stopped = false;
     this.log.interruptStaleRunning(this.now());
-    this.timer = setInterval(() => { void this.triggerDispatchScan(); void this.drain(); void this.triggerActivityDrain(); }, this.options.pollMs ?? 250);
+    this.timer = setInterval(() => { void this.drain(); void this.triggerActivityDrain(); }, this.options.pollMs ?? 250);
     this.reconcileTimer = setInterval(() => void this.triggerActivityDrain(), this.options.reconcileMs ?? 60_000);
-    this.timer.unref(); this.reconcileTimer.unref(); void this.triggerDispatchScan(); void this.drain(); void this.triggerActivityDrain();
+    this.dispatchTimer = setInterval(() => void this.triggerDispatchScan(), this.options.dispatchScanMs ?? 5_000);
+    this.timer.unref(); this.reconcileTimer.unref(); this.dispatchTimer.unref();
+    void this.triggerDispatchScan(); void this.drain(); void this.triggerActivityDrain();
   }
   trigger(): void { queueMicrotask(() => { void this.triggerDispatchScan(); void this.drain(); }); }
   private async drain(): Promise<void> {
@@ -136,7 +141,8 @@ export class SessionWorker {
         maxTurns: implementer ? this.config.doMaxTurns : this.config.claudeMaxTurns,
         ...(implementer && this.config.doMaxBudgetUsd !== undefined ? { maxBudgetUsd: this.config.doMaxBudgetUsd } : {}),
         mcpConfigJson, env: { LINEAR_API_KEY: this.config.linearApiKey!, GH_TOKEN: process.env.GH_TOKEN,
-          GITHUB_TOKEN: process.env.GITHUB_TOKEN, ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId }, signal,
+          GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+          ...(DISPATCH_OWNER_PATTERN.test(turn.linearSessionId) ? { ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId } : {}) }, signal,
         onSessionId: id => this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()),
         onEvent: event => progress.push(event.type === "text"
           ? { type: "thought", body: event.text } : { type: "action", body: describeTool(event) }),
@@ -206,6 +212,11 @@ export class SessionWorker {
     try {
       for (const session of this.log.sessionsWithWorktrees()) {
         if (!session.worktreePath || this.log.hasOpenTurn(session.linearSessionId)) continue;
+        if (!DISPATCH_OWNER_PATTERN.test(session.linearSessionId)) {
+          this.logger.error(jsonLog({ event: "dispatch_scan_failed", linearSessionId: session.linearSessionId,
+            reason: "invalid dispatch owner" }));
+          continue;
+        }
         const directory = resolve(session.worktreePath, ".codex-dispatches", session.linearSessionId);
         try {
           const files = (await readdir(directory)).filter(file => file.endsWith(".done")).sort();
@@ -216,7 +227,7 @@ export class SessionWorker {
               deliveryId: `dispatch:${session.linearSessionId}:${file}`, app: session.app, action: "prompted",
               agentSessionId: session.linearSessionId, sourceActivityId: `dispatch:${file}`, receivedAt: this.now(),
               rawBody: Buffer.from(JSON.stringify({ agentActivity: {
-                body: `A detached Codex dispatch completed. At turn start, pick up ${marker} and its sibling report/log, continue the pipeline, then delete the dispatch files after consuming them.`,
+                body: `A detached Codex dispatch completed. At turn start, pick up ${marker}, any sibling completed dispatches in the same owner directory, and their report/log files; continue the pipeline, then delete each dispatch's files after consuming them.`,
               } })),
             });
             if (result.inserted) {
@@ -404,6 +415,7 @@ export class SessionWorker {
   }
   async stop(): Promise<void> {
     this.stopped = true; if (this.timer) clearInterval(this.timer); if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+    if (this.dispatchTimer) clearInterval(this.dispatchTimer);
     for (const active of this.active.values()) active.controller.abort();
     await Promise.allSettled([...this.active.values()].map(active => active.promise));
     await this.activityDrain;

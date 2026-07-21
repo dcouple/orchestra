@@ -25,8 +25,13 @@ function deferred(){let resolve!:()=>void;const promise=new Promise<void>(r=>{re
 
 describe("CleanupWorker",()=>{
   it("AC5 removes a clean worktree and branch with a recorded external URL, including ignored attachments",async()=>{const s=await setup();mkdirSync(join(s.tree.path,".linear-attachments"));writeFileSync(join(s.tree.path,".linear-attachments","a"),"x");s.log.stageExternalUrl("session","implementer","Pull Request","https://github.com/dcouple/example/pull/42",3);complete(s.log);
+    s.log.append({deliveryId:"planner",app:"planner",action:"created",agentSessionId:"planner-session",issueId:"issue",issueIdentifier:"ENG-42",receivedAt:3,rawBody:Buffer.from("{}")});
+    s.log.updateSessionWorktree("planner-session",s.tree.path,s.tree.branch,3);
+    const plannerTurn=s.log.claimNextTurn(3)!;s.log.finishTurn(plannerTurn.id,"response","done",3);s.log.markTurnActivityPosted(plannerTurn.id,3);
     const worker=new CleanupWorker(s.log,new Poster() as unknown as LinearGateway,s.root,s.repo,{pollMs:10,reconcileMs:20});worker.start();await waitFor(()=>s.log.cleanupStates()[0]?.status==="done");await worker.stop();
-    expect(existsSync(s.tree.path)).toBe(false);expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-42"],s.repo)).toThrow();s.log.close();});
+    expect(existsSync(s.tree.path)).toBe(false);expect(s.log.getSession("session")?.worktreePath).toBeNull();
+    expect(s.log.getSession("planner-session")?.worktreePath).toBeNull();
+    expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-42"],s.repo)).toThrow();s.log.close();});
   it("retains a clean present worktree when no pull request URL was recorded",async()=>{const s=await setup();complete(s.log);const poster=new Poster();
     const worker=new CleanupWorker(s.log,poster as unknown as LinearGateway,s.root,s.repo,{pollMs:10,reconcileMs:20});worker.start();await waitFor(()=>s.log.cleanupNotificationStates()[0]?.status==="posted");await worker.stop();
     expect(s.log.cleanupStates()[0]?.status).toBe("retained");expect(poster.posts[0]).toContain("no pull request was recorded");expect(poster.posts[0]).toContain(s.tree.path);expect(existsSync(s.tree.path)).toBe(true);s.log.close();});
@@ -50,5 +55,5 @@ describe("CleanupWorker",()=>{
     release.resolve();await Promise.all([drain,reconcile]);expect(s.log.cleanupStates()[0]?.status).toBe("done");s.log.close();});
   it("finishes crash recovery when the worktree is already removed but its branch remains",async()=>{const s=await setup();complete(s.log);git(["worktree","remove",s.tree.path],s.repo);
     const worker=new CleanupWorker(s.log,new Poster() as unknown as LinearGateway,s.root,s.repo,{pollMs:10,reconcileMs:20});worker.start();await waitFor(()=>s.log.cleanupStates()[0]?.status==="done");await worker.stop();
-    expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-42"],s.repo)).toThrow();s.log.close();});
+    expect(s.log.getSession("session")?.worktreePath).toBeNull();expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-42"],s.repo)).toThrow();s.log.close();});
 });

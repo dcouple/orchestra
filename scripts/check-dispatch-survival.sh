@@ -22,7 +22,7 @@ write_launcher() {
 perl -e 'alarm shift; exec @ARGV or die "exec failed: \$!"' "$cap" \
   bash -c 'sleep "\$1"; echo report > "\$2"' bash "$delay" "$scratch/$name.md" </dev/null
 status=\$?
-echo "\$status" > "$scratch/$name.done"
+echo "\$status" > "$scratch/$name.done.tmp" && mv "$scratch/$name.done.tmp" "$scratch/$name.done"
 EOF
 }
 detach_from_exiting_parent() {
@@ -31,21 +31,29 @@ detach_from_exiting_parent() {
     'nohup perl -MPOSIX -e '\''POSIX::setsid(); exec @ARGV or die "exec failed: $!"'\'' bash "$SCRATCH/$NAME.sh" > "$SCRATCH/$NAME.log" 2>&1 & disown'
 }
 
-name="survival-$(date +%s)-$$-1"
+launch_epoch="$(date +%s)"
+sequence=0
+allocate_name() {
+  local target="$1" role="$2"
+  sequence=$((sequence + 1))
+  printf -v "$target" '%s-%s-%s-%s' "$role" "$launch_epoch" "$$" "$sequence"
+}
+
+allocate_name name survival
 write_launcher "$name" 10 3
 detach_from_exiting_parent "$name"
 wait_for_marker "$scratch/$name.done"
 [[ "$(<"$scratch/$name.done")" == "0" ]] || fail "survival marker did not record 0"
 [[ "$(<"$scratch/$name.md")" == "report" ]] || fail "survival report missing"
 
-name="timeout-$(date +%s)-$$-2"
+allocate_name name timeout
 write_launcher "$name" 2 60
 detach_from_exiting_parent "$name"
 wait_for_marker "$scratch/$name.done"
 [[ "$(<"$scratch/$name.done")" == "142" ]] || fail "watchdog marker did not record 142"
 
-first="reviewer-$(date +%s)-$$-3"
-second="reviewer-$(date +%s)-$$-4"
+allocate_name first reviewer
+allocate_name second reviewer
 [[ "$first" != "$second" ]] || fail "concurrent names collided"
 write_launcher "$first" 10 1
 write_launcher "$second" 10 1

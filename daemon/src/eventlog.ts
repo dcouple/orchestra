@@ -378,6 +378,9 @@ export class EventLog {
     this.db.prepare(`UPDATE sessions SET worktree_path=?, branch=?, last_seen_at=? WHERE linear_session_id=?`)
       .run(path, branch, now, linearSessionId);
   }
+  clearSessionWorktrees(issueIdentifier: string): void {
+    this.db.prepare("UPDATE sessions SET worktree_path=NULL WHERE issue_identifier=?").run(issueIdentifier);
+  }
   updateClaudeSessionId(linearSessionId: string, id: string, now = Date.now()): void {
     this.db.prepare(`UPDATE sessions SET claude_session_id=?, last_seen_at=? WHERE linear_session_id=?`).run(id, now, linearSessionId);
   }

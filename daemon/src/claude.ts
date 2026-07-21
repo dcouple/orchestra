@@ -35,7 +35,9 @@ function childEnv(extra: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
       allowed[key] = value;
     }
   };
-  for (const [key, value] of Object.entries(process.env)) include(key, value);
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key !== "ORCHESTRA_DISPATCH_OWNER") include(key, value);
+  }
   for (const [key, value] of Object.entries(extra ?? {})) include(key, value);
   return allowed;
 }

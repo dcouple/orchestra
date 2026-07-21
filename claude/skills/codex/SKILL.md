@@ -125,7 +125,8 @@ perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' <cap> \
   [--ephemeral] --skip-git-repo-check -C <repo root> \
   -o <owner dir>/<name>.md "$(cat <owner dir>/<name>.prompt)" </dev/null
 status=$?
-echo "$status" > <owner dir>/<name>.done
+echo "$status" > <owner dir>/<name>.done.tmp && \
+  mv <owner dir>/<name>.done.tmp <owner dir>/<name>.done
 ```
 
 Use a 900-second `<cap>` for `--ephemeral` roles and 2700 for the implementer.
@@ -145,7 +146,8 @@ perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' 2700 \
   codex exec resume --last -o <owner dir>/<name>.md \
   "$(cat <owner dir>/<name>.prompt)" </dev/null
 status=$?
-echo "$status" > <owner dir>/<name>.done
+echo "$status" > <owner dir>/<name>.done.tmp && \
+  mv <owner dir>/<name>.done.tmp <owner dir>/<name>.done
 ```
 
 The marker convention is: `<name>.md` is the final report, `<name>.log` is
