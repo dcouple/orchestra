@@ -79,12 +79,15 @@ describe("runTurn", () => {
     const dir = cwd(); const envFile = join(dir, "env.jsonl");
     const oldHeaders = process.env.OTEL_EXPORTER_OTLP_HEADERS;
     const oldControl = process.env.OTEL_X;
+    const oldToolContent = process.env.OTEL_LOG_TOOL_CONTENT;
     process.env.OTEL_EXPORTER_OTLP_HEADERS = "process-header";
     process.env.OTEL_X = "process-control";
+    process.env.OTEL_LOG_TOOL_CONTENT = "process-tool-content";
     try {
       const result = await runTurn(options({ cwd: dir, mcpConfigJson: JSON.stringify({ token: "secret-token" }),
         maxBudgetUsd:12.5, env: { CLAUDE_FAKE_ENV_FILE: envFile, LINEAR_API_KEY: "linear-key", GH_TOKEN:"github-key",
-          OTEL_RESOURCE_ATTRIBUTES: "service.namespace=daemon", OTEL_X: "extra-control", PLANNER_WEBHOOK_SECRET: "webhook-secret",
+          OTEL_RESOURCE_ATTRIBUTES: "service.namespace=daemon", OTEL_LOG_TOOL_DETAILS: "1",
+          OTEL_LOG_TOOL_CONTENT: "extra-tool-content", OTEL_X: "extra-control", PLANNER_WEBHOOK_SECRET: "webhook-secret",
           PLANNER_LINEAR_CLIENT_SECRET: "client-secret", IMPLEMENTER_LINEAR_CLIENT_SECRET: "other-secret" } }));
       expect(result.ok).toBe(true);
       const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { args: string[]; env: Record<string, string> };
@@ -92,6 +95,8 @@ describe("runTurn", () => {
       expect(row.env.GH_TOKEN).toBe("github-key");
       expect(row.env.OTEL_EXPORTER_OTLP_HEADERS).toBe("process-header");
       expect(row.env.OTEL_RESOURCE_ATTRIBUTES).toBe("service.namespace=daemon");
+      expect(row.env.OTEL_LOG_TOOL_DETAILS).toBe("1");
+      expect(row.env.OTEL_LOG_TOOL_CONTENT).toBeUndefined();
       expect(row.env.OTEL_X).toBeUndefined();
       expect(row.env.PLANNER_WEBHOOK_SECRET).toBeUndefined();
       expect(row.env.PLANNER_LINEAR_CLIENT_SECRET).toBeUndefined();
@@ -104,6 +109,8 @@ describe("runTurn", () => {
       if (oldHeaders === undefined) delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
       else process.env.OTEL_EXPORTER_OTLP_HEADERS = oldHeaders;
       if (oldControl === undefined) delete process.env.OTEL_X; else process.env.OTEL_X = oldControl;
+      if (oldToolContent === undefined) delete process.env.OTEL_LOG_TOOL_CONTENT;
+      else process.env.OTEL_LOG_TOOL_CONTENT = oldToolContent;
     }
   });
   it("passes only the named browser handshake and attempt context", async () => {

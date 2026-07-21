@@ -58,7 +58,6 @@ const OTEL_CHILD_ENV_KEYS: ReadonlySet<string> = new Set([
   "OTEL_LOG_USER_PROMPTS",
   "OTEL_LOG_ASSISTANT_RESPONSES",
   "OTEL_LOG_TOOL_DETAILS",
-  "OTEL_LOG_TOOL_CONTENT",
 ]);
 
 function childEnv(extra: NodeJS.ProcessEnv | undefined, trusted: Record<string, string> | undefined): NodeJS.ProcessEnv {

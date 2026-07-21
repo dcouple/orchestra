@@ -232,7 +232,7 @@ export class SessionWorker {
         const separator = pair.indexOf("=");
         if (!pair || separator < 1) return [];
         const key = pair.slice(0, separator).trim();
-        if (!key || key.includes("=") || ownedKeys.has(key)) return [];
+        if (!key || ownedKeys.has(key)) return [];
         return [`${key}=${pair.slice(separator + 1)}`];
       });
       telemetryEnv.OTEL_RESOURCE_ATTRIBUTES = [...baseAttributes,
