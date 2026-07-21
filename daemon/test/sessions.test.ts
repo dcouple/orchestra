@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
@@ -78,6 +79,14 @@ function append(log: EventLog, delivery: string, session: string, action: "creat
 function appendImplementer(log:EventLog,delivery:string,session:string,issue="issue-uuid",identifier="ENG-42"){
   log.append({deliveryId:delivery,app:"implementer",action:"created",agentSessionId:session,issueId:issue,issueIdentifier:identifier,
     receivedAt:Date.now(),rawBody:Buffer.from(JSON.stringify({action:"created",agentSession:{id:session,issue:{id:issue,identifier}}}))});
+}
+function turnUsage(dbPath: string, id = 1): Record<string, unknown> {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return db.prepare(`SELECT status, usage_input_tokens inputTokens, usage_output_tokens outputTokens,
+      usage_cache_creation_tokens cacheCreationTokens, usage_cache_read_tokens cacheReadTokens,
+      cost_usd costUsd, model FROM turns WHERE id=?`).get(id) as Record<string, unknown>;
+  } finally { db.close(); }
 }
 async function waitFor(predicate: () => boolean, timeout = 4000): Promise<void> {
   const end = Date.now() + timeout; while (!predicate()) { if (Date.now() > end) throw new Error("timed out"); await new Promise(resolve => setTimeout(resolve, 20)); }
@@ -370,6 +379,43 @@ describe("SessionWorker", () => {
       profile: "fable", runtime: "claude", launcher: "FABLE_BIN" });
     expect(poster.posts.map(post => activityBody(post.content)).filter(Boolean).join("\n")).toContain("FABLE_BIN");
     log.close();
+  });
+  it("persists and logs usage for a completed turn", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    append(log, "usage-success", "usage-session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    expect(turnUsage(config.dbPath)).toEqual({ status: "done", inputTokens: 2, outputTokens: 4,
+      cacheCreationTokens: 5780, cacheReadTokens: 15105, costUsd: 0.130925, model: "claude-fable-5" });
+    expect(logger.entries().find(entry => entry.event === "session_turn_completed")).toMatchObject({
+      inputTokens: 2, outputTokens: 4, cacheCreationTokens: 5780, cacheReadTokens: 15105,
+      costUsd: 0.130925, model: "claude-fable-5",
+    });
+    await worker.stop(); log.close();
+  });
+  it("completes a usage-free turn with null usage", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "no-usage"; append(log, "usage-absent", "usage-session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    expect(turnUsage(config.dbPath)).toEqual({ status: "done", inputTokens: null, outputTokens: null,
+      cacheCreationTokens: null, cacheReadTokens: null, costUsd: null, model: null });
+    const completion = logger.entries().find(entry => entry.event === "session_turn_completed")!;
+    expect(completion).not.toHaveProperty("inputTokens"); expect(completion).not.toHaveProperty("costUsd");
+    await worker.stop(); log.close();
+  });
+  it("persists and logs usage for a failed turn", async () => {
+    const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "denied"; append(log, "usage-failure", "usage-session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    expect(turnUsage(config.dbPath)).toEqual({ status: "failed", inputTokens: 2, outputTokens: 4,
+      cacheCreationTokens: 5780, cacheReadTokens: 15105, costUsd: 0.130925, model: "claude-fable-5" });
+    expect(logger.entries().find(entry => entry.event === "session_turn_failed")).toMatchObject({
+      inputTokens: 2, outputTokens: 4, cacheCreationTokens: 5780, cacheReadTokens: 15105,
+      costUsd: 0.130925, model: "claude-fable-5",
+    });
+    await worker.stop(); log.close();
   });
   it("phase3 AC1/AC2/AC3: do-mode reuses worktree, starts fresh, uses literal prompt, and posts PR URL",async()=>{
     const {dir,log,config}=setup(); const poster=new Poster(); process.env.CLAUDE_FAKE_ARGS_FILE=join(dir,"args.jsonl");

@@ -86,6 +86,14 @@ const finalSession = mode === "new-id" ? "claude-session-2" : session;
 const errorResult = mode === "denied" || mode === "do-pr-error" || mode === "error-result-exit";
 emit({ type: "result", subtype: errorResult ? "error" : "success", is_error: errorResult,
   result: mode === "do-pr" || mode === "do-pr-error" ? "Opened https://github.com/dcouple/example/pull/42" : resumed ? `resumed ${resumed}` : "planner answer", session_id: finalSession,
+  ...(mode !== "no-usage" ? {
+    total_cost_usd: mode === "all-malformed-usage" ? -1 : 0.130925,
+    usage: { input_tokens: mode === "malformed-usage" || mode === "all-malformed-usage" ? -1 : 2,
+      output_tokens: mode === "all-malformed-usage" ? -1 : 4,
+      cache_creation_input_tokens: mode === "all-malformed-usage" ? -1 : 5780,
+      cache_read_input_tokens: mode === "all-malformed-usage" ? -1 : 15105 },
+    modelUsage: mode === "all-malformed-usage" ? {} : { "claude-fable-5": { inputTokens: 2, outputTokens: 4 } },
+  } : {}),
   permission_denials: mode === "denied" ? [{ tool: "Bash" }] : [] });
 if (mode === "error-result-exit") process.exit(11);
 if (mode === "touch-file" && process.env.CLAUDE_FAKE_TOUCH_FILE) await writeFile(process.env.CLAUDE_FAKE_TOUCH_FILE, "done");

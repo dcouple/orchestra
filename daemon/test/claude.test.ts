@@ -20,8 +20,24 @@ describe("runTurn", () => {
     const result = await runTurn(options({ onEvent: (event: unknown) => events.push(event), onSessionId: (id: string) => ids.push(id) }));
     expect(result).toMatchObject({ ok: true, sessionId: "claude-session-1", resultText: "planner answer", sawResult: true });
     expect(result.capacityEvidence).toEqual([]);
+    expect(result.usage).toEqual({ inputTokens: 2, outputTokens: 4, cacheCreationTokens: 5780,
+      cacheReadTokens: 15105, costUsd: 0.130925, model: "claude-fable-5" });
     expect(events).toEqual([{ type: "text", text: "thinking" }, { type: "toolUse", name: "Read", input: { description: "ticket" } }]);
     expect(ids).toEqual(["claude-session-1"]);
+  });
+  it("omits usage for a usage-free result", async () => {
+    const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: "no-usage" } }));
+    expect(result.ok).toBe(true);
+    expect(result.usage).toBeUndefined();
+  });
+  it("drops malformed negative usage values", async () => {
+    const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: "malformed-usage" } }));
+    expect(result.usage).toEqual({ inputTokens: undefined, outputTokens: 4, cacheCreationTokens: 5780,
+      cacheReadTokens: 15105, costUsd: 0.130925, model: "claude-fable-5" });
+  });
+  it("omits usage when every usage value is malformed", async () => {
+    const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: "all-malformed-usage" } }));
+    expect(result.usage).toBeUndefined();
   });
   it("passes resume and captures a mid-stream session id change", async () => {
     const ids: string[] = [];

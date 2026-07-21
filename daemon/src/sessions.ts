@@ -385,11 +385,19 @@ export class SessionWorker {
       if (url) this.log.stageExternalUrl(turn.linearSessionId, turn.app, "Pull Request", url, finishedAt);
       else this.logger.log(jsonLog({ event: "implementer_pr_url_not_found", turnId: turn.id, linearSessionId: turn.linearSessionId }));
     }
+    const usageLog = result.usage ? {
+      ...(result.usage.inputTokens !== undefined ? { inputTokens: result.usage.inputTokens } : {}),
+      ...(result.usage.outputTokens !== undefined ? { outputTokens: result.usage.outputTokens } : {}),
+      ...(result.usage.cacheCreationTokens !== undefined ? { cacheCreationTokens: result.usage.cacheCreationTokens } : {}),
+      ...(result.usage.cacheReadTokens !== undefined ? { cacheReadTokens: result.usage.cacheReadTokens } : {}),
+      ...(result.usage.costUsd !== undefined ? { costUsd: result.usage.costUsd } : {}),
+      ...(result.usage.model !== undefined ? { model: result.usage.model } : {}),
+    } : {};
     if (result.ok) {
-      this.log.finishTurn(turn.id, "response", result.resultText || "Turn completed.", finishedAt, randomUUID(), true);
+      this.log.finishTurn(turn.id, "response", result.resultText || "Turn completed.", finishedAt, randomUUID(), true, result.usage);
       this.logger.log(jsonLog({ event: "session_turn_completed", turnId: turn.id, issueIdentifier: identifier,
         linearSessionId: turn.linearSessionId, attempts: turn.attempts,
-        durationMs: Math.max(0, finishedAt - (turn.startedAt ?? turn.receivedAt)) }));
+        durationMs: Math.max(0, finishedAt - (turn.startedAt ?? turn.receivedAt)), ...usageLog }));
     } else {
       const failedRuntime = fallbackAttempted ? "Claudex" : runtime === "claudex" ? "Claudex" : "Claude";
       const runtimeDetail = result.spawnError ?? (result.permissionDenials.length ? `${failedRuntime} permission was denied` :
@@ -397,10 +405,10 @@ export class SessionWorker {
       const detail = fallbackCause
         ? `Claude hit a usage limit (${fallbackCause})${fallbackAttempted ? `; Claudex fallback failed: ${runtimeDetail}` : ""}`
         : runtimeDetail;
-      this.log.finishTurn(turn.id, "error", `${implementer ? "Implementer" : "Planner"} turn failed: ${detail}`, finishedAt, randomUUID(), true);
+      this.log.finishTurn(turn.id, "error", `${implementer ? "Implementer" : "Planner"} turn failed: ${detail}`, finishedAt, randomUUID(), true, result.usage);
       this.logger.error(jsonLog({ event: "session_turn_failed", turnId: turn.id, issueIdentifier: identifier,
         linearSessionId: turn.linearSessionId, attempts: turn.attempts, durationMs: Math.max(0, finishedAt - (turn.startedAt ?? turn.receivedAt)),
-        error: detail, ...(result.stderrTail ? { stderrTail: result.stderrTail } : {}) }));
+        error: detail, ...(result.stderrTail ? { stderrTail: result.stderrTail } : {}), ...usageLog }));
     }
     await progress.cancelAndWait();
     this.log.touchSession(turn.linearSessionId, this.now());

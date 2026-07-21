@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
+import type { TurnUsage } from "./claude.js";
 import type { AppName } from "./config.js";
 
 export interface AppendEvent {
@@ -146,7 +147,13 @@ export class EventLog {
         attempts INTEGER NOT NULL DEFAULT 0,
         error TEXT,
         started_at INTEGER,
-        finished_at INTEGER
+        finished_at INTEGER,
+        usage_input_tokens INTEGER,
+        usage_output_tokens INTEGER,
+        usage_cache_creation_tokens INTEGER,
+        usage_cache_read_tokens INTEGER,
+        cost_usd REAL,
+        model TEXT
       );
       CREATE TABLE IF NOT EXISTS turn_activities (
         turn_id INTEGER PRIMARY KEY REFERENCES turns(id),
@@ -223,6 +230,12 @@ export class EventLog {
     const columns = new Set((this.db.prepare("PRAGMA table_info(turns)").all() as Array<{ name: string }>).map(column => column.name));
     const addedSourceKey = !columns.has("source_key");
     if (addedSourceKey) this.db.prepare("ALTER TABLE turns ADD COLUMN source_key TEXT").run();
+    if (!columns.has("usage_input_tokens")) this.db.prepare("ALTER TABLE turns ADD COLUMN usage_input_tokens INTEGER").run();
+    if (!columns.has("usage_output_tokens")) this.db.prepare("ALTER TABLE turns ADD COLUMN usage_output_tokens INTEGER").run();
+    if (!columns.has("usage_cache_creation_tokens")) this.db.prepare("ALTER TABLE turns ADD COLUMN usage_cache_creation_tokens INTEGER").run();
+    if (!columns.has("usage_cache_read_tokens")) this.db.prepare("ALTER TABLE turns ADD COLUMN usage_cache_read_tokens INTEGER").run();
+    if (!columns.has("cost_usd")) this.db.prepare("ALTER TABLE turns ADD COLUMN cost_usd REAL").run();
+    if (!columns.has("model")) this.db.prepare("ALTER TABLE turns ADD COLUMN model TEXT").run();
     this.backfillCreatedTurnSourceKeys();
     if (addedSourceKey) this.seedActivityCursorsForSourceKeyMigration(Date.now());
     this.db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_source_key ON turns(source_key)").run();
@@ -465,14 +478,17 @@ export class EventLog {
   touchSession(linearSessionId: string, now = Date.now()): void {
     this.db.prepare("UPDATE sessions SET last_seen_at=? WHERE linear_session_id=?").run(now, linearSessionId);
   }
-  finishTurn(turnId: number, kind: "response" | "error", body: string, now = Date.now(), activityId = randomUUID(), progressBarrier = false): void {
+  finishTurn(turnId: number, kind: "response" | "error", body: string, now = Date.now(), activityId = randomUUID(), progressBarrier = false,
+    usage?: TurnUsage): void {
     this.db.transaction(() => {
       this.db.prepare(`INSERT INTO turn_activities
         (turn_id, kind, activity_id, body, status, next_attempt_at, created_at, progress_barrier)
         VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`)
         .run(turnId, kind, activityId, body, now, now, progressBarrier ? 1 : 0);
-      this.db.prepare("UPDATE turns SET status='awaiting_activity', error=?, finished_at=? WHERE id=?")
-        .run(kind === "error" ? body : null, now, turnId);
+      this.db.prepare(`UPDATE turns SET status='awaiting_activity', error=?, finished_at=?,
+        usage_input_tokens=?, usage_output_tokens=?, usage_cache_creation_tokens=?, usage_cache_read_tokens=?, cost_usd=?, model=? WHERE id=?`)
+        .run(kind === "error" ? body : null, now, usage?.inputTokens ?? null, usage?.outputTokens ?? null,
+          usage?.cacheCreationTokens ?? null, usage?.cacheReadTokens ?? null, usage?.costUsd ?? null, usage?.model ?? null, turnId);
     })();
   }
   clearTurnProgressBarrier(turnId: number): void {

@@ -157,6 +157,23 @@ describe("EventLog", () => {
     log.close();
   });
 
+  it("stores usage atomically with turn completion", () => {
+    const dbPath = path(); const log = new EventLog(dbPath);
+    log.append(event()); const turn = log.claimNextTurn(1100)!;
+    log.finishTurn(turn.id, "response", "done", 1200, "activity-1", false, {
+      inputTokens: 2, outputTokens: 4, cacheCreationTokens: 5780, cacheReadTokens: 15105,
+      costUsd: 0.130925, model: "claude-fable-5",
+    });
+    const db = new Database(dbPath, { readonly: true });
+    expect(db.prepare(`SELECT usage_input_tokens inputTokens, usage_output_tokens outputTokens,
+      usage_cache_creation_tokens cacheCreationTokens, usage_cache_read_tokens cacheReadTokens,
+      cost_usd costUsd, model FROM turns WHERE id=?`).get(turn.id)).toEqual({
+      inputTokens: 2, outputTokens: 4, cacheCreationTokens: 5780, cacheReadTokens: 15105,
+      costUsd: 0.130925, model: "claude-fable-5",
+    });
+    db.close(); log.close();
+  });
+
   it("still returns expired pending terminal activities so the worker can fail them", () => {
     const log = new EventLog(path());
     log.append(event());
@@ -212,7 +229,7 @@ describe("EventLog", () => {
     reopened.close();
   });
 
-  it("migrates a pre-source-key turns table before creating the unique source key index", () => {
+  it("migrates a populated pre-usage turns table with null usage", () => {
     const dbPath = path();
     const old = new Database(dbPath);
     old.exec(`
@@ -229,6 +246,8 @@ describe("EventLog", () => {
         started_at INTEGER,
         finished_at INTEGER
       );
+      INSERT INTO turns (id, event_id, linear_session_id, issue_id, kind, prompt, status, attempts)
+      VALUES (1, 1, 'old-session', 'old-issue', 'created', 'old prompt', 'done', 1);
     `);
     old.close();
 
@@ -240,7 +259,17 @@ describe("EventLog", () => {
       unique: index.unique,
     }));
     expect(columns).toContain("source_key");
+    expect(columns).toEqual(expect.arrayContaining(["usage_input_tokens", "usage_output_tokens",
+      "usage_cache_creation_tokens", "usage_cache_read_tokens", "cost_usd", "model"]));
     expect(indexes).toContainEqual({ name: "idx_turns_source_key", unique: 1 });
+    expect(db.prepare(`SELECT linear_session_id linearSessionId, prompt, status,
+      usage_input_tokens inputTokens, usage_output_tokens outputTokens,
+      usage_cache_creation_tokens cacheCreationTokens, usage_cache_read_tokens cacheReadTokens,
+      cost_usd costUsd, model FROM turns WHERE id=1`).get()).toEqual({
+      linearSessionId: "old-session", prompt: "old prompt", status: "done",
+      inputTokens: null, outputTokens: null, cacheCreationTokens: null, cacheReadTokens: null,
+      costUsd: null, model: null,
+    });
     db.close();
     log.close();
   });

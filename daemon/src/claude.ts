@@ -16,15 +16,28 @@ export interface RunTurnOptions {
   onSessionId?: (id: string) => void | Promise<void>;
   signal?: AbortSignal;
 }
+export interface TurnUsage {
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+  cacheCreationTokens: number | undefined;
+  cacheReadTokens: number | undefined;
+  costUsd: number | undefined;
+  model: string | undefined;
+}
 export interface RunTurnResult {
   ok: boolean; sessionId?: string; resultText?: string; isError: boolean; exitCode: number | null;
   signal: NodeJS.Signals | null; spawnError?: string; permissionDenials: unknown[]; sawResult: boolean;
   stderrTail?: string; capacityEvidence: string[];
   processGroupTerminationAttempted?: boolean; processGroupExited?: boolean;
+  usage?: TurnUsage;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function nonnegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function childEnv(extra: NodeJS.ProcessEnv | undefined, trusted: Record<string, string> | undefined): NodeJS.ProcessEnv {
@@ -98,6 +111,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   let spawnError: string | undefined;
   let stderrTail = "";
   const capacityEvidence = new Set<string>();
+  let usage: TurnUsage | undefined;
   const pending: Promise<void>[] = [];
   const lines = createInterface({ input: child.stdout });
   lines.on("line", line => {
@@ -125,6 +139,18 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
       if (typeof event.result === "string") resultText = event.result;
       if (Array.isArray(event.permission_denials)) denials = event.permission_denials;
       if (denials.length) isError = true;
+      const rawUsage = record(event.usage);
+      const modelUsage = record(event.modelUsage);
+      const models = modelUsage ? Object.keys(modelUsage) : [];
+      const parsedUsage: TurnUsage = {
+        inputTokens: nonnegativeNumber(rawUsage?.input_tokens) ? rawUsage.input_tokens : undefined,
+        outputTokens: nonnegativeNumber(rawUsage?.output_tokens) ? rawUsage.output_tokens : undefined,
+        cacheCreationTokens: nonnegativeNumber(rawUsage?.cache_creation_input_tokens) ? rawUsage.cache_creation_input_tokens : undefined,
+        cacheReadTokens: nonnegativeNumber(rawUsage?.cache_read_input_tokens) ? rawUsage.cache_read_input_tokens : undefined,
+        costUsd: nonnegativeNumber(event.total_cost_usd) ? event.total_cost_usd : undefined,
+        model: models.length ? models.join(",") : undefined,
+      };
+      if (Object.values(parsedUsage).some(value => value !== undefined)) usage = parsedUsage;
     }
   });
   child.stderr?.on("data", chunk => { stderrTail = appendTail(stderrTail, chunk as Buffer); });
@@ -167,6 +193,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
       exitCode: closed.code, signal: closed.signal, ...(spawnError ? { spawnError } : {}), permissionDenials: denials, sawResult,
       ...(stderrTail ? { stderrTail } : {}), capacityEvidence: [...capacityEvidence],
       processGroupTerminationAttempted, processGroupExited: !groupAlive(),
+      ...(usage ? { usage } : {}),
     };
   } finally {
     if (killTimer) clearTimeout(killTimer);
