@@ -28,24 +28,31 @@ sub-agent.
 ## Autonomy & safety (read first)
 
 This run is meant to finish unattended — started at night, reviewed in the
-morning. Three rules make that safe:
+morning. These rules make that safe:
 
 - **A phase or step boundary is not a turn boundary.** Chain straight into the
   next step while work is ready. A detached Codex dispatch may remain
   outstanding when a turn ends: its completion marker survives, turn-start
   pickup recovers its report, and the daemon auto-resumes the run. Claude-lane
   Agent-tool background sub-agents cannot be detached and die with the parent
-  process, so they must be awaited within the turn. If you are ever about to
-  yield with work left while waiting on external state, schedule a self-wakeup
-  (`ScheduleWakeup`) so the run resumes on its own instead of idling until a
-  human nudges it. Idle-waiting on a human nudge is a pipeline bug.
+  process, so they must be awaited within the turn. Ending a turn with work
+  remaining — including a turn whose only outstanding work is background
+  dispatches — **requires** a scheduled self-wakeup (`ScheduleWakeup`): a hung
+  dispatch never sends a completion notification. While dispatches are
+  outstanding the fallback interval is ≤600s; the longer 1200s+ heartbeat is
+  for turns with nothing in flight. Idle-waiting on a human nudge is a
+  pipeline bug.
+- **A plain human message mid-run — "continue", "still running?", "does it
+  work?" — is genuine input, never a task notification.** Inspect the dispatch
+  markers and durable outputs, answer from them, and resume immediately.
 - **Action tiers decide what you may do alone. When unsure which tier an
   action is, it is red — always err toward caution.**
   - **Green — do it unattended:** code, tests, docs, new files, and
     **staging** schema changes that are *both* additive/nullable *and*
     reversible (a new nullable column or new table you could drop with no data
-    loss) — anything self-undoing. Apply it; note the production counterpart
-    in Deploy notes.
+    loss) — anything self-undoing. Apply it without asking — a green action
+    is never gated on a conversational confirmation; note the production
+    counterpart in Deploy notes.
   - **Red — never executed by you:** **anything touching production** — the
     production database, production config, real users, or money — full stop,
     even if it looks trivial and even if the human approves it; **anything
@@ -390,7 +397,9 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 ## Step 5: Post-PR review + QA
 
 Reviews run against the open PR and fixes land on it — self-correction
-happens on the artifact, not before it exists.
+happens on the artifact, not before it exists. The turn in which a reviewer
+or verifier report arrives publishes its results (body edit, evidence
+comment) before ending — a returned report is never parked for a later turn.
 
 - Run the review lanes over the PR diff (zone 0: both reviewers,
   dispatched together in one message — Agent tool + detached `codex exec`
