@@ -207,6 +207,10 @@ fresh review pass (it's a new artifact), an unchanged one never does. The
 score recorded after the last pass is final.
 Never a reason to stop the run.
 
+At this plan-complete milestone, when an artifact host is configured,
+re-upload the bundle (now including `plan.md`) using the artifact-host step in
+`.references/publish-work-item.md`.
+
 ## Step 2: Implement
 
 Every implementation dispatch goes to the `codex` skill, role `implementer`
@@ -463,6 +467,9 @@ happens on the artifact, not before it exists.
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
   instructions.
+- At this wrap-up milestone, when an artifact host is configured, re-upload
+  the bundle (now including `wrapup.md`) using the artifact-host step in
+  `.references/publish-work-item.md`.
 - Immediately before the `awaiting-human-review` label, **YOU MUST** run the
   shared contract's current-item handoff set and report each `In Review`
   operation as `verified`, `already-correct`, `failed`, or `unavailable`.

@@ -53,6 +53,27 @@ app prefix are test-only static overrides and are ignored unless `DAEMON_TEST_MO
 production uses client credentials. Optional settings are `PORT`, `BIND_ADDR`,
 `REPLAY_WINDOW_MS`, `LINEAR_GRAPHQL_URL`, and `LINEAR_TOKEN_URL`.
 
+Set `ARTIFACT_TOKEN` to enable artifact hosting. An authenticated `POST /a` creates a
+bundle with a server-generated id; authenticated `PUT /a/<id>` atomically replaces an
+existing bundle. Both accept a JSON manifest whose file contents are base64 encoded:
+
+```json
+{
+  "files": [
+    { "path": "item.md", "contentBase64": "IyBJdGVtCg==" },
+    { "path": "refs/explainer.html", "contentBase64": "PGgxPkV4cGxhaW5lcjwvaDE+" }
+  ]
+}
+```
+
+Writes require `Authorization: Bearer <ARTIFACT_TOKEN>`. `GET /a/<id>/` is an
+unauthenticated, self-contained viewer; `GET /a/<id>/<path>` serves raw files. There is no
+bundle-listing route. `ARTIFACTS_DIR` defaults to an `artifacts` directory beside the
+database, and `ARTIFACT_MAX_BODY_BYTES` defaults to 32 MiB. Provisioning creates the default
+directory under `/var/lib/linear-agent-daemon`, outside the deployed application tree, so
+content survives provision and deploy reruns. It is not backed up yet; loss of the VM disk
+loses stored bundles.
+
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
 `CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),

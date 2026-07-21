@@ -19,6 +19,9 @@ export interface Config {
   linearGraphqlUrl: string;
   linearTokenUrl: string;
   webhookBaseUrl: string;
+  artifactToken?: string;
+  artifactsDir: string;
+  artifactMaxBodyBytes: number;
   reconcileIntervalMs: number;
   reconcileRequestTimeoutMs: number;
   apps: Record<AppName, AppConfig>;
@@ -80,6 +83,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const sessionsEnabled = enabled(env, "SESSIONS_ENABLED");
   const targetRepoPath = env.TARGET_REPO_PATH?.trim();
   const linearApiKey = env.LINEAR_API_KEY?.trim();
+  const artifactToken = env.ARTIFACT_TOKEN?.trim();
   const webhookBaseUrl = env.WEBHOOK_BASE_URL?.trim() || (testMode ? "http://127.0.0.1:8787" : required(env, "WEBHOOK_BASE_URL"));
   if (sessionsEnabled && !targetRepoPath) required(env, "TARGET_REPO_PATH");
   if (sessionsEnabled && !linearApiKey) required(env, "LINEAR_API_KEY");
@@ -101,6 +105,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     linearGraphqlUrl: env.LINEAR_GRAPHQL_URL?.trim() || "https://api.linear.app/graphql",
     linearTokenUrl: env.LINEAR_TOKEN_URL?.trim() || "https://api.linear.app/oauth/token",
     webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
+    ...(artifactToken ? { artifactToken } : {}),
+    artifactsDir: env.ARTIFACTS_DIR?.trim() || `${dirname(dbPath)}/artifacts`,
+    artifactMaxBodyBytes: positiveInteger(env, "ARTIFACT_MAX_BODY_BYTES", 32 * 1024 * 1024),
     reconcileIntervalMs: positiveInteger(env, "RECONCILE_INTERVAL_MS", 60_000),
     reconcileRequestTimeoutMs: positiveInteger(env, "RECONCILE_REQUEST_TIMEOUT_MS", 10_000),
     apps: { planner: appConfig(env, "planner", testMode), implementer: appConfig(env, "implementer", testMode) },

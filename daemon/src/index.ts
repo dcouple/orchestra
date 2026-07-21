@@ -6,6 +6,7 @@ import { WebhookServer } from "./server.js";
 import { SessionWorker } from "./sessions.js";
 import { CleanupWorker } from "./cleanup.js";
 import { ReconcileWorker } from "./reconcile.js";
+import { ArtifactStore } from "./artifacts.js";
 
 const config = loadConfig();
 const log = new EventLog(config.dbPath);
@@ -16,7 +17,8 @@ const sessionWorker = config.sessionsEnabled ? new SessionWorker(log, gateway, c
 const triggerWorkers = () => { worker.trigger(); sessionWorker?.trigger(); void cleanupWorker?.trigger(); };
 const onStop = (id: string) => sessionWorker?.stopSession(id);
 const reconcileWorker = hasLinearApiCreds() ? new ReconcileWorker(log, gateway, config, { onInserted: triggerWorkers, onStop }) : undefined;
-const server = new WebhookServer({ config, log, onInserted: triggerWorkers, onStop });
+const artifactStore = config.artifactToken ? new ArtifactStore(config.artifactsDir) : undefined;
+const server = new WebhookServer({ config, log, onInserted: triggerWorkers, onStop, ...(artifactStore ? { artifactStore } : {}) });
 
 worker.start();
 sessionWorker?.start();

@@ -52,7 +52,7 @@ if ! id linear-daemon >/dev/null 2>&1; then
   useradd --system --home-dir /var/lib/linear-agent-daemon --create-home --shell /usr/sbin/nologin linear-daemon
 fi
 install -d -o linear-daemon -g linear-daemon -m 0750 /opt/linear-agent-daemon /var/lib/linear-agent-daemon
-install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/worktrees /var/lib/linear-agent-daemon/repos
+install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/worktrees /var/lib/linear-agent-daemon/repos /var/lib/linear-agent-daemon/artifacts
 install -d -o root -g linear-daemon -m 0750 /etc/linear-agent-daemon
 if [[ ! -f /etc/linear-agent-daemon/env ]]; then
   install -o linear-daemon -g linear-daemon -m 0600 /dev/null /etc/linear-agent-daemon/env
@@ -144,7 +144,7 @@ install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-daemon.service" 
 cat > /etc/caddy/Caddyfile <<EOF
 ${DAEMON_HOST} {
   request_body {
-    max_size 1MB
+    max_size 32MB
   }
   reverse_proxy 127.0.0.1:8787
 }

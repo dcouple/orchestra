@@ -59,7 +59,11 @@ Example — publish to GitHub issues (replace or delete):
 ```yaml
 tracker: github
 github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the current repo
+# artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
 ```
+
+When `artifact_host` is set, export `ARTIFACT_HOST_TOKEN` with its upload
+bearer token; the shared publish procedure uploads and attaches the viewer URL.
 
 > Publish every work item as a self-contained GitHub issue: `item.md` is
 > the issue body; `refs/` files ride as marker-delimited issue comments.

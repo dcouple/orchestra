@@ -34,6 +34,64 @@ the `Work-item tracking` section of the project's `AGENTS.md` (or
    nowhere: the work item is complete as local files under `./tmp/<id>/`.
    Tell the user nothing was published and where the files live.
 
+## Artifact host (optional)
+
+When the consumer's `Work-item tracking` block sets `artifact_host: <https
+base URL>`, uploading and attaching the artifact bundle is a required,
+additive publish step. Read the bearer token from `ARTIFACT_HOST_TOKEN`.
+Repos with no `artifact_host` key skip this step. Existing tracker artifact
+transport, including GitHub marker comments and `/do`'s pull, stays unchanged.
+
+Build the manifest from `item.md`, any present `plan.md` and `wrapup.md`, and
+every regular file under `refs/`. This dependency-free Node snippet writes the
+wire format to stdout (set `ITEM_DIR` to the work-item directory):
+
+```bash
+node --input-type=module - "$ITEM_DIR" <<'NODE'
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+const root = process.argv[2];
+const files = [];
+const add = path => files.push({ path: relative(root, path).split("\\").join("/"), contentBase64: readFileSync(path).toString("base64") });
+for (const name of ["item.md", "plan.md", "wrapup.md"]) {
+  const path = join(root, name); try { if (statSync(path).isFile()) add(path); } catch {}
+}
+const walk = dir => { for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  const path = join(dir, entry.name); if (entry.isDirectory()) walk(path); else if (entry.isFile()) add(path);
+}};
+try { walk(join(root, "refs")); } catch {}
+process.stdout.write(JSON.stringify({ files }));
+NODE
+```
+
+Redirect the snippet's stdout to a file from `mktemp`, then create the bundle
+with (remove the temporary file afterward):
+
+```bash
+curl --fail-with-body --retry 1 \
+  -H "Authorization: Bearer $ARTIFACT_HOST_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary "@$MANIFEST_FILE" \
+  "$ARTIFACT_HOST/a"
+```
+
+On first publish, send that manifest to `POST <artifact_host>/a` with
+`Authorization: Bearer $ARTIFACT_HOST_TOKEN`. Record the returned `url` in
+`item.md` frontmatter as `artifact_bundle:`; this stable URL identifies the
+server-generated bundle id used for later uploads. Attach the URL to the
+published tracker item: create a Linear `attachmentCreate` card for Linear,
+or add an `Artifact bundle: <url>` link line to the GitHub issue body.
+
+At the **plan-complete** and **wrap-up** milestones, rebuild the manifest and
+re-upload it with an authenticated `PUT` to the recorded `artifact_bundle`
+URL with its trailing slash removed. This makes the already-attached stable
+URL serve the current `plan.md` and `wrapup.md` after a browser refresh.
+
+Retry a failed upload once. If the retry also fails, surface the failure to
+the user and record `artifact_upload: failed` in `item.md` frontmatter so the
+next milestone retries; never silently skip an upload when `artifact_host` is
+configured. On a successful later upload, remove the failure field.
+
 When the configured destination is GitHub issues and the instructions
 don't already say how to attach artifacts: issue attachments are
 web-UI-only (no API/CLI path), so post each artifact as its own issue
