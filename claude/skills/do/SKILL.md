@@ -93,7 +93,11 @@ keys, a browser for computer-use); and the **harness permission modes** —
 the orchestrator session runs under `claude --dangerously-skip-permissions`
 and every codex dispatch uses `--yolo`; approvals must never gate an
 unattended run. Not in bypass mode → preflight note with the exact relaunch
-command. Resolvable from config or a quick check →
+command. Prove each credential with a token-producing probe, never a
+listing (`gcloud auth print-access-token` — plus the application-default
+variant when terraform is in play; `gcloud auth list` proves nothing), and
+note each token's expiry horizon against the run's expected length.
+Resolvable from config or a quick check →
 just confirm it silently. If nothing is missing, say so in one line and
 proceed. A missing green-tier dependency is a preflight note, not a
 stop — the human clears it while you work; only a dependency the run truly
@@ -106,7 +110,10 @@ dependencies, run the project's own idempotent install (a no-op when the
 tree is already current), detecting the toolchain from the repo's
 `AGENTS.md`/manifests rather than assuming one — always in the toolchain's
 reproducible mode (locked versions) and with lifecycle scripts suppressed
-where the toolchain supports it. A missing toolchain or failed install
+where the toolchain supports it. Compare installed linter/build-tool
+versions against the versions the repo's `AGENTS.md`/CI pin — a mismatch is
+a preflight note, and the pinned install can start in the background before
+implement. A missing toolchain or failed install
 emits an **environment note** in the preflight message or run chat naming
 the workspace and tool; continue per the action tiers and carry a
 persistent note into the wrap-up/PR notes. If a later stage fails on an
@@ -172,15 +179,24 @@ These preflight items are only checkable now that the item is loaded:
   **YOU MUST NOT** prompt for tracker authentication.
 - When verification criteria imply driving the running app (UI acceptance
   criteria, manual flows), confirm the repo `AGENTS.md`'s testing-accounts
-  section exists and is filled — it is the verifier's credentials source.
-  Missing or unfilled → an immediate preflight follow-up note asking the human,
-  so the gap surfaces now instead of when the verifier blocks mid-run.
+  section exists and is filled — it is the verifier's credentials source —
+  and prove the readiness executable, not documentary: the browser-automation
+  transport connects and the named test sessions/credentials are actually
+  reachable. Either half missing → an immediate preflight follow-up note
+  naming each missing half, so the gap surfaces now instead of when the
+  verifier blocks mid-run.
 - When any stage will need the running app — verification, reproduction, or a
   staging prerequisite — confirm the repo `AGENTS.md` documents its launch
   command, flags, port/URL, and env. Missing or unfilled → an immediate
   preflight follow-up note. Using only those sourced facts, the pipeline may
   start the app in the background when needed and must stop what it started;
   never invent a launch command.
+
+Check branch state before any work builds on it: `git fetch origin
+<default>` and note in one line whether the default branch has moved past
+the branch point, and `gh pr list --head <branch>` — a branch already
+carrying an open PR means this run's PR stacks on a fresh branch, decided
+now, before the first push.
 
 Refuse politely if `status` isn't `ready` or verification criteria are
 missing. Never create a branch — if on the default branch, stop and ask the
@@ -266,6 +282,11 @@ more research and deepening the plan; a materially revised plan earns a
 fresh review pass (it's a new artifact), an unchanged one never does. The
 score recorded after the last pass is final.
 Never a reason to stop the run.
+
+A plan that pins a dependency the repo's install gates will refuse without
+human approval (a release-age allowlist, a license gate) surfaces that
+approval request in a notify at plan-exit — never as a blocking gate the
+implement wave discovers.
 
 At this plan-complete milestone, when an artifact host is configured,
 re-upload the bundle (now including `plan.md`) using the artifact-host step in
