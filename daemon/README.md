@@ -78,8 +78,11 @@ stored bundles.
 
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
-`CLAUDE_BIN` (default `claudex`, whitespace-split for a command prefix; set `claude`
-explicitly for Anthropic-backed local development),
+`CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),
+`CLAUDEX_BIN` (optional, whitespace-split; enables a one-shot retry of validated
+Claude usage/rate-limit failures through the Claudex proxy runtime — point it at
+the provisioned `claudex` wrapper), `CLAUDEX_ENV` (optional JSON string map of
+extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
 `CLAUDE_PERMISSION_MODE` (`bypassPermissions`), `CLAUDE_MAX_TURNS` (100),
 `DO_PERMISSION_MODE` (`bypassPermissions`; production rejects every other value),
 `DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),

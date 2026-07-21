@@ -24,9 +24,12 @@ either agent resume the same Claude session.
 - Admin access to the Linear workspace where the agents will live.
 - A GitHub bot identity with a fine-grained PAT scoped to the target
   repository (contents + pull-requests write).
-- An OpenAI account with Codex access (ChatGPT Plus/Pro) for both the
-  `claudex` proxy and standalone Codex CLI lanes. The provisioner installs
-  Claude Code as the harness; it does not require Anthropic authentication.
+- Anthropic authentication for the daemon user — Claude is the normal
+  top-level harness for planner and implementer sessions.
+- An OpenAI account with Codex access (ChatGPT Plus/Pro) for the standalone
+  Codex CLI lanes and the `claudex` proxy runtime, which serves as the
+  one-shot capacity fallback when Claude reports a validated usage/rate
+  limit (`CLAUDEX_BIN`).
 - A target repository that meets the requirements in
   [Target repository requirements](#target-repository-requirements).
 
@@ -175,7 +178,9 @@ LINEAR_API_KEY=...
 SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/<repo>
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
-CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
+CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
+# One-shot capacity fallback through the provisioned claudex wrapper:
+CLAUDEX_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_MAX_TURNS=100
 DO_PERMISSION_MODE=bypassPermissions
