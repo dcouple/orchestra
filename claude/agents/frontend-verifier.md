@@ -88,11 +88,14 @@ session handling, event checks go beyond "the request fired":
   users each look like one clean person. On a mismatch, inspect the raw
   distinct/device id per event: it names the identity that captured the event
   and usually the merge vector.
-- Drive one **multi-user same-browser pass** for auth/signup surfaces:
+- Only when the change touches identity stitching itself (aliasing, identify
+  calls, distinct-id handling, session-identity plumbing) — not for routine
+  auth-adjacent UI work — drive one **multi-user same-browser pass**:
   consecutive signups or login switches in a single browser profile, then
-  assert each user resolved to a separate person AND that session-scoped
-  connections (e.g. websocket auth) followed the switch. Shared-machine bugs
-  are invisible to single-user passes.
+  assert each user resolved to a separate person and that session-scoped
+  connections (e.g. websocket auth) followed the switch. Shared-machine
+  merges are invisible to single-user passes, but this pass is expensive;
+  reserve it for changes where that failure mode is actually in play.
 - Events fired immediately before a hard navigation (payment redirects,
   external scheduling links) must be confirmed ingested — SDK batching drops
   them on unload unless they use a beacon-style transport.
