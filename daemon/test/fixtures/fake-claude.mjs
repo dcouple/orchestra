@@ -12,6 +12,10 @@ if (argsFile) await appendFile(argsFile,
 if (process.env.CLAUDE_FAKE_ENV_FILE) await appendFile(process.env.CLAUDE_FAKE_ENV_FILE,
   `${JSON.stringify({ args, env: process.env, at: Date.now(), phase: "env" })}\n`);
 const emit = value => process.stdout.write(`${JSON.stringify(value)}\n`);
+if (mode === "provider-fail-pre-id") {
+  process.stderr.write("connection refused by provider base URL\n");
+  process.exit(7);
+}
 const session = resumed || (mode === "do-pr" || mode === "do-pr-error" ? "claude-do-session" : "claude-session-1");
 emit({ type: "system", subtype: "init", session_id: session, uuid: "init" });
 if (mode === "rate-limit-rejected" || mode === "capacity-after-session") {
@@ -44,6 +48,10 @@ if (mode === "non-capacity-api-error") {
   emit({ type: "result", subtype: "error_during_execution", terminal_reason: "api_error", is_error: true,
     errors: [{ type: "authentication_error" }, { type: "api_error" }], result: "request failed", session_id: session });
   process.exit(1);
+}
+if (mode === "provider-fail-post-id") {
+  process.stderr.write("HTTP 503 from provider base URL\n");
+  process.exit(7);
 }
 if (mode === "crash") process.exit(7);
 if (mode === "no-result") process.exit(0);

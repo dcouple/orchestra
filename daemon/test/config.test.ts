@@ -23,7 +23,20 @@ describe("loadConfig", () => {
     expect(config.sessionsEnabled).toBe(false);
     expect(config.claudeArgv).toEqual(["claude"]);
     expect(config.claudexArgv).toBeUndefined();
+    expect(config.fableArgv).toBeUndefined();
+    expect(config).toMatchObject({ cliproxyEnvFile: "/etc/linear-agent-daemon/cliproxyapi.env",
+      cliproxyUrl: "http://127.0.0.1:8317", providerProbeIntervalMs: 60_000,
+      providerStateStaleMs: 300_000, providerInitialProbeTimeoutMs: 5_000 });
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
+  });
+  it("loads Fable and provider probe overrides", () => {
+    expect(loadConfig({ ...base, FABLE_BIN: "node fable.mjs", CLIPROXY_ENV_FILE: "/tmp/proxy.env",
+      CLIPROXY_URL: "http://proxy:8317/", PROVIDER_PROBE_INTERVAL_MS: "2000",
+      PROVIDER_STATE_STALE_MS: "9000", PROVIDER_INITIAL_PROBE_TIMEOUT_MS: "750" })).toMatchObject({
+        fableArgv: ["node", "fable.mjs"], cliproxyEnvFile: "/tmp/proxy.env", cliproxyUrl: "http://proxy:8317",
+        providerProbeIntervalMs: 2000, providerStateStaleMs: 9000, providerInitialProbeTimeoutMs: 750,
+      });
+    expect(() => loadConfig({ ...base, PROVIDER_INITIAL_PROBE_TIMEOUT_MS: "0" })).toThrow("PROVIDER_INITIAL_PROBE_TIMEOUT_MS");
   });
   it("forces production do-mode autonomy and parses its budget",()=>{
     expect(()=>loadConfig({...base,DAEMON_TEST_MODE:undefined,WEBHOOK_BASE_URL:"https://agent.example.com",DO_PERMISSION_MODE:"plan"})).toThrow("DO_PERMISSION_MODE");

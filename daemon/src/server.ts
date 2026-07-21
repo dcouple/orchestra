@@ -51,7 +51,13 @@ export class WebhookServer {
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     try {
       if (request.method === "GET" && request.url === "/healthz") {
-        this.earlyJson(request, response, 200, { ok: true }); return;
+        const claude = this.options.log.getProviderState("claude");
+        const codex = this.options.log.getProviderState("codex");
+        this.earlyJson(request, response, 200, { ok: true, providers: {
+          claude: { status: claude?.status ?? "not_ready", reason: claude?.reason ?? "state_missing",
+            ...(claude?.cooldownUntil != null ? { cooldownUntil: claude.cooldownUntil } : {}), updatedAt: claude?.updatedAt ?? 0 },
+          codex: { status: codex?.status ?? "ready", ...(codex?.cooldownUntil != null ? { cooldownUntil: codex.cooldownUntil } : {}) },
+        } }); return;
       }
       const pathname = (request.url ?? "").split("?", 1)[0] ?? "";
       if (pathname === "/a" || pathname === "/a/" || pathname.startsWith("/a/")) {
@@ -102,6 +108,8 @@ export class WebhookServer {
         rawBody,
       };
       const result = this.options.log.append(event);
+      if (result.assignedProfile) this.logger.log(JSON.stringify({ event: "session_profile_assigned",
+        linearSessionId: event.agentSessionId, profile: result.assignedProfile, reason: result.assignmentReason }));
       this.logger.log(JSON.stringify({ event: "webhook", deliveryId: result.deliveryId, app,
         action: event.action ?? null, signal: event.signal ?? null, sessionId: event.agentSessionId ?? null, issueId: event.issueId ?? null,
         inserted: result.inserted }));

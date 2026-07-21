@@ -1,11 +1,13 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const provision = readFileSync(resolve("ops/provision.sh"), "utf8");
 const claudex = readFileSync(resolve("ops/claudex"), "utf8");
+const claudexFable = readFileSync(resolve("ops/claudex-fable"), "utf8");
 const proxyAccounts = readFileSync(resolve("ops/proxy-accounts.sh"), "utf8");
 const providerGate = readFileSync(resolve("ops/codex-provider-gate.sh"), "utf8");
 const proxyUnit = readFileSync(resolve("ops/cliproxyapi.service"), "utf8");
@@ -35,6 +37,36 @@ describe("daemon provisioning", () => {
     expect(claudex).toContain("export CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3");
     expect(claudex).toContain("export ENABLE_TOOL_SEARCH=true");
     expect(claudex).toContain("claude --model gpt-5.6-sol");
+  });
+  it("installs a fail-closed Fable launcher and validates model identity before exec", async () => {
+    expect(provision).toContain('"${SOURCE_DIR}/ops/claudex-fable"');
+    expect(provision).not.toContain("cat > /etc/linear-agent-daemon/fable-models.env");
+    expect(claudexFable).toContain("claude-*");
+    expect(claudexFable).toContain("/v1/models");
+    const dir = mkdtempSync(join(tmpdir(), "claudex-fable-"));
+    const proxyEnv = join(dir, "proxy.env"), modelsEnv = join(dir, "models.env"), argsFile = join(dir, "args");
+    const fakeClaude = join(dir, "claude");
+    writeFileSync(proxyEnv, "CLIPROXY_API_KEY=test-key\n");
+    writeFileSync(fakeClaude, `#!/bin/sh\nprintf '%s\\n' "$*" > ${argsFile}\n`); chmodSync(fakeClaude, 0o755);
+    const server = createServer((_request, response) => { response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: [{ id: "claude-real" }] })); });
+    await new Promise<void>(resolveListen => server.listen(0, "127.0.0.1", resolveListen));
+    const port = (server.address() as { port: number }).port;
+    const run = (models: string) => new Promise<{ code: number | null; stderr: string }>(resolveRun => {
+      writeFileSync(modelsEnv, models);
+      const child = spawn("sh", [resolve("ops/claudex-fable"), "--flag"], { env: { ...process.env,
+        CLIPROXY_ENV_FILE: proxyEnv, FABLE_MODELS_ENV_FILE: modelsEnv, PROXY_URL: `http://127.0.0.1:${port}`,
+        FABLE_CLAUDE_BIN: fakeClaude }, stdio: ["ignore", "ignore", "pipe"] });
+      let stderr = ""; child.stderr.on("data", chunk => { stderr += String(chunk); });
+      child.on("close", code => resolveRun({ code, stderr }));
+    });
+    const valid = "FABLE_MAIN_MODEL=claude-real\nFABLE_HAIKU_MODEL=claude-real\nFABLE_SONNET_MODEL=claude-real\nFABLE_OPUS_MODEL=claude-real\nFABLE_FABLE_MODEL=claude-real\n";
+    expect((await run(valid)).code).toBe(0); expect(readFileSync(argsFile, "utf8")).toContain("--model claude-real --flag");
+    const wrong = await run(valid.replace("FABLE_MAIN_MODEL=claude-real", "FABLE_MAIN_MODEL=gpt-wrong"));
+    expect(wrong.code).not.toBe(0); expect(wrong.stderr).toContain("FABLE_MAIN_MODEL must name a claude-*");
+    const missing = await run(valid.replace("FABLE_MAIN_MODEL=claude-real", "FABLE_MAIN_MODEL=claude-missing"));
+    expect(missing.code).not.toBe(0); expect(missing.stderr).toContain("FABLE_MAIN_MODEL model absent");
+    await new Promise<void>(resolveClose => server.close(() => resolveClose())); rmSync(dir, { recursive: true, force: true });
   });
 
   it("configures model effort tiers and starts the loopback proxy before the daemon", () => {

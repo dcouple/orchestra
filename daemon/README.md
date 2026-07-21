@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 pnpm test
-bash -n ops/provision.sh ops/claudex ops/proxy-accounts.sh ops/codex-provider-gate.sh
+bash -n ops/provision.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
 ```
 
 The Vitest suite is hermetic: it uses loopback HTTP servers and temporary real SQLite
@@ -86,6 +86,9 @@ enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the dat
 Claude usage/rate-limit failures through the Claudex proxy runtime — point it at
 the provisioned `claudex` wrapper), `CLAUDEX_ENV` (optional JSON string map of
 extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
+`FABLE_BIN` (optional; normally the installed `ops/claudex-fable` launcher),
+`CLIPROXY_ENV_FILE`, `CLIPROXY_URL`, `PROVIDER_PROBE_INTERVAL_MS`,
+`PROVIDER_STATE_STALE_MS`, and `PROVIDER_INITIAL_PROBE_TIMEOUT_MS`,
 `CLAUDE_PERMISSION_MODE` (`bypassPermissions`), `CLAUDE_MAX_TURNS` (100),
 `DO_PERMISSION_MODE` (`bypassPermissions`; production rejects every other value),
 `DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),

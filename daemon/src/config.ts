@@ -31,6 +31,12 @@ export interface Config {
   claudeArgv: string[];
   claudexArgv?: string[];
   claudexEnv?: Record<string, string>;
+  fableArgv?: string[];
+  cliproxyEnvFile: string;
+  cliproxyUrl: string;
+  providerProbeIntervalMs: number;
+  providerStateStaleMs: number;
+  providerInitialProbeTimeoutMs: number;
   claudePermissionMode: string;
   claudeMaxTurns: number;
   doPermissionMode: string;
@@ -114,6 +120,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const claudexArgv = optionalArgv(env, "CLAUDEX_BIN");
   const claudexEnv = stringMap(env, "CLAUDEX_ENV");
   if (claudexEnv && !claudexArgv) throw new Error("CLAUDEX_ENV requires CLAUDEX_BIN");
+  const fableBin = env.FABLE_BIN?.trim();
+  const providerProbeIntervalMs = positiveInteger(env, "PROVIDER_PROBE_INTERVAL_MS", 60_000);
   const doPermissionMode = env.DO_PERMISSION_MODE?.trim() || "bypassPermissions";
   if (!testMode && doPermissionMode !== "bypassPermissions") {
     throw new Error("DO_PERMISSION_MODE must be bypassPermissions unless DAEMON_TEST_MODE=1");
@@ -143,6 +151,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     claudeArgv,
     ...(claudexArgv ? { claudexArgv } : {}),
     ...(claudexEnv ? { claudexEnv } : {}),
+    ...(fableBin ? { fableArgv: fableBin.split(/\s+/) } : {}),
+    cliproxyEnvFile: env.CLIPROXY_ENV_FILE?.trim() || "/etc/linear-agent-daemon/cliproxyapi.env",
+    cliproxyUrl: (env.CLIPROXY_URL?.trim() || "http://127.0.0.1:8317").replace(/\/+$/, ""),
+    providerProbeIntervalMs,
+    providerStateStaleMs: positiveInteger(env, "PROVIDER_STATE_STALE_MS", 5 * providerProbeIntervalMs),
+    providerInitialProbeTimeoutMs: positiveInteger(env, "PROVIDER_INITIAL_PROBE_TIMEOUT_MS", 5_000),
     claudePermissionMode: env.CLAUDE_PERMISSION_MODE?.trim() || "bypassPermissions",
     claudeMaxTurns: positiveInteger(env, "CLAUDE_MAX_TURNS", 100),
     doPermissionMode,

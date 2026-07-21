@@ -3,13 +3,14 @@ import { loadConfig } from "./config.js";
 import { EventLog } from "./eventlog.js";
 import { LinearGateway } from "./linear.js";
 import { WebhookServer } from "./server.js";
-import { SessionWorker } from "./sessions.js";
+import { ProviderReadinessPoller, SessionWorker, selectSessionProfile } from "./sessions.js";
 import { CleanupWorker } from "./cleanup.js";
 import { ReconcileWorker } from "./reconcile.js";
 import { ArtifactStore } from "./artifacts.js";
 
 const config = loadConfig();
-const log = new EventLog(config.dbPath);
+let log: EventLog;
+log = new EventLog(config.dbPath, () => selectSessionProfile(log, config));
 const gateway = new LinearGateway(log, config.apps, config.linearGraphqlUrl, config.linearTokenUrl);
 const worker = new AckWorker(log, gateway);
 const cleanupWorker = config.sessionsEnabled ? new CleanupWorker(log,gateway,config.worktreesRoot,config.targetRepoPath!) : undefined;
@@ -19,6 +20,18 @@ const onStop = (id: string) => sessionWorker?.stopSession(id);
 const reconcileWorker = hasLinearApiCreds() ? new ReconcileWorker(log, gateway, config, { onInserted: triggerWorkers, onStop }) : undefined;
 const artifactStore = config.artifactToken ? new ArtifactStore(config.artifactsDir) : undefined;
 const server = new WebhookServer({ config, log, onInserted: triggerWorkers, onStop, ...(artifactStore ? { artifactStore } : {}) });
+const providerPoller = config.sessionsEnabled ? new ProviderReadinessPoller(log, config) : undefined;
+
+if (providerPoller) {
+  let initialTimer: NodeJS.Timeout | undefined;
+  await Promise.race([providerPoller.probe(), new Promise<void>(resolve => {
+    initialTimer = setTimeout(() => {
+      log.setProviderState("claude", "not_ready", "initial_probe_timeout"); resolve();
+    }, config.providerInitialProbeTimeoutMs);
+  })]);
+  if (initialTimer) clearTimeout(initialTimer);
+  providerPoller.start();
+}
 
 worker.start();
 sessionWorker?.start();
@@ -37,6 +50,7 @@ async function shutdown(signal: string): Promise<void> {
   await worker.stop();
   await sessionWorker?.stop();
   await cleanupWorker?.stop();
+  providerPoller?.stop();
   log.close();
 }
 

@@ -9,7 +9,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent, TerminalContent } from "../src/linear.js";
-import { SessionWorker } from "../src/sessions.js";
+import { WebhookServer } from "../src/server.js";
+import { ProviderReadinessPoller, SessionWorker, classifyProviderFailure, selectSessionProfile } from "../src/sessions.js";
 
 const dirs: string[] = [];
 const oldMode = process.env.CLAUDE_FAKE_MODE;
@@ -37,6 +38,8 @@ function setup() {
       planner: { name: "planner", webhookSecret: "p", staticToken: "p" }, implementer: { name: "implementer", webhookSecret: "i", staticToken: "i" } },
     sessionsEnabled: true, worktreesRoot: join(dir, "trees"), targetRepoPath: repo,
     claudeArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")], claudePermissionMode: "plan", claudeMaxTurns: 5,
+    cliproxyEnvFile: join(dir, "proxy.env"), cliproxyUrl: "http://127.0.0.1:1", providerProbeIntervalMs: 60_000,
+    providerStateStaleMs: 300_000, providerInitialProbeTimeoutMs: 5000,
     doPermissionMode:"plan",doMaxTurns:50,doMaxBudgetUsd:10,
     sessionConcurrency: 2, keepaliveMs: 30, linearApiKey: "linear-key", attachmentsEnabled: false, attachmentHosts: ["uploads.linear.app"] };
   return { dir, log, config };
@@ -89,6 +92,182 @@ async function healthy(port: number, child: ChildProcess): Promise<void> {
 }
 
 describe("SessionWorker", () => {
+  it("classifies only conservative provider failures", () => {
+    const base = { ok: false, isError: true, exitCode: 1, signal: null, permissionDenials: [], sawResult: false } as const;
+    expect(classifyProviderFailure({ ...base, spawnError: "spawn ECONNREFUSED" })).toMatchObject({ reason: "spawn_econnrefused" });
+    expect(classifyProviderFailure({ ...base, stderrTail: "HTTP 403 from base URL" })).toMatchObject({ state: "auth_failure", reason: "http_403" });
+    expect(classifyProviderFailure({ ...base, stderrTail: "ordinary model error" })).toBeUndefined();
+  });
+  it("probes readiness and selects Fable only for fresh ready state without cooldown", async () => {
+    const { log, config } = setup(); config.fableArgv = ["fable"];
+    const logger = new CapturingLogger();
+    await new ProviderReadinessPoller(log, config, logger, async () => ({ files: [
+      { provider: "claude", disabled: false, failed: false, email: "secret@example.com" },
+    ] })).probe(1000);
+    expect(selectSessionProfile(log, config, 1001)).toEqual({ profile: "fable", reason: "claude_ready" });
+    expect(logger.entries()[0]).toEqual({ event: "provider_state_changed", provider: "claude", status: "ready",
+      reason: "eligible_1_failed_0", cooldownUntil: null });
+    expect(logger.lines.join("\n")).not.toContain("secret@example.com");
+    log.setProviderCooldown("claude", 5000, "http_503", 1100);
+    expect(selectSessionProfile(log, config, 1200)).toEqual({ profile: "sol", reason: "claude_cooldown" });
+    log.close();
+  });
+  it("probes the management auth-files endpoint with the key read from disk", async () => {
+    const { log, config } = setup(); writeFileSync(config.cliproxyEnvFile, "CLIPROXY_MANAGEMENT_KEY=management-secret\n");
+    let authorization: string | undefined;
+    const server = createServer((request, response) => { authorization = request.headers.authorization;
+      response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ files: [{ provider: "claude", disabled: false, failed: true }] })); });
+    await new Promise<void>(resolveListen => server.listen(0, "127.0.0.1", resolveListen));
+    config.cliproxyUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const logger = new CapturingLogger(); await new ProviderReadinessPoller(log, config, logger).probe(1000);
+    expect(authorization).toBe("Bearer management-secret");
+    expect(log.getProviderState("claude")).toMatchObject({ status: "ready", reason: "eligible_1_failed_1" });
+    expect(logger.lines.join("\n")).not.toContain("management-secret");
+    await new Promise<void>(resolveClose => server.close(() => resolveClose())); log.close();
+  });
+  it("times out a stalled readiness fetch and never overlaps interval probes", async () => {
+    const { log, config } = setup(); writeFileSync(config.cliproxyEnvFile, "CLIPROXY_MANAGEMENT_KEY=management-secret\n");
+    config.providerInitialProbeTimeoutMs = 50; config.providerProbeIntervalMs = 10;
+    let requests = 0; let active = 0; let maxActive = 0;
+    const server = createServer(request => {
+      requests++; active++; maxActive = Math.max(maxActive, active);
+      request.on("close", () => { active--; });
+      // Intentionally never respond: AbortSignal.timeout must release the single-flight probe.
+    });
+    await new Promise<void>(resolveListen => server.listen(0, "127.0.0.1", resolveListen));
+    config.cliproxyUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const poller = new ProviderReadinessPoller(log, config, new CapturingLogger()); const startedAt = Date.now();
+    poller.start(); const inFlight = poller.probe(); expect(poller.probe()).toBe(inFlight); await inFlight; poller.stop();
+    expect(log.getProviderState("claude")).toMatchObject({ status: "not_ready", reason: "probe_timeout" });
+    expect(Date.now() - startedAt).toBeLessThan(500); expect(requests).toBe(1); expect(maxActive).toBe(1);
+    server.closeAllConnections(); await new Promise<void>(resolveClose => server.close(() => resolveClose())); log.close();
+  });
+  it("routes Fable, falls back once before establishment, and never flips after an id", async () => {
+    // AC5's pre/post-establishment states cannot both be reached from one webhook payload, so seed them directly.
+    const seeded = setup(); seeded.log.close();
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    const fixtureEmail = "secret@example.com"; const fixtureKey = "management-secret";
+    seeded.config.linearApiKey = fixtureKey;
+    const logger = new CapturingLogger();
+    await new ProviderReadinessPoller(log, seeded.config, logger, async () => ({ files: [
+      { provider: "claude", disabled: false, failed: false, email: fixtureEmail },
+    ] })).probe();
+    seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "routing.jsonl");
+    process.env.CLAUDE_FAKE_MODE = "provider-fail-pre-id";
+    append(log, "fable-created", "fable-session", "created");
+    let worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10, logger });
+    worker.start(); await waitFor(() => log.turnStates()[0]?.status === "failed"); await worker.stop();
+    expect(log.getSession("fable-session")).toMatchObject({ profile: "sol", profileFallback: 1 });
+    let starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(2); expect(starts[0].args).toContain("--fable-launcher"); expect(starts[1].args).not.toContain("--fable-launcher");
+    const firstFailureEntries = logger.entries();
+    const classified = firstFailureEntries.find(entry => entry.event === "provider_failure_classified");
+    const fallback = firstFailureEntries.find(entry => entry.event === "profile_fallback");
+    expect(classified).toEqual({ event: "provider_failure_classified", linearSessionId: "fable-session",
+      profile: "fable", provider: "claude", classifiedState: "transport_failure",
+      reason: "connection_refused", cooldownUntil: expect.any(Number) });
+    expect(fallback).toEqual({ event: "profile_fallback", linearSessionId: "fable-session", from: "fable", to: "sol",
+      provider: "claude", classifiedState: "transport_failure", reason: "connection_refused",
+      cooldownUntil: classified?.cooldownUntil });
+
+    process.env.CLAUDE_FAKE_MODE = "happy";
+    append(log, "established-created", "established-fable", "created", "issue-2", "ENG-43");
+    worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10, logger });
+    worker.start(); await waitFor(() => log.turnStates()[1]?.status === "done"); await worker.stop();
+    expect(log.getSession("established-fable")).toMatchObject({ profile: "fable", claudeSessionId: "claude-session-1" });
+    process.env.CLAUDE_FAKE_MODE = "provider-fail-post-id";
+    append(log, "established-prompt", "established-fable", "prompted", "issue-2", "ENG-43");
+    worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10, logger });
+    worker.start(); await waitFor(() => log.turnStates()[2]?.status === "failed"); await worker.stop();
+    expect(log.getSession("established-fable")?.profile).toBe("fable");
+    starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(4);
+    const healthServer = new WebhookServer({ config: seeded.config, log, logger });
+    const healthAddress = await healthServer.listen();
+    const healthBody = await (await fetch(`http://127.0.0.1:${healthAddress.port}/healthz`)).json();
+    const routingNames = new Set(["session_profile_assigned", "provider_state_changed", "provider_failure_classified",
+      "profile_fallback", "profile_launcher_unconfigured", "legacy_session_profile_defaulted"]);
+    const capturedRoutingEvents = logger.entries().filter(entry => routingNames.has(String(entry.event)));
+    expect([...capturedRoutingEvents, healthBody].every(payload => {
+      const serialized = JSON.stringify(payload); return !serialized.includes(fixtureEmail) && !serialized.includes(fixtureKey);
+    })).toBe(true);
+    await healthServer.close();
+    log.close();
+  });
+  it("persists Fable for planner and implementer before their first launch", async () => {
+    const seeded = setup(); seeded.log.close();
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "fable-starts.jsonl"); process.env.CLAUDE_FAKE_MODE = "happy";
+    append(log, "planner-fable", "planner-fable", "created", "issue-p", "ENG-41");
+    appendImplementer(log, "implementer-fable", "implementer-fable", "issue-i", "ENG-42");
+    const worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10 });
+    worker.start(); await waitFor(() => log.turnStates().every(turn => turn.status === "done")); await worker.stop();
+    expect(log.getSession("planner-fable")?.profile).toBe("fable"); expect(log.getSession("implementer-fable")?.profile).toBe("fable");
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(2); expect(starts.every(row => row.args.includes("--fable-launcher"))).toBe(true); log.close();
+  });
+  it("persists Sol and uses the Sol launcher when Claude is cooling down", async () => {
+    const seeded = setup(); seeded.log.close(); seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
+    let log: EventLog; log = new EventLog(seeded.config.dbPath, () => selectSessionProfile(log, seeded.config, 1000));
+    log.setProviderCooldown("claude", 5000, "http_503", 900);
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "sol-starts.jsonl"); process.env.CLAUDE_FAKE_MODE = "happy";
+    append(log, "cooldown-created", "sol-session", "created");
+    const worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10 });
+    worker.start(); await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop();
+    expect(log.getSession("sol-session")?.profile).toBe("sol");
+    const start = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").split("\n")[0]!);
+    expect(start.args).not.toContain("--fable-launcher"); log.close();
+  });
+  it("persists Sol and uses the Sol launcher when Claude is explicitly not ready", async () => {
+    const seeded = setup(); seeded.log.close(); seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
+    let log: EventLog; log = new EventLog(seeded.config.dbPath, () => selectSessionProfile(log, seeded.config));
+    log.setProviderState("claude", "not_ready", "no_eligible_claude_failed_0", Date.now());
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "not-ready-starts.jsonl"); process.env.CLAUDE_FAKE_MODE = "happy";
+    append(log, "not-ready-created", "not-ready-session", "created");
+    const worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10 });
+    worker.start(); await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop();
+    expect(log.getSession("not-ready-session")?.profile).toBe("sol");
+    const start = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").split("\n")[0]!);
+    expect(start.args).not.toContain("--fable-launcher"); log.close();
+  });
+  it.each([
+    { criterion: "AC1", status: "ready", reason: "eligible_1_failed_0", expectedProfile: "fable", usesFable: true },
+    { criterion: "AC3", status: "not_ready", reason: "no_eligible_claude_failed_0", expectedProfile: "sol", usesFable: false },
+  ])("$criterion signed webhook persists $expectedProfile and launches it", async ({ status, reason, expectedProfile, usesFable }) => {
+    const seeded = setup(); seeded.log.close(); seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
+    let log: EventLog; log = new EventLog(seeded.config.dbPath, () => selectSessionProfile(log, seeded.config));
+    log.setProviderState("claude", status, reason, Date.now());
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, `webhook-${expectedProfile}.jsonl`); process.env.CLAUDE_FAKE_MODE = "happy";
+    const worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10 });
+    const server = new WebhookServer({ config: seeded.config, log, onInserted: () => worker.trigger(), logger: new CapturingLogger() });
+    worker.start(); const address = await server.listen();
+    const body = JSON.stringify({ webhookTimestamp: Date.now(), action: "created", promptContext: "route me",
+      agentSession: { id: `webhook-${expectedProfile}`, issue: { id: `issue-${expectedProfile}`, identifier: expectedProfile === "fable" ? "ENG-51" : "ENG-52" } } });
+    const signature = createHmac("sha256", seeded.config.apps.planner.webhookSecret).update(body).digest("hex");
+    expect((await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", body,
+      headers: { "Linear-Signature": signature, "Linear-Delivery": `delivery-${expectedProfile}` } })).status).toBe(200);
+    await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop(); await server.close();
+    expect(log.getSession(`webhook-${expectedProfile}`)?.profile).toBe(expectedProfile);
+    const start = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").split("\n")[0]!);
+    expect(start.args.includes("--fable-launcher")).toBe(usesFable); log.close();
+  });
+  it("fails an established Fable session closed when its launcher is unconfigured", async () => {
+    // AC7 requires an already-established Fable row, which a single webhook payload cannot create while FABLE_BIN is unset.
+    const seeded = setup(); seeded.log.close();
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "ready" }));
+    append(log, "created-fable", "fable-session", "created");
+    log.updateClaudeSessionId("fable-session", "established-id");
+    const logger = new CapturingLogger();
+    const poster = new Poster();
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, seeded.config, { pollMs: 10, logger });
+    worker.start(); await waitFor(() => log.turnStates()[0]?.status === "failed"); await worker.stop();
+    expect(log.getSession("fable-session")).toMatchObject({ profile: "fable", claudeSessionId: "established-id" });
+    expect(logger.entries()).toContainEqual({ event: "profile_launcher_unconfigured", linearSessionId: "fable-session", profile: "fable" });
+    expect(poster.posts.map(post => activityBody(post.content)).filter(Boolean).join("\n")).toContain("FABLE_BIN");
+    log.close();
+  });
   it("phase3 AC1/AC2/AC3: do-mode reuses worktree, starts fresh, uses literal prompt, and posts PR URL",async()=>{
     const {dir,log,config}=setup(); const poster=new Poster(); process.env.CLAUDE_FAKE_ARGS_FILE=join(dir,"args.jsonl");
     append(log,"planner","planner-session","created"); let worker=new SessionWorker(log,poster as unknown as LinearGateway,config,{pollMs:10,reconcileMs:20});worker.start();
@@ -597,11 +776,17 @@ describe("SessionWorker", () => {
       request.on("end", () => { requests.push(JSON.parse(Buffer.concat(chunks).toString())); response.writeHead(200, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ data: { agentActivityCreate: { success: true, agentActivity: { id: "a" } } } })); }); });
     await new Promise<void>(resolve => graphql.listen(0, "127.0.0.1", resolve)); const graphqlPort = (graphql.address() as { port: number }).port;
+    const proxy = createServer((_request, response) => { response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ files: [{ provider: "claude", disabled: false, failed: false }] })); });
+    await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve)); const proxyPort = (proxy.address() as { port: number }).port;
+    const proxyEnv = join(dir, "proxy.env"); writeFileSync(proxyEnv, "CLIPROXY_MANAGEMENT_KEY=management-key\n");
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
     const env = { ...process.env, DAEMON_TEST_MODE: "1", PORT: String(port), BIND_ADDR: "127.0.0.1", DB_PATH: config.dbPath,
       PLANNER_WEBHOOK_SECRET: "planner-secret", PLANNER_LINEAR_TOKEN: "p", IMPLEMENTER_WEBHOOK_SECRET: "i", IMPLEMENTER_LINEAR_TOKEN: "i",
       SESSIONS_ENABLED: "1", TARGET_REPO_PATH: config.targetRepoPath!, WORKTREES_ROOT: config.worktreesRoot, LINEAR_API_KEY: "key",
       CLAUDE_BIN: `${process.execPath} ${resolve("test/fixtures/fake-claude.mjs")}`, CLAUDE_PERMISSION_MODE: "plan", ATTACHMENTS_ENABLED: "0",
+      FABLE_BIN: `${process.execPath} ${resolve("test/fixtures/fake-claude.mjs")} --fable-launcher`, CLIPROXY_ENV_FILE: proxyEnv,
+      CLIPROXY_URL: `http://127.0.0.1:${proxyPort}`, PROVIDER_INITIAL_PROBE_TIMEOUT_MS: "1000",
       LINEAR_GRAPHQL_URL: `http://127.0.0.1:${graphqlPort}/graphql` };
     const launch = () => spawn(process.execPath, [resolve("dist/index.js")], { env, stdio: "ignore" });
     const send = async (delivery: string, body: Record<string, unknown>) => { const encoded = JSON.stringify({ webhookTimestamp: Date.now(), ...body });
@@ -611,13 +796,18 @@ describe("SessionWorker", () => {
     let child = launch(); await healthy(port, child);
     await send("d1", { action: "created", promptContext: "plan", agentSession: { id: "session", issue: { id: "issue", identifier: "ENG-7" } } });
     await waitFor(() => { const db = new EventLog(config.dbPath); const done = db.turnStates()[0]?.status === "done"; db.close(); return done; });
+    { const db = new EventLog(config.dbPath); expect(db.getProviderState("claude")).toMatchObject({ status: "ready" });
+      expect(db.getSession("session")?.profile).toBe("fable"); db.close(); }
     child.kill("SIGKILL"); await new Promise(resolve => child.once("close", resolve)); child = launch(); await healthy(port, child);
     await send("d2", { action: "prompted", agentActivity: { body: "continue" }, agentSession: { id: "session" } });
     await waitFor(() => { const db = new EventLog(config.dbPath); const done = db.turnStates()[1]?.status === "done"; db.close(); return done; });
     child.kill("SIGTERM"); await new Promise(resolve => child.once("close", resolve));
     const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts.map(row => row.args.includes("--fable-launcher"))).toEqual([true, true]);
     expect(starts[1].args).toContain("--resume"); expect(starts[1].args).toContain("claude-session-1"); expect(requests.length).toBeGreaterThan(2);
+    const persisted = new EventLog(config.dbPath); expect(persisted.getSession("session")?.profile).toBe("fable"); persisted.close();
     await new Promise<void>(resolve => graphql.close(() => resolve()));
+    await new Promise<void>(resolve => proxy.close(() => resolve()));
   }, 10_000);
   it("persists a compacted session id and never posts progress after the terminal response", async () => {
     const { dir, log, config } = setup(); process.env.CLAUDE_FAKE_MODE = "new-id"; process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
@@ -652,6 +842,29 @@ describe("SessionWorker", () => {
       expect(log.getSession("session")).toMatchObject({ runtime: "claudex", fallbackCause: expect.any(String) });
       log.close();
     });
+  it("routes Fable first, gives structured capacity fallback priority, and persists Claudex", async () => {
+    const seeded = setup(); seeded.log.close(); const poster = new Poster(); const logger = new CapturingLogger();
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "fable-capacity.jsonl"); process.env.CLAUDE_FAKE_MODE = "result-429";
+    seeded.config.fableArgv = [...seeded.config.claudeArgv, "--fable-launcher"];
+    seeded.config.claudexArgv = [...seeded.config.claudeArgv, "--claudex-runtime"];
+    seeded.config.claudexEnv = { CLAUDE_FAKE_MODE: "happy" };
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, seeded.config, { pollMs: 10, reconcileMs: 20, logger });
+    worker.start(); await waitFor(() => log.turnStates()[0]?.status === "done");
+    process.env.CLAUDE_FAKE_MODE = "crash"; append(log, "d2", "session", "prompted"); worker.trigger();
+    await waitFor(() => log.turnStates()[1]?.status === "done"); await worker.stop();
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+      .map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(3); expect(starts[0].args).toContain("--fable-launcher");
+    expect(starts[1].args).toContain("--claudex-runtime"); expect(starts[1].args).not.toContain("--resume");
+    expect(starts[2].args).toEqual(expect.arrayContaining(["--claudex-runtime", "--resume", "claude-session-1"]));
+    expect(log.getSession("session")).toMatchObject({ profile: "fable", profileFallback: null, runtime: "claudex" });
+    expect(logger.entries().find(entry => entry.event === "session_capacity_fallback"))
+      .toMatchObject({ originalRuntime: "fable", fallbackRuntime: "claudex" });
+    expect(logger.entries().filter(entry => entry.event === "provider_failure_classified" || entry.event === "profile_fallback")).toHaveLength(0);
+    log.close();
+  });
   it("AC5/AC6/AC8: resumed /do fallback is fresh, records the downgrade, and persists Claudex", async () => {
     const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_MODE = "do-pr";

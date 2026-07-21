@@ -247,4 +247,48 @@ describe("EventLog", () => {
     expect(log.append(event({ deliveryId: undefined })).inserted).toBe(false);
     log.close();
   });
+  it("assigns a profile only on first insert and preserves it in every projection", () => {
+    let selections = 0;
+    const log = new EventLog(path(), () => { selections++; return { profile: "fable", reason: "claude_ready" }; });
+    const first = log.append(event());
+    const duplicate = log.append(event({ deliveryId: "delivery-2", action: "prompted" }));
+    expect(first).toMatchObject({ assignedProfile: "fable", assignmentReason: "claude_ready" });
+    expect(duplicate.assignedProfile).toBeUndefined(); expect(selections).toBe(1);
+    log.updateSessionWorktree("session-1", "/worktree", "branch");
+    expect(log.getSession("session-1")?.profile).toBe("fable");
+    expect(log.sessionByIssueIdentifier("ENG-42")?.profile).toBe("fable");
+    expect(log.plannerSessionsForReconcile()[0]?.profile).toBe("fable");
+    expect(log.sessionsWithWorktrees()[0]?.profile).toBe("fable");
+    log.close();
+  });
+  it("stores provider state and atomically permits only one pre-establishment fallback", () => {
+    const log = new EventLog(path(), () => ({ profile: "fable", reason: "ready" }));
+    log.append(event());
+    expect(log.applyPreEstablishmentFallback("session-1")).toBe(true);
+    expect(log.applyPreEstablishmentFallback("session-1")).toBe(false);
+    expect(log.getSession("session-1")).toMatchObject({ profile: "sol", profileFallback: 1 });
+    log.setProviderState("claude", "ready", "eligible_1_failed_0", 100);
+    log.setProviderCooldown("claude", 900, "http_503", 200);
+    expect(log.getProviderState("claude")).toEqual({ provider: "claude", status: "cooldown", reason: "http_503", cooldownUntil: 900, updatedAt: 200 });
+    log.close();
+    const established = new EventLog(path(), () => ({ profile: "fable", reason: "ready" }));
+    established.append(event({ deliveryId: "other", agentSessionId: "other" }));
+    established.updateClaudeSessionId("other", "claude-id");
+    expect(established.applyPreEstablishmentFallback("other")).toBe(false);
+    established.close();
+  });
+  it("migrates legacy session rows with NULL profiles", () => {
+    const dbPath = path(); const old = new Database(dbPath);
+    old.exec(`CREATE TABLE sessions (
+      linear_session_id TEXT PRIMARY KEY, app TEXT NOT NULL, issue_id TEXT, issue_identifier TEXT,
+      worktree_path TEXT, branch TEXT, claude_session_id TEXT, mode TEXT NOT NULL DEFAULT 'planner',
+      status TEXT NOT NULL DEFAULT 'active', last_seen_at INTEGER NOT NULL, last_seen_activity_at INTEGER
+    ); INSERT INTO sessions(linear_session_id,app,mode,status,last_seen_at) VALUES('legacy','planner','planner','active',1);`);
+    old.close(); const log = new EventLog(dbPath);
+    expect(log.getSession("legacy")).toMatchObject({ profile: null, profileFallback: null });
+    const db = new Database(dbPath, { readonly: true });
+    expect((db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>).map(row => row.name))
+      .toEqual(expect.arrayContaining(["profile", "profile_fallback"]));
+    db.close(); log.close();
+  });
 });

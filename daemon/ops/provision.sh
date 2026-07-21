@@ -190,6 +190,10 @@ chmod 0640 /etc/linear-agent-daemon/cliproxyapi.yaml
 
 install -o linear-daemon -g linear-daemon -m 0750 "${SOURCE_DIR}/ops/claudex" \
   /var/lib/linear-agent-daemon/.local/bin/claudex
+install -o linear-daemon -g linear-daemon -m 0750 "${SOURCE_DIR}/ops/claudex-fable" \
+  /var/lib/linear-agent-daemon/.local/bin/claudex-fable
+# fable-models.env is deliberately operator-authored only after enrolled-account
+# model identity is confirmed; provisioning must not guess or overwrite it.
 
 # The VM is single-purpose isolation; Claude Code's Bash sandbox (whose seccomp
 # filter kills Chrome with SIGSYS) is disabled so sessions behave like a local

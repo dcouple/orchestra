@@ -26,7 +26,7 @@ Copy this `daemon/` directory to the host, then run the idempotent provisioner a
 
 ```bash
 cd daemon
-bash -n ops/provision.sh ops/claudex
+bash -n ops/provision.sh ops/claudex ops/claudex-fable
 sudo DAEMON_HOST=linear-agent.example.com ops/provision.sh "$PWD"
 ```
 
@@ -231,7 +231,7 @@ sudo -u linear-daemon -H gh pr create --repo dcouple/bloom-mono --draft --fill -
 ## Host checks
 
 ```bash
-cd /opt/linear-agent-daemon && bash -n ops/provision.sh ops/claudex ops/proxy-accounts.sh ops/codex-provider-gate.sh
+cd /opt/linear-agent-daemon && bash -n ops/provision.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
 sudo systemd-analyze verify \
   /etc/systemd/system/cliproxyapi.service \
   /etc/systemd/system/linear-agent-daemon.service
@@ -443,6 +443,66 @@ raw payloads permanently) and verify the tolerant parser's fields. Trigger a web
 and confirm Linear reuses `Linear-Delivery`; record the two delivery IDs. Linear retries at
 about 1 minute, 1 hour, and 6 hours and may disable repeated failures. On restart, confirm
 the daemon re-enables each app webhook; use the app settings only as the manual fallback.
+
+## Enable and verify Fable routing
+
+Fable remains disabled until the enrolled Claude accounts expose confirmed real Anthropic
+model IDs. Enroll the accounts with `cliproxyapi --claude-login`, then inspect the catalog:
+
+```bash
+. /etc/linear-agent-daemon/cliproxyapi.env
+printf 'header = "Authorization: Bearer %s"\n' "$CLIPROXY_API_KEY" |
+  curl -fsS -K - http://127.0.0.1:8317/v1/models |
+  python3 -m json.tool | grep '"id": "claude-'
+```
+
+If no usable `claude-*` model completes a request, leave `FABLE_BIN` unset and report Phase
+2 AC2 unmet. Otherwise author the mapping only after that request succeeds:
+
+```bash
+sudo install -o root -g linear-daemon -m 0640 /dev/null /etc/linear-agent-daemon/fable-models.env
+sudoedit /etc/linear-agent-daemon/fable-models.env
+# FABLE_MAIN_MODEL=claude-<confirmed-main>
+# FABLE_HAIKU_MODEL=claude-<confirmed-haiku>
+# FABLE_SONNET_MODEL=claude-<confirmed-sonnet>
+# FABLE_OPUS_MODEL=claude-<confirmed-opus>
+# FABLE_FABLE_MODEL=claude-<confirmed-fable>
+sudo sh -c 'printf "\nFABLE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex-fable\n" >> /etc/linear-agent-daemon/env'
+sudo systemctl restart linear-agent-daemon
+curl -fsS http://127.0.0.1:8787/healthz | python3 -m json.tool
+```
+
+The health response must show `providers.claude.status` as `ready` before a new Fable
+session is created (AC1/AC3). For AC2, create one Fable workflow, complete one Claude-side
+request and one detached `codex exec -m gpt-5.6-sol` role, then preserve the model catalog,
+management counters, and redacted proxy journal proving Claude and Codex used their
+respective pools. For AC4, record the session profile and Claude ID, restart, prompt again,
+and verify both remain unchanged:
+
+```bash
+sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
+  'select linear_session_id,profile,claude_session_id from sessions order by last_seen_at desc limit 5;'
+sudo systemctl restart linear-agent-daemon
+sudo journalctl -u linear-agent-daemon --since '-10 min' -o cat |
+  grep -E 'session_profile_assigned|provider_state_changed|provider_failure_classified|profile_fallback|profile_launcher_unconfigured'
+curl -fsS http://127.0.0.1:8787/healthz | python3 -m json.tool
+```
+
+Those journal and health commands are the supporting AC6 schema/redaction evidence; verify
+they contain no key, token, or account email. For AC7, temporarily put a `gpt-*` alias in one
+`FABLE_*_MODEL` entry and run `claudex-fable -p test`: it must exit nonzero naming that
+variable before sending a model request. Restore the confirmed mapping afterward. Legacy
+rows with a NULL profile intentionally route as Sol and log `legacy_session_profile_defaulted`.
+
+Preserve the automated host evidence for the fixture-drivable criteria as well:
+
+```bash
+cd /opt/linear-agent-daemon
+pnpm vitest run test/sessions.test.ts -t 'persists Fable for planner and implementer|probes readiness' # AC1, AC3
+pnpm vitest run test/sessions.test.ts -t 'reopens SQLite|child-restart'                                # AC4
+pnpm vitest run test/sessions.test.ts -t 'falls back once|launcher is unconfigured'                   # AC5, AC7
+pnpm vitest run test/server.test.ts test/sessions.test.ts -t 'reports durable|probes readiness'        # AC6
+```
 
 ## Planner-session smoke
 
