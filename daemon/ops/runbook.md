@@ -161,29 +161,54 @@ sudo chmod 600 /var/lib/linear-agent-daemon/.git-credentials
 
 Use a fine-grained PAT or GitHub App installation token limited to the target repository.
 The `read -s` flow keeps the token out of shell history and process argv. The provisioner
-installs the Claude Code harness but does not authenticate it with Anthropic. Instead, it
-creates a loopback-only CLIProxyAPI service and a `claudex` executable that routes the
-harness and every subagent through GPT-5.6 Sol via OpenAI Codex OAuth. The main loop uses
-high reasoning; Claude model pins map to low, medium, or xhigh proxy aliases, and Claude Code
-compacts against a 250k context budget. The proxy API key is generated once in
-`/etc/linear-agent-daemon/cliproxyapi.env`; do not copy it into the main daemon env file.
+installs the Claude Code harness but does not authenticate it directly with Anthropic.
+Instead, it creates a loopback-only CLIProxyAPI service and a `claudex` executable that
+routes the harness and every subagent through GPT-5.6 Sol via the Codex OAuth pool. The main
+loop uses high reasoning; Claude model pins map to low, medium, or xhigh proxy aliases, and
+Claude Code compacts against a 250k context budget. Separate local API and management keys
+are generated once in `/etc/linear-agent-daemon/cliproxyapi.env`; do not copy either key into
+the main daemon env file.
 
-Complete the one-time Codex OAuth flow as `linear-daemon`. On a headless host, open the
-printed URL on another device and paste the resulting callback URL or authorization code as
-prompted. Credentials must land under the service user's HOME:
+Enroll both founders in both provider pools as `linear-daemon`. On a headless host, open each
+printed URL on another device and paste the callback URL or authorization code as prompted.
+The helper prints only a redacted pool summary. Re-running `add` is an intentional re-login
+and leaves one current pool record for that identity; use `--dry-run` before checking the
+flow:
 
 ```bash
-sudo -u linear-daemon -H /usr/local/bin/cliproxyapi \
-  -config /etc/linear-agent-daemon/cliproxyapi.yaml \
-  --codex-login --no-browser
-sudo -u linear-daemon -H sh -c \
-  'test -n "$(find "$HOME/.cli-proxy-api" -maxdepth 1 -name "codex-*.json" -print -quit)"'
-sudo systemctl restart cliproxyapi linear-agent-daemon
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh add codex --dry-run
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh add codex
+# Repeat the preceding command for the second founder.
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh add claude
+# Repeat the preceding command for the second founder.
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+sudo systemctl restart cliproxyapi
 sudo -u linear-daemon -H /var/lib/linear-agent-daemon/.local/bin/claudex \
   -p "Reply with exactly: claudex works."
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/codex-provider-gate.sh
+sudo systemctl restart linear-agent-daemon
 ```
 
-The final command must return exactly `claudex works.`. A warning that claude.ai connectors
+The Claude enrollment is viable only after one real provider-native request completes
+through an enrolled Claude credential. Choose a Claude-provider model from the proxy catalog,
+then record the redacted management counters before and after this Messages-protocol probe:
+
+```bash
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+read -r -p 'Claude provider model ID from /v1/models: ' CLAUDE_MODEL
+sudo -u linear-daemon -H env CLAUDE_MODEL="$CLAUDE_MODEL" bash -c '
+  . /etc/linear-agent-daemon/cliproxyapi.env
+  python3 -c "import json,os; print(json.dumps({\"model\":os.environ[\"CLAUDE_MODEL\"],\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: claude pool works.\"}]}))" \
+    | curl -fsS -K <(printf "header = \"x-api-key: %s\"\nheader = \"anthropic-version: 2023-06-01\"\nheader = \"content-type: application/json\"\n" "$CLIPROXY_API_KEY") \
+      --data-binary @- http://127.0.0.1:8317/v1/messages'
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+unset CLAUDE_MODEL
+```
+
+If Anthropic rejects subscription OAuth, disable/remove the Claude
+credentials, record the probe as failed, and leave Phase 2 on Sol; do not claim the Claude
+half of AC1. The `claudex` command must return exactly `claudex works.` and the provider gate
+must print `PASS`. A warning that claude.ai connectors
 are disabled is expected because the local proxy token replaces Claude authentication for
 that process. Confirm that `git remote -v` is HTTPS. The target repository must contain its
 own `AGENTS.md` work-item tracker configuration; the daemon guarantees `/do` runs on its
@@ -206,7 +231,7 @@ sudo -u linear-daemon -H gh pr create --repo dcouple/bloom-mono --draft --fill -
 ## Host checks
 
 ```bash
-cd /opt/linear-agent-daemon && bash -n ops/provision.sh ops/claudex
+cd /opt/linear-agent-daemon && bash -n ops/provision.sh ops/claudex ops/proxy-accounts.sh ops/codex-provider-gate.sh
 sudo systemd-analyze verify \
   /etc/systemd/system/cliproxyapi.service \
   /etc/systemd/system/linear-agent-daemon.service
@@ -237,6 +262,16 @@ The inventory should include `gpt-5.6-sol` plus the `-low`, `-medium`, and `-xhi
 aliases. An empty `data` array means the Codex OAuth flow did not complete for
 `linear-daemon`.
 
+Check the credential pool only through the redacting management helper:
+
+```bash
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+```
+
+Each record includes only name, email, provider, disabled, failed, and recent request
+counters. It must show two enabled Codex and two enabled Claude identities after enrollment.
+Never paste raw credential files into logs or artifacts.
+
 The SQLite database is secret material because it stores raw webhook payloads and OAuth
 access tokens. Keep `/var/lib/linear-agent-daemon` owned by `linear-daemon:linear-daemon`
 with mode `0750`, keep `events.db*` files unreadable by other users, and do not copy them
@@ -245,6 +280,123 @@ for audit/debugging, and test restore with SQLite's backup mechanism rather than
 live database file directly.
 
 ## Deploy-gate smoke evidence
+
+### Phase 1 multi-account evidence
+
+Capture command output in the private deploy record after redacting account names and email
+addresses. These are human red-tier checks because they use founder subscription accounts.
+
+AC1 — aliases, two identities in each pool, and no credential-value logging:
+
+```bash
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+sudo journalctl -u cliproxyapi --since today --no-pager
+```
+
+AC2 — record `recent_requests` before and after six independent Sol conversations; successful
+counters must increase for at least two enabled Codex identities:
+
+```bash
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+for run in 1 2 3 4 5 6; do
+  sudo -u linear-daemon -H /var/lib/linear-agent-daemon/.local/bin/claudex \
+    -p "Reply with exactly: routing-${run}."
+done
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+```
+
+AC3 — the gate exercises a tool call, streaming output, detached marker pickup, and
+`resume --last` through the host-pinned Codex CLI:
+
+```bash
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/codex-provider-gate.sh
+```
+
+AC4 — verify the 168-hour config and continue both protocol conversations. Record the same
+credential's counter increment on each continuation. The Codex continuation is part of the
+gate; this command makes and resumes a Claude-protocol conversation:
+
+```bash
+grep -F 'session-affinity-ttl: "168h"' /etc/linear-agent-daemon/cliproxyapi.yaml
+sudo -u linear-daemon -H sh -c '
+  result="$(claudex -p --output-format json "Reply with exactly: affinity-start.")"
+  session="$(printf "%s" "$result" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"session_id\"])")"
+  claudex --resume "$session" -p "Reply with exactly: affinity-resume."'
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/codex-provider-gate.sh
+```
+
+There is no finite maximum daemon session lifetime, so the literal “TTL longer than maximum
+lifecycle” wording remains unmet. The 168-hour value exceeds observed runs; expiry affects
+provider-side affinity/cache cost, while both harnesses retain local resume state. Record
+human acceptance or require the criterion to be reworded. If Claude-protocol counters do not
+expose affinity, record that evidence limitation rather than passing it silently.
+
+AC5 — choose one enabled Codex filename from the redacted list, disable it through the body
+form, run a new conversation, verify only another enabled identity increments, then re-enable
+the credential:
+
+```bash
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+read -r -p 'Codex credential filename to disable: ' ACCOUNT_FILE
+sudo -u linear-daemon -H bash -c '
+  set -euo pipefail
+  account_file="$1"
+  account_body="$(mktemp)"
+  . /etc/linear-agent-daemon/cliproxyapi.env
+  set_account_status() {
+    python3 -c '\''import json,sys; print(json.dumps({"name":sys.argv[1],"disabled":sys.argv[2] == "true"}))'\'' \
+      "$account_file" "$1" > "$account_body"
+    printf "header = \"Authorization: Bearer %s\"\n" "$CLIPROXY_MANAGEMENT_KEY" \
+      | curl -fsS -K - -H "Content-Type: application/json" -X PATCH \
+        --data-binary "@$account_body" http://127.0.0.1:8317/v0/management/auth-files/status
+  }
+  account_disabled=0
+  cleanup() {
+    status=$?
+    if (( account_disabled )); then set_account_status false || true; fi
+    rm -f "$account_body"
+    return "$status"
+  }
+  trap cleanup EXIT
+  account_disabled=1
+  set_account_status true
+  /var/lib/linear-agent-daemon/.local/bin/claudex -p "Reply with exactly: failover-ok."
+  /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+  set_account_status false
+  account_disabled=0
+' gate-account-status "$ACCOUNT_FILE"
+unset ACCOUNT_FILE
+```
+
+AC6 — onboarding needs no daemon code change; dry-run twice for identical output, perform the
+interactive login, and observe hot-loading in the list without restarting the proxy:
+
+```bash
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh add codex --dry-run
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh add codex --dry-run
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh add codex
+sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
+```
+
+AC7 — the passing gate above installs the provider. A dead-port run must name the failed gate,
+exit nonzero, and remove only a gate-marked target; use a disposable target for this proof:
+
+```bash
+sudo -u linear-daemon -H bash -c '
+  set -eu
+  gate_tmp="$(mktemp -d)"
+  trap '\''rm -rf "$gate_tmp"'\'' EXIT
+  target="$gate_tmp/config.toml"
+  printf "%s\n" "# managed by codex-provider-gate.sh — removed on gate failure" > "$target"
+  set +e
+  PROXY_URL=http://127.0.0.1:1 TARGET_CONFIG="$target" \
+    /opt/linear-agent-daemon/ops/codex-provider-gate.sh
+  gate_status=$?
+  set -e
+  test "$gate_status" -ne 0
+  test ! -e "$target"
+'
+```
 
 External HTTPS health:
 
@@ -372,13 +524,15 @@ artifact path. Do not run the emulator smoke from an automated implementation ag
 | Two OAuth client IDs/secrets | 1 / `linear-daemon` | env, `0600` | Agent scopes only | Rotate secret or revoke app; update and restart |
 | SQLite event/token database | 1 / `linear-daemon` | `/var/lib/linear-agent-daemon/events.db*`, `0600`/dir `0750` | Raw payloads and OAuth access tokens | Encrypt backups; delete per retention; revoke OAuth apps if exposed |
 | Bot git/gh identity + HTTPS credential | 2–3 / `linear-daemon` | `~/.gitconfig`, `~/.git-credentials` or env, `0600` | One repository, least privilege | Revoke PAT/App token and replace |
-| Standalone Codex CLI authentication | 3 / `linear-daemon` | provider config under service HOME, `0600` | Dedicated bot project | Revoke provider token, replace |
-| CLIProxyAPI Codex OAuth | 2 / `linear-daemon` | `~/.cli-proxy-api/codex-*.json`, `0600` | Dedicated ChatGPT/Codex account | Revoke OpenAI authorization, rerun `--codex-login` |
-| CLIProxyAPI local API key | 2 / root + `linear-daemon` group | `/etc/linear-agent-daemon/cliproxyapi.env` and `.yaml`, `0640` | Loopback proxy only | Stop services, replace env value, rerun provisioner, restart |
+| Standalone Codex provider selection | 3 / `linear-daemon` | `~/.codex/config.toml`, `0600` | Loopback Responses provider; no token stored | Rerun gate; failed gate removes only its marked config |
+| CLIProxyAPI Codex OAuth pool | 2 / `linear-daemon` | `~/.cli-proxy-api/codex-*.json`, `0600` | Both founders' ChatGPT/Codex subscriptions | Revoke OpenAI authorization, rerun `proxy-accounts.sh add codex` |
+| CLIProxyAPI Claude OAuth pool | 2 / `linear-daemon` | provider-reported files under `~/.cli-proxy-api/`, `0600` | Both founders' Claude subscriptions, subject to viability probe | Revoke Anthropic authorization, rerun `proxy-accounts.sh add claude` |
+| CLIProxyAPI local API + management keys | 2 / root + `linear-daemon` group | `/etc/linear-agent-daemon/cliproxyapi.env` and generated `.yaml`, `0640` | Loopback proxy and loopback management API only | Stop services, replace both env values, rerun provisioner, restart |
 | `LINEAR_API_KEY` for spawned sessions | 2 / `linear-daemon` | env, `0600` | Scoped bot access | Revoke in Linear, replace env |
 
-Never install personal credentials on the host. These credentials are inventory only in phase
-1 and are not installed until their owning phases.
+Install founder subscription OAuth only through the documented interactive proxy flow; never
+copy raw token values or unrelated personal credentials onto the host. All other credentials
+are installed only in their owning phase.
 
 ## Logs and recovery
 

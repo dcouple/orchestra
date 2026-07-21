@@ -25,7 +25,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 pnpm test
-bash -n ops/provision.sh ops/claudex
+bash -n ops/provision.sh ops/claudex ops/proxy-accounts.sh ops/codex-provider-gate.sh
 ```
 
 ## Live daemon diagnostics

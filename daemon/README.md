@@ -20,14 +20,17 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 pnpm test
-bash -n ops/provision.sh ops/claudex
+bash -n ops/provision.sh ops/claudex ops/proxy-accounts.sh ops/codex-provider-gate.sh
 ```
 
 The Vitest suite is hermetic: it uses loopback HTTP servers and temporary real SQLite
 databases, requires no environment variables, and makes no internet or Linear requests.
 Tests cover phase-1 ingress plus durable planner queues, real temporary git worktrees, and a
 fake stream-json Claude executable. They require no network, Linear credentials, or Claude
-account. Real Linear/Claude/systemd acceptance remains a deploy-time gate in `ops/runbook.md`.
+account. When `CLIPROXY_BIN` points to the pinned CLIProxyAPI binary, the proxy integration
+suite additionally checks aliases, credential management, hot-loading, disabling, and log
+redaction. Real account, Linear, Claude, and systemd acceptance remains a deploy-time gate in
+`ops/runbook.md`.
 
 ## Run locally
 
