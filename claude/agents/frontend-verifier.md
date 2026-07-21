@@ -48,6 +48,9 @@ because you lack credentials, environment, or tooling, **do not keep trying**:
 stop, report exactly what instructions, credentials, or help you need, and
 return a verdict of fail/blocked with that gap as the evidence. Improvised
 test routes are not evidence.
+If the dispatch carries app-launch instructions and the app is not already up,
+launch it exactly as directed and stop what you started; a missing or failed
+launch is blocked, never grounds to improvise a command.
 
 ## Method
 

@@ -92,6 +92,21 @@ proceed. A missing green-tier dependency is a preflight note, not a
 stop — the human clears it while you work; only a dependency the run truly
 cannot start without stops Step 0.
 
+Make the worktree's environment ready — installing dependencies and running
+the development app inside its own worktree are the pipeline's deliberate,
+logged actions, whatever the platform. In every workspace that declares
+dependencies, run the project's own idempotent install (a no-op when the
+tree is already current), detecting the toolchain from the repo's
+`AGENTS.md`/manifests rather than assuming one — always in the toolchain's
+reproducible mode (locked versions) and with lifecycle scripts suppressed
+where the toolchain supports it. A missing toolchain or failed install
+emits an **environment note** in the preflight message or run chat naming
+the workspace and tool; continue per the action tiers and carry a
+persistent note into the wrap-up/PR notes. If a later stage fails on an
+artifact a suppressed install step would have produced, emit the same named
+environment note for that package — never continue silently or improvise a
+workaround.
+
 Then **Load:**
 
 Get everything about the work item into `./tmp/<id>/` before starting.
@@ -132,6 +147,12 @@ These preflight items are only checkable now that the item is loaded:
   section exists and is filled — it is the verifier's credentials source.
   Missing or unfilled → an immediate preflight follow-up note asking the human,
   so the gap surfaces now instead of when the verifier blocks mid-run.
+- When any stage will need the running app — verification, reproduction, or a
+  staging prerequisite — confirm the repo `AGENTS.md` documents its launch
+  command, flags, port/URL, and env. Missing or unfilled → an immediate
+  preflight follow-up note. Using only those sourced facts, the pipeline may
+  start the app in the background when needed and must stop what it started;
+  never invent a launch command.
 
 Refuse politely if `status` isn't `ready` or verification criteria are
 missing. Never create a branch — if on the default branch, stop and ask the
@@ -278,7 +299,8 @@ testing instructions (the app folder's `AGENTS.md`/testing docs). If a
 verifier reports it has no testing instructions for the app, or can't test
 for lack of credentials, environment, or tooling, don't retry or improvise a
 workaround — stop the verify loop and ask the user for the missing
-instructions or access.
+instructions or access. When verification needs the running app, apply Step
+0's `AGENTS.md`-sourced launch rule and stop what the pipeline started.
 
 **Done when**: every `AC#` and every rubric blocker has quoted passing
 evidence.
@@ -382,8 +404,11 @@ happens on the artifact, not before it exists.
   ACs (record `qa_pass: trimmed`); zone 3 skips both the command-shaped
   items and the Manual-tests execution (record `skipped`) — but **an AC
   whose only possible proof needs the running app is driven at any zone,
-  zone 3 included; acceptance evidence is never trimmed by a dial.** The frontend-verifier dispatch carries the QA-drive
-  contract: map every touched surface and user journey to **ordered,
+  zone 3 included; acceptance evidence is never trimmed by a dial.** When the
+  app is needed, apply Step 0's launch rule; the frontend-verifier dispatch
+  carries the `AGENTS.md`-sourced launch command, flags, port/URL, and env.
+  The dispatch also carries the QA-drive contract: map every touched surface
+  and user journey to **ordered,
   step-named captures** (`01-<journey>-<state>.png`) covering meaningful
   states — empty/default, filled, expanded, validation error,
   loading/success, and one narrow viewport when responsive layout is in

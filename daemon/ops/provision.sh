@@ -11,7 +11,27 @@ SOURCE_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git gnupg libatomic1 rsync sqlite3 ufw
+apt-get install -y \
+  build-essential ca-certificates curl git gnupg libatomic1 pkg-config python3 \
+  rsync sqlite3 ufw \
+  libcairo2 libdrm2 libgbm1 libnss3 libpango-1.0-0 libxcomposite1 \
+  libxdamage1 libxfixes3 libxkbcommon0 libxrandr2
+
+# Keep scripts-suppressed installs usable with native modules and headless browsers.
+install_apt_release_variant() {
+  local t64_package="$1"
+  local legacy_package="$2"
+  if apt-cache show "${t64_package}" >/dev/null 2>&1; then
+    apt-get install -y "${t64_package}"
+  else
+    apt-get install -y "${legacy_package}"
+  fi
+}
+install_apt_release_variant libasound2t64 libasound2
+install_apt_release_variant libatk1.0-0t64 libatk1.0-0
+install_apt_release_variant libatk-bridge2.0-0t64 libatk-bridge2.0-0
+install_apt_release_variant libcups2t64 libcups2
+install_apt_release_variant libatspi2.0-0t64 libatspi2.0-0
 
 GH_VERSION="2.76.2"
 ARCH="$(dpkg --print-architecture)"
