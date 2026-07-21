@@ -69,9 +69,14 @@ launch is blocked, never grounds to improvise a command.
    **every UI state you verify is also screenshotted**: save each capture to
    the scratchpad with a stable name (`<item>-<criterion or J#>-<state>.png`)
    and enumerate it in your report's Captures section — path, one-line
-   description, the criterion or checklist item it evidences. A capture that
-   exists only as prose ("screenshot shows…") is lost the moment you exit;
-   the Overseer can only host and embed what your report enumerates.
+   description, the criterion or checklist item it evidences. When a journey
+   runs through a scriptable driver, also record it as a video (driver-level
+   recording, one mp4 per journey, encoded for review — see
+   `.references/qa-verification.md` § Journey videos) and enumerate each in
+   the same Captures section: path, journey, duration, what it evidences.
+   A capture that exists only as prose ("screenshot shows…") is lost the
+   moment you exit; the Overseer can only host and embed what your report
+   enumerates.
 4. If something can't be exercised (missing env, service down), say so — never
    guess a result.
 
