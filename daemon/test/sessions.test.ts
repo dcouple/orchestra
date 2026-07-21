@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
-import type { LinearGateway, PostResult } from "../src/linear.js";
+import type { LinearGateway, PostResult, ProgressContent, TerminalContent } from "../src/linear.js";
 import { SessionWorker } from "../src/sessions.js";
 
 const dirs: string[] = [];
@@ -36,11 +36,11 @@ function setup() {
   return { dir, log, config };
 }
 class Poster {
-  posts: Array<{ app:string; session: string; content: { type: string; body: string }; ephemeral: boolean; at: number }> = [];
+  posts: Array<{ app:string; session: string; content: ProgressContent | TerminalContent; ephemeral: boolean; at: number }> = [];
   urls:Array<{app:string;session:string;label:string;url:string}>=[];
   failures = 0;
   urlFailures=0;
-  async postActivity(_app: string, session: string, _id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+  async postActivity(_app: string, session: string, _id: string, content: ProgressContent | TerminalContent, ephemeral: boolean): Promise<PostResult> {
     this.posts.push({ app:_app, session, content, ephemeral, at: Date.now() });
     if (!ephemeral && this.failures-- > 0) return { ok: false, retriable: true, error: "temporary" };
     return { ok: true };
@@ -54,6 +54,9 @@ class CapturingLogger {
   log(...args: unknown[]): void { this.lines.push(String(args[0])); }
   error(...args: unknown[]): void { this.lines.push(String(args[0])); }
   entries(): Array<Record<string, unknown>> { return this.lines.map(line => JSON.parse(line) as Record<string, unknown>); }
+}
+function activityBody(content: ProgressContent | TerminalContent | undefined): string | undefined {
+  return content && "body" in content ? content.body : undefined;
 }
 function append(log: EventLog, delivery: string, session: string, action: "created" | "prompted", issue = "issue-uuid", identifier = "ENG-42") {
   const raw = action === "created" ? { action, promptContext: "Help plan this", agentSession: { id: session, issue: { id: issue, identifier } } }
@@ -122,7 +125,7 @@ describe("SessionWorker", () => {
     const progressGate = new Promise<void>(resolve => { releaseProgress = resolve; });
     class GatedPoster extends Poster {
       isActive?: () => boolean; activeAtTerminal: boolean | undefined;
-      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+      override async postActivity(app: string, session: string, id: string, content: ProgressContent | TerminalContent, ephemeral: boolean): Promise<PostResult> {
         const result = super.postActivity(app, session, id, content, ephemeral);
         if (ephemeral) await progressGate;
         else this.activeAtTerminal = this.isActive?.();
@@ -228,8 +231,11 @@ describe("SessionWorker", () => {
     const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     append(log, "d2", "linear-session", "prompted"); worker.trigger(); await waitFor(() => log.turnStates()[1]?.status === "done");
+    expect(poster.posts).toContainEqual(expect.objectContaining({
+      content: { type: "action", action: "Read", parameter: "ticket" }, ephemeral: true,
+    }));
     expect(poster.posts.some(post => !post.ephemeral && post.content.type === "response" && post.content.body === "planner answer")).toBe(true);
-    expect(poster.posts.some(post => !post.ephemeral && post.content.body.includes("resumed claude-session-1"))).toBe(true);
+    expect(poster.posts.some(post => !post.ephemeral && activityBody(post.content)?.includes("resumed claude-session-1"))).toBe(true);
     const invocations = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
     expect(invocations[1].args).toContain("--resume"); expect(invocations[1].cwd).toBe(invocations[0].cwd);
     const completions = logger.entries().filter(entry => entry.event === "session_turn_completed");
@@ -245,7 +251,7 @@ describe("SessionWorker", () => {
     append(log, "d1", "session", "created"); const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     const terminal = poster.posts.findIndex(post => !post.ephemeral); const before = poster.posts.slice(0, terminal);
-    expect(before.some(post => post.content.body.includes("still working"))).toBe(true); expect(before.every(post => post.ephemeral)).toBe(true);
+    expect(before.some(post => activityBody(post.content)?.includes("still working"))).toBe(true); expect(before.every(post => post.ephemeral)).toBe(true);
     await worker.stop(); log.close();
   });
   it("AC5: posts durable error after crash and accepts the next prompt", async () => {
@@ -301,7 +307,7 @@ describe("SessionWorker", () => {
       { pollMs: 10, reconcileMs: 20, now: () => 1200 }); worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     expect(poster.posts.find(post => !post.ephemeral)).toMatchObject({ content: { type: "response", body: "real persisted response" } });
-    expect(poster.posts.some(post => post.content.body.includes("interrupted"))).toBe(false);
+    expect(poster.posts.some(post => activityBody(post.content)?.includes("interrupted"))).toBe(false);
     await worker.stop(); log.close();
   });
   it("gives late terminal activities a full retry budget from their creation time", async () => {
@@ -316,14 +322,14 @@ describe("SessionWorker", () => {
     await waitFor(() => logger.entries().some(entry => entry.event === "terminal_activity_retry_scheduled"));
     clock += 1000;
     await waitFor(() => log.turnStates()[0]?.status === "done");
-    expect(poster.posts.filter(post => !post.ephemeral).map(post => post.content.body)).toEqual(["late response", "late response"]);
+    expect(poster.posts.filter(post => !post.ephemeral).map(post => activityBody(post.content))).toEqual(["late response", "late response"]);
     await worker.stop(); log.close();
   });
   it("does not start a later same-issue turn until the earlier terminal activity posts", async () => {
     const { dir, log, config } = setup(); const logger = new CapturingLogger();
     class FastRetryPoster extends Poster {
-      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
-        this.posts.push({ session, content, ephemeral, at: Date.now() });
+      override async postActivity(app: string, session: string, id: string, content: ProgressContent | TerminalContent, ephemeral: boolean): Promise<PostResult> {
+        this.posts.push({ app, session, content, ephemeral, at: Date.now() });
         if (!ephemeral && this.failures-- > 0) return { ok: false, retriable: true, retryAfterMs: 50, error: "temporary" };
         return { ok: true };
       }
@@ -343,9 +349,9 @@ describe("SessionWorker", () => {
   it("expires retriable terminal delivery failures and unblocks the issue", async () => {
     const { log, config } = setup(); const logger = new CapturingLogger(); let clock = 1000;
     class ExpiringPoster extends Poster {
-      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
-        this.posts.push({ session, content, ephemeral, at: clock });
-        if (!ephemeral && content.body === "stuck terminal response")
+      override async postActivity(app: string, session: string, id: string, content: ProgressContent | TerminalContent, ephemeral: boolean): Promise<PostResult> {
+        this.posts.push({ app, session, content, ephemeral, at: clock });
+        if (!ephemeral && "body" in content && content.body === "stuck terminal response")
           return { ok: false, retriable: true, retryAfterMs: 30 * 60_000 + 1, error: "temporary" };
         return { ok: true };
       }
@@ -379,7 +385,7 @@ describe("SessionWorker", () => {
   });
   it("logs terminal activity delivery failures with job id and attempts", async () => {
     class TerminalFailingPoster extends Poster {
-      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+      override async postActivity(app: string, session: string, id: string, content: ProgressContent | TerminalContent, ephemeral: boolean): Promise<PostResult> {
         await super.postActivity(app, session, id, content, ephemeral);
         return ephemeral ? { ok: true } : { ok: false, retriable: false, error: "permanent" };
       }
@@ -413,7 +419,7 @@ describe("SessionWorker", () => {
     expect(logger.entries().find(entry => entry.event === "session_turn_failed"))
       .toMatchObject({ event: "session_turn_failed", turnId: 1, linearSessionId: "session",
         attempts: 1, stderrTail: expect.stringContaining("stderr-line-") });
-    expect(poster.posts.find(post => !post.ephemeral)?.content.body).not.toContain("stderr-line-");
+    expect(activityBody(poster.posts.find(post => !post.ephemeral)?.content)).not.toContain("stderr-line-");
     await worker.stop(); log.close();
   });
   it("cancels progress and keepalive when the Claude runner rejects after progress starts", async () => {
@@ -520,7 +526,7 @@ describe("SessionWorker", () => {
   it("persists a compacted session id and never posts progress after the terminal response", async () => {
     const { dir, log, config } = setup(); process.env.CLAUDE_FAKE_MODE = "new-id"; process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
     class DelayedPoster extends Poster {
-      override async postActivity(app: string, session: string, id: string, content: { type: string; body: string }, ephemeral: boolean): Promise<PostResult> {
+      override async postActivity(app: string, session: string, id: string, content: ProgressContent | TerminalContent, ephemeral: boolean): Promise<PostResult> {
         if (ephemeral) await new Promise(resolve => setTimeout(resolve, 30));
         return super.postActivity(app, session, id, content, ephemeral);
       }

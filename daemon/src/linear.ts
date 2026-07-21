@@ -1,16 +1,27 @@
 import {
+  AgentActivityType,
   LinearClient,
   LinearError,
   LinearErrorType,
   RatelimitedLinearError,
   parseLinearError,
 } from "@linear/sdk";
+import type {
+  AgentActivityActionContent,
+  AgentActivityErrorContent,
+  AgentActivityResponseContent,
+  AgentActivityThoughtContent,
+} from "@linear/sdk";
 import type { AppConfig, AppName } from "./config.js";
 import type { EventLog } from "./eventlog.js";
 
 export type PostResult = { ok: true } | { ok: false; retriable: boolean; error: string; retryAfterMs?: number };
-export type ProgressContent = { type: "thought" | "action"; body: string };
-export type TerminalContent = { type: "response" | "error"; body: string };
+type Thought = Pick<AgentActivityThoughtContent, "body"> & { type: `${AgentActivityType.Thought}` };
+type Action = Pick<AgentActivityActionContent, "action" | "parameter"> & { type: `${AgentActivityType.Action}` };
+export type ProgressContent = Thought | Action;
+export type TerminalContent =
+  | (Pick<AgentActivityResponseContent, "body"> & { type: `${AgentActivityType.Response}` })
+  | (Pick<AgentActivityErrorContent, "body"> & { type: `${AgentActivityType.Error}` });
 export interface AgentSessionSummary {
   id: string;
   app: AppName;
