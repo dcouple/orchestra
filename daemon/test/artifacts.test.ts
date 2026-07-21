@@ -8,6 +8,7 @@ import { ArtifactStore } from "../src/artifacts.js";
 import { loadConfig } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
 import { WebhookServer } from "../src/server.js";
+import { renderViewer } from "../src/viewer.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -67,6 +68,14 @@ async function oversizedWebhook(port: number): Promise<string> {
   });
 }
 
+function expectExecutableScriptsToParse(html: string): void {
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
+    .filter(match => !/\btype=["']application\/json["']/i.test(match[1] ?? ""))
+    .map(match => match[2] ?? "");
+  expect(scripts.length).toBeGreaterThan(0);
+  for (const source of scripts) expect(() => new Function(source)).not.toThrow();
+}
+
 describe("artifact store", () => {
   it("generates distinct 128-bit base64url ids and rejects traversal", async () => {
     const { store } = setup();
@@ -75,6 +84,13 @@ describe("artifact store", () => {
     const id = await store.create([{ path: "item.md", content: Buffer.from("safe") }]);
     await expect(store.resolve(id, "../secret.txt")).resolves.toBeUndefined();
     await expect(store.resolve(id, "refs\\secret.txt")).resolves.toBeUndefined();
+  });
+});
+
+describe("artifact viewer", () => {
+  it("emits syntactically valid executable script blocks", () => {
+    const html = renderViewer("AAAAAAAAAAAAAAAAAAAAAA", ["refs/explainer.html", "plan.md", "refs/image.png"]);
+    expectExecutableScriptsToParse(html);
   });
 });
 
@@ -96,6 +112,7 @@ describe("artifact HTTP integration", () => {
     const viewer = await fetch(`http://127.0.0.1:${address.port}/a/${id}/`);
     const html = await viewer.text();
     expect(viewer.status).toBe(200); expect(html).toContain("refs/explainer.html");
+    expectExecutableScriptsToParse(html);
     expect(html).toContain('setAttribute("sandbox", "allow-scripts allow-popups")');
     expect(html.indexOf("refs/explainer.html")).toBeLessThan(html.indexOf("item.md"));
     await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a`), 404, "not_found");

@@ -6,7 +6,7 @@ export function renderViewer(id: string, files: readonly string[]): string {
   const ordered = [...files].sort((left, right) => rank(left) - rank(right) || left.localeCompare(right));
   const fileJson = JSON.stringify(ordered).replace(/<\//g, "<\\/");
   const root = `/a/${encodeURIComponent(id)}/`;
-  return `<!doctype html>
+  return String.raw`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
