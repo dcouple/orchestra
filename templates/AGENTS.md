@@ -59,23 +59,34 @@ Example — publish to GitHub issues (replace or delete):
 ```yaml
 tracker: github
 github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the current repo
+# artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
 ```
 
-> Publish every work item as a self-contained GitHub issue: `item.md` is
-> the issue body; `refs/` files ride as marker-delimited issue comments.
+When `artifact_host` is set, export `ARTIFACT_HOST_TOKEN` with its upload
+bearer token; the shared publish procedure uploads and attaches the viewer URL.
+
+> Without `artifact_host`, publish every work item as a self-contained GitHub
+> issue: `item.md` is the full issue body and `refs/` files ride as
+> marker-delimited issue comments. With `artifact_host`, publish the lean issue
+> body (full frontmatter, Intent summary, and `Artifact bundle: <url>`), use the
+> bundle as the artifact transport, and post no marker comments.
 
 Example — publish to Linear (replace or delete):
 
 ```yaml
 tracker: linear
 linear_team: <team key or team ID>
+# artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
 ```
 
 > Publish each work item to that team. Record `linear_issues` in `item.md` as an
 > always-list pairing canonical `url`, URL-derived `identifier`, and
 > `relationship: completes | relates`; see `.references/tracker-lifecycle.md`.
-> `/do` discovers team workflow statuses at runtime. Document any required
-> artifact attachment steps.
+> `/do` discovers team workflow statuses at runtime. Without `artifact_host`,
+> publish the full body and document any required artifact attachment steps.
+> With `artifact_host`, publish a lean body with full frontmatter and an Intent
+> summary, create an attachment card for the bundle transport, and post no
+> marker comments. Export `ARTIFACT_HOST_TOKEN` with the upload bearer token.
 
 Configure one tracker example, not both.
 

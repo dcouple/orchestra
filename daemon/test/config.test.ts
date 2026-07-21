@@ -14,6 +14,9 @@ describe("loadConfig", () => {
     expect(config.bindAddr).toBe("127.0.0.1");
     expect(config.replayWindowMs).toBe(60_000);
     expect(config.webhookBaseUrl).toBe("http://127.0.0.1:8787");
+    expect(config.artifactToken).toBeUndefined();
+    expect(config.artifactsDir).toBe("/var/lib/linear-agent-daemon/artifacts");
+    expect(config.artifactMaxBodyBytes).toBe(32 * 1024 * 1024);
     expect(config.reconcileIntervalMs).toBe(60_000);
     expect(config.reconcileRequestTimeoutMs).toBe(10_000);
     expect(config.apps.planner.staticToken).toBe("pt");
@@ -51,6 +54,11 @@ describe("loadConfig", () => {
       reconcileRequestTimeoutMs: 2000 });
     expect(config.apps.planner.appActorId).toBe("planner-actor");
     expect(config.apps.implementer.appActorId).toBe("implementer-actor");
+  });
+  it("loads artifact settings", () => {
+    const config = loadConfig({ ...base, DB_PATH: "/state/events.db", ARTIFACT_TOKEN: " secret ",
+      ARTIFACTS_DIR: "/srv/artifacts", ARTIFACT_MAX_BODY_BYTES: "4096" });
+    expect(config).toMatchObject({ artifactToken: "secret", artifactsDir: "/srv/artifacts", artifactMaxBodyBytes: 4096 });
   });
   it("requires WEBHOOK_BASE_URL outside test mode", () => {
     const env = { ...base, PLANNER_LINEAR_CLIENT_ID: "p-id", PLANNER_LINEAR_CLIENT_SECRET: "p-secret",

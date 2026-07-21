@@ -113,17 +113,38 @@ Get everything about the work item into `./tmp/<id>/` before starting.
 This mirrors the publish rule: the project's `AGENTS.md` `Work-item
 tracking` section says where work items and their artifacts live — fetch
 them per its instructions; with no instructions, the item exists only
-locally, so expect it in `./tmp/<id>/`. When the tracker is GitHub issues,
-the issue body is the item and the issue's comments carry the refs —
-harvest every `<!-- ORCHESTRA-ARTIFACT path="..." -->` block back to its
-path under `./tmp/<id>/` (joining `part=n` splits) before planning; an
-issue with no artifact comments gives you the body alone, so say so in the
-plan's Known mismatches. A local `./tmp/<id>/` that
-already exists wins over anything fetched — disk is the working truth;
-only fill gaps. A local path is read directly. Invoked with no argument: list
-the local items with `status: ready` (`./tmp/*/item.md`) and ask the user
-which to run — never pick one silently. Skim `refs/`; read individual refs
-as the work calls for them.
+locally, so expect it in `./tmp/<id>/`. Treat the tracker body as the item and
+preserve its full frontmatter separately as tracker state before writing or
+loading any `./tmp/<id>/item.md` copy. Also record whether `item.md` contained
+genuinely pre-existing local document content before the tracker fetch; the
+lean tracker stub fetched during this load does not count as pre-existing
+local content.
+If that frontmatter, or a local-only item's frontmatter, carries
+`artifact_bundle:`, fetch `<artifact_bundle>index.json` and then GET every
+listed raw file from the bundle into `./tmp/<id>/`.
+Existing local files win for document content and bundle files normally fill
+content gaps only. The exception is a tracker-loaded lean `item.md`: when no
+genuinely pre-existing local `item.md` document content was present before the
+tracker fetch, always replace the lean stub's document content with the
+bundle's authoritative `item.md`. Retry the index fetch or any file GET once.
+If the configured bundle is still
+unreachable, this is a **red gate blocking everything**: notify per
+`.references/notify.md`, state exactly which bundle request must become
+reachable, and wait. Never proceed from the lean tracker stub.
+
+For a tracker-loaded item, after the bundle pull rewrite the loaded
+`item.md` frontmatter block with the tracker body's full frontmatter values.
+Tracker frontmatter governs the run and overrides both pulled and pre-existing
+local `item.md` frontmatter: state beats documents, while disk wins applies
+only to document content. For a GitHub issue with no `artifact_bundle:`, keep
+the legacy transport: harvest every `<!-- ORCHESTRA-ARTIFACT path="..." -->`
+comment block back to its path under `./tmp/<id>/` (joining `part=n` splits)
+before planning. Only a GitHub item with neither an artifact bundle nor
+artifact comments gives you the body alone; say so in the plan's Known
+mismatches. A local path is read directly. Invoked with no argument: list the
+local items with `status: ready` (`./tmp/*/item.md`) and ask the user which to
+run — never pick one silently. Skim `refs/`; read individual refs as the work
+calls for them.
 
 These preflight items are only checkable now that the item is loaded:
 
@@ -234,6 +255,10 @@ more research and deepening the plan; a materially revised plan earns a
 fresh review pass (it's a new artifact), an unchanged one never does. The
 score recorded after the last pass is final.
 Never a reason to stop the run.
+
+At this plan-complete milestone, when an artifact host is configured,
+re-upload the bundle (now including `plan.md`) using the artifact-host step in
+`.references/publish-work-item.md`.
 
 ## Step 2: Implement
 
@@ -495,6 +520,9 @@ happens on the artifact, not before it exists.
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
   instructions.
+- At this wrap-up milestone, when an artifact host is configured, re-upload
+  the bundle (now including `wrapup.md`) using the artifact-host step in
+  `.references/publish-work-item.md`.
 - Immediately before the `awaiting-human-review` label, **YOU MUST** run the
   shared contract's current-item handoff set and report each `In Review`
   operation as `verified`, `already-correct`, `failed`, or `unavailable`.
