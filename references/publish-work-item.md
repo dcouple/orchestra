@@ -96,6 +96,14 @@ On first publish, perform these steps in order:
    line. For Linear, create an `attachmentCreate` attachment card after the
    item exists. For an epic spec, also keep its phase checklist in the lean
    tracker body so tracker-side completion ticks remain visible.
+4. After tracker creation, record the canonical returned tracker URL/identifier
+   in local `item.md`: use the applicable GitHub or other tracker frontmatter
+   fields, or a `linear_issues` always-list entry for Linear as specified
+   above. Rebuild the manifest one final time and send an
+   authenticated `PUT` to the `artifact_bundle` URL with its trailing slash
+   removed. This final PUT is mandatory: it makes the bundle's authoritative
+   `item.md` link back to the tracker while the tracker body or attachment
+   links to the bundle.
 
 Post no marker comments in this branch. The bundle's `item.md`, `refs/`, and
 present milestone `plan.md` and `wrapup.md` are the complete artifact

@@ -98,12 +98,20 @@ This mirrors the publish rule: the project's `AGENTS.md` `Work-item
 tracking` section says where work items and their artifacts live — fetch
 them per its instructions; with no instructions, the item exists only
 locally, so expect it in `./tmp/<id>/`. Treat the tracker body as the item and
-preserve its full frontmatter as tracker state before loading any other copy.
+preserve its full frontmatter separately as tracker state before writing or
+loading any `./tmp/<id>/item.md` copy. Also record whether `item.md` contained
+genuinely pre-existing local document content before the tracker fetch; the
+lean tracker stub fetched during this load does not count as pre-existing
+local content.
 If that frontmatter, or a local-only item's frontmatter, carries
 `artifact_bundle:`, fetch `<artifact_bundle>index.json` and then GET every
 listed raw file from the bundle into `./tmp/<id>/`.
-Existing local files win for document content: fill content gaps only. Retry
-the index fetch or any file GET once. If the configured bundle is still
+Existing local files win for document content and bundle files normally fill
+content gaps only. The exception is a tracker-loaded lean `item.md`: when no
+genuinely pre-existing local `item.md` document content was present before the
+tracker fetch, always replace the lean stub's document content with the
+bundle's authoritative `item.md`. Retry the index fetch or any file GET once.
+If the configured bundle is still
 unreachable, this is a **red gate blocking everything**: notify per
 `.references/notify.md`, state exactly which bundle request must become
 reachable, and wait. Never proceed from the lean tracker stub.
