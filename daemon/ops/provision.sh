@@ -64,6 +64,22 @@ if [[ ! -x /var/lib/linear-agent-daemon/.local/bin/claude ]]; then
     'curl -fsSL https://claude.ai/install.sh | bash'
 fi
 
+# Claude Code's Bash sandbox (seccomp) kills Chrome with SIGSYS; excludedCommands
+# runs google-chrome outside the sandbox so sessions can rasterize HTML mock-ups.
+if [[ ! -f /var/lib/linear-agent-daemon/.claude/settings.json ]]; then
+  install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/.claude
+  install -o linear-daemon -g linear-daemon -m 0644 /dev/null /var/lib/linear-agent-daemon/.claude/settings.json
+  cat > /var/lib/linear-agent-daemon/.claude/settings.json <<'EOF'
+{
+  "sandbox": {
+    "excludedCommands": [
+      "google-chrome *"
+    ]
+  }
+}
+EOF
+fi
+
 if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
   install -d -m 0755 /opt/pnpm
   curl -fsSL https://get.pnpm.io/install.sh \
