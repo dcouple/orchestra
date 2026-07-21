@@ -99,7 +99,14 @@ SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/bloom-mono
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
 LINEAR_API_KEY=...
-CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
+CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
+# Capacity fallback: a validated Claude usage/rate-limit failure retries once through
+# the Claudex proxy wrapper (ops/claudex, installed by provision.sh; it carries the
+# proxy env itself, so CLAUDEX_ENV is not needed with it):
+CLAUDEX_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
+# CLAUDEX_ENV optionally supplies extra child env as a JSON string map when CLAUDEX_BIN
+# points at a bare claude binary instead of the wrapper; it requires CLAUDEX_BIN:
+# CLAUDEX_ENV={"ANTHROPIC_BASE_URL":"http://127.0.0.1:8317","ANTHROPIC_AUTH_TOKEN":"..."}
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_MAX_TURNS=100
 DO_PERMISSION_MODE=bypassPermissions

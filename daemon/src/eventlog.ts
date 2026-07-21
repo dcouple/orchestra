@@ -21,6 +21,7 @@ export interface AppendEvent {
 export interface SessionRow {
   linearSessionId: string; app: AppName; issueId: string | null; issueIdentifier: string | null;
   worktreePath: string | null; branch: string | null; claudeSessionId: string | null;
+  runtime: "claude" | "claudex"; fallbackCause: string | null;
   mode: string; status: string; lastSeenAt: number; lastSeenActivityAt: number | null;
 }
 export interface TurnRow {
@@ -110,6 +111,8 @@ export class EventLog {
         worktree_path TEXT,
         branch TEXT,
         claude_session_id TEXT,
+        runtime TEXT NOT NULL DEFAULT 'claude',
+        fallback_cause TEXT,
         mode TEXT NOT NULL DEFAULT 'planner',
         status TEXT NOT NULL DEFAULT 'active',
         last_seen_at INTEGER NOT NULL,
@@ -185,6 +188,8 @@ export class EventLog {
   private migrateSessionColumns(): void {
     const columns = new Set((this.db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>).map(column => column.name));
     if (!columns.has("last_seen_activity_at")) this.db.prepare("ALTER TABLE sessions ADD COLUMN last_seen_activity_at INTEGER").run();
+    if (!columns.has("runtime")) this.db.prepare("ALTER TABLE sessions ADD COLUMN runtime TEXT NOT NULL DEFAULT 'claude'").run();
+    if (!columns.has("fallback_cause")) this.db.prepare("ALTER TABLE sessions ADD COLUMN fallback_cause TEXT").run();
   }
 
   private migrateTurnColumns(): void {
@@ -344,11 +349,13 @@ export class EventLog {
   getSession(linearSessionId: string): SessionRow | undefined {
     return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
+      runtime, fallback_cause fallbackCause,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt FROM sessions WHERE linear_session_id=?`).get(linearSessionId) as SessionRow | undefined;
   }
   sessionByIssueIdentifier(identifier: string): SessionRow | undefined {
     const query = (mode: string) => this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
+      runtime, fallback_cause fallbackCause,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt FROM sessions WHERE issue_identifier=? AND mode=? ORDER BY last_seen_at DESC LIMIT 1`)
       .get(identifier, mode) as SessionRow | undefined;
     return query("implementer") ?? query("planner");
@@ -356,6 +363,7 @@ export class EventLog {
   plannerSessionsForReconcile(): SessionRow[] {
     return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
+      runtime, fallback_cause fallbackCause,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt
       FROM sessions WHERE app='planner' AND mode='planner' ORDER BY last_seen_at`)
       .all() as SessionRow[];
@@ -363,6 +371,7 @@ export class EventLog {
   sessionsWithWorktrees(): SessionRow[] {
     return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
+      runtime, fallback_cause fallbackCause,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt
       FROM sessions WHERE worktree_path IS NOT NULL ORDER BY last_seen_at`).all() as SessionRow[];
   }
@@ -383,6 +392,13 @@ export class EventLog {
   }
   updateClaudeSessionId(linearSessionId: string, id: string, now = Date.now()): void {
     this.db.prepare(`UPDATE sessions SET claude_session_id=?, last_seen_at=? WHERE linear_session_id=?`).run(id, now, linearSessionId);
+  }
+  clearClaudeSessionId(linearSessionId: string, now = Date.now()): void {
+    this.db.prepare("UPDATE sessions SET claude_session_id=NULL, last_seen_at=? WHERE linear_session_id=?").run(now, linearSessionId);
+  }
+  recordRuntimeFallback(linearSessionId: string, claudexSessionId: string | undefined, cause: string, now = Date.now()): void {
+    this.db.prepare(`UPDATE sessions SET runtime='claudex', fallback_cause=?, claude_session_id=?, last_seen_at=?
+      WHERE linear_session_id=?`).run(cause, claudexSessionId ?? null, now, linearSessionId);
   }
   touchSession(linearSessionId: string, now = Date.now()): void {
     this.db.prepare("UPDATE sessions SET last_seen_at=? WHERE linear_session_id=?").run(now, linearSessionId);

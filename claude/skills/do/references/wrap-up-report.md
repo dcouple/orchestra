@@ -43,6 +43,10 @@ pr: <url or #>
 ```yaml
 zone: <0-3>            # from the item (or Overseer-classified, noted)
 lanes: <dual | single-codex>
+requested_lanes: <dual | single — omit unless runtime fallback occurred>
+effective_lanes: <single-codex — omit unless runtime fallback occurred>
+runtime_fallback: <claude -> claudex — omit unless runtime fallback occurred>
+fallback_cause: <daemon-classified cause — omit unless runtime fallback occurred>
 passes: {plan: <used>/<cap>, post_pr: <used>/<cap>}
 findings: {plan: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}},
            post_pr: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}}}

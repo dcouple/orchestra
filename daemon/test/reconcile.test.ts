@@ -196,6 +196,7 @@ describe("ReconcileWorker", () => {
     expect(migrated.prepare("SELECT source_key sourceKey FROM turns WHERE id=1").get())
       .toEqual({ sourceKey: "created:planner-session" });
     const seeded = log.getSession("planner-session")?.lastSeenActivityAt;
+    expect(log.getSession("planner-session")).toMatchObject({ runtime: "claude", fallbackCause: null });
     expect(seeded).toEqual(expect.any(Number));
     expect(seeded!).toBeGreaterThan(2_000);
     migrated.close();

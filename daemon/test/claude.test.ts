@@ -19,6 +19,7 @@ describe("runTurn", () => {
     const events: unknown[] = []; const ids: string[] = [];
     const result = await runTurn(options({ onEvent: (event: unknown) => events.push(event), onSessionId: (id: string) => ids.push(id) }));
     expect(result).toMatchObject({ ok: true, sessionId: "claude-session-1", resultText: "planner answer", sawResult: true });
+    expect(result.capacityEvidence).toEqual([]);
     expect(events).toEqual([{ type: "text", text: "thinking" }, { type: "toolUse", name: "Read", input: { description: "ticket" } }]);
     expect(ids).toEqual(["claude-session-1"]);
   });
@@ -29,7 +30,22 @@ describe("runTurn", () => {
     expect(result.resultText).toBe("resumed prior-id");
   });
   it.each([["crash", false], ["no-result", false], ["denied", false]])("classifies %s as failure", async (mode, ok) => {
-    const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: mode } })); expect(result.ok).toBe(ok);
+    const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: mode } }));
+    expect(result.ok).toBe(ok); expect(result.capacityEvidence).toEqual([]);
+  });
+  it.each([
+    ["rate-limit-rejected", "rate_limit_event:rejected"],
+    ["out-of-credits", "rate_limit_event:out_of_credits"],
+    ["api-retry-exhausted", "api_retry:rate_limit"],
+    ["result-429", "result:429"],
+    ["assistant-rate-limit", "assistant:rate_limit"],
+  ])("collects structured capacity evidence from %s", async (mode, evidence) => {
+    const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: mode } }));
+    expect(result.ok).toBe(false); expect(result.capacityEvidence).toContain(evidence);
+  });
+  it("does not turn recovered retry evidence into a runner failure", async () => {
+    const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: "api-retry-recovered" } }));
+    expect(result.ok).toBe(true); expect(result.capacityEvidence).toContain("api_retry:overloaded");
   });
   it("classifies ENOENT and abort signal death", async () => {
     expect(await runTurn(options({ argv: ["/missing/claude"] }))).toMatchObject({ ok: false, sawResult: false });
@@ -53,6 +69,14 @@ describe("runTurn", () => {
     expect(row.args).toContain("--mcp-config");
     expect(row.args).toEqual(expect.arrayContaining(["--max-budget-usd","12.5"]));
     expect(JSON.stringify(row.args)).not.toContain("secret-token");
+  });
+  it("merges trusted runtime environment after the allowlist", async () => {
+    const dir = cwd(); const envFile = join(dir, "env.jsonl");
+    const result = await runTurn(options({ cwd: dir, env: { CLAUDE_FAKE_ENV_FILE: envFile },
+      trustedEnv: { ENABLE_TOOL_SEARCH: "true", CLAUDE_FAKE_MODE: "happy" } }));
+    expect(result.ok).toBe(true);
+    const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { env: Record<string, string> };
+    expect(row.env.ENABLE_TOOL_SEARCH).toBe("true");
   });
   it("drains noisy stderr and returns a bounded tail on failure", async () => {
     const result = await runTurn(options({ env: { CLAUDE_FAKE_MODE: "stderr-fail" } }));

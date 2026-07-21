@@ -18,7 +18,7 @@ autonomously; the human returns at the PR.
 **Sub-agents:** code-researcher, implementer, backend-verifier,
 plan-reviewer, and code-reviewer run on Codex via the `codex` skill; each
 review runs the Codex and Claude reviewers in parallel and weighs both
-reports at zones 0–2; zone 3 runs the Codex lane alone. **All
+reports at zone 0; zones 1–3 run the Codex lane alone. **All
 implementation runs on the Codex `implementer`** at effort `medium`,
 every surface — backend/ops and frontend web/mobile alike. The Claude
 `frontend-verifier` is the app-driving QA agent: it runs **once per run,
@@ -186,17 +186,22 @@ user to set one up.
 
 Read the item's `zone:` and derive this run's dials from the table in
 `.references/zones.md` — record zone and effective dials in `plan.md`'s
-frontmatter. Zones 0–1 run the full lane (dossier, dual reviews, cap 3);
-zones 2–3 run light (no dossier, cap 1; zone 3 reviews single-lane on
-Codex). An explicit `review_lanes: dual | single` in the item frontmatter
+frontmatter. Zones 0–1 run the full lane (dossier, cap 3); zones 2–3 run
+light (no dossier, cap 1). Zone 0 defaults to dual review; zones 1–3 default
+to the single Codex lane. An explicit `review_lanes: dual | single` in the item frontmatter
 outranks the zone's lane dial — it's the human's setting, made at capture
 or edited later as item metadata on the tracker (Step 0's pull picks up
 tracker edits). You may escalate the effective zone one notch toward 0 with the
 reason recorded in `plan.md`'s frontmatter; never de-escalate — that's the
 human's call at capture, or the table's via postmortem evidence. Item
 missing a zone → classify it yourself from stakes and downstream
-consequences, record the reasoning in the frontmatter, and proceed. Epics:
-see zones.md's Epics override.
+consequences, record the reasoning in the frontmatter, and proceed. Epics keep
+full machinery and cap 3 while their lanes follow the same zone rule.
+
+If the daemon's prompt contains a runtime-fallback context line, record
+`requested_lanes`, `effective_lanes`, `runtime_fallback`, and `fallback_cause`
+in `plan.md` frontmatter. Regardless of a dual request, the effective review
+topology for the rest of that run is single/Codex-only.
 
 Full lane: dispatch the `codex` skill, role `code-researcher`, to map the
 territory the plan builds on — critical codebase anchors, patterns to
@@ -228,10 +233,9 @@ subsection. Before dispatching reviewers, run one **fresh-eyes pass** over
 the finished plan yourself — reread it as a stranger hunting blunders,
 mistakes, oversights, omissions, and misconceptions, and fix what you find.
 Then run the review
-loop — this run's effective review lanes per the dials above (zones 0–2:
-Codex + Claude in parallel; zone 3: Codex alone; `review_lanes:` override
-honored — on an epic too, where it outranks the always-dual Epics
-default; epics otherwise always both, per zones.md's Epics) — findings
+loop — this run's effective review lanes per the dials above (zone 0:
+Codex + Claude in parallel; zones 1–3: Codex alone; `review_lanes:` override
+honored in either direction, including on an epic) — findings
 fixed into the plan — until you're satisfied. A dual-lane pass dispatches
 both lanes in a single message — the Claude reviewer via the Agent tool,
 the Codex reviewer as a detached dispatch per the codex skill — then awaits
@@ -388,12 +392,11 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 Reviews run against the open PR and fixes land on it — self-correction
 happens on the artifact, not before it exists.
 
-- Run the review lanes over the PR diff (zones 0–2: both reviewers,
+- Run the review lanes over the PR diff (zone 0: both reviewers,
   dispatched together in one message — Agent tool + detached `codex exec`
-  — never serially; zone 3: Codex alone; the item's explicit
-  `review_lanes:` outranks the zone default and, when set on the epic
-  itself, even the Epics always-dual default; epics otherwise always
-  both — zones.md's Epics override)
+  — never serially; zones 1–3: Codex alone; the item's explicit
+  `review_lanes:` outranks the zone default in either direction, including
+  when set on the epic itself)
   (correctness + security, `(security)` tags). A Codex report may arrive
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format — map it, never re-dispatch over format: P0/P1 ≡
@@ -407,9 +410,9 @@ happens on the artifact, not before it exists.
   readiness, research depth) stays single-voice — they're bounded or
   self-correcting.
 - **Another pass runs only on a trigger — the caps are ceilings, never
-  quotas** (cap 3 passes; zones 2–3: 1; epics always 3 passes,
-  dual-lane unless the epic's own `review_lanes:` says otherwise —
-  zones.md's Epics override). Two triggers: (a) **any Must Fix / P0 / P1
+  quotas** (cap 3 passes; zones 2–3: 1; epics always 3 passes, with lanes
+  derived from zone unless the epic's own `review_lanes:` says otherwise).
+  Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** — loop those findings back to the matching
   implementer, push the fixes, re-review; (b) the two lanes' reports
   **diverge sharply** (little overlap in what they caught, or conflicting
@@ -514,6 +517,9 @@ happens on the artifact, not before it exists.
   number — never estimate. This record is what the postmortem and the
   zones.md tuning aggregate consume; a run that doesn't emit it is
   invisible to that tuning.
+  When runtime fallback occurred, also carry the plan's `requested_lanes`,
+  `effective_lanes`, `runtime_fallback`, and `fallback_cause` into the dial
+  record; effective lanes remain single/Codex-only regardless of the request.
 - Write `./tmp/<id>/wrapup.md` following this skill's
   `references/wrap-up-report.md`; post
   it as a PR comment. `plan.md` and `wrapup.md` stay in `./tmp/<id>/` —
@@ -553,8 +559,8 @@ happens on the artifact, not before it exists.
 
 Run Steps 1–3 per phase, sequentially — per-phase `plan-<n>.md`, tick the
 phase ✓ in the spec on completion. After each phase verifies, review the
-phase diff — the epic profile: dual lanes, cap 3 (zones.md's Epics
-override outranks the zone's lane/cap dials) — fix and
+phase diff — the epic profile: cap 3, with lanes derived from zone unless
+the epic has an explicit `review_lanes:` override — fix and
 re-verify, then run the build gate and commit the phase following Step 4's
 commit rules. After the last phase, continue from Step 4's PR steps
 (deploy-notes scan over the whole epic diff, rebase, push, open the PR) and
