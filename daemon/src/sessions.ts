@@ -22,10 +22,12 @@ function bodyFrom(value: unknown): string | undefined {
   const node = object(value); if (!node) return undefined;
   return text(node.body) ?? text(object(node.content)?.body) ?? text(node.prompt);
 }
-function describeTool(event: Extract<ClaudeEvent, { type: "toolUse" }>): string {
+export function toolUseContent(event: Extract<ClaudeEvent, { type: "toolUse" }>): ProgressContent {
   const input = object(event.input);
-  const detail = text(input?.description) ?? text(input?.command) ?? JSON.stringify(event.input ?? {}).slice(0, 500);
-  return `${event.name}: ${detail || "running"}`;
+  let serialized: string | undefined;
+  try { serialized = JSON.stringify(event.input ?? {})?.slice(0, 500); } catch {}
+  const detail = text(input?.description) ?? text(input?.command) ?? serialized;
+  return { type: "action", action: text(event.name) ?? "tool", parameter: detail || "running" };
 }
 function jsonLog(fields: Record<string, unknown>): string {
   return JSON.stringify(fields);
@@ -137,7 +139,7 @@ export class SessionWorker {
         mcpConfigJson, env: { LINEAR_API_KEY: this.config.linearApiKey!, GH_TOKEN: process.env.GH_TOKEN, GITHUB_TOKEN: process.env.GITHUB_TOKEN }, signal,
         onSessionId: id => this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()),
         onEvent: event => progress.push(event.type === "text"
-          ? { type: "thought", body: event.text } : { type: "action", body: describeTool(event) }),
+          ? { type: "thought", body: event.text } : toolUseContent(event)),
       }).catch(async error => {
         clearInterval(keepalive);
         await progress.cancelAndWait();
