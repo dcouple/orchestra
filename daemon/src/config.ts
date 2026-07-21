@@ -87,7 +87,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const webhookBaseUrl = env.WEBHOOK_BASE_URL?.trim() || (testMode ? "http://127.0.0.1:8787" : required(env, "WEBHOOK_BASE_URL"));
   if (sessionsEnabled && !targetRepoPath) required(env, "TARGET_REPO_PATH");
   if (sessionsEnabled && !linearApiKey) required(env, "LINEAR_API_KEY");
-  const claudeArgv = (env.CLAUDE_BIN?.trim() || "claude").split(/\s+/);
+  const claudeArgv = (env.CLAUDE_BIN?.trim() || "claudex").split(/\s+/);
   const doPermissionMode = env.DO_PERMISSION_MODE?.trim() || "bypassPermissions";
   if (!testMode && doPermissionMode !== "bypassPermissions") {
     throw new Error("DO_PERMISSION_MODE must be bypassPermissions unless DAEMON_TEST_MODE=1");

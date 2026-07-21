@@ -21,7 +21,7 @@ describe("loadConfig", () => {
     expect(config.reconcileRequestTimeoutMs).toBe(10_000);
     expect(config.apps.planner.staticToken).toBe("pt");
     expect(config.sessionsEnabled).toBe(false);
-    expect(config.claudeArgv).toEqual(["claude"]);
+    expect(config.claudeArgv).toEqual(["claudex"]);
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
   });
   it("forces production do-mode autonomy and parses its budget",()=>{

@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 pnpm test
-bash -n ops/provision.sh
+bash -n ops/provision.sh ops/claudex
 ```
 
 The Vitest suite is hermetic: it uses loopback HTTP servers and temporary real SQLite
@@ -78,7 +78,8 @@ stored bundles.
 
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
-`CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),
+`CLAUDE_BIN` (default `claudex`, whitespace-split for a command prefix; set `claude`
+explicitly for Anthropic-backed local development),
 `CLAUDE_PERMISSION_MODE` (`bypassPermissions`), `CLAUDE_MAX_TURNS` (100),
 `DO_PERMISSION_MODE` (`bypassPermissions`; production rejects every other value),
 `DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),

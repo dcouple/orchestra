@@ -1,17 +1,15 @@
 [Unit]
-Description=Linear agent webhook daemon
-After=network-online.target cliproxyapi.service
-Wants=network-online.target cliproxyapi.service
+Description=CLIProxyAPI for Claude Code
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=linear-daemon
 Group=linear-daemon
-WorkingDirectory=/opt/linear-agent-daemon
-EnvironmentFile=/etc/linear-agent-daemon/env
 Environment=HOME=/var/lib/linear-agent-daemon
-Environment=PATH=/var/lib/linear-agent-daemon/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/node /opt/linear-agent-daemon/dist/index.js
+WorkingDirectory=/var/lib/linear-agent-daemon
+ExecStart=/usr/local/bin/cliproxyapi -config /etc/linear-agent-daemon/cliproxyapi.yaml
 Restart=always
 RestartSec=2
 NoNewPrivileges=true
@@ -33,7 +31,7 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 SystemCallFilter=@system-service
 SystemCallArchitectures=native
 UMask=0077
-ReadWritePaths=/var/lib/linear-agent-daemon
+ReadWritePaths=/var/lib/linear-agent-daemon/.cli-proxy-api
 
 [Install]
 WantedBy=multi-user.target

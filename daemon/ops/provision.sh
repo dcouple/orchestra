@@ -12,7 +12,7 @@ SOURCE_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y \
-  build-essential ca-certificates curl git gnupg libatomic1 pkg-config python3 \
+  build-essential ca-certificates curl git gnupg libatomic1 openssl pkg-config python3 \
   rsync sqlite3 ufw \
   libcairo2 libdrm2 libgbm1 libnss3 libpango-1.0-0 libxcomposite1 \
   libxdamage1 libxfixes3 libxkbcommon0 libxrandr2
@@ -41,6 +41,33 @@ if ! command -v gh >/dev/null || [[ "$(gh --version | head -1)" != "gh version $
   curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${GH_ARCH}.tar.gz" -o "${tmp}/gh.tgz"
   tar -xzf "${tmp}/gh.tgz" -C "${tmp}"
   install -m 0755 "${tmp}/gh_${GH_VERSION}_linux_${GH_ARCH}/bin/gh" /usr/local/bin/gh
+  rm -rf "${tmp}"; trap - EXIT
+fi
+
+CLIPROXY_VERSION="7.2.93"
+case "${ARCH}" in
+  amd64)
+    CLIPROXY_ARCH="amd64"
+    CLIPROXY_SHA256="3ca18073c87a7d21391dcc437558c37ee9b98ce1eb1cd2c013e064a236664322"
+    ;;
+  arm64)
+    CLIPROXY_ARCH="aarch64"
+    CLIPROXY_SHA256="fc9d27799c97950614e98f191c3a6fea5c1b61bd390c44d2977090678b1c5794"
+    ;;
+  *) echo "unsupported CLIProxyAPI architecture: ${ARCH}" >&2; exit 1 ;;
+esac
+CLIPROXY_MARKER="/usr/local/share/cliproxyapi-version"
+if [[ ! -x /usr/local/bin/cliproxyapi ]] || [[ ! -f "${CLIPROXY_MARKER}" ]] \
+    || [[ "$(<"${CLIPROXY_MARKER}")" != "${CLIPROXY_VERSION}" ]]; then
+  tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
+  archive="CLIProxyAPI_${CLIPROXY_VERSION}_linux_${CLIPROXY_ARCH}.tar.gz"
+  curl -fsSL "https://github.com/router-for-me/CLIProxyAPI/releases/download/v${CLIPROXY_VERSION}/${archive}" \
+    -o "${tmp}/${archive}"
+  printf '%s  %s\n' "${CLIPROXY_SHA256}" "${tmp}/${archive}" | sha256sum -c -
+  tar -xzf "${tmp}/${archive}" -C "${tmp}"
+  install -m 0755 "${tmp}/cli-proxy-api" /usr/local/bin/cliproxyapi
+  install -d -m 0755 "$(dirname "${CLIPROXY_MARKER}")"
+  printf '%s\n' "${CLIPROXY_VERSION}" > "${CLIPROXY_MARKER}"
   rm -rf "${tmp}"; trap - EXIT
 fi
 
@@ -83,6 +110,67 @@ if [[ ! -x /var/lib/linear-agent-daemon/.local/bin/claude ]]; then
   runuser -u linear-daemon -- env HOME=/var/lib/linear-agent-daemon bash -c \
     'curl -fsSL https://claude.ai/install.sh | bash'
 fi
+
+install -d -o linear-daemon -g linear-daemon -m 0700 \
+  /var/lib/linear-agent-daemon/.cli-proxy-api \
+  /var/lib/linear-agent-daemon/.local/bin
+CLIPROXY_ENV="/etc/linear-agent-daemon/cliproxyapi.env"
+if [[ ! -f "${CLIPROXY_ENV}" ]]; then
+  install -o root -g linear-daemon -m 0640 /dev/null "${CLIPROXY_ENV}"
+  printf 'CLIPROXY_API_KEY=%s\n' "$(openssl rand -hex 24)" > "${CLIPROXY_ENV}"
+fi
+chown root:linear-daemon "${CLIPROXY_ENV}"
+chmod 0640 "${CLIPROXY_ENV}"
+CLIPROXY_API_KEY="$(grep -E '^CLIPROXY_API_KEY=[0-9a-f]{48}$' "${CLIPROXY_ENV}" | cut -d= -f2- || true)"
+if [[ ! "${CLIPROXY_API_KEY}" =~ ^[0-9a-f]{48}$ ]]; then
+  echo "${CLIPROXY_ENV} must contain one CLIPROXY_API_KEY=<48 lowercase hex characters> entry" >&2
+  exit 1
+fi
+cat > /etc/linear-agent-daemon/cliproxyapi.yaml <<EOF
+host: "127.0.0.1"
+port: 8317
+auth-dir: "/var/lib/linear-agent-daemon/.cli-proxy-api"
+api-keys:
+  - "${CLIPROXY_API_KEY}"
+oauth-model-alias:
+  codex:
+    - name: "gpt-5.6-sol"
+      alias: "gpt-5.6-sol-low"
+      fork: true
+    - name: "gpt-5.6-sol"
+      alias: "gpt-5.6-sol-medium"
+      fork: true
+    - name: "gpt-5.6-sol"
+      alias: "gpt-5.6-sol-xhigh"
+      fork: true
+payload:
+  override:
+    - models:
+        - name: "gpt-5.6-sol"
+          protocol: "codex"
+      params:
+        "reasoning.effort": "high"
+    - models:
+        - name: "gpt-5.6-sol-low"
+          protocol: "codex"
+      params:
+        "reasoning.effort": "low"
+    - models:
+        - name: "gpt-5.6-sol-medium"
+          protocol: "codex"
+      params:
+        "reasoning.effort": "medium"
+    - models:
+        - name: "gpt-5.6-sol-xhigh"
+          protocol: "codex"
+      params:
+        "reasoning.effort": "xhigh"
+EOF
+chown root:linear-daemon /etc/linear-agent-daemon/cliproxyapi.yaml
+chmod 0640 /etc/linear-agent-daemon/cliproxyapi.yaml
+
+install -o linear-daemon -g linear-daemon -m 0750 "${SOURCE_DIR}/ops/claudex" \
+  /var/lib/linear-agent-daemon/.local/bin/claudex
 
 # The VM is single-purpose isolation; Claude Code's Bash sandbox (whose seccomp
 # filter kills Chrome with SIGSYS) is disabled so sessions behave like a local
@@ -160,6 +248,7 @@ rsync -a --delete \
 chown -R linear-daemon:linear-daemon /opt/linear-agent-daemon
 runuser -u linear-daemon -- bash -c 'cd /opt/linear-agent-daemon && pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod'
 
+install -o root -g root -m 0644 "${SOURCE_DIR}/ops/cliproxyapi.service" /etc/systemd/system/cliproxyapi.service
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-daemon.service" /etc/systemd/system/linear-agent-daemon.service
 cat > /etc/caddy/Caddyfile <<EOF
 ${DAEMON_HOST} {
@@ -178,14 +267,26 @@ ufw allow 443/tcp
 ufw --force enable
 
 systemctl daemon-reload
-systemctl enable caddy linear-agent-daemon
-systemctl restart caddy
+systemctl enable caddy cliproxyapi linear-agent-daemon
+systemctl restart caddy cliproxyapi
 env_has_key() {
   local key="$1"
   grep -Eq "^[[:space:]]*${key}=[^[:space:]]+" /etc/linear-agent-daemon/env
 }
 env_sessions_enabled() {
   ! grep -Eq '^[[:space:]]*SESSIONS_ENABLED=0([[:space:]]*(#.*)?)?$' /etc/linear-agent-daemon/env
+}
+cliproxy_has_default_model() {
+  local attempt
+  for attempt in {1..10}; do
+    if printf 'header = "Authorization: Bearer %s"\n' "${CLIPROXY_API_KEY}" \
+        | curl -fs --connect-timeout 2 --max-time 10 -K - http://127.0.0.1:8317/v1/models \
+        | python3 -c 'import json, sys; data = json.load(sys.stdin).get("data", []); raise SystemExit(0 if any(model.get("id") == "gpt-5.6-sol" for model in data) else 1)' 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 env_ready_for_restart() {
   if [[ ! -s /etc/linear-agent-daemon/env ]]; then
@@ -199,6 +300,10 @@ env_ready_for_restart() {
     done
     if (( ${#missing[@]} )); then
       echo "service enabled but not restarted: SESSIONS_ENABLED=1 requires ${missing[*]} in /etc/linear-agent-daemon/env" >&2
+      return 1
+    fi
+    if ! systemctl is-active --quiet cliproxyapi || ! cliproxy_has_default_model; then
+      echo "service enabled but not started: authenticate CLIProxyAPI as linear-daemon and verify gpt-5.6-sol, then systemctl restart linear-agent-daemon" >&2
       return 1
     fi
   fi
