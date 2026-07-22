@@ -75,6 +75,17 @@ describe("runTurn", () => {
     expect(row.args).toEqual(expect.arrayContaining(["--max-budget-usd","12.5"]));
     expect(JSON.stringify(row.args)).not.toContain("secret-token");
   });
+  it("passes only the named browser handshake and attempt context", async () => {
+    const dir = cwd(); const envFile = join(dir, "env.jsonl");
+    await runTurn(options({ cwd: dir, env: { CLAUDE_FAKE_ENV_FILE: envFile,
+      ORCHESTRA_BROWSER_REQUEST_FILE: "/request", ORCHESTRA_BROWSER_RUN_ID: "run",
+      ORCHESTRA_BROWSER_ATTEMPT_ID: "attempt", ORCHESTRA_BROWSER_EVIDENCE_DIR: "/evidence",
+      UNTRUSTED_BROWSER_SECRET: "drop" } }));
+    const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { env: Record<string, string> };
+    expect(row.env).toMatchObject({ ORCHESTRA_BROWSER_REQUEST_FILE: "/request", ORCHESTRA_BROWSER_RUN_ID: "run",
+      ORCHESTRA_BROWSER_ATTEMPT_ID: "attempt", ORCHESTRA_BROWSER_EVIDENCE_DIR: "/evidence" });
+    expect(row.env.UNTRUSTED_BROWSER_SECRET).toBeUndefined();
+  });
   it("merges trusted runtime environment after the allowlist", async () => {
     const dir = cwd(); const envFile = join(dir, "env.jsonl");
     const result = await runTurn(options({ cwd: dir, env: { CLAUDE_FAKE_ENV_FILE: envFile },

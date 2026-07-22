@@ -16,6 +16,8 @@ describe("loadConfig", () => {
     expect(config.webhookBaseUrl).toBe("http://127.0.0.1:8787");
     expect(config.artifactToken).toBeUndefined();
     expect(config.artifactsDir).toBe("/var/lib/linear-agent-daemon/artifacts");
+    expect(config).toMatchObject({ browserEnabled: false, playwrightMcpBin: "/usr/local/bin/playwright-mcp",
+      playwrightChromeBin: "/usr/bin/google-chrome", browserAttemptTimeoutMs: 14_400_000 });
     expect(config.artifactMaxBodyBytes).toBe(32 * 1024 * 1024);
     expect(config.reconcileIntervalMs).toBe(60_000);
     expect(config.reconcileRequestTimeoutMs).toBe(10_000);
@@ -102,6 +104,13 @@ describe("loadConfig", () => {
     const config = loadConfig({ ...base, DB_PATH: "/state/events.db", ARTIFACT_TOKEN: " secret ",
       ARTIFACTS_DIR: "/srv/artifacts", ARTIFACT_MAX_BODY_BYTES: "4096" });
     expect(config).toMatchObject({ artifactToken: "secret", artifactsDir: "/srv/artifacts", artifactMaxBodyBytes: 4096 });
+  });
+  it("loads strict browser capability overrides", () => {
+    expect(loadConfig({ ...base, BROWSER_ENABLED: "1", PLAYWRIGHT_MCP_BIN: "/mcp", PLAYWRIGHT_CHROME_BIN: "/chrome",
+      BROWSER_ATTEMPT_TIMEOUT_MS: "1234" })).toMatchObject({ browserEnabled: true, playwrightMcpBin: "/mcp",
+        playwrightChromeBin: "/chrome", browserAttemptTimeoutMs: 1234 });
+    expect(() => loadConfig({ ...base, BROWSER_ENABLED: "yes" })).toThrow("BROWSER_ENABLED must be 0 or 1");
+    expect(() => loadConfig({ ...base, BROWSER_ATTEMPT_TIMEOUT_MS: "0" })).toThrow("BROWSER_ATTEMPT_TIMEOUT_MS");
   });
   it("requires WEBHOOK_BASE_URL outside test mode", () => {
     const env = { ...base, PLANNER_LINEAR_CLIENT_ID: "p-id", PLANNER_LINEAR_CLIENT_SECRET: "p-secret",

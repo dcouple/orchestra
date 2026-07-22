@@ -32,7 +32,8 @@ function childEnv(extra: NodeJS.ProcessEnv | undefined, trusted: Record<string, 
     if (value === undefined) return;
     if (key === "PATH" || key === "HOME" || key === "USER" || key === "LOGNAME" || key === "TMPDIR" || key === "TEMP" || key === "TMP" || key === "LANG"
       || key.startsWith("LC_") || key.startsWith("ANTHROPIC_") || key.startsWith("CLAUDE_") || key === "LINEAR_API_KEY"
-      || key === "GH_TOKEN" || key === "GITHUB_TOKEN" || key === "ORCHESTRA_DISPATCH_OWNER") {
+      || key === "GH_TOKEN" || key === "GITHUB_TOKEN" || key === "ORCHESTRA_DISPATCH_OWNER"
+      || key.startsWith("ORCHESTRA_BROWSER_")) {
       allowed[key] = value;
     }
   };
@@ -132,6 +133,14 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     if (!child.pid) return;
     try { process.kill(-child.pid, signal); } catch { try { child.kill(signal); } catch {} }
   };
+  const groupAlive = (): boolean => {
+    if (!child.pid) return false;
+    try { process.kill(-child.pid, 0); return true; } catch { return false; }
+  };
+  const awaitGroupExit = async (deadlineMs: number): Promise<void> => {
+    const deadline = Date.now() + deadlineMs;
+    while (groupAlive() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+  };
   const abort = (): void => {
     if (child.exitCode !== null || child.signalCode !== null) return;
     killGroup("SIGTERM");
@@ -145,6 +154,10 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     });
     if (killTimer) clearTimeout(killTimer);
     options.signal?.removeEventListener("abort", abort);
+    // The stream process may exit before stdio MCP/browser descendants. End and
+    // await the detached group before callers remove attempt-scoped state.
+    if (groupAlive()) { killGroup("SIGTERM"); await awaitGroupExit(1_000); }
+    if (groupAlive()) { killGroup("SIGKILL"); await awaitGroupExit(1_000); }
     await Promise.allSettled(pending);
     const ok = !spawnError && closed.code === 0 && closed.signal === null && sawResult && !isError;
     return {

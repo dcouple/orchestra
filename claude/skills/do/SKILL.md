@@ -162,6 +162,21 @@ calls for them.
 
 These preflight items are only checkable now that the item is loaded:
 
+- Classify browser need from the authoritative loaded item before any browser
+  preflight. E2E-browser criteria or a manual UI journey make the run browser
+  required. On the initial daemon turn, if required and
+  `ORCHESTRA_BROWSER_REQUEST_FILE` is present, atomically replace that file
+  with JSON `{ "requested": true }` and return exactly
+  `ORCHESTRA_BROWSER_RELAUNCH_REQUIRED` with no other terminal text. Never
+  write the marker for a non-browser item. If browser proof is required but
+  neither the request file nor `ORCHESTRA_BROWSER_EVIDENCE_DIR` is present,
+  stop with an explicit browser-prerequisite failure.
+- After relaunch, prove the attached MCP and Chrome by invoking
+  `mcp__playwright__browser_snapshot`, then close the probe with
+  `mcp__playwright__browser_close`. Classify MCP startup/connection, Chrome
+  launch, and target-application reachability as separate prerequisite
+  failures. None may fall back to scripts/logs as browser evidence.
+
 - Read the item's **Dependencies** section when present and check each
   listed dependency. When the item was already local, this runs before the
   preflight message goes out, so the gaps fold into that single message;
@@ -546,6 +561,15 @@ comment) before ending.
   without repo access; the links still work — and unauthenticated fetches
   (curl, markdown proxies) get 404s from `releases/download/...` URLs, so
   verify an upload via its API asset id, never a bare curl.
+- Before the frontend-verifier dispatch, save `git status --short`. Accept only
+  the actual dispatched verifier's completed `evidence-manifest.json`; require
+  its run/attempt ids to match the current daemon environment, require every
+  listed absolute path to remain under the current attempt evidence directory,
+  and reject missing, partial, unlisted, fixture, or older-attempt files. Host
+  every manifest entry through `qa-assets`, then read back the persisted PR
+  body and evidence comment and confirm every expected asset is present.
+  Compare `git status --short` afterward byte-for-byte with the saved value;
+  any delta fails QA publication because evidence must never enter the repo.
 - After the loop and QA, post surviving Should Fix / Nice to Have findings
   as line-anchored inline PR comments (`gh api` reviews, event `COMMENT` —
   never `REQUEST_CHANGES`: the loop owns Must Fix, and capped survivors are

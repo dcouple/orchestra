@@ -228,6 +228,15 @@ if ! command -v codex >/dev/null || [[ "$(codex --version)" != *"${CODEX_VERSION
   chmod 0755 /usr/local/bin/codex
 fi
 
+PLAYWRIGHT_MCP_VERSION="$(node -e 'const p=require(process.argv[1]); const v=p.dependencies?.["@playwright/mcp"]; if(!/^\d+\.\d+\.\d+$/.test(v||"")) process.exit(1); process.stdout.write(v)' "${SOURCE_DIR}/package.json")" \
+  || { echo "Playwright MCP version is not exactly pinned in package.json" >&2; exit 1; }
+if ! command -v playwright-mcp >/dev/null || [[ "$(playwright-mcp --version)" != *"${PLAYWRIGHT_MCP_VERSION}"* ]]; then
+  env PNPM_HOME=/opt/pnpm PATH="/opt/pnpm/bin:${PATH}" \
+    pnpm add --global "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}"
+fi
+printf '#!/bin/sh\nexec /opt/pnpm/bin/playwright-mcp "$@"\n' > /usr/local/bin/playwright-mcp
+chmod 0755 /usr/local/bin/playwright-mcp
+
 if [[ "${INSTALL_ANDROID:-0}" == "1" ]]; then
   ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-35}"
   ANDROID_AVD_NAME="${ANDROID_AVD_NAME:-linear-smoke}"

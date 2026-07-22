@@ -3,6 +3,8 @@ import { mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promis
 import { resolve, sep } from "node:path";
 import type { AppName, Config } from "./config.js";
 import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
+import { BROWSER_RELAUNCH_SENTINEL, browserAttemptEnv, browserWasRequested, cleanupBrowserAttempt,
+  createBrowserAttempt, createBrowserRequest, mergeMcpConfig, removeBrowserRequest } from "./browser.js";
 import type { EventLog, ExternalUrlRow, StopAckRow, TurnActivityRow, TurnRow } from "./eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
 import { WorktreeManager } from "./worktrees.js";
@@ -214,8 +216,10 @@ export class SessionWorker {
         progress.push({ type: "thought", body: implementer ? "still working on implementation" : "still working on this turn" });
     }, Math.max(10, Math.min(this.config.keepaliveMs, 60_000)));
     keepalive.unref();
-    const mcpConfigJson = JSON.stringify({ mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp",
+    const linearMcpConfigJson = JSON.stringify({ mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp",
       headers: { Authorization: `Bearer ${this.config.linearApiKey}` } } } });
+    const requestFile = implementer && !resuming && this.config.browserEnabled && session.browserRequired !== 1
+      ? await createBrowserRequest(this.config, turn.linearSessionId) : undefined;
     const durableProfile = session.profile ?? "sol";
     if (session.profile === null && !this.legacyProfileLogged.has(turn.linearSessionId)) {
       this.legacyProfileLogged.add(turn.linearSessionId);
@@ -225,8 +229,9 @@ export class SessionWorker {
       cwd: worktree.path, permissionMode: implementer ? this.config.doPermissionMode : this.config.claudePermissionMode,
       maxTurns: implementer ? this.config.doMaxTurns : this.config.claudeMaxTurns,
       ...(implementer && this.config.doMaxBudgetUsd !== undefined ? { maxBudgetUsd: this.config.doMaxBudgetUsd } : {}),
-      mcpConfigJson, env: { LINEAR_API_KEY: this.config.linearApiKey!, GH_TOKEN: process.env.GH_TOKEN,
+      env: { LINEAR_API_KEY: this.config.linearApiKey!, GH_TOKEN: process.env.GH_TOKEN,
         GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+        ...(requestFile ? { ORCHESTRA_BROWSER_REQUEST_FILE: requestFile } : {}),
         ...(DISPATCH_OWNER_PATTERN.test(turn.linearSessionId) ? { ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId } : {}) }, signal,
       onEvent: (event: ClaudeEvent) => progress.push(event.type === "text"
         ? { type: "thought", body: event.text } : toolUseContent(event)),
@@ -238,12 +243,36 @@ export class SessionWorker {
       await progress.cancelAndWait();
       throw error;
     };
-    const run = (argv: string[], runPrompt = prompt, resume = resuming,
-      trustedEnv = runtime === "claudex" ? this.config.claudexEnv : undefined) => runTurn({ ...common, prompt: runPrompt,
-        ...(resume ? { resumeSessionId: session.claudeSessionId! } : {}), argv,
-        ...(trustedEnv ? { trustedEnv } : {}),
-        onSessionId: id => { this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()); },
-      }).catch(cleanupRejectedRun);
+    let browserRequired = session.browserRequired === 1;
+    let browserRunId = session.browserRunId ?? undefined;
+    const run = async (argv: string[], runPrompt = prompt, resume = resuming,
+      trustedEnv = runtime === "claudex" ? this.config.claudexEnv : undefined): Promise<RunTurnResult> => {
+      const attempt = browserRequired ? await createBrowserAttempt(this.config, browserRunId!) : undefined;
+      const timeout = attempt ? AbortSignal.timeout(this.config.browserAttemptTimeoutMs) : undefined;
+      const runSignal = timeout ? AbortSignal.any([signal, timeout]) : signal;
+      if (attempt) this.logger.log(jsonLog({ event: "browser_attempt_started", linearSessionId: turn.linearSessionId,
+        browserRunId, browserAttemptId: attempt.attemptId, evidenceDir: attempt.evidenceDir }));
+      try {
+        const currentSessionId = this.log.getSession(turn.linearSessionId)?.claudeSessionId;
+        const { ORCHESTRA_BROWSER_REQUEST_FILE: _requestFile, ...postHandshakeEnv } = common.env;
+        const turnResult = await runTurn({ ...common,
+          mcpConfigJson: attempt ? mergeMcpConfig(linearMcpConfigJson, attempt) : linearMcpConfigJson,
+          env: attempt ? { ...postHandshakeEnv, ...browserAttemptEnv(attempt) } : common.env, signal: runSignal,
+          prompt: runPrompt, ...(resume && currentSessionId ? { resumeSessionId: currentSessionId } : {}), argv,
+          ...(trustedEnv ? { trustedEnv } : {}),
+          onSessionId: id => { this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()); },
+        });
+        return timeout?.aborted && !signal.aborted
+          ? { ...turnResult, ok: false, isError: true, spawnError: `browser attempt timed out after ${this.config.browserAttemptTimeoutMs}ms` }
+          : turnResult;
+      } finally {
+        if (attempt) {
+          await cleanupBrowserAttempt(attempt);
+          this.logger.log(jsonLog({ event: "browser_attempt_finished", linearSessionId: turn.linearSessionId,
+            browserRunId, browserAttemptId: attempt.attemptId, stateRemoved: true }));
+        }
+      }
+    };
     let result: RunTurnResult;
     if (!runtimeArgv) {
       const launcher = runtime === "claudex" ? "CLAUDEX_BIN" : "FABLE_BIN";
@@ -254,7 +283,33 @@ export class SessionWorker {
           ? "Claudex runtime launcher is not configured; set CLAUDEX_BIN"
           : "Fable profile launcher is not configured; set FABLE_BIN after validating fable-models.env",
         permissionDenials: [], sawResult: false, capacityEvidence: [] };
-    } else result = await run(runtimeArgv);
+    } else result = await run(runtimeArgv).catch(cleanupRejectedRun);
+    if (!requestFile && browserRequired && result.resultText?.trim() === BROWSER_RELAUNCH_SENTINEL)
+      result = { ...result, ok: false, isError: true, spawnError: "browser relaunch sentinel repeated after Playwright attachment" };
+    if (requestFile) {
+      const requested = await browserWasRequested(requestFile);
+      await removeBrowserRequest(requestFile);
+      const sentinel = result.resultText?.trim() === BROWSER_RELAUNCH_SENTINEL;
+      if (requested !== sentinel) {
+        if (requested || sentinel) result = { ...result, ok: false, isError: true,
+          spawnError: "browser request marker and relaunch sentinel did not agree" };
+      } else if (requested) {
+        if (!result.sessionId) result = { ...result, ok: false, isError: true,
+          spawnError: "browser relaunch requested before a Claude session ID was established" };
+        else {
+          browserRunId = randomUUID();
+          if (!this.log.requireBrowser(turn.linearSessionId, browserRunId, this.now())) result = { ...result, ok: false, isError: true,
+            spawnError: "browser relaunch sentinel repeated for an already browser-required session" };
+          else {
+            browserRequired = true;
+            this.logger.log(jsonLog({ event: "browser_relaunch_required", linearSessionId: turn.linearSessionId, browserRunId }));
+            result = await run(runtimeArgv!, `Resume /do ${identifier} after browser capability attachment.`, true).catch(cleanupRejectedRun);
+            if (result.resultText?.trim() === BROWSER_RELAUNCH_SENTINEL) result = { ...result, ok: false, isError: true,
+              spawnError: "browser relaunch sentinel repeated after Playwright attachment" };
+          }
+        }
+      }
+    }
     let fallbackCause: string | undefined;
     let fallbackAttempted = false;
     const applyCapacityFallback = async (candidate: RunTurnResult,
@@ -272,10 +327,8 @@ export class SessionWorker {
         ? `/do ${identifier}\n\nResume where we left off.\n\n${fallbackContext}`
         : `${prompt}\n\nResume where we left off.\n\n${fallbackContext}`;
       let fallbackSessionId: string | undefined;
-      const fallbackResult = await runTurn({ ...common, prompt: retryPrompt, argv: this.config.claudexArgv,
-        ...(this.config.claudexEnv ? { trustedEnv: this.config.claudexEnv } : {}),
-        onSessionId: id => { fallbackSessionId = id; },
-      }).catch(cleanupRejectedRun);
+      const fallbackResult = await run(this.config.claudexArgv, retryPrompt, false, this.config.claudexEnv)
+        .then(value => { fallbackSessionId = value.sessionId; return value; }).catch(cleanupRejectedRun);
       if (fallbackResult.ok && !fallbackSessionId) return { ...fallbackResult, ok: false, isError: true,
         spawnError: "Claudex fallback completed without a session ID" };
       if (fallbackResult.ok && !this.stopRequested.has(turn.id))
@@ -308,7 +361,7 @@ export class SessionWorker {
               spawnError: "Claudex runtime launcher is not configured; set CLAUDEX_BIN",
               permissionDenials: [], sawResult: false, capacityEvidence: [] };
           } else {
-            result = await run(this.config.claudexArgv, prompt, false, this.config.claudexEnv);
+            result = await run(this.config.claudexArgv, prompt, false, this.config.claudexEnv).catch(cleanupRejectedRun);
           }
           if (!result.ok && !fallbackCause) {
             const solClassified = classifyProviderFailure(result);

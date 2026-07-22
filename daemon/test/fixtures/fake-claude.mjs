@@ -18,6 +18,12 @@ if (mode === "provider-fail-pre-id") {
 }
 const session = resumed || (mode === "do-pr" || mode === "do-pr-error" ? "claude-do-session" : "claude-session-1");
 emit({ type: "system", subtype: "init", session_id: session, uuid: "init" });
+if (mode === "browser-relaunch" && process.env.ORCHESTRA_BROWSER_REQUEST_FILE && !resumed) {
+  await writeFile(process.env.ORCHESTRA_BROWSER_REQUEST_FILE, JSON.stringify({ requested: true }));
+  emit({ type: "result", subtype: "success", is_error: false,
+    result: "ORCHESTRA_BROWSER_RELAUNCH_REQUIRED", session_id: session, permission_denials: [] });
+  process.exit(0);
+}
 if (mode === "rate-limit-rejected" || mode === "capacity-after-session") {
   emit({ type: "rate_limit_event", session_id: session, rate_limit_info: { status: "rejected", rateLimitType: "five_hour" } });
   process.exit(1);

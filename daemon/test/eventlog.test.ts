@@ -180,6 +180,9 @@ describe("EventLog", () => {
     expect(log.getSession("session-1")?.claudeSessionId).toBeNull();
     log.recordRuntimeFallback("session-1", "claudex-1", "rate_limit_event:rejected", 1004);
     expect(log.getSession("session-1")).toMatchObject({ runtime: "claudex", fallbackCause: "rate_limit_event:rejected", claudeSessionId: "claudex-1" });
+    expect(log.requireBrowser("session-1", "browser-run", 1005)).toBe(true);
+    expect(log.requireBrowser("session-1", "replacement", 1006)).toBe(false);
+    expect(log.getSession("session-1")).toMatchObject({ browserRequired: 1, browserRunId: "browser-run" });
     expect(log.claimNextTurn(1100)?.id).toBe(1);
     expect(log.interruptStaleRunning(1200)).toEqual([1]);
     expect(log.pendingTurnActivities(1200)[0]).toMatchObject({ kind: "error", turnId: 1 });
@@ -189,7 +192,8 @@ describe("EventLog", () => {
     expect(log.claimNextTurn(1301)).toMatchObject({ id: 2, kind: "prompted" });
     log.close();
     const reopened = new EventLog(dbPath);
-    expect(reopened.getSession("session-1")).toMatchObject({ runtime: "claudex", claudeSessionId: "claudex-1" });
+    expect(reopened.getSession("session-1")).toMatchObject({ runtime: "claudex", claudeSessionId: "claudex-1",
+      browserRequired: 1, browserRunId: "browser-run" });
     reopened.close();
   });
 

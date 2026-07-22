@@ -122,5 +122,15 @@ when a band becomes a finding, cite its timestamp range in the report.
 
 ## Cleanup
 
+### Playwright attempt finalization
+
+Daemon browser attempts have sibling `state/` and `evidence/` directories.
+Only `evidence/` survives teardown. A Playwright attempt is publication-ready
+only after trace and video stop successfully, media is validated, and a final
+`evidence-manifest.json` with `status: "completed"` lists every artifact from
+that same run and attempt. Missing manifests, partial manifests, paths outside
+the current evidence directory, and files from earlier attempts are diagnostic
+only and cannot prove acceptance criteria or be published as QA evidence.
+
 Kill the listeners, processes, and temp state the run started; leftovers
 poison the next run's evidence.
