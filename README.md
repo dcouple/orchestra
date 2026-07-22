@@ -94,8 +94,9 @@ scripts/sync-user.sh
 It rsyncs `claude/ → ~/.claude`, `codex/ → ~/.codex`,
 `references/ → ~/.references`, and rewrites the installed copies'
 repo-relative `.references/` paths to `~/.references/` (the repo itself is
-never touched). No `--delete`: user-level dirs are a union space — personal
-skills and `p-*` preserves from other sets live alongside. To keep it fresh,
+never touched). There is no blanket `--delete`: user-level dirs are a union
+space, so personal skills and `p-*` preserves from other sets live alongside;
+retired orchestra-owned entries are purged by exact name. To keep it fresh,
 point a LaunchAgent or cron at a wrapper that fetches `origin/main`, exports
 it (`git archive`), and runs the script from the export — invoke it with
 `bash`, and never schedule a plain one-set rsync over these dirs.

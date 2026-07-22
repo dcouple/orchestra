@@ -57,7 +57,9 @@ fidelity joins the lines of attack).
 
 Run both reviewers over the diff in parallel, as `/do` does: the `codex`
 skill with role `code-reviewer`, and the Claude `code-reviewer` agent. The
-Must-Fix gate is the union of both reports.
+Must-Fix gate is the union of both reports. When the reviewers disagree,
+adjudicate it yourself. Use sub-agents to help you understand what is true when
+needed.
 
 - Fix Must-Fix findings yourself (these are your own session's changes —
   there is no separate implementer), then re-run both reviewers on the

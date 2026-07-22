@@ -15,8 +15,9 @@ Every judgment call is yours — the effective zone (one escalation notch), how 
 the plan needs, when the plan is ready, when review findings are resolved. Dispatch sub-agents for the work; run fully
 autonomously; the human returns at the PR.
 
-**Sub-agents:** code-researcher, implementer, backend-verifier,
-plan-reviewer, and code-reviewer run on Codex via the `codex` skill; each
+**Sub-agents:** code-researcher, investigator, implementer,
+backend-verifier, plan-reviewer, and code-reviewer run on Codex via the
+`codex` skill; each
 review runs the Codex and Claude reviewers in parallel and weighs both
 reports at zone 0; zones 1–3 run the Codex lane alone. **All
 implementation runs on the Codex `implementer`** at effort `medium`,
@@ -267,10 +268,8 @@ the Codex reviewer as a detached dispatch per the codex skill — then awaits
 the Agent-tool sub-agent within the turn and picks up the Codex report from its
 marker; running one lane to completion before
 starting the other serializes the pass and doubles its wall-clock.
-A head-on Must Fix disagreement between the lanes here gets the same
-second-voice consult as the post-PR loop: a background `discussant`
-dispatch with both findings and the disputed plan section, weighed
-alongside the lanes' arguments before you rule.
+When the reviewers disagree, adjudicate it yourself. Use sub-agents to help
+you understand what is true when needed.
 The loop continues until
 the plan is ready — same exit rule as the post-PR loop: a pass returning
 zero Must Fix from every lane (Codex tiers: P0/P1 count as Must Fix) ends
@@ -442,15 +441,9 @@ comment) before ending.
   (correctness + security, `(security)` tags). A Codex report may arrive
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format — map it, never re-dispatch over format: P0/P1 ≡
-  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the two lanes
-  disagree head-on about a Must Fix, get a second voice before ruling:
-  dispatch the `discussant` sub-agent (background) with both findings and
-  the disputed diff hunks, weigh its take alongside the lanes', then rule.
-  This is the one Overseer meta-call with no adversarial check and no
-  downstream net — a wrongly dismissed Must Fix ships, because the loop
-  ends on zero Must Fix. Every other judgment call (zone escalation,
-  readiness, research depth) stays single-voice — they're bounded or
-  self-correcting.
+  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the reviewers disagree,
+  adjudicate it yourself. Use sub-agents to help you understand what is true
+  when needed.
 - **Another pass runs only on a trigger — the caps are ceilings, never
   quotas** (cap 3 passes; zones 2–3: 1; epics always 3 passes, with lanes
   derived from zone unless the epic's own `review_lanes:` says otherwise).

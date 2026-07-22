@@ -14,9 +14,11 @@
 
 ## Must Fix  *(blocks; loop back to plan)*
 - **MF-1** — `<what>` · `<where: plan section>` · `<concrete fix>` · violates `<D# / AC# | "new issue">`
+  - **Evidence:** `<concrete repo artifact, item/plan text, or command output>` — `<why it proves the finding>`
 
 ## Should Fix  *(important, non-blocking)*
 - **SF-1** — `<what>` · `<where>` · `<fix>`
+  - **Evidence:** `<artifact>` — `<why it supports the finding>`
 
 ## Nice to Have  *(omit section if empty)*
 - `<nit or thought>`
@@ -36,7 +38,9 @@ a justified hot-spot task; placeholder leakage — "TBD" in a plan — is a Must
 dead code (a replacement plan with an empty Deprecated / removed section is a finding) ·
 self-sufficiency (Goal & invariants specific to the item; Known gotchas present; every
 AC# under exactly one of Verification's Automated / Manual subsections, Automated
-commands runnable).
+commands runnable). Every checkable finding at every severity names the concrete
+artifact inspected and explains the inference; unsupported claims belong under Cannot
+verify with the evidence needed to settle them.
 
 **Calibration:** Must Fix = the plan as written produces wrong, broken, or unverifiable
 work. Should Fix = a materially better plan, but this one can proceed. Everything else
