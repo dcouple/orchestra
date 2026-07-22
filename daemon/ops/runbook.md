@@ -4,6 +4,49 @@ Provisioning and OAuth registration are human-controlled deploy gates. Do not ru
 runbook from an automated agent. Real Linear, Claude Code through CLIProxyAPI, and systemd
 acceptance is not closed until the live smoke checks below are captured.
 
+## Routine operations control
+
+Use the host-native command for routine work; from an orchestra checkout, the corresponding
+`make daemon-*` targets are thin wrappers around the same command.
+
+```bash
+sudo daemonctl status
+sudo daemonctl sessions
+sudo daemonctl top
+sudo daemonctl config --planner claude --implementer claudex --dry-run
+sudo daemonctl restart --dry-run
+sudo daemonctl update --dry-run
+sudo daemonctl subscriptions list
+```
+
+Normal config, restart, and update requests drain durable `running` turns, block all new
+claims, and leave webhook ingestion active. Status reports the pending type, safe reason,
+request time, target ref/commit, drain stage, and last outcome. Equivalent restarts converge.
+An operation that cannot prove acceptance or a safe rollback becomes `blocked`; queued work
+stays held. Correct the named stage, then use `sudo daemonctl operation retry <id>`. Cancel is
+allowed only before mutation or after verified rollback.
+
+`sudo daemonctl restart --hard` prints the affected app, issue identifier, runtime, state,
+and elapsed time, then requires `HARD-RESTART`. It terminates those turns through normal
+startup interruption reconciliation and does not enqueue continuations.
+
+Updates use `/opt/orchestra-source`, whose `origin` must be HTTPS and whose clean `HEAD` must
+equal `/var/lib/linear-agent-operations/accepted-commit`. Both default and explicit refs must
+be fast-forward descendants. The immutable candidate runs install, typecheck, build, tests,
+and shell syntax as the dedicated `linear-validator` user with an empty allowlisted
+environment. A transient systemd sandbox makes the candidate tree and validator home the
+only persistent writable paths, provides a private temporary directory, and denies daemon
+credential access; root only creates/removes the Git worktree and runs the committed-diff
+check. The accepted marker advances only after provision, service-active, and loopback-health
+acceptance; failed deployment rolls back to the previous accepted commit before claims can
+resume.
+
+For a human production smoke, run the three read-only commands first, dry-run every mutator,
+then use disposable turns/accounts to prove idle restart, busy drain and ingestion, config
+rollback, update old/new commit reporting, hard-restart consequences, and subscription
+remove/reauth. Capture only redacted output. Direct `systemctl`, `sqlite3`, provisioner, and
+proxy helper commands below remain recovery tools, not the routine path.
+
 ## Host and DNS
 
 Use a Hetzner AX41-NVMe-class dedicated server with Ubuntu 24.04. Its bare-metal KVM is

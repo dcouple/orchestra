@@ -1,0 +1,16 @@
+[Unit]
+Description=Linear agent privileged maintenance executor
+After=local-fs.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/daemonctl internal-execute
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

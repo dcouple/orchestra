@@ -24,7 +24,7 @@ PLAYWRIGHT_MCP_BIN="$PWD/node_modules/.bin/playwright-mcp" \
 PLAYWRIGHT_CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
 BROWSER_E2E_OUTPUT_DIR="../tmp/browser-smoke" pnpm test:browser
 pnpm test:browser-contract
-bash -n ops/provision.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
+bash -n ops/provision.sh ops/daemonctl ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
 ```
 
 The Vitest suite is hermetic: it uses loopback HTTP servers and temporary real SQLite
@@ -35,6 +35,24 @@ account. When `CLIPROXY_BIN` points to the pinned CLIProxyAPI binary, the proxy 
 suite additionally checks aliases, credential management, hot-loading, disabling, and log
 redaction. Real account, Linear, Claude, and systemd acceptance remains a deploy-time gate in
 `ops/runbook.md`.
+
+## Host operations
+
+`sudo daemonctl --help` is the production control surface. It provides narrow harness
+configuration, idle-aware restart and validated HTTPS update, safe status/running-turn and
+compute views, and interactive subscription maintenance. Normal mutations persist one
+operation and stop new turn claims while signed webhooks continue to be stored and
+acknowledged. A root-owned request file authorizes the privileged executor; SQLite alone
+never authorizes root work. `daemonctl restart --hard` is the only path that may interrupt
+turns, requires explicit confirmation, and never requeues them.
+
+The root repository `Makefile` forwards the same commands over GCE SSH; it contains no
+deployment logic. Its local transport builds an argv vector and uses Python `shlex` parsing
+and quoting so operator values remain daemonctl arguments rather than local or remote shell
+syntax. Update candidates run as the dedicated `linear-validator` identity in a transient
+systemd filesystem sandbox with a cleared environment; that identity is not `linear-daemon`
+and cannot read daemon credentials. See `ops/runbook.md` for pending/blocked recovery,
+accepted-commit rules, and the human-only production smoke procedure.
 
 ## Run locally
 

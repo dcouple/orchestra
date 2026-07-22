@@ -2,6 +2,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 import type { TurnUsage } from "./claude.js";
 import type { AppName } from "./config.js";
+import { ACTIVE_OPERATION_STATES, type OperationRow, type OperationState,
+  type SafeOperationStatus, type SafeRunningTurn, type ScheduleOperationInput, validateScheduleOperation } from "./operations.js";
 
 export interface AppendEvent {
   deliveryId?: string | undefined;
@@ -458,6 +460,26 @@ export class EventLog {
         last_error TEXT,
         created_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS operations (
+        id TEXT PRIMARY KEY,
+        request_digest TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('restart','config','update')),
+        reason TEXT NOT NULL,
+        requested_at INTEGER NOT NULL,
+        target_ref TEXT,
+        target_commit TEXT,
+        previous_commit TEXT,
+        state TEXT NOT NULL CHECK(state IN ('pending','draining','executing','accepting','rolling_back','blocked','succeeded','failed','cancelled')),
+        stage TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        mutated INTEGER NOT NULL DEFAULT 0,
+        rollback_verified INTEGER NOT NULL DEFAULT 0,
+        outcome TEXT,
+        error_stage TEXT,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_one_active
+        ON operations((1)) WHERE state IN ('pending','draining','executing','accepting','rolling_back','blocked');
     `);
     this.migrateEventColumns();
     this.migrateSessionColumns();
@@ -900,6 +922,8 @@ export class EventLog {
         .prepare(
           `SELECT t.id FROM turns t
         WHERE t.status='pending'
+          AND NOT EXISTS (SELECT 1 FROM operations o
+            WHERE o.state IN ('pending','draining','executing','accepting','rolling_back','blocked'))
           AND NOT EXISTS (SELECT 1 FROM turns earlier WHERE earlier.issue_id=t.issue_id
             AND earlier.id<t.id AND (
               earlier.status IN ('pending','running','awaiting_activity')
@@ -920,6 +944,116 @@ export class EventLog {
       if (!changed.changes) return undefined;
       return this.turnById(candidate.id);
     })();
+  }
+
+  scheduleOperation(input: ScheduleOperationInput): { operation: OperationRow; deduplicated: boolean } {
+    validateScheduleOperation(input);
+    return this.db.transaction(() => {
+      const active = this.activeOperation();
+      if (active) {
+        const equivalent = active.type === input.type
+          && active.requestDigest === input.requestDigest;
+        // Restarts intentionally converge even though separately-created request files have
+        // different IDs. Other payload-bearing mutations must match exactly.
+        if (equivalent || (active.type === "restart" && input.type === "restart")) {
+          return { operation: active, deduplicated: true };
+        }
+        throw new Error(`active operation ${active.id} (${active.type}) already blocks new mutations`);
+      }
+      const now = input.requestedAt ?? Date.now();
+      this.db.prepare(`INSERT INTO operations
+        (id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,state,updated_at)
+        VALUES (?,?,?,?,?,?,?,?, 'pending',?)`).run(input.id, input.requestDigest, input.type,
+          input.reason, now, input.targetRef ?? null, input.targetCommit ?? null,
+          input.previousCommit ?? null, now);
+      return { operation: this.operationById(input.id)!, deduplicated: false };
+    })();
+  }
+
+  operationById(id: string): OperationRow | undefined {
+    return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
+      target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
+      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt
+      FROM operations WHERE id=?`).get(id) as OperationRow | undefined;
+  }
+
+  activeOperation(): OperationRow | undefined {
+    return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
+      target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
+      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt
+      FROM operations WHERE state IN ('pending','draining','executing','accepting','rolling_back','blocked')
+      ORDER BY requested_at LIMIT 1`).get() as OperationRow | undefined;
+  }
+
+  claimOperation(id: string, digest: string, now = Date.now()): OperationRow | undefined {
+    return this.db.transaction(() => {
+      const row = this.operationById(id);
+      if (!row || row.requestDigest !== digest || row.state === "blocked"
+          || !ACTIVE_OPERATION_STATES.includes(row.state as never)) return undefined;
+      if (row.state === "pending") {
+        this.db.prepare("UPDATE operations SET state='draining',stage='wait_idle',attempts=attempts+1,updated_at=? WHERE id=? AND state='pending'")
+          .run(now, id);
+      } else {
+        this.db.prepare("UPDATE operations SET attempts=attempts+1,updated_at=? WHERE id=?").run(now, id);
+      }
+      return this.operationById(id);
+    })();
+  }
+
+  transitionOperation(id: string, state: OperationState, stage: string | null, options: {
+    outcome?: string | null; errorStage?: string | null; mutated?: boolean; rollbackVerified?: boolean;
+  } = {}, now = Date.now()): OperationRow {
+    const current = this.operationById(id);
+    if (!current) throw new Error(`unknown operation: ${id}`);
+    if ((state === "failed" || state === "cancelled") && current.mutated === 1
+        && !(options.rollbackVerified ?? current.rollbackVerified === 1)) {
+      throw new Error("cannot release drain after mutation without verified rollback");
+    }
+    this.db.prepare(`UPDATE operations SET state=?,stage=?,outcome=?,error_stage=?,
+      mutated=?,rollback_verified=?,updated_at=? WHERE id=?`).run(state, stage,
+        options.outcome ?? current.outcome, options.errorStage ?? current.errorStage,
+        options.mutated === undefined ? current.mutated : Number(options.mutated),
+        options.rollbackVerified === undefined ? current.rollbackVerified : Number(options.rollbackVerified), now, id);
+    return this.operationById(id)!;
+  }
+
+  retryOperation(id: string, now = Date.now()): OperationRow {
+    const row = this.operationById(id);
+    if (!row || row.state !== "blocked") throw new Error("only a blocked operation can be retried");
+    this.db.prepare("UPDATE operations SET state='draining',stage='wait_idle',error_stage=NULL,updated_at=? WHERE id=?")
+      .run(now, id);
+    return this.operationById(id)!;
+  }
+
+  cancelOperation(id: string, now = Date.now()): OperationRow {
+    const row = this.operationById(id);
+    if (!row || !ACTIVE_OPERATION_STATES.includes(row.state as never)) throw new Error("operation is not active");
+    if (row.mutated === 1 && row.rollbackVerified !== 1) throw new Error("operation may not be cancelled after mutation without verified rollback");
+    return this.transitionOperation(id, "cancelled", "cancelled", { outcome: "cancelled by operator" }, now);
+  }
+
+  runningTurns(now = Date.now()): SafeRunningTurn[] {
+    return this.db.prepare(`SELECT e.app,COALESCE(s.issue_identifier,t.issue_id) issueIdentifier,
+      COALESCE(s.runtime,'claude') runtime,'running' state,t.started_at startedAt,
+      MAX(0,?-COALESCE(t.started_at,?)) elapsedMs
+      FROM turns t JOIN events e ON e.id=t.event_id
+      LEFT JOIN sessions s ON s.linear_session_id=t.linear_session_id
+      WHERE t.status='running' ORDER BY t.started_at,t.id`).all(now, now) as SafeRunningTurn[];
+  }
+
+  operationStatus(now = Date.now()): SafeOperationStatus {
+    const pending = this.activeOperation();
+    const last = this.db.prepare(`SELECT id,type,state,stage,outcome,error_stage errorStage,updated_at updatedAt
+      FROM operations WHERE state IN ('succeeded','failed','cancelled') ORDER BY updated_at DESC LIMIT 1`)
+      .get() as SafeOperationStatus["lastOutcome"];
+    return {
+      pending: pending ? { id: pending.id, type: pending.type, reason: pending.reason,
+        requestedAt: pending.requestedAt, targetRef: pending.targetRef, targetCommit: pending.targetCommit,
+        drainState: pending.state, stage: pending.stage, attempts: pending.attempts,
+        recoveryCommand: pending.state === "blocked" ? `daemonctl operation retry ${pending.id}` : null } : null,
+      runningTurns: this.runningTurns(now).length,
+      lastOutcome: last ?? null,
+    };
   }
 
   private turnById(id: number): TurnRow | undefined {

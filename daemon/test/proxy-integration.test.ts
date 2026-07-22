@@ -1,6 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -161,6 +161,10 @@ payload:
     const dryRunOne = execFileSync(helper, ["add", "codex", "--dry-run"], { env: helperEnv, encoding: "utf8" });
     const dryRunTwo = execFileSync(helper, ["add", "codex", "--dry-run"], { env: helperEnv, encoding: "utf8" });
     expect(dryRunTwo).toBe(dryRunOne);
+    expect(execFileSync(helper, ["remove", fixtures[0][0], "--dry-run"], { env: helperEnv, encoding: "utf8" }))
+      .toContain("credential file retained");
+    expect(execFileSync(helper, ["reauth", "codex", fixtures[0][0], "--dry-run"], { env: helperEnv, encoding: "utf8" }))
+      .toContain("restore selector");
 
     const disabledName = fixtures[0][0];
     const disabled = await fetch(`${base}/v0/management/auth-files/status`, {
@@ -170,6 +174,9 @@ payload:
     });
     expect(disabled.status).toBe(200);
     await poll(async () => (await list()).files.find(item => item.name === disabledName && item.disabled === true));
+    const removed = execFileSync(helper, ["remove", disabledName, "--yes"], { env: helperEnv, encoding: "utf8" });
+    expect(removed).toContain("credential file retained");
+    expect(existsSync(join(authDir, disabledName))).toBe(true);
 
     const hotToken = "fixture-codex-hot-secret";
     fixtureTokens.push(hotToken);
