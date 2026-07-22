@@ -4,8 +4,8 @@ The rates the wrap-up run record and postmortems use to turn token counts
 into dollars. Versioned: each row carries the date it was last verified;
 on a mismatch the provider's published page wins — update the row and its
 date here (this file is the history). Verify against
-<https://platform.claude.com/docs/en/pricing> and
-<https://platform.openai.com/pricing>.
+<https://platform.claude.com/docs/en/about-claude/pricing> and
+<https://platform.openai.com/docs/pricing>.
 
 ## Rates (USD per million tokens)
 
