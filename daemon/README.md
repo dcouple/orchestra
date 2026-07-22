@@ -20,14 +20,17 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 pnpm test
-bash -n ops/provision.sh ops/claudex
+bash -n ops/provision.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
 ```
 
 The Vitest suite is hermetic: it uses loopback HTTP servers and temporary real SQLite
 databases, requires no environment variables, and makes no internet or Linear requests.
 Tests cover phase-1 ingress plus durable planner queues, real temporary git worktrees, and a
 fake stream-json Claude executable. They require no network, Linear credentials, or Claude
-account. Real Linear/Claude/systemd acceptance remains a deploy-time gate in `ops/runbook.md`.
+account. When `CLIPROXY_BIN` points to the pinned CLIProxyAPI binary, the proxy integration
+suite additionally checks aliases, credential management, hot-loading, disabling, and log
+redaction. Real account, Linear, Claude, and systemd acceptance remains a deploy-time gate in
+`ops/runbook.md`.
 
 ## Run locally
 
@@ -53,10 +56,39 @@ app prefix are test-only static overrides and are ignored unless `DAEMON_TEST_MO
 production uses client credentials. Optional settings are `PORT`, `BIND_ADDR`,
 `REPLAY_WINDOW_MS`, `LINEAR_GRAPHQL_URL`, and `LINEAR_TOKEN_URL`.
 
+Set `ARTIFACT_TOKEN` to enable artifact hosting. An authenticated `POST /a` creates a
+bundle with a server-generated id; authenticated `PUT /a/<id>` atomically replaces an
+existing bundle. Both accept a JSON manifest whose file contents are base64 encoded:
+
+```json
+{
+  "files": [
+    { "path": "item.md", "contentBase64": "IyBJdGVtCg==" },
+    { "path": "refs/explainer.html", "contentBase64": "PGgxPkV4cGxhaW5lcjwvaDE+" }
+  ]
+}
+```
+
+Writes require `Authorization: Bearer <ARTIFACT_TOKEN>`. `GET /a/<id>/` is an
+unauthenticated, self-contained viewer; `GET /a/<id>/index.json` returns the live version's
+file paths as a no-cache JSON array, and `GET /a/<id>/<path>` serves raw files. The name
+`index.json` is reserved at the bundle root. Nothing above the unguessable `/a/<id>/` URL
+enumerates bundles. `ARTIFACTS_DIR` defaults to an `artifacts` directory beside the database,
+and `ARTIFACT_MAX_BODY_BYTES` defaults to 32 MiB. Provisioning creates the default directory
+under `/var/lib/linear-agent-daemon`, outside the deployed application tree, so content
+survives provision and deploy reruns. It is not backed up yet; loss of the VM disk loses
+stored bundles.
+
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
-`CLAUDE_BIN` (default `claudex`, whitespace-split for a command prefix; set `claude`
-explicitly for Anthropic-backed local development),
+`CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),
+`CLAUDEX_BIN` (optional, whitespace-split; enables a one-shot retry of validated
+Claude usage/rate-limit failures through the Claudex proxy runtime — point it at
+the provisioned `claudex` wrapper), `CLAUDEX_ENV` (optional JSON string map of
+extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
+`FABLE_BIN` (optional; normally the installed `ops/claudex-fable` launcher),
+`CLIPROXY_ENV_FILE`, `CLIPROXY_URL`, `PROVIDER_PROBE_INTERVAL_MS`,
+`PROVIDER_STATE_STALE_MS`, and `PROVIDER_INITIAL_PROBE_TIMEOUT_MS`,
 `CLAUDE_PERMISSION_MODE` (`bypassPermissions`), `CLAUDE_MAX_TURNS` (100),
 `DO_PERMISSION_MODE` (`bypassPermissions`; production rejects every other value),
 `DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),

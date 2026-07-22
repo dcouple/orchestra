@@ -99,11 +99,11 @@ if ! id linear-daemon >/dev/null 2>&1; then
   useradd --system --home-dir /var/lib/linear-agent-daemon --create-home --shell /usr/sbin/nologin linear-daemon
 fi
 install -d -o linear-daemon -g linear-daemon -m 0750 /opt/linear-agent-daemon /var/lib/linear-agent-daemon
-install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/worktrees /var/lib/linear-agent-daemon/repos
+install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/worktrees /var/lib/linear-agent-daemon/repos /var/lib/linear-agent-daemon/artifacts
 install -d -o root -g linear-daemon -m 0750 /etc/linear-agent-daemon
 if [[ ! -f /etc/linear-agent-daemon/env ]]; then
   install -o linear-daemon -g linear-daemon -m 0600 /dev/null /etc/linear-agent-daemon/env
-  echo "created /etc/linear-agent-daemon/env; populate it before starting the service" >&2
+  echo "created /etc/linear-agent-daemon/env; populate it before starting the service (see README.md Environment; optional ARTIFACT_TOKEN enables artifact hosting)" >&2
 fi
 
 if [[ ! -x /var/lib/linear-agent-daemon/.local/bin/claude ]]; then
@@ -117,13 +117,23 @@ install -d -o linear-daemon -g linear-daemon -m 0700 \
 CLIPROXY_ENV="/etc/linear-agent-daemon/cliproxyapi.env"
 if [[ ! -f "${CLIPROXY_ENV}" ]]; then
   install -o root -g linear-daemon -m 0640 /dev/null "${CLIPROXY_ENV}"
-  printf 'CLIPROXY_API_KEY=%s\n' "$(openssl rand -hex 24)" > "${CLIPROXY_ENV}"
+  printf 'CLIPROXY_API_KEY=%s\nCLIPROXY_MANAGEMENT_KEY=%s\n' \
+    "$(openssl rand -hex 24)" "$(openssl rand -hex 24)" > "${CLIPROXY_ENV}"
+elif ! grep -q '^CLIPROXY_MANAGEMENT_KEY=' "${CLIPROXY_ENV}"; then
+  printf 'CLIPROXY_MANAGEMENT_KEY=%s\n' "$(openssl rand -hex 24)" >> "${CLIPROXY_ENV}"
 fi
 chown root:linear-daemon "${CLIPROXY_ENV}"
 chmod 0640 "${CLIPROXY_ENV}"
 CLIPROXY_API_KEY="$(grep -E '^CLIPROXY_API_KEY=[0-9a-f]{48}$' "${CLIPROXY_ENV}" | cut -d= -f2- || true)"
-if [[ ! "${CLIPROXY_API_KEY}" =~ ^[0-9a-f]{48}$ ]]; then
+if [[ "$(grep -c '^CLIPROXY_API_KEY=' "${CLIPROXY_ENV}" || true)" -ne 1 ]] \
+    || [[ ! "${CLIPROXY_API_KEY}" =~ ^[0-9a-f]{48}$ ]]; then
   echo "${CLIPROXY_ENV} must contain one CLIPROXY_API_KEY=<48 lowercase hex characters> entry" >&2
+  exit 1
+fi
+CLIPROXY_MANAGEMENT_KEY="$(grep -E '^CLIPROXY_MANAGEMENT_KEY=[0-9a-f]{48}$' "${CLIPROXY_ENV}" | cut -d= -f2- || true)"
+if [[ "$(grep -c '^CLIPROXY_MANAGEMENT_KEY=' "${CLIPROXY_ENV}" || true)" -ne 1 ]] \
+    || [[ ! "${CLIPROXY_MANAGEMENT_KEY}" =~ ^[0-9a-f]{48}$ ]]; then
+  echo "${CLIPROXY_ENV} must contain one CLIPROXY_MANAGEMENT_KEY=<48 lowercase hex characters> entry" >&2
   exit 1
 fi
 cat > /etc/linear-agent-daemon/cliproxyapi.yaml <<EOF
@@ -132,6 +142,14 @@ port: 8317
 auth-dir: "/var/lib/linear-agent-daemon/.cli-proxy-api"
 api-keys:
   - "${CLIPROXY_API_KEY}"
+routing:
+  strategy: "round-robin"
+  session-affinity: true
+  session-affinity-ttl: "168h"
+save-cooldown-status: true
+remote-management:
+  secret-key: "${CLIPROXY_MANAGEMENT_KEY}"
+  allow-remote: false
 oauth-model-alias:
   codex:
     - name: "gpt-5.6-sol"
@@ -144,12 +162,13 @@ oauth-model-alias:
       alias: "gpt-5.6-sol-xhigh"
       fork: true
 payload:
-  override:
+  default:
     - models:
         - name: "gpt-5.6-sol"
           protocol: "codex"
       params:
         "reasoning.effort": "high"
+  override:
     - models:
         - name: "gpt-5.6-sol-low"
           protocol: "codex"
@@ -171,6 +190,10 @@ chmod 0640 /etc/linear-agent-daemon/cliproxyapi.yaml
 
 install -o linear-daemon -g linear-daemon -m 0750 "${SOURCE_DIR}/ops/claudex" \
   /var/lib/linear-agent-daemon/.local/bin/claudex
+install -o linear-daemon -g linear-daemon -m 0750 "${SOURCE_DIR}/ops/claudex-fable" \
+  /var/lib/linear-agent-daemon/.local/bin/claudex-fable
+# fable-models.env is deliberately operator-authored only after enrolled-account
+# model identity is confirmed; provisioning must not guess or overwrite it.
 
 # The VM is single-purpose isolation; Claude Code's Bash sandbox (whose seccomp
 # filter kills Chrome with SIGSYS) is disabled so sessions behave like a local
@@ -246,6 +269,7 @@ rsync -a --delete \
   --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' \
   "${SOURCE_DIR}/" /opt/linear-agent-daemon/
 chown -R linear-daemon:linear-daemon /opt/linear-agent-daemon
+chmod 0755 /opt/linear-agent-daemon/ops/proxy-accounts.sh /opt/linear-agent-daemon/ops/codex-provider-gate.sh
 runuser -u linear-daemon -- bash -c 'cd /opt/linear-agent-daemon && pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod'
 
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/cliproxyapi.service" /etc/systemd/system/cliproxyapi.service
@@ -253,7 +277,7 @@ install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-daemon.service" 
 cat > /etc/caddy/Caddyfile <<EOF
 ${DAEMON_HOST} {
   request_body {
-    max_size 1MB
+    max_size 32MB
   }
   reverse_proxy 127.0.0.1:8787
 }
@@ -269,6 +293,44 @@ ufw --force enable
 systemctl daemon-reload
 systemctl enable caddy cliproxyapi linear-agent-daemon
 systemctl restart caddy cliproxyapi
+GATE_TARGET_CONFIG=/var/lib/linear-agent-daemon/.codex/config.toml
+cliproxy_has_enabled_codex_credential() {
+  local _attempt management_json
+  for _attempt in {1..10}; do
+    if management_json="$(printf 'header = "Authorization: Bearer %s"\n' "${CLIPROXY_MANAGEMENT_KEY}" \
+        | curl -fsS --connect-timeout 2 --max-time 10 -K - \
+          http://127.0.0.1:8317/v0/management/auth-files 2>/dev/null)"; then
+      python3 -c 'import json, sys; payload = json.load(sys.stdin); files = payload.get("files", payload.get("data", [])); raise SystemExit(0 if any(item.get("provider") == "codex" and not item.get("disabled", False) and (item.get("account") or item.get("email")) for item in files) else 1)' \
+        <<<"${management_json}"
+      return $?
+    fi
+    sleep 1
+  done
+  return 2
+}
+GATE_CREDENTIAL_STATUS=0
+cliproxy_has_enabled_codex_credential || GATE_CREDENTIAL_STATUS=$?
+if [[ "${GATE_CREDENTIAL_STATUS}" -eq 0 ]]; then
+  if ! runuser -u linear-daemon -- env \
+      HOME=/var/lib/linear-agent-daemon \
+      CLIPROXY_ENV_FILE="${CLIPROXY_ENV}" \
+      CLIPROXY_VERSION_MARKER="${CLIPROXY_MARKER}" \
+      EXPECTED_PROXY_VERSION="${CLIPROXY_VERSION}" \
+      TARGET_CONFIG="${GATE_TARGET_CONFIG}" \
+      /opt/linear-agent-daemon/ops/codex-provider-gate.sh; then
+    echo "standalone Codex provider gate failed; direct authentication remains selected" >&2
+  fi
+else
+  if [[ -f "${GATE_TARGET_CONFIG}" ]] \
+      && head -n 1 "${GATE_TARGET_CONFIG}" | grep -Fqx '# managed by codex-provider-gate.sh — removed on gate failure'; then
+    rm -f "${GATE_TARGET_CONFIG}"
+  fi
+  if [[ "${GATE_CREDENTIAL_STATUS}" -eq 1 ]]; then
+    echo "standalone Codex provider gate skipped: no enabled Codex OAuth credentials; direct authentication remains selected" >&2
+  else
+    echo "standalone Codex provider gate skipped: management API unavailable; direct authentication remains selected" >&2
+  fi
+fi
 env_has_key() {
   local key="$1"
   grep -Eq "^[[:space:]]*${key}=[^[:space:]]+" /etc/linear-agent-daemon/env
@@ -277,8 +339,8 @@ env_sessions_enabled() {
   ! grep -Eq '^[[:space:]]*SESSIONS_ENABLED=0([[:space:]]*(#.*)?)?$' /etc/linear-agent-daemon/env
 }
 cliproxy_has_default_model() {
-  local attempt
-  for attempt in {1..10}; do
+  local _attempt
+  for _attempt in {1..10}; do
     if printf 'header = "Authorization: Bearer %s"\n' "${CLIPROXY_API_KEY}" \
         | curl -fs --connect-timeout 2 --max-time 10 -K - http://127.0.0.1:8317/v1/models \
         | python3 -c 'import json, sys; data = json.load(sys.stdin).get("data", []); raise SystemExit(0 if any(model.get("id") == "gpt-5.6-sol" for model in data) else 1)' 2>/dev/null; then

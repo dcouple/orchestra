@@ -11,6 +11,7 @@ export type ClaudeEvent =
 export interface RunTurnOptions {
   cwd: string; prompt: string; resumeSessionId?: string; argv: string[]; permissionMode: string;
   maxTurns: number; maxBudgetUsd?: number; mcpConfigJson: string; env?: NodeJS.ProcessEnv;
+  trustedEnv?: Record<string, string>;
   onEvent?: (event: ClaudeEvent) => void | Promise<void>;
   onSessionId?: (id: string) => void | Promise<void>;
   signal?: AbortSignal;
@@ -18,14 +19,14 @@ export interface RunTurnOptions {
 export interface RunTurnResult {
   ok: boolean; sessionId?: string; resultText?: string; isError: boolean; exitCode: number | null;
   signal: NodeJS.Signals | null; spawnError?: string; permissionDenials: unknown[]; sawResult: boolean;
-  stderrTail?: string;
+  stderrTail?: string; capacityEvidence: string[];
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
-function childEnv(extra: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+function childEnv(extra: NodeJS.ProcessEnv | undefined, trusted: Record<string, string> | undefined): NodeJS.ProcessEnv {
   const allowed: NodeJS.ProcessEnv = {};
   const include = (key: string, value: string | undefined): void => {
     if (value === undefined) return;
@@ -39,7 +40,36 @@ function childEnv(extra: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
     if (key !== "ORCHESTRA_DISPATCH_OWNER") include(key, value);
   }
   for (const [key, value] of Object.entries(extra ?? {})) include(key, value);
+  for (const [key, value] of Object.entries(trusted ?? {})) allowed[key] = value;
   return allowed;
+}
+
+function collectCapacityEvidence(event: Record<string, unknown>, evidence: Set<string>): void {
+  if (event.type === "rate_limit_event") {
+    const info = record(event.rate_limit_info);
+    const rejected = info?.status === "rejected" || info?.overageStatus === "rejected";
+    const disabled = typeof info?.overageDisabledReason === "string" && !!info.overageDisabledReason;
+    const status429 = event.apiErrorStatus === 429 || info?.apiErrorStatus === 429;
+    if (rejected || disabled || status429) {
+      const cause = rejected ? "rejected" : disabled
+        ? (info?.overageDisabledReason === "out_of_credits" ? "out_of_credits" : "overage_disabled") : "429";
+      evidence.add(`rate_limit_event:${cause}`);
+    }
+  }
+  if (event.type === "system" && event.subtype === "api_retry") {
+    const error = typeof event.error === "string" ? event.error : undefined;
+    const status = event.error_status;
+    if (["rate_limit", "overloaded", "billing_error"].includes(error ?? "") || status === 429 || status === 529)
+      evidence.add(`api_retry:${error ?? status}`);
+  }
+  if (event.type === "result") {
+    if (event.error_status === 429) evidence.add("result:429");
+    if (Array.isArray(event.errors)) for (const raw of event.errors) {
+      const type = record(raw)?.type;
+      if (type === "rate_limit_error" || type === "overloaded_error") evidence.add(`result:${type}`);
+    }
+  }
+  if (event.type === "assistant" && event.error === "rate_limit") evidence.add("assistant:rate_limit");
 }
 
 function appendTail(current: string, chunk: Buffer): string {
@@ -57,7 +87,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   if (options.resumeSessionId) args.push("--resume", options.resumeSessionId);
   args.push("--permission-mode", options.permissionMode, "--max-turns", String(options.maxTurns), "--mcp-config", configPath);
   if (options.maxBudgetUsd !== undefined) args.push("--max-budget-usd", String(options.maxBudgetUsd));
-  const child = spawn(bin, args, { cwd: options.cwd, env: childEnv(options.env), detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(bin, args, { cwd: options.cwd, env: childEnv(options.env, options.trustedEnv), detached: true, stdio: ["ignore", "pipe", "pipe"] });
   let latestId: string | undefined;
   let resultText: string | undefined;
   let isError = false;
@@ -65,12 +95,14 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   let denials: unknown[] = [];
   let spawnError: string | undefined;
   let stderrTail = "";
+  const capacityEvidence = new Set<string>();
   const pending: Promise<void>[] = [];
   const lines = createInterface({ input: child.stdout });
   lines.on("line", line => {
     let value: unknown;
     try { value = JSON.parse(line); } catch { return; }
     const event = record(value); if (!event) return;
+    collectCapacityEvidence(event, capacityEvidence);
     if (typeof event.session_id === "string" && event.session_id !== latestId) {
       latestId = event.session_id;
       if (options.onSessionId) pending.push(Promise.resolve(options.onSessionId(latestId)));
@@ -118,7 +150,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     return {
       ok, ...(latestId ? { sessionId: latestId } : {}), ...(resultText !== undefined ? { resultText } : {}), isError,
       exitCode: closed.code, signal: closed.signal, ...(spawnError ? { spawnError } : {}), permissionDenials: denials, sawResult,
-      ...(stderrTail ? { stderrTail } : {}),
+      ...(stderrTail ? { stderrTail } : {}), capacityEvidence: [...capacityEvidence],
     };
   } finally {
     if (killTimer) clearTimeout(killTimer);

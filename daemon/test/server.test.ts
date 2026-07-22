@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createConnection, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { AckWorker } from "../src/ack.js";
 import type { Config } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
 import { LinearGateway } from "../src/linear.js";
+import { ReconcileWorker } from "../src/reconcile.js";
 import { WebhookServer } from "../src/server.js";
 
 const dirs: string[] = [];
@@ -18,18 +19,21 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "linear-server-")); dirs.push(dir);
+  const managementKey = "management-secret"; const cliproxyEnvFile = join(dir, "cliproxy.env");
+  writeFileSync(cliproxyEnvFile, `CLIPROXY_MANAGEMENT_KEY=${managementKey}\n`);
   const log = new EventLog(join(dir, "events.db"));
   const config: Config = {
     port: 0, bindAddr: "127.0.0.1", dbPath: join(dir, "events.db"), replayWindowMs: 60_000,
-    linearGraphqlUrl: "http://unused", linearTokenUrl: "http://unused",
+    linearGraphqlUrl: "http://unused", linearTokenUrl: "http://unused", cliproxyEnvFile,
     apps: {
       planner: { name: "planner", webhookSecret: "planner-secret", staticToken: "p" },
       implementer: { name: "implementer", webhookSecret: "implementer-secret", staticToken: "i" },
     },
   };
   const onInserted = vi.fn(); const onStop = vi.fn();
-  const server = new WebhookServer({ config, log, onInserted, onStop, logger: { log: vi.fn(), error: vi.fn() } });
-  return { config, log, server, onInserted, onStop };
+  const logger = { log: vi.fn(), error: vi.fn() };
+  const server = new WebhookServer({ config, log, onInserted, onStop, logger });
+  return { config, log, server, onInserted, onStop, logger, managementKey };
 }
 
 function signed(body: string, secret = "planner-secret", delivery = "delivery-1") {
@@ -72,6 +76,32 @@ describe("webhook HTTP integration", () => {
     expect(log.count()).toBe(1); expect(log.ackCount()).toBe(1);
     expect(log.getSession("session")).toMatchObject({ issueId: "issue", issueIdentifier: "ENG-42" });
     await server.close(); log.close();
+  });
+  it("logs one assignment for a prompted-first session and none for later conflicts", async () => {
+    const { log, server, logger } = setup(); const address = await server.listen();
+    const prompted = JSON.stringify({ webhookTimestamp: Date.now(), action: "prompted",
+      agentActivity: { id: "a1", body: "start" }, agentSession: { id: "prompt-first" } });
+    await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(prompted, "planner-secret", "p1"), body: prompted });
+    const created = JSON.stringify({ webhookTimestamp: Date.now(), action: "created", agentSession: { id: "prompt-first" } });
+    await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(created, "planner-secret", "c1"), body: created });
+    const assignments = logger.log.mock.calls.map(call => JSON.parse(String(call[0]))).filter(entry => entry.event === "session_profile_assigned");
+    expect(assignments).toEqual([{ event: "session_profile_assigned", linearSessionId: "prompt-first", profile: "sol", reason: "fable_not_configured" }]);
+    await server.close(); log.close();
+  });
+  it("logs one assignment when reconciliation creates the durable session", async () => {
+    const base = setup(); const config = base.config; base.log.close(); const dbPath = join(dirs.at(-1)!, "reconcile.db");
+    const log = new EventLog(dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    config.apps.planner.appActorId = "planner-actor"; config.apps.implementer.appActorId = "implementer-actor";
+    config.reconcileRequestTimeoutMs = 1000; config.webhookBaseUrl = "http://daemon";
+    const gateway = { ensureWebhookEnabled: async () => ({ matched: true, updated: false }),
+      listAgentSessions: async (app: string) => app === "planner" ? [{ id: "reconciled", app: "planner", issueId: "issue", issueIdentifier: "ENG-1" }] : [],
+      listDelegatedIssueAgentSessions: async () => [], listSessionActivitiesSince: async () => [] };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    const worker = new ReconcileWorker(log, gateway as unknown as LinearGateway, config, { logger, now: () => 1000 });
+    await worker.trigger(); await worker.trigger();
+    const assignments = logger.log.mock.calls.map(call => JSON.parse(String(call[0]))).filter(entry => entry.event === "session_profile_assigned");
+    expect(assignments).toEqual([{ event: "session_profile_assigned", linearSessionId: "reconciled", profile: "fable", reason: "claude_ready" }]);
+    await worker.stop(); log.close();
   });
 
   it.each(["missing", "tampered", "stale", "malformed"])("AC2: rejects %s payloads without persistence", async kind => {
@@ -168,6 +198,21 @@ describe("webhook HTTP integration", () => {
     expect((await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(body), body })).status).toBe(200);
     const health = await fetch(`http://127.0.0.1:${address.port}/healthz`);
     expect(await health.json()).toEqual({ ok: true }); expect(log.count()).toBe(1); expect(log.ackCount()).toBe(0);
+    await server.close(); log.close();
+  });
+  it("keeps provider health private and reports it only for the management key", async () => {
+    const { log, server, managementKey } = setup();
+    log.setProviderState("claude", "ready", "eligible_2_failed_0", 1000);
+    log.setProviderCooldown("codex", 9000, "http_503", 2000);
+    const address = await server.listen();
+    expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`)).json()).toEqual({ ok: true });
+    expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`,
+      { headers: { Authorization: "Bearer wrong-key" } })).json()).toEqual({ ok: true });
+    expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`,
+      { headers: { Authorization: `Bearer ${managementKey}` } })).json()).toEqual({ ok: true, providers: {
+      claude: { status: "ready", reason: "eligible_2_failed_0", updatedAt: 1000 },
+      codex: { status: "cooldown", cooldownUntil: 9000 },
+    } });
     await server.close(); log.close();
   });
 

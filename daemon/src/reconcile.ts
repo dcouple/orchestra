@@ -86,13 +86,16 @@ export class ReconcileWorker {
 
       for (const session of sessions) {
         if (this.log.getSession(session.id)) continue;
-        const inserted = this.appendCreated(session);
-        if (inserted) this.options.onInserted?.();
+        const result = this.appendCreated(session);
+        if (result.assignedProfile) this.logger.log(JSON.stringify({ event: "session_profile_assigned",
+          linearSessionId: session.id, profile: result.assignedProfile, reason: result.assignmentReason }));
+        if (result.inserted) this.options.onInserted?.();
       }
     }
   }
 
   private async reconcilePlannerPrompts(): Promise<void> {
+    // Prompt reconciliation only visits durable sessions, so it cannot assign a profile.
     for (const session of this.log.plannerSessionsForReconcile()) {
       let activities: AgentPromptActivity[];
       try {
@@ -116,7 +119,7 @@ export class ReconcileWorker {
     }
   }
 
-  private appendCreated(session: AgentSessionSummary): boolean {
+  private appendCreated(session: AgentSessionSummary): ReturnType<EventLog["append"]> {
     const raw = {
       action: "created",
       agentSession: {
@@ -134,7 +137,7 @@ export class ReconcileWorker {
       issueIdentifier: session.issueIdentifier,
       receivedAt: this.now(),
       rawBody: Buffer.from(JSON.stringify(raw)),
-    }).inserted;
+    });
   }
 
   private appendPrompted(session: SessionRow, activity: AgentPromptActivity): ReturnType<EventLog["append"]> {

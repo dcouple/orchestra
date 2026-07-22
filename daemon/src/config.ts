@@ -19,6 +19,9 @@ export interface Config {
   linearGraphqlUrl: string;
   linearTokenUrl: string;
   webhookBaseUrl: string;
+  artifactToken?: string;
+  artifactsDir: string;
+  artifactMaxBodyBytes: number;
   reconcileIntervalMs: number;
   reconcileRequestTimeoutMs: number;
   apps: Record<AppName, AppConfig>;
@@ -26,6 +29,14 @@ export interface Config {
   worktreesRoot: string;
   targetRepoPath?: string;
   claudeArgv: string[];
+  claudexArgv?: string[];
+  claudexEnv?: Record<string, string>;
+  fableArgv?: string[];
+  cliproxyEnvFile: string;
+  cliproxyUrl: string;
+  providerProbeIntervalMs: number;
+  providerStateStaleMs: number;
+  providerInitialProbeTimeoutMs: number;
   claudePermissionMode: string;
   claudeMaxTurns: number;
   doPermissionMode: string;
@@ -61,6 +72,27 @@ function enabled(env: NodeJS.ProcessEnv, name: string, fallback = true): boolean
   throw new Error(`${name} must be 0 or 1`);
 }
 
+function optionalArgv(env: NodeJS.ProcessEnv, name: string): string[] | undefined {
+  const raw = env[name];
+  if (raw === undefined) return undefined;
+  const value = raw.trim();
+  if (!value) throw new Error(`${name} must not be empty`);
+  return value.split(/\s+/);
+}
+
+function stringMap(env: NodeJS.ProcessEnv, name: string): Record<string, string> | undefined {
+  if (env[name] === undefined) return undefined;
+  const raw = env[name]!.trim();
+  if (!raw) throw new Error(`${name} must be valid JSON`);
+  let value: unknown;
+  try { value = JSON.parse(raw); } catch { throw new Error(`${name} must be valid JSON`); }
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || Object.values(value as Record<string, unknown>).some(entry => typeof entry !== "string")) {
+    throw new Error(`${name} must be a JSON object with string values`);
+  }
+  return value as Record<string, string>;
+}
+
 function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean): AppConfig {
   const prefix = name.toUpperCase();
   const staticToken = env[`${prefix}_LINEAR_TOKEN`]?.trim();
@@ -80,10 +112,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const sessionsEnabled = enabled(env, "SESSIONS_ENABLED");
   const targetRepoPath = env.TARGET_REPO_PATH?.trim();
   const linearApiKey = env.LINEAR_API_KEY?.trim();
+  const artifactToken = env.ARTIFACT_TOKEN?.trim();
   const webhookBaseUrl = env.WEBHOOK_BASE_URL?.trim() || (testMode ? "http://127.0.0.1:8787" : required(env, "WEBHOOK_BASE_URL"));
   if (sessionsEnabled && !targetRepoPath) required(env, "TARGET_REPO_PATH");
   if (sessionsEnabled && !linearApiKey) required(env, "LINEAR_API_KEY");
-  const claudeArgv = (env.CLAUDE_BIN?.trim() || "claudex").split(/\s+/);
+  const claudeArgv = (env.CLAUDE_BIN?.trim() || "claude").split(/\s+/);
+  const claudexArgv = optionalArgv(env, "CLAUDEX_BIN");
+  const claudexEnv = stringMap(env, "CLAUDEX_ENV");
+  if (claudexEnv && !claudexArgv) throw new Error("CLAUDEX_ENV requires CLAUDEX_BIN");
+  const fableBin = env.FABLE_BIN?.trim();
+  const providerProbeIntervalMs = positiveInteger(env, "PROVIDER_PROBE_INTERVAL_MS", 60_000);
   const doPermissionMode = env.DO_PERMISSION_MODE?.trim() || "bypassPermissions";
   if (!testMode && doPermissionMode !== "bypassPermissions") {
     throw new Error("DO_PERMISSION_MODE must be bypassPermissions unless DAEMON_TEST_MODE=1");
@@ -101,6 +139,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     linearGraphqlUrl: env.LINEAR_GRAPHQL_URL?.trim() || "https://api.linear.app/graphql",
     linearTokenUrl: env.LINEAR_TOKEN_URL?.trim() || "https://api.linear.app/oauth/token",
     webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
+    ...(artifactToken ? { artifactToken } : {}),
+    artifactsDir: env.ARTIFACTS_DIR?.trim() || `${dirname(dbPath)}/artifacts`,
+    artifactMaxBodyBytes: positiveInteger(env, "ARTIFACT_MAX_BODY_BYTES", 32 * 1024 * 1024),
     reconcileIntervalMs: positiveInteger(env, "RECONCILE_INTERVAL_MS", 60_000),
     reconcileRequestTimeoutMs: positiveInteger(env, "RECONCILE_REQUEST_TIMEOUT_MS", 10_000),
     apps: { planner: appConfig(env, "planner", testMode), implementer: appConfig(env, "implementer", testMode) },
@@ -108,6 +149,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     worktreesRoot: env.WORKTREES_ROOT?.trim() || `${dirname(dbPath)}/worktrees`,
     ...(targetRepoPath ? { targetRepoPath } : {}),
     claudeArgv,
+    ...(claudexArgv ? { claudexArgv } : {}),
+    ...(claudexEnv ? { claudexEnv } : {}),
+    ...(fableBin ? { fableArgv: fableBin.split(/\s+/) } : {}),
+    cliproxyEnvFile: env.CLIPROXY_ENV_FILE?.trim() || "/etc/linear-agent-daemon/cliproxyapi.env",
+    cliproxyUrl: (env.CLIPROXY_URL?.trim() || "http://127.0.0.1:8317").replace(/\/+$/, ""),
+    providerProbeIntervalMs,
+    providerStateStaleMs: positiveInteger(env, "PROVIDER_STATE_STALE_MS", 5 * providerProbeIntervalMs),
+    providerInitialProbeTimeoutMs: positiveInteger(env, "PROVIDER_INITIAL_PROBE_TIMEOUT_MS", 5_000),
     claudePermissionMode: env.CLAUDE_PERMISSION_MODE?.trim() || "bypassPermissions",
     claudeMaxTurns: positiveInteger(env, "CLAUDE_MAX_TURNS", 100),
     doPermissionMode,
