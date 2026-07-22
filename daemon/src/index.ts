@@ -10,7 +10,7 @@ import { ArtifactStore } from "./artifacts.js";
 
 const config = loadConfig();
 let log: EventLog;
-log = new EventLog(config.dbPath, () => selectSessionProfile(log, config));
+log = new EventLog(config.dbPath, app => selectSessionProfile(log, config, app));
 const gateway = new LinearGateway(log, config.apps, config.linearGraphqlUrl, config.linearTokenUrl);
 const worker = new AckWorker(log, gateway);
 const cleanupWorker = config.sessionsEnabled ? new CleanupWorker(log,gateway,config.worktreesRoot,config.targetRepoPath!) : undefined;

@@ -88,7 +88,8 @@ export class ReconcileWorker {
         if (this.log.getSession(session.id)) continue;
         const result = this.appendCreated(session);
         if (result.assignedProfile) this.logger.log(JSON.stringify({ event: "session_profile_assigned",
-          linearSessionId: session.id, profile: result.assignedProfile, reason: result.assignmentReason }));
+          linearSessionId: session.id, profile: result.assignedProfile,
+          runtime: result.assignedRuntime, reason: result.assignmentReason }));
         if (result.inserted) this.options.onInserted?.();
       }
     }

@@ -81,10 +81,12 @@ stored bundles.
 
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
+`PLANNER_HARNESS` and `IMPLEMENTER_HARNESS` (independent `claude | claudex`
+preferences, both default `claude`),
 `CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),
-`CLAUDEX_BIN` (optional, whitespace-split; enables a one-shot retry of validated
-Claude usage/rate-limit failures through the Claudex proxy runtime — point it at
-the provisioned `claudex` wrapper), `CLAUDEX_ENV` (optional JSON string map of
+`CLAUDEX_BIN` (optional, whitespace-split; required for a direct `claudex`
+preference and for Sol fallback — point it at the provisioned `claudex` wrapper),
+`CLAUDEX_ENV` (optional JSON string map of
 extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
 `FABLE_BIN` (optional; normally the installed `ops/claudex-fable` launcher),
 `CLIPROXY_ENV_FILE`, `CLIPROXY_URL`, `PROVIDER_PROBE_INTERVAL_MS`,
@@ -94,6 +96,12 @@ extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
 `DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),
 `SESSION_CONCURRENCY` (2), `KEEPALIVE_MS` (900000), `ATTACHMENTS_ENABLED` (1), and
 `ATTACHMENT_HOSTS` (`uploads.linear.app`). Set `SESSIONS_ENABLED=0` for ingress-only runs.
+For a new role session, `claude` prefers the Fable launcher and retains readiness routing
+plus the one-shot structured capacity fallback to Claudex/GPT-Sol; `claudex` starts
+Claudex/GPT-Sol immediately without probing Fable. The resolved harness and session ID are
+persisted together, so later prompts, restarts, fix rounds, and preference changes continue
+on the established harness. Missing `CLAUDEX_BIN` fails a selected Claudex session closed;
+it never starts a replacement Claude session.
 Set `NTFY_URL` to an ntfy topic URL (e.g. `https://ntfy.sh/<topic>`) to push a one-way
 notification whenever an agent posts a terminal response or error — errors post at high
 priority. Unset means no notifications. A public ntfy topic is readable by anyone who knows

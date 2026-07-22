@@ -99,7 +99,10 @@ SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/bloom-mono
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
 LINEAR_API_KEY=...
+PLANNER_HARNESS=claude
+IMPLEMENTER_HARNESS=claude
 CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
+FABLE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex-fable
 # Capacity fallback: a validated Claude usage/rate-limit failure retries once through
 # the Claudex proxy wrapper (ops/claudex, installed by provision.sh; it carries the
 # proxy env itself, so CLAUDEX_ENV is not needed with it):
@@ -118,6 +121,14 @@ ATTACHMENTS_ENABLED=1
 ATTACHMENT_HOSTS=uploads.linear.app
 # NTFY_URL=https://ntfy.sh/<unguessable-topic>
 ```
+
+The harness settings are independent and accept only `claude` or `claudex`; both default
+to `claude`. Use `claudex` to send new sessions for that role directly to GPT-Sol without a
+Fable readiness probe. A `claude` preference retains readiness routing and the one-time
+capacity fallback, so both `FABLE_BIN` and `CLAUDEX_BIN` must be usable for full protection.
+Changes affect only new sessions: established prompts, daemon restarts, and implementer fix
+rounds resume the persisted harness and session ID. If an established or selected Claudex
+session has no `CLAUDEX_BIN`, it fails closed and keeps its durable state.
 
 The daemon requests 30-day client-credentials app tokens with
 `read,write,app:assignable,app:mentionable,admin` and persists their expiry in SQLite. It

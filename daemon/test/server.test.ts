@@ -85,12 +85,13 @@ describe("webhook HTTP integration", () => {
     const created = JSON.stringify({ webhookTimestamp: Date.now(), action: "created", agentSession: { id: "prompt-first" } });
     await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(created, "planner-secret", "c1"), body: created });
     const assignments = logger.log.mock.calls.map(call => JSON.parse(String(call[0]))).filter(entry => entry.event === "session_profile_assigned");
-    expect(assignments).toEqual([{ event: "session_profile_assigned", linearSessionId: "prompt-first", profile: "sol", reason: "fable_not_configured" }]);
+    expect(assignments).toEqual([{ event: "session_profile_assigned", linearSessionId: "prompt-first",
+      profile: "fable", runtime: "claude", reason: "compatibility_default" }]);
     await server.close(); log.close();
   });
   it("logs one assignment when reconciliation creates the durable session", async () => {
     const base = setup(); const config = base.config; base.log.close(); const dbPath = join(dirs.at(-1)!, "reconcile.db");
-    const log = new EventLog(dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    const log = new EventLog(dbPath, () => ({ profile: "fable", runtime: "claude", reason: "claude_ready" }));
     config.apps.planner.appActorId = "planner-actor"; config.apps.implementer.appActorId = "implementer-actor";
     config.reconcileRequestTimeoutMs = 1000; config.webhookBaseUrl = "http://daemon";
     const gateway = { ensureWebhookEnabled: async () => ({ matched: true, updated: false }),
@@ -100,7 +101,8 @@ describe("webhook HTTP integration", () => {
     const worker = new ReconcileWorker(log, gateway as unknown as LinearGateway, config, { logger, now: () => 1000 });
     await worker.trigger(); await worker.trigger();
     const assignments = logger.log.mock.calls.map(call => JSON.parse(String(call[0]))).filter(entry => entry.event === "session_profile_assigned");
-    expect(assignments).toEqual([{ event: "session_profile_assigned", linearSessionId: "reconciled", profile: "fable", reason: "claude_ready" }]);
+    expect(assignments).toEqual([{ event: "session_profile_assigned", linearSessionId: "reconciled",
+      profile: "fable", runtime: "claude", reason: "claude_ready" }]);
     await worker.stop(); log.close();
   });
 

@@ -249,29 +249,30 @@ describe("EventLog", () => {
   });
   it("assigns a profile only on first insert and preserves it in every projection", () => {
     let selections = 0;
-    const log = new EventLog(path(), () => { selections++; return { profile: "fable", reason: "claude_ready" }; });
+    const log = new EventLog(path(), app => { selections++; expect(app).toBe("planner");
+      return { profile: "fable", runtime: "claude", reason: "claude_ready" }; });
     const first = log.append(event());
     const duplicate = log.append(event({ deliveryId: "delivery-2", action: "prompted" }));
-    expect(first).toMatchObject({ assignedProfile: "fable", assignmentReason: "claude_ready" });
+    expect(first).toMatchObject({ assignedProfile: "fable", assignedRuntime: "claude", assignmentReason: "claude_ready" });
     expect(duplicate.assignedProfile).toBeUndefined(); expect(selections).toBe(1);
     log.updateSessionWorktree("session-1", "/worktree", "branch");
-    expect(log.getSession("session-1")?.profile).toBe("fable");
+    expect(log.getSession("session-1")).toMatchObject({ profile: "fable", runtime: "claude" });
     expect(log.sessionByIssueIdentifier("ENG-42")?.profile).toBe("fable");
     expect(log.plannerSessionsForReconcile()[0]?.profile).toBe("fable");
     expect(log.sessionsWithWorktrees()[0]?.profile).toBe("fable");
     log.close();
   });
   it("stores provider state and atomically permits only one pre-establishment fallback", () => {
-    const log = new EventLog(path(), () => ({ profile: "fable", reason: "ready" }));
+    const log = new EventLog(path(), () => ({ profile: "fable", runtime: "claude", reason: "ready" }));
     log.append(event());
     expect(log.applyPreEstablishmentFallback("session-1")).toBe(true);
     expect(log.applyPreEstablishmentFallback("session-1")).toBe(false);
-    expect(log.getSession("session-1")).toMatchObject({ profile: "sol", profileFallback: 1 });
+    expect(log.getSession("session-1")).toMatchObject({ profile: "sol", runtime: "claudex", profileFallback: 1 });
     log.setProviderState("claude", "ready", "eligible_1_failed_0", 100);
     log.setProviderCooldown("claude", 900, "http_503", 200);
     expect(log.getProviderState("claude")).toEqual({ provider: "claude", status: "cooldown", reason: "http_503", cooldownUntil: 900, updatedAt: 200 });
     log.close();
-    const established = new EventLog(path(), () => ({ profile: "fable", reason: "ready" }));
+    const established = new EventLog(path(), () => ({ profile: "fable", runtime: "claude", reason: "ready" }));
     established.append(event({ deliveryId: "other", agentSessionId: "other" }));
     established.updateClaudeSessionId("other", "claude-id");
     expect(established.applyPreEstablishmentFallback("other")).toBe(false);

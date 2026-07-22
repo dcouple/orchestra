@@ -178,7 +178,10 @@ LINEAR_API_KEY=...
 SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/<repo>
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
+PLANNER_HARNESS=claude
+IMPLEMENTER_HARNESS=claude
 CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
+FABLE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex-fable
 # One-shot capacity fallback through the provisioned claudex wrapper:
 CLAUDEX_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
 CLAUDE_PERMISSION_MODE=bypassPermissions
@@ -197,6 +200,14 @@ ATTACHMENT_HOSTS=uploads.linear.app
 # unguessable.
 #NTFY_URL=https://ntfy.sh/<unguessable-topic>
 ```
+
+Each harness setting accepts `claude` or `claudex` and defaults to `claude`. The settings
+apply only when a durable role session is first created. `claude` prefers Fable but retains
+readiness routing and the one-shot capacity fallback to Claudex/GPT-Sol; `claudex` starts
+GPT-Sol directly without probing Fable. Established prompts, restarts, and implementer fix
+rounds keep their stored harness and resumable ID even after configuration changes. Keep
+`CLAUDEX_BIN` configured for every direct or fallback Sol route; a selected Claudex session
+fails closed if that launcher is missing.
 
 Start with a conservative `DO_MAX_BUDGET_USD`; raise it once you trust
 the flow. Then:
@@ -217,9 +228,12 @@ have the exact SQL/GraphQL evidence queries.
    event and the issue shows the "picked up — starting work" ack within
    10 seconds. `kill -9` the daemon; systemd restarts it with events
    intact.
-2. **Planner**: a full planning turn streams thoughts into the session
-   and ends in a response. Reply — the same Claude session and worktree
-   resume. Restart the service between turns and reply again; resume
+2. **Planner**: a full planning turn streams thoughts into the session and ends in a
+   response through Fable when `PLANNER_HARNESS=claude` and readiness is healthy. Temporarily use
+   `PLANNER_HARNESS=claudex` for a new throwaway session and verify it starts through the
+   provisioned Claudex/GPT-Sol wrapper without a Fable attempt; restore the desired setting
+   afterward. An already established session must continue on its original harness.
+   Reply — the same harness session and worktree resume. Restart the service between turns and reply again; resume
    still works.
 3. **Implementer**: assign a small, plan-ready issue. `/do` runs
    unattended on branch `agents/<identifier>`, opens a PR, and the PR

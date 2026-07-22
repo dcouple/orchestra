@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import type { Config } from "./config.js";
+import type { AppName, Config } from "./config.js";
 import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
 import type { EventLog, ExternalUrlRow, StopAckRow, TurnActivityRow, TurnRow } from "./eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
@@ -27,14 +27,17 @@ export function classifyProviderFailure(result: RunTurnResult): { state: string;
   return undefined;
 }
 
-export function selectSessionProfile(log: EventLog, config: Config, now = Date.now()): { profile: "fable" | "sol"; reason: string } {
-  if (!config.fableArgv) return { profile: "sol", reason: "fable_not_configured" };
+export function selectSessionProfile(log: EventLog, config: Config, app: AppName, now = Date.now()): {
+  profile: "fable" | "sol"; runtime: "claude" | "claudex"; reason: string;
+} {
+  if (config.apps[app].harness === "claudex") return { profile: "sol", runtime: "claudex", reason: "claudex_preferred" };
+  if (!config.fableArgv) return { profile: "sol", runtime: "claudex", reason: "fable_not_configured" };
   const state = log.getProviderState("claude");
-  if (!state) return { profile: "sol", reason: "claude_state_missing" };
-  if (state.cooldownUntil !== null && state.cooldownUntil > now) return { profile: "sol", reason: "claude_cooldown" };
-  if (now - state.updatedAt > config.providerStateStaleMs) return { profile: "sol", reason: "claude_state_stale" };
-  if (state.status !== "ready") return { profile: "sol", reason: state.reason ?? "claude_not_ready" };
-  return { profile: "fable", reason: "claude_ready" };
+  if (!state) return { profile: "sol", runtime: "claudex", reason: "claude_state_missing" };
+  if (state.cooldownUntil !== null && state.cooldownUntil > now) return { profile: "sol", runtime: "claudex", reason: "claude_cooldown" };
+  if (now - state.updatedAt > config.providerStateStaleMs) return { profile: "sol", runtime: "claudex", reason: "claude_state_stale" };
+  if (state.status !== "ready") return { profile: "sol", runtime: "claudex", reason: state.reason ?? "claude_not_ready" };
+  return { profile: "fable", runtime: "claude", reason: "claude_ready" };
 }
 
 export async function readCliproxyManagementKey(path: string): Promise<string> {
@@ -195,12 +198,8 @@ export class SessionWorker {
     const worktree = await this.worktrees.ensureWorktree(identifier);
     this.log.updateSessionWorktree(turn.linearSessionId, worktree.path, worktree.branch, this.now());
     const implementer = session.mode === "implementer";
-    const runtimeDegraded = session.runtime === "claudex" && !this.config.claudexArgv;
-    const runtime = runtimeDegraded ? "claude" : session.runtime;
-    if (runtimeDegraded) this.logger.error(jsonLog({ event: "session_runtime_degraded", turnId: turn.id,
-      linearSessionId: turn.linearSessionId, configuredRuntime: "claudex", effectiveRuntime: "claude",
-      reason: "CLAUDEX_BIN is not configured" }));
-    const resuming = turn.kind === "prompted" && !!session.claudeSessionId && !runtimeDegraded;
+    const runtime = session.runtime;
+    const resuming = turn.kind === "prompted" && !!session.claudeSessionId;
     let prompt = implementer && !resuming ? `/do ${identifier}` : this.composePrompt(turn, identifier);
     if ((!implementer || resuming) && this.config.attachmentsEnabled) prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
     this.log.setTurnPrompt(turn.id, prompt);
@@ -232,7 +231,6 @@ export class SessionWorker {
       onEvent: (event: ClaudeEvent) => progress.push(event.type === "text"
         ? { type: "thought", body: event.text } : toolUseContent(event)),
     };
-    // CLAUDE_BIN may name the host's Sol launcher; CLAUDEX_BIN is the distinct #101 capacity-fallback target.
     const runtimeArgv = runtime === "claudex" ? this.config.claudexArgv!
       : durableProfile === "fable" ? this.config.fableArgv : this.config.claudeArgv;
     const cleanupRejectedRun = async (error: unknown): Promise<never> => {
@@ -244,13 +242,17 @@ export class SessionWorker {
       trustedEnv = runtime === "claudex" ? this.config.claudexEnv : undefined) => runTurn({ ...common, prompt: runPrompt,
         ...(resume ? { resumeSessionId: session.claudeSessionId! } : {}), argv,
         ...(trustedEnv ? { trustedEnv } : {}),
-        onSessionId: id => { if (!runtimeDegraded) this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()); },
+        onSessionId: id => { this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()); },
       }).catch(cleanupRejectedRun);
     let result: RunTurnResult;
     if (!runtimeArgv) {
-      this.logger.error(jsonLog({ event: "profile_launcher_unconfigured", linearSessionId: turn.linearSessionId, profile: "fable" }));
+      const launcher = runtime === "claudex" ? "CLAUDEX_BIN" : "FABLE_BIN";
+      this.logger.error(jsonLog({ event: "profile_launcher_unconfigured", linearSessionId: turn.linearSessionId,
+        profile: durableProfile, runtime, launcher }));
       result = { ok: false, isError: true, exitCode: null, signal: null,
-        spawnError: "Fable profile launcher is not configured; set FABLE_BIN after validating fable-models.env",
+        spawnError: runtime === "claudex"
+          ? "Claudex runtime launcher is not configured; set CLAUDEX_BIN"
+          : "Fable profile launcher is not configured; set FABLE_BIN after validating fable-models.env",
         permissionDenials: [], sawResult: false, capacityEvidence: [] };
     } else result = await run(runtimeArgv);
     let fallbackCause: string | undefined;
@@ -262,7 +264,6 @@ export class SessionWorker {
       // Structured capacity evidence is narrower than provider unavailability and always wins classification.
       if (!this.config.claudexArgv || this.stopRequested.has(turn.id)) return candidate;
       fallbackAttempted = true;
-      this.log.clearClaudeSessionId(turn.linearSessionId, this.now());
       progress.push({ type: "thought", body: `${originalRuntime === "fable" ? "Fable" : "Claude"} capacity limit detected (${fallbackCause}); retrying once with Claudex.` });
       this.logger.log(jsonLog({ event: "session_capacity_fallback", turnId: turn.id, issueIdentifier: identifier,
         linearSessionId: turn.linearSessionId, originalRuntime, fallbackRuntime: "claudex", evidence: candidate.capacityEvidence }));
@@ -275,8 +276,10 @@ export class SessionWorker {
         ...(this.config.claudexEnv ? { trustedEnv: this.config.claudexEnv } : {}),
         onSessionId: id => { fallbackSessionId = id; },
       }).catch(cleanupRejectedRun);
+      if (fallbackResult.ok && !fallbackSessionId) return { ...fallbackResult, ok: false, isError: true,
+        spawnError: "Claudex fallback completed without a session ID" };
       if (fallbackResult.ok && !this.stopRequested.has(turn.id))
-        this.log.recordRuntimeFallback(turn.linearSessionId, fallbackSessionId, fallbackCause, this.now());
+        this.log.recordRuntimeFallback(turn.linearSessionId, fallbackSessionId!, fallbackCause, this.now());
       return fallbackResult;
     };
     result = await applyCapacityFallback(result);
@@ -300,8 +303,13 @@ export class SessionWorker {
           && this.log.applyPreEstablishmentFallback(turn.linearSessionId)) {
           this.logger.log(jsonLog({ event: "profile_fallback", linearSessionId: turn.linearSessionId, from: "fable", to: "sol",
             provider, classifiedState: classified.state, reason: classified.reason, cooldownUntil }));
-          result = await run(this.config.claudeArgv, prompt, false, undefined);
-          result = await applyCapacityFallback(result, "claude");
+          if (!this.config.claudexArgv) {
+            result = { ok: false, isError: true, exitCode: null, signal: null,
+              spawnError: "Claudex runtime launcher is not configured; set CLAUDEX_BIN",
+              permissionDenials: [], sawResult: false, capacityEvidence: [] };
+          } else {
+            result = await run(this.config.claudexArgv, prompt, false, this.config.claudexEnv);
+          }
           if (!result.ok && !fallbackCause) {
             const solClassified = classifyProviderFailure(result);
             if (solClassified) recordProviderFailure("sol", "codex", solClassified);

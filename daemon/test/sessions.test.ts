@@ -35,9 +35,11 @@ function setup() {
   const log = new EventLog(join(dir, "events.db"));
   const config: Config = { port: 0, bindAddr: "127.0.0.1", dbPath: join(dir, "events.db"), replayWindowMs: 60_000,
     linearGraphqlUrl: "http://unused", linearTokenUrl: "http://unused", apps: {
-      planner: { name: "planner", webhookSecret: "p", staticToken: "p" }, implementer: { name: "implementer", webhookSecret: "i", staticToken: "i" } },
+      planner: { name: "planner", harness: "claude", webhookSecret: "p", staticToken: "p" },
+      implementer: { name: "implementer", harness: "claude", webhookSecret: "i", staticToken: "i" } },
     sessionsEnabled: true, worktreesRoot: join(dir, "trees"), targetRepoPath: repo,
-    claudeArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")], claudePermissionMode: "plan", claudeMaxTurns: 5,
+    claudeArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")],
+    fableArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")], claudePermissionMode: "plan", claudeMaxTurns: 5,
     cliproxyEnvFile: join(dir, "proxy.env"), cliproxyUrl: "http://127.0.0.1:1", providerProbeIntervalMs: 60_000,
     providerStateStaleMs: 300_000, providerInitialProbeTimeoutMs: 5000,
     doPermissionMode:"plan",doMaxTurns:50,doMaxBudgetUsd:10,
@@ -104,12 +106,12 @@ describe("SessionWorker", () => {
     await new ProviderReadinessPoller(log, config, logger, async () => ({ files: [
       { provider: "claude", disabled: false, failed: false, email: "secret@example.com" },
     ] })).probe(1000);
-    expect(selectSessionProfile(log, config, 1001)).toEqual({ profile: "fable", reason: "claude_ready" });
+    expect(selectSessionProfile(log, config, "planner", 1001)).toEqual({ profile: "fable", runtime: "claude", reason: "claude_ready" });
     expect(logger.entries()[0]).toEqual({ event: "provider_state_changed", provider: "claude", status: "ready",
       reason: "eligible_1_failed_0", cooldownUntil: null });
     expect(logger.lines.join("\n")).not.toContain("secret@example.com");
     log.setProviderCooldown("claude", 5000, "http_503", 1100);
-    expect(selectSessionProfile(log, config, 1200)).toEqual({ profile: "sol", reason: "claude_cooldown" });
+    expect(selectSessionProfile(log, config, "planner", 1200)).toEqual({ profile: "sol", runtime: "claudex", reason: "claude_cooldown" });
     log.close();
   });
   it("probes the management auth-files endpoint with the key read from disk", async () => {
@@ -145,7 +147,7 @@ describe("SessionWorker", () => {
   it("routes Fable, falls back once before establishment, and never flips after an id", async () => {
     // AC5's pre/post-establishment states cannot both be reached from one webhook payload, so seed them directly.
     const seeded = setup(); seeded.log.close();
-    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", runtime: "claude", reason: "claude_ready" }));
     const fixtureEmail = "secret@example.com"; const fixtureKey = "management-secret";
     seeded.config.linearApiKey = fixtureKey;
     writeFileSync(seeded.config.cliproxyEnvFile, `CLIPROXY_MANAGEMENT_KEY=${fixtureKey}\n`);
@@ -154,6 +156,7 @@ describe("SessionWorker", () => {
       { provider: "claude", disabled: false, failed: false, email: fixtureEmail },
     ] })).probe();
     seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
+    seeded.config.claudexArgv = [...seeded.config.claudeArgv, "--claudex-runtime"];
     process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "routing.jsonl");
     process.env.CLAUDE_FAKE_MODE = "provider-fail-pre-id";
     append(log, "fable-created", "fable-session", "created");
@@ -199,8 +202,9 @@ describe("SessionWorker", () => {
   });
   it("classifies both pools when Fable and its one Sol retry fail before establishment", async () => {
     const seeded = setup(); seeded.log.close(); const poster = new Poster(); const logger = new CapturingLogger();
-    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", runtime: "claude", reason: "claude_ready" }));
     seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
+    seeded.config.claudexArgv = [...seeded.config.claudeArgv, "--claudex-runtime"];
     process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "two-provider-failures.jsonl");
     process.env.CLAUDE_FAKE_MODE = "provider-fail-pre-id";
     append(log, "d1", "session", "created");
@@ -221,7 +225,7 @@ describe("SessionWorker", () => {
   });
   it("persists Fable for planner and implementer before their first launch", async () => {
     const seeded = setup(); seeded.log.close();
-    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", runtime: "claude", reason: "claude_ready" }));
     seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
     process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "fable-starts.jsonl"); process.env.CLAUDE_FAKE_MODE = "happy";
     append(log, "planner-fable", "planner-fable", "created", "issue-p", "ENG-41");
@@ -232,9 +236,29 @@ describe("SessionWorker", () => {
     const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
     expect(starts).toHaveLength(2); expect(starts.every(row => row.args.includes("--fable-launcher"))).toBe(true); log.close();
   });
+  it.each(["planner", "implementer"] as const)("starts a directly preferred Claudex %s session and keeps it sticky after config changes", async app => {
+    const seeded = setup(); seeded.log.close(); seeded.config.apps[app].harness = "claudex";
+    seeded.config.claudexArgv = [...seeded.config.claudeArgv, "--claudex-runtime"];
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, `direct-${app}.jsonl`); process.env.CLAUDE_FAKE_MODE = "happy";
+    let log: EventLog; log = new EventLog(seeded.config.dbPath, selected => selectSessionProfile(log, seeded.config, selected));
+    if (app === "planner") append(log, "created", "direct-session", "created");
+    else appendImplementer(log, "created", "direct-session");
+    const worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10 });
+    worker.start(); await waitFor(() => log.turnStates()[0]?.status === "done");
+    expect(log.getSession("direct-session")).toMatchObject({ profile: "sol", runtime: "claudex" });
+    seeded.config.apps[app].harness = "claude";
+    log.append({ deliveryId: "prompted", app, action: "prompted", agentSessionId: "direct-session", receivedAt: Date.now(),
+      rawBody: Buffer.from(JSON.stringify({ action: "prompted", agentActivity: { body: "continue" }, agentSession: { id: "direct-session" } })) });
+    worker.trigger(); await waitFor(() => log.turnStates()[1]?.status === "done"); await worker.stop();
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+      .map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(2); expect(starts.every(row => row.args.includes("--claudex-runtime"))).toBe(true);
+    expect(starts[1].args).toEqual(expect.arrayContaining(["--resume", "claude-session-1"])); log.close();
+  });
   it("persists Sol and uses the Sol launcher when Claude is cooling down", async () => {
     const seeded = setup(); seeded.log.close(); seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
-    let log: EventLog; log = new EventLog(seeded.config.dbPath, () => selectSessionProfile(log, seeded.config, 1000));
+    seeded.config.claudexArgv = [...seeded.config.claudeArgv, "--claudex-runtime"];
+    let log: EventLog; log = new EventLog(seeded.config.dbPath, app => selectSessionProfile(log, seeded.config, app, 1000));
     log.setProviderCooldown("claude", 5000, "http_503", 900);
     process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "sol-starts.jsonl"); process.env.CLAUDE_FAKE_MODE = "happy";
     append(log, "cooldown-created", "sol-session", "created");
@@ -242,11 +266,12 @@ describe("SessionWorker", () => {
     worker.start(); await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop();
     expect(log.getSession("sol-session")?.profile).toBe("sol");
     const start = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").split("\n")[0]!);
-    expect(start.args).not.toContain("--fable-launcher"); log.close();
+    expect(start.args).toContain("--claudex-runtime"); log.close();
   });
   it("persists Sol and uses the Sol launcher when Claude is explicitly not ready", async () => {
     const seeded = setup(); seeded.log.close(); seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
-    let log: EventLog; log = new EventLog(seeded.config.dbPath, () => selectSessionProfile(log, seeded.config));
+    seeded.config.claudexArgv = [...seeded.config.claudeArgv, "--claudex-runtime"];
+    let log: EventLog; log = new EventLog(seeded.config.dbPath, app => selectSessionProfile(log, seeded.config, app));
     log.setProviderState("claude", "not_ready", "no_eligible_claude_failed_0", Date.now());
     process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "not-ready-starts.jsonl"); process.env.CLAUDE_FAKE_MODE = "happy";
     append(log, "not-ready-created", "not-ready-session", "created");
@@ -254,14 +279,15 @@ describe("SessionWorker", () => {
     worker.start(); await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop();
     expect(log.getSession("not-ready-session")?.profile).toBe("sol");
     const start = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").split("\n")[0]!);
-    expect(start.args).not.toContain("--fable-launcher"); log.close();
+    expect(start.args).toContain("--claudex-runtime"); log.close();
   });
   it.each([
     { criterion: "AC1", status: "ready", reason: "eligible_1_failed_0", expectedProfile: "fable", usesFable: true },
     { criterion: "AC3", status: "not_ready", reason: "no_eligible_claude_failed_0", expectedProfile: "sol", usesFable: false },
   ])("$criterion signed webhook persists $expectedProfile and launches it", async ({ status, reason, expectedProfile, usesFable }) => {
     const seeded = setup(); seeded.log.close(); seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
-    let log: EventLog; log = new EventLog(seeded.config.dbPath, () => selectSessionProfile(log, seeded.config));
+    seeded.config.claudexArgv = [...seeded.config.claudeArgv, "--claudex-runtime"];
+    let log: EventLog; log = new EventLog(seeded.config.dbPath, app => selectSessionProfile(log, seeded.config, app));
     log.setProviderState("claude", status, reason, Date.now());
     process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, `webhook-${expectedProfile}.jsonl`); process.env.CLAUDE_FAKE_MODE = "happy";
     const worker = new SessionWorker(log, new Poster() as unknown as LinearGateway, seeded.config, { pollMs: 10 });
@@ -275,12 +301,14 @@ describe("SessionWorker", () => {
     await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop(); await server.close();
     expect(log.getSession(`webhook-${expectedProfile}`)?.profile).toBe(expectedProfile);
     const start = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").split("\n")[0]!);
-    expect(start.args.includes("--fable-launcher")).toBe(usesFable); log.close();
+    expect(start.args.includes("--fable-launcher")).toBe(usesFable);
+    expect(start.args.includes("--claudex-runtime")).toBe(!usesFable); log.close();
   });
   it("fails an established Fable session closed when its launcher is unconfigured", async () => {
     // AC7 requires an already-established Fable row, which a single webhook payload cannot create while FABLE_BIN is unset.
     const seeded = setup(); seeded.log.close();
-    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "ready" }));
+    seeded.config.fableArgv = undefined;
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", runtime: "claude", reason: "ready" }));
     append(log, "created-fable", "fable-session", "created");
     log.updateClaudeSessionId("fable-session", "established-id");
     const logger = new CapturingLogger();
@@ -288,7 +316,8 @@ describe("SessionWorker", () => {
     const worker = new SessionWorker(log, poster as unknown as LinearGateway, seeded.config, { pollMs: 10, logger });
     worker.start(); await waitFor(() => log.turnStates()[0]?.status === "failed"); await worker.stop();
     expect(log.getSession("fable-session")).toMatchObject({ profile: "fable", claudeSessionId: "established-id" });
-    expect(logger.entries()).toContainEqual({ event: "profile_launcher_unconfigured", linearSessionId: "fable-session", profile: "fable" });
+    expect(logger.entries()).toContainEqual({ event: "profile_launcher_unconfigured", linearSessionId: "fable-session",
+      profile: "fable", runtime: "claude", launcher: "FABLE_BIN" });
     expect(poster.posts.map(post => activityBody(post.content)).filter(Boolean).join("\n")).toContain("FABLE_BIN");
     log.close();
   });
@@ -723,7 +752,7 @@ describe("SessionWorker", () => {
   });
   it("cancels progress and keepalive when the Claude runner rejects after progress starts", async () => {
     const { log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
-    config.claudeArgv = [];
+    config.fableArgv = [];
     append(log, "d1", "session", "created");
     const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
@@ -868,7 +897,7 @@ describe("SessionWorker", () => {
     });
   it("routes Fable first, gives structured capacity fallback priority, and persists Claudex", async () => {
     const seeded = setup(); seeded.log.close(); const poster = new Poster(); const logger = new CapturingLogger();
-    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", runtime: "claude", reason: "claude_ready" }));
     process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "fable-capacity.jsonl"); process.env.CLAUDE_FAKE_MODE = "result-429";
     seeded.config.fableArgv = [...seeded.config.claudeArgv, "--fable-launcher"];
     seeded.config.claudexArgv = [...seeded.config.claudeArgv, "--claudex-runtime"];
@@ -883,7 +912,7 @@ describe("SessionWorker", () => {
     expect(starts).toHaveLength(3); expect(starts[0].args).toContain("--fable-launcher");
     expect(starts[1].args).toContain("--claudex-runtime"); expect(starts[1].args).not.toContain("--resume");
     expect(starts[2].args).toEqual(expect.arrayContaining(["--claudex-runtime", "--resume", "claude-session-1"]));
-    expect(log.getSession("session")).toMatchObject({ profile: "fable", profileFallback: null, runtime: "claudex" });
+    expect(log.getSession("session")).toMatchObject({ profile: "sol", profileFallback: null, runtime: "claudex" });
     expect(logger.entries().find(entry => entry.event === "session_capacity_fallback"))
       .toMatchObject({ originalRuntime: "fable", fallbackRuntime: "claudex" });
     expect(logger.entries().filter(entry => entry.event === "provider_failure_classified" || entry.event === "profile_fallback")).toHaveLength(0);
@@ -911,7 +940,7 @@ describe("SessionWorker", () => {
     const retryArgs = starts[2].args as string[]; expect(retryArgs).toContain("--claudex-runtime"); expect(retryArgs).not.toContain("--resume");
     const retryPrompt = retryArgs[retryArgs.indexOf("-p") + 1];
     expect(retryPrompt).toContain("/do ENG-42\n\nResume where we left off.");
-    expect(retryPrompt).toContain("original runtime claude; fallback runtime claudex");
+    expect(retryPrompt).toContain("original runtime fable; fallback runtime claudex");
     expect(retryPrompt).toContain("effective review lanes are single/Codex-only regardless of any dual request");
     expect(starts[3].args).toEqual(expect.arrayContaining(["--claudex-runtime", "--resume", "claude-session-1"]));
     expect(log.getSession("implementer-session")).toMatchObject({ runtime: "claudex", claudeSessionId: "claude-session-1" });
@@ -961,7 +990,7 @@ describe("SessionWorker", () => {
   it("AC7: missing Claude binary does not start Claudex and preserves the spawn failure", async () => {
     const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
     const argsFile = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_ARGS_FILE = argsFile;
-    config.claudeArgv = [join(dir, "missing-claude")];
+    config.fableArgv = [join(dir, "missing-claude")];
     config.claudexArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--claudex-runtime"];
     config.claudexEnv = { CLAUDE_FAKE_MODE: "happy" };
     append(log, "d1", "session", "created");
@@ -998,7 +1027,7 @@ describe("SessionWorker", () => {
       .toMatchObject({ attempts: 1, error: expect.stringContaining("Claude argv is empty") });
     await worker.stop(); log.close();
   });
-  it("degrades a persisted Claudex session to a fresh Claude turn when CLAUDEX_BIN is removed", async () => {
+  it("fails a persisted Claudex session closed when CLAUDEX_BIN is removed", async () => {
     const { dir, log, config } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
     append(log, "d1", "session", "created");
@@ -1006,25 +1035,27 @@ describe("SessionWorker", () => {
     await waitFor(() => log.turnStates()[0]?.status === "done");
     log.recordRuntimeFallback("session", "persisted-claudex-id", "prior capacity", Date.now());
     append(log, "d2", "session", "prompted"); worker.trigger();
-    await waitFor(() => log.turnStates()[1]?.status === "done"); await worker.stop();
+    await waitFor(() => log.turnStates()[1]?.status === "failed"); await worker.stop();
     const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
       .map(line => JSON.parse(line)).filter(row => row.phase === "start");
-    expect(starts).toHaveLength(2); expect(starts[1].args).not.toContain("--resume");
-    expect(logger.entries().find(entry => entry.event === "session_runtime_degraded"))
-      .toMatchObject({ configuredRuntime: "claudex", effectiveRuntime: "claude", reason: "CLAUDEX_BIN is not configured" });
+    expect(starts).toHaveLength(1);
+    expect(logger.entries().find(entry => entry.event === "profile_launcher_unconfigured"))
+      .toMatchObject({ profile: "sol", runtime: "claudex", launcher: "CLAUDEX_BIN" });
+    expect(poster.posts.filter(post => !post.ephemeral).map(post => activityBody(post.content)).join("\n")).toContain("CLAUDEX_BIN");
     expect(log.getSession("session")).toMatchObject({ runtime: "claudex", claudeSessionId: "persisted-claudex-id" });
     log.close();
   });
-  it("discards a failed fallback session id and retries Claude fresh next turn", async () => {
+  it("preserves the original session id when fallback fails and resumes it next turn", async () => {
     const { dir, log, config } = setup(); const poster = new Poster();
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl"); process.env.CLAUDE_FAKE_MODE = "rate-limit-rejected";
     config.claudexArgv = [...config.claudeArgv, "--claudex-runtime"]; config.claudexEnv = { CLAUDE_FAKE_MODE: "capacity-after-session" };
     append(log, "d1", "session", "created"); const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
-    expect(log.getSession("session")).toMatchObject({ runtime: "claude", claudeSessionId: null });
+    expect(log.getSession("session")).toMatchObject({ profile: "fable", runtime: "claude", claudeSessionId: "claude-session-1" });
     process.env.CLAUDE_FAKE_MODE = "happy"; append(log, "d2", "session", "prompted"); worker.trigger();
     await waitFor(() => log.turnStates()[1]?.status === "done"); await worker.stop();
     const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(row => row.phase === "start");
-    expect(starts[2].args).not.toContain("--resume"); expect(starts[2].args).not.toContain("--claudex-runtime"); log.close();
+    expect(starts[2].args).toEqual(expect.arrayContaining(["--resume", "claude-session-1"]));
+    expect(starts[2].args).not.toContain("--claudex-runtime"); log.close();
   });
 });

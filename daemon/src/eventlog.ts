@@ -29,7 +29,8 @@ export interface ProviderStateRow {
   provider: string; status: string; reason: string | null; cooldownUntil: number | null; updatedAt: number;
 }
 export interface AppendResult {
-  inserted: boolean; deliveryId: string; assignedProfile?: "fable" | "sol"; assignmentReason?: string;
+  inserted: boolean; deliveryId: string; assignedProfile?: "fable" | "sol";
+  assignedRuntime?: "claude" | "claudex"; assignmentReason?: string;
   stop?: { agentSessionId: string; app: AppName };
 }
 export interface TurnRow {
@@ -78,8 +79,9 @@ export interface AckState {
 export class EventLog {
   private readonly db: Database.Database;
 
-  constructor(path: string, private readonly selectProfile: () => { profile: "fable" | "sol"; reason: string } =
-    () => ({ profile: "sol", reason: "fable_not_configured" })) {
+  constructor(path: string, private readonly selectProfile: (app: AppName) => {
+    profile: "fable" | "sol"; runtime: "claude" | "claudex"; reason: string;
+  } = () => ({ profile: "fable", runtime: "claude", reason: "compatibility_default" })) {
     this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
@@ -285,22 +287,23 @@ export class EventLog {
         }
         return { inserted: true } as const;
       }
-      let assignment: { profile: "fable" | "sol"; reason: string } | undefined;
+      let assignment: { profile: "fable" | "sol"; runtime: "claude" | "claudex"; reason: string } | undefined;
       const createsTurn = event.agentSessionId && (event.action === "created" || event.action === "prompted");
       if (createsTurn) {
         const existing = this.db.prepare("SELECT issue_id issueId, issue_identifier issueIdentifier FROM sessions WHERE linear_session_id=?")
           .get(event.agentSessionId) as { issueId: string | null; issueIdentifier: string | null } | undefined;
         const issueId = event.issueId ?? existing?.issueId ?? event.agentSessionId;
         const issueIdentifier = event.issueIdentifier ?? existing?.issueIdentifier ?? event.issueId ?? event.agentSessionId;
-        assignment = existing ? undefined : this.selectProfile();
+        assignment = existing ? undefined : this.selectProfile(event.app);
         this.db.prepare(`INSERT INTO sessions
-          (linear_session_id, app, issue_id, issue_identifier, profile, mode, status, last_seen_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+          (linear_session_id, app, issue_id, issue_identifier, profile, runtime, mode, status, last_seen_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
           ON CONFLICT(linear_session_id) DO UPDATE SET
             issue_id=COALESCE(excluded.issue_id, sessions.issue_id),
             issue_identifier=COALESCE(excluded.issue_identifier, sessions.issue_identifier),
             last_seen_at=excluded.last_seen_at`)
-          .run(event.agentSessionId, event.app, issueId, issueIdentifier, assignment?.profile ?? null, event.app, event.receivedAt);
+          .run(event.agentSessionId, event.app, issueId, issueIdentifier, assignment?.profile ?? null,
+            assignment?.runtime ?? "claude", event.app, event.receivedAt);
         if (event.action === "created" && event.issueId) {
           this.db.prepare(`UPDATE sessions SET issue_id=?, issue_identifier=?, last_seen_at=?
             WHERE linear_session_id=?`)
@@ -325,7 +328,8 @@ export class EventLog {
       if (event.type === "Issue" && event.stateType === "completed" && event.issueId && event.issueIdentifier) {
         this.enqueueCleanup(event.issueId, event.issueIdentifier, event.receivedAt);
       }
-      if (assignment) return { inserted: true, assignedProfile: assignment.profile, assignmentReason: assignment.reason } as const;
+      if (assignment) return { inserted: true, assignedProfile: assignment.profile,
+        assignedRuntime: assignment.runtime, assignmentReason: assignment.reason } as const;
       return { inserted: true } as const;
     });
     const result = run();
@@ -419,13 +423,13 @@ export class EventLog {
   clearClaudeSessionId(linearSessionId: string, now = Date.now()): void {
     this.db.prepare("UPDATE sessions SET claude_session_id=NULL, last_seen_at=? WHERE linear_session_id=?").run(now, linearSessionId);
   }
-  recordRuntimeFallback(linearSessionId: string, claudexSessionId: string | undefined, cause: string, now = Date.now()): void {
-    this.db.prepare(`UPDATE sessions SET runtime='claudex', fallback_cause=?, claude_session_id=?, last_seen_at=?
-      WHERE linear_session_id=?`).run(cause, claudexSessionId ?? null, now, linearSessionId);
+  recordRuntimeFallback(linearSessionId: string, claudexSessionId: string, cause: string, now = Date.now()): void {
+    this.db.prepare(`UPDATE sessions SET profile='sol', runtime='claudex', fallback_cause=?, claude_session_id=?, last_seen_at=?
+      WHERE linear_session_id=?`).run(cause, claudexSessionId, now, linearSessionId);
   }
   applyPreEstablishmentFallback(linearSessionId: string): boolean {
     // The four-way WHERE predicate is the atomicity guarantee: only one unestablished Fable row can flip once.
-    return this.db.prepare(`UPDATE sessions SET profile='sol', profile_fallback=1
+    return this.db.prepare(`UPDATE sessions SET profile='sol', runtime='claudex', profile_fallback=1
       WHERE linear_session_id=? AND claude_session_id IS NULL AND profile='fable' AND profile_fallback IS NULL`)
       .run(linearSessionId).changes === 1;
   }

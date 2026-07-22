@@ -107,7 +107,8 @@ export class WebhookServer {
       };
       const result = this.options.log.append(event);
       if (result.assignedProfile) this.logger.log(JSON.stringify({ event: "session_profile_assigned",
-        linearSessionId: event.agentSessionId, profile: result.assignedProfile, reason: result.assignmentReason }));
+        linearSessionId: event.agentSessionId, profile: result.assignedProfile,
+        runtime: result.assignedRuntime, reason: result.assignmentReason }));
       this.logger.log(JSON.stringify({ event: "webhook", deliveryId: result.deliveryId, app,
         action: event.action ?? null, signal: event.signal ?? null, sessionId: event.agentSessionId ?? null, issueId: event.issueId ?? null,
         inserted: result.inserted }));

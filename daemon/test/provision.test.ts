@@ -12,6 +12,7 @@ const proxyAccounts = readFileSync(resolve("ops/proxy-accounts.sh"), "utf8");
 const providerGate = readFileSync(resolve("ops/codex-provider-gate.sh"), "utf8");
 const proxyUnit = readFileSync(resolve("ops/cliproxyapi.service"), "utf8");
 const daemonUnit = readFileSync(resolve("ops/linear-agent-daemon.service"), "utf8");
+const sessions = readFileSync(resolve("src/sessions.ts"), "utf8");
 
 describe("daemon provisioning", () => {
   it("pins and checksum-verifies CLIProxyAPI for supported architectures", () => {
@@ -37,6 +38,8 @@ describe("daemon provisioning", () => {
     expect(claudex).toContain("export CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3");
     expect(claudex).toContain("export ENABLE_TOOL_SEARCH=true");
     expect(claudex).toContain("claude --model gpt-5.6-sol");
+    expect(sessions).toContain('runtime === "claudex" ? this.config.claudexArgv');
+    expect(sessions).toContain('return { profile: "sol", runtime: "claudex", reason: "claudex_preferred" }');
   });
   it("installs a fail-closed Fable launcher and validates model identity before exec", async () => {
     expect(provision).toContain('"${SOURCE_DIR}/ops/claudex-fable"');

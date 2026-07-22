@@ -1,14 +1,22 @@
 import { dirname } from "node:path";
 
 export type AppName = "planner" | "implementer";
+export type HarnessPreference = "claude" | "claudex";
 
 export interface AppConfig {
   name: AppName;
+  harness: HarnessPreference;
   webhookSecret: string;
   appActorId?: string;
   clientId?: string;
   clientSecret?: string;
   staticToken?: string;
+}
+
+function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPreference {
+  const value = env[name]?.trim() || "claude";
+  if (value !== "claude" && value !== "claudex") throw new Error(`${name} must be claude or claudex`);
+  return value;
 }
 
 export interface Config {
@@ -97,7 +105,8 @@ function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean): Ap
   const prefix = name.toUpperCase();
   const staticToken = env[`${prefix}_LINEAR_TOKEN`]?.trim();
   const appActorId = env[`${prefix}_APP_ACTOR_ID`]?.trim();
-  const base = { name, webhookSecret: required(env, `${prefix}_WEBHOOK_SECRET`), ...(appActorId ? { appActorId } : {}) };
+  const base = { name, harness: harnessPreference(env, `${prefix}_HARNESS`),
+    webhookSecret: required(env, `${prefix}_WEBHOOK_SECRET`), ...(appActorId ? { appActorId } : {}) };
   if (testMode && staticToken) return { ...base, staticToken };
   return {
     ...base,

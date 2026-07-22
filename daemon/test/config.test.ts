@@ -20,6 +20,8 @@ describe("loadConfig", () => {
     expect(config.reconcileIntervalMs).toBe(60_000);
     expect(config.reconcileRequestTimeoutMs).toBe(10_000);
     expect(config.apps.planner.staticToken).toBe("pt");
+    expect(config.apps.planner.harness).toBe("claude");
+    expect(config.apps.implementer.harness).toBe("claude");
     expect(config.sessionsEnabled).toBe(false);
     expect(config.claudeArgv).toEqual(["claude"]);
     expect(config.claudexArgv).toBeUndefined();
@@ -28,6 +30,13 @@ describe("loadConfig", () => {
       cliproxyUrl: "http://127.0.0.1:8317", providerProbeIntervalMs: 60_000,
       providerStateStaleMs: 300_000, providerInitialProbeTimeoutMs: 5_000 });
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
+  });
+  it("loads independent harness preferences and names invalid settings", () => {
+    const config = loadConfig({ ...base, PLANNER_HARNESS: "claudex", IMPLEMENTER_HARNESS: "claude" });
+    expect(config.apps.planner.harness).toBe("claudex");
+    expect(config.apps.implementer.harness).toBe("claude");
+    expect(() => loadConfig({ ...base, PLANNER_HARNESS: "sol" })).toThrow("PLANNER_HARNESS");
+    expect(() => loadConfig({ ...base, IMPLEMENTER_HARNESS: "fable" })).toThrow("IMPLEMENTER_HARNESS");
   });
   it("loads Fable and provider probe overrides", () => {
     expect(loadConfig({ ...base, FABLE_BIN: "node fable.mjs", CLIPROXY_ENV_FILE: "/tmp/proxy.env",
