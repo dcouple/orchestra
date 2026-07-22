@@ -143,16 +143,17 @@ its command with the following so session context survives:
 
 ```bash
 perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' 2700 \
-  codex exec resume --last --yolo -C <repo root> -o <owner dir>/<name>.md \
+  codex exec resume --last --yolo -o <owner dir>/<name>.md \
   "$(cat <owner dir>/<name>.prompt)" </dev/null
 status=$?
 echo "$status" > <owner dir>/<name>.done.tmp && \
   mv <owner dir>/<name>.done.tmp <owner dir>/<name>.done
 ```
 
-A resume dispatch carries `--yolo` and `-C` exactly like a fresh one — a
-resumed session that loses either flag runs sandboxed from the wrong root
-and blocks the very tests the fix round must run.
+A resume dispatch carries `--yolo` exactly like a fresh one — a resumed
+session that loses it runs sandboxed and blocks the very tests the fix
+round must run. `resume` takes no `-C`: it matches recorded sessions by
+cwd, so launch it from the same repo root as the original dispatch.
 
 The marker convention is: `<name>.md` is the final report, `<name>.log` is
 durable stdout/stderr including the `tokens used` summary, and `<name>.done`

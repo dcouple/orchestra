@@ -2,7 +2,8 @@
 # Render a run-timeline HTML page to PNG with whatever Chromium-family
 # browser or Playwright install the machine has — macOS, Linux, or
 # Windows (git-bash). Usage:
-#   render-timeline.sh <in.html> <out.png>   render
+#   render-timeline.sh <in.html> <out.png> [height]   render (height default 2400;
+#     size it ~800 + 50 per dispatch row so a long run's table isn't clipped)
 #   render-timeline.sh --check               print the renderer this machine will use
 # TIMELINE_BROWSER=/path/to/browser overrides discovery. Run --check at
 # preflight on a box that will publish postmortems. Exit 0 on success;
@@ -49,19 +50,21 @@ if [ "${1:-}" = "--check" ]; then
   exit 3
 fi
 
-in="${1:?usage: render-timeline.sh <in.html> <out.png> | --check}"
-out="${2:?usage: render-timeline.sh <in.html> <out.png> | --check}"
+in="${1:?usage: render-timeline.sh <in.html> <out.png> [height] | --check}"
+out="${2:?usage: render-timeline.sh <in.html> <out.png> [height] | --check}"
+height="${3:-2400}"
 [ -f "$in" ] || { echo "no such file: $in" >&2; exit 2; }
 abs_in="$(cd "$(dirname "$in")" && pwd)/$(basename "$in")"
 if command -v cygpath >/dev/null 2>&1; then
-  url="file:///$(cygpath -m "$abs_in")"   # Windows browsers need a Windows path
+  url="file:///$(cygpath -m "$abs_in")"   # Windows browsers need Windows paths
+  out="$(cygpath -m "$out")"              # for the --screenshot target too
 else
   url="file://$abs_in"
 fi
 
 shot() { # $1 = browser, $2 = headless flag (new Chromium wants =new, old wants bare)
   "$1" "$2" --disable-gpu --no-sandbox --hide-scrollbars \
-       --window-size=1680,2400 --screenshot="$out" "$url" >/dev/null 2>&1 \
+       --window-size=1680,"$height" --screenshot="$out" "$url" >/dev/null 2>&1 \
   && [ -s "$out" ]
 }
 

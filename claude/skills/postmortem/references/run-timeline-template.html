@@ -61,7 +61,7 @@ const defs=el('defs'); const pat=el('pattern',{id:'hatch',width:8,height:8,patte
 // phase bands
 RUN.phases.forEach((p,i)=>{const px=x(p[1]),pw=x(p[2])-px;svg.append(el('rect',{x:px,y:T-28,width:pw,height:H-T-B+28,fill:i%2?css('--surface'):css('--phase'),opacity:i%2?.55:.72}));svg.append(el('text',{x:px+8,y:T-38,fill:css('--muted'),'font-size':11,'font-weight':700},p[0].toUpperCase()));});
 // grid and time ticks (~10 ticks, snapped to 1/5/10/15/30/60 min)
-const stepMin=[1,5,10,15,30,60,120].find(s=>SPAN/(s*60000)<=12)||240;
+const stepMin=[1,5,10,15,30,60,120,240,480,720].find(s=>SPAN/(s*60000)<=12)||1440;
 for(let tm=START;tm<=END;tm+=stepMin*60000){const px=L+(tm-START)/SPAN*plotW;svg.append(el('line',{x1:px,y1:T-28,x2:px,y2:H-B,stroke:css('--grid'),'stroke-width':1}));svg.append(el('text',{x:px,y:H-18,fill:css('--muted'),'font-size':11,'text-anchor':'middle'},new Date(tm).toISOString().slice(11,16)));}
 // overseer row: active spans interleaved with hatched gap bands
 svg.append(el('text',{x:12,y:T+18,fill:css('--ink'),'font-size':13,'font-weight':700},'Overseer / main loop'));
@@ -74,7 +74,7 @@ RUN.jobs.forEach((j,i)=>{const y=T+54+i*rowH;svg.append(el('text',{x:12,y:y+15,f
 // hover/focus tooltips
 svg.querySelectorAll('[data-tip]').forEach(n=>{const show=e=>{tip.textContent=n.dataset.tip;tip.style.opacity=1;tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY+12)+'px'};n.addEventListener('mousemove',show);n.addEventListener('mouseenter',show);n.addEventListener('mouseleave',()=>tip.style.opacity=0);n.addEventListener('focus',()=>{const b=n.getBoundingClientRect();show({clientX:b.left+b.width/2,clientY:b.top})});n.addEventListener('blur',()=>tip.style.opacity=0)});
 function fmt(s){return new Date(s).toISOString().slice(11,19)}
-function duration(a,b){const sec=Math.round((Date.parse(b)-Date.parse(a))/1000);return sec>=60?`${Math.floor(sec/60)}m${String(sec%60).padStart(2,'0')}s`:`${sec}s`}
+function duration(a,b){const sec=Math.round((Date.parse(b)-Date.parse(a))/1000);if(sec<60)return`${sec}s`;const m=Math.floor(sec/60);return m<60?`${m}m${String(sec%60).padStart(2,'0')}s`:`${Math.floor(m/60)}h${String(m%60).padStart(2,'0')}m`}
 // accessible table
 const tbody=document.getElementById('rows');RUN.jobs.forEach(j=>{const tr=document.createElement('tr');tr.innerHTML=`<td><span class="pill">${j.name}</span></td><td>${fmt(j.start)}</td><td>${fmt(j.end)}</td><td>${duration(j.start,j.end)}</td><td class="right">${j.tokens==null?'unknown':j.tokens.toLocaleString()}</td><td>${j.yield}</td>`;tbody.append(tr)});
 </script>

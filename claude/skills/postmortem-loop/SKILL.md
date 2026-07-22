@@ -25,10 +25,13 @@ postmortems:
 
 ```bash
 gh api "repos/<repo>/issues/comments?sort=created&direction=desc&per_page=100" \
-  --paginate -q '.[] | select(.body | test("^# Postmortem|type: postmortem"))'
+  -q '.[] | select(.created_at >= "<since>")
+          | select(.body | test("^# Postmortem|type: postmortem"))'
 ```
 
-Stop paginating past the window (default 30 days). From each postmortem,
+Page manually (`?page=N`) and stop once a page's oldest `created_at`
+precedes the window (default 30 days) — `--paginate` walks the repo's
+entire comment history regardless of the filter. From each postmortem,
 extract the proposals in its "What to change so it doesn't recur" section:
 target file, proposed edit, evidence — each tagged with its source comment
 URL. A postmortem is settled only when its anchor thread carries a verdict
