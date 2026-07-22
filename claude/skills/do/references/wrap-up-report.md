@@ -58,8 +58,10 @@ pr_size: {files_changed: <n>, additions: <n>, deletions: <n>}  # gh pr view --js
 tokens:                # per source; "unknown" is honest, a guess is not
   codex: {total: <n>, by_role: {implementer: <n>, plan_reviewer: <n>, code_reviewer: <n>, ...}}
                        # summed from each dispatch's "CODEX <role>: … · tokens <n>" line
-  claude_subagents: <n | unknown>   # from the harness's task-completion summaries
-  overseer: <n | unknown>           # main session, when the harness exposes it
+  claude_subagents: <n | unknown>   # scripted from the sub-agent transcript JSONLs — group by
+                                    # message.id, keep the final usage snapshot per id; harness
+                                    # task-completion summaries are a cross-check only
+  overseer: <n | unknown>           # main session transcript JSONL, same message.id dedup
   total: <n — sum of the known>
 spend_ratio: <tokens.total ÷ (additions + deletions), 1 decimal — append " (lower bound)"
               whenever any token source above is unknown: a partial total presented as the

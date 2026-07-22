@@ -195,12 +195,12 @@ These preflight items are only checkable now that the item is loaded:
 Check branch state before any work builds on it: `git fetch origin
 <default>` and note in one line whether the default branch has moved past
 the branch point, and `gh pr list --head <branch>` — a branch already
-carrying an open PR means this run's PR stacks on a fresh branch, decided
-now, before the first push.
+carrying an open PR is handled like the default branch below: surface it
+and stop for a fresh branch, decided now, before the first push.
 
 Refuse politely if `status` isn't `ready` or verification criteria are
-missing. Never create a branch — if on the default branch, stop and ask the
-user to set one up.
+missing. Never create a branch — if on the default branch, or on a branch
+whose open PR this run must not amend, stop and ask the user to set one up.
 
 **Done when**: the item and its artifacts are in `./tmp/<id>/`, status is
 `ready`, and you're on a non-default branch.
@@ -457,9 +457,11 @@ comment) before ending — a returned report is never parked for a later turn.
   derived from zone unless the epic's own `review_lanes:` says otherwise).
   Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** — loop those findings back to the matching
-  implementer, stage the fix commit from `git status --short` (everything
-  modified outside `./tmp/`), never a remembered file list, push the
-  fixes, re-review; (b) the two lanes' reports
+  implementer, stage the fix commit against `git status --short` (the
+  status output is the checklist of the fix round's edits — Step 4's
+  selective-commit rule still governs, so unrelated dirty paths stay
+  unstaged), never from a remembered file list, push the fixes,
+  re-review; (b) the two lanes' reports
   **diverge sharply** (little overlap in what they caught, or conflicting
   overall verdicts) — one extra pass to confirm convergence. **A pass with
   zero Must Fix from every lane ends the loop**, even with Should Fixes

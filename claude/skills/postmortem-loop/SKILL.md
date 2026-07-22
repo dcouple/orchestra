@@ -36,12 +36,14 @@ extract the proposals in its "What to change so it doesn't recur" section:
 target file, proposed edit, evidence — each tagged with its source comment
 URL. A postmortem is settled only when its anchor thread carries a verdict
 comment (first line `# Proposal verdicts`) that names **that postmortem's
-item and source comment URL** — an anchor thread can host several
-postmortems, so a verdict for one never settles another.
+item and source comment URL** and gives every proposal a terminal status —
+an anchor thread can host several postmortems, so a verdict for one never
+settles another, and a proposal marked `deferred` stays open: harvest it
+again on every sweep until a later verdict closes it.
 
 **Success criteria**: every postmortem in the window is harvested or skipped
-as settled by its own matching verdict; each harvested proposal carries its
-source URL.
+as settled by its own matching verdict; deferred proposals re-enter the
+sweep; each harvested proposal carries its source URL.
 
 ### 2. Reconcile
 Cluster proposals that target the same file and change substance — the same
@@ -73,8 +75,9 @@ threads it was published to), first line
 `# Proposal verdicts — <item> — <date>`, with the source postmortem
 comment URL on the next line, then each of its proposals as
 `adopted (<commit/PR>)`, `declined — <reason>`, `landed earlier (<commit>)`,
-or `superseded`. The verdict comment is the ledger — it is what step 1 of
-the next sweep matches against.
+`superseded`, or `deferred — <reason>`. The verdict comment is the ledger —
+it is what step 1 of the next sweep matches against, and only the terminal
+statuses settle a proposal; `deferred` keeps it in play.
 
 **Success criteria**: every swept postmortem has a verdict reply naming its
 item and source comment URL and covering each of its proposals; approved
