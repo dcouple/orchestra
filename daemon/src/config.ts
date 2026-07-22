@@ -14,7 +14,9 @@ export interface AppConfig {
 }
 
 function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPreference {
-  const value = env[name]?.trim() || "claude";
+  const raw = env[name];
+  if (raw === undefined) return "claude";
+  const value = raw.trim();
   if (value !== "claude" && value !== "claudex") throw new Error(`${name} must be claude or claudex`);
   return value;
 }

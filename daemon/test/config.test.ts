@@ -38,6 +38,14 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...base, PLANNER_HARNESS: "sol" })).toThrow("PLANNER_HARNESS");
     expect(() => loadConfig({ ...base, IMPLEMENTER_HARNESS: "fable" })).toThrow("IMPLEMENTER_HARNESS");
   });
+  it.each([
+    ["PLANNER_HARNESS", ""],
+    ["PLANNER_HARNESS", "   "],
+    ["IMPLEMENTER_HARNESS", ""],
+    ["IMPLEMENTER_HARNESS", " \t "],
+  ])("rejects a configured empty %s value", (name, value) => {
+    expect(() => loadConfig({ ...base, [name]: value })).toThrow(name);
+  });
   it("loads Fable and provider probe overrides", () => {
     expect(loadConfig({ ...base, FABLE_BIN: "node fable.mjs", CLIPROXY_ENV_FILE: "/tmp/proxy.env",
       CLIPROXY_URL: "http://proxy:8317/", PROVIDER_PROBE_INTERVAL_MS: "2000",
