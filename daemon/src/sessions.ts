@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readdir, realpath, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import type { Config } from "./config.js";
-import { runTurn, type ClaudeEvent } from "./claude.js";
+import type { AppName, Config } from "./config.js";
+import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
 import type { EventLog, ExternalUrlRow, StopAckRow, TurnActivityRow, TurnRow } from "./eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
 import { WorktreeManager } from "./worktrees.js";
@@ -12,6 +12,83 @@ export interface SessionWorkerOptions {
   pollMs?: number; reconcileMs?: number; dispatchScanMs?: number; now?: () => number; logger?: Logger;
   attachmentTestAllowHttp?: boolean; attachmentTimeoutMs?: number;
   onTurnComplete?: () => void;
+}
+
+const PROVIDER_COOLDOWN_MS = 10 * 60_000;
+
+export function classifyProviderFailure(result: RunTurnResult): { state: string; reason: string } | undefined {
+  const spawn = result.spawnError ?? "";
+  if (/ECONNREFUSED/i.test(spawn)) return { state: "transport_failure", reason: "spawn_econnrefused" };
+  if (/ENOTFOUND/i.test(spawn)) return { state: "transport_failure", reason: "spawn_enotfound" };
+  const stderr = result.stderrTail ?? "";
+  if (/connection\s+refused/i.test(stderr)) return { state: "transport_failure", reason: "connection_refused" };
+  const status = /(?:HTTP(?:\/\d(?:\.\d)?)?\s*|status(?:\s+code)?[=: ]+)(401|403|5\d\d)\b[^\n]*(?:base\s*URL|proxy|anthropic)/i.exec(stderr)?.[1];
+  if (status) return { state: status.startsWith("5") ? "transport_failure" : "auth_failure", reason: `http_${status}` };
+  return undefined;
+}
+
+export function selectSessionProfile(log: EventLog, config: Config, app: AppName, now = Date.now()): {
+  profile: "fable" | "sol"; runtime: "claude" | "claudex"; reason: string;
+} {
+  if (config.apps[app].harness === "claudex") return { profile: "sol", runtime: "claudex", reason: "claudex_preferred" };
+  if (!config.fableArgv) return { profile: "sol", runtime: "claudex", reason: "fable_not_configured" };
+  const state = log.getProviderState("claude");
+  if (!state) return { profile: "sol", runtime: "claudex", reason: "claude_state_missing" };
+  if (state.cooldownUntil !== null && state.cooldownUntil > now) return { profile: "sol", runtime: "claudex", reason: "claude_cooldown" };
+  if (now - state.updatedAt > config.providerStateStaleMs) return { profile: "sol", runtime: "claudex", reason: "claude_state_stale" };
+  if (state.status !== "ready") return { profile: "sol", runtime: "claudex", reason: state.reason ?? "claude_not_ready" };
+  return { profile: "fable", runtime: "claude", reason: "claude_ready" };
+}
+
+export async function readCliproxyManagementKey(path: string): Promise<string> {
+  const source = await readFile(path, "utf8").catch(() => { throw new Error("probe_env_unreadable"); });
+  const key = /^\s*(?:export\s+)?CLIPROXY_MANAGEMENT_KEY=(?:['"]?)([^'"\s#]+)(?:['"]?)\s*(?:#.*)?$/m.exec(source)?.[1];
+  if (!key) throw new Error("probe_management_key_missing");
+  return key;
+}
+
+export class ProviderReadinessPoller {
+  private timer?: NodeJS.Timeout;
+  private probing: Promise<void> | undefined;
+  constructor(private readonly log: EventLog, private readonly config: Config,
+    private readonly logger: Logger = console, private readonly probeOverride?: () => Promise<unknown>) {}
+  probe(now = Date.now()): Promise<void> {
+    this.probing ??= this.performProbe(now).finally(() => { this.probing = undefined; });
+    return this.probing;
+  }
+  private async performProbe(now: number): Promise<void> {
+    const before = this.log.getProviderState("claude");
+    let status = "not_ready"; let reason = "probe_error";
+    try {
+      const payload = this.probeOverride ? await this.probeOverride() : await this.fetchAuthFiles();
+      const rows = Array.isArray(payload) ? payload : Array.isArray(object(payload)?.files) ? object(payload)!.files as unknown[] : [];
+      const claude = rows.map(object).filter((row): row is Record<string, unknown> => !!row && row.provider === "claude");
+      const eligible = claude.filter(row => row.disabled === false);
+      const failed = claude.filter(row => row.failed === true).length;
+      status = eligible.length > 0 ? "ready" : "not_ready";
+      reason = eligible.length > 0 ? `eligible_${eligible.length}_failed_${failed}` : `no_eligible_claude_failed_${failed}`;
+    } catch (error) {
+      reason = error instanceof Error && error.message.startsWith("probe_") ? error.message : "probe_error";
+    }
+    const activeCooldown = before?.cooldownUntil != null && before.cooldownUntil > now;
+    if (activeCooldown) { status = "cooldown"; reason = before.reason ?? "provider_cooldown"; }
+    this.log.setProviderState("claude", status, reason, now, activeCooldown ? before.cooldownUntil : null);
+    const after = this.log.getProviderState("claude")!;
+    if (!before || before.status !== after.status || before.reason !== after.reason || before.cooldownUntil !== after.cooldownUntil)
+      this.logger.log(jsonLog({ event: "provider_state_changed", provider: "claude", status: after.status,
+        reason: after.reason, cooldownUntil: after.cooldownUntil }));
+  }
+  private async fetchAuthFiles(): Promise<unknown> {
+    const key = await readCliproxyManagementKey(this.config.cliproxyEnvFile);
+    const signal = AbortSignal.timeout(this.config.providerInitialProbeTimeoutMs);
+    const response = await fetch(`${this.config.cliproxyUrl}/v0/management/auth-files`, {
+      headers: { Authorization: `Bearer ${key}` }, signal,
+    }).catch(error => { if (signal.aborted) throw new Error("probe_timeout"); throw error; });
+    if (!response.ok) { await response.body?.cancel(); throw new Error(`probe_http_${response.status}`); }
+    return response.json();
+  }
+  start(): void { this.timer = setInterval(() => void this.probe(), this.config.providerProbeIntervalMs); this.timer.unref(); }
+  stop(): void { if (this.timer) clearInterval(this.timer); }
 }
 
 const DISPATCH_OWNER_PATTERN = /^[0-9a-fA-F][0-9a-fA-F-]{7,63}$/;
@@ -74,6 +151,7 @@ export class SessionWorker {
   private readonly now: () => number;
   private readonly logger: Logger;
   private readonly worktrees: WorktreeManager;
+  private readonly legacyProfileLogged = new Set<string>();
 
   constructor(private readonly log: EventLog, private readonly gateway: LinearGateway, private readonly config: Config,
     private readonly options: SessionWorkerOptions = {}) {
@@ -120,12 +198,8 @@ export class SessionWorker {
     const worktree = await this.worktrees.ensureWorktree(identifier);
     this.log.updateSessionWorktree(turn.linearSessionId, worktree.path, worktree.branch, this.now());
     const implementer = session.mode === "implementer";
-    const runtimeDegraded = session.runtime === "claudex" && !this.config.claudexArgv;
-    const runtime = runtimeDegraded ? "claude" : session.runtime;
-    if (runtimeDegraded) this.logger.error(jsonLog({ event: "session_runtime_degraded", turnId: turn.id,
-      linearSessionId: turn.linearSessionId, configuredRuntime: "claudex", effectiveRuntime: "claude",
-      reason: "CLAUDEX_BIN is not configured" }));
-    const resuming = turn.kind === "prompted" && !!session.claudeSessionId && !runtimeDegraded;
+    const runtime = session.runtime;
+    const resuming = turn.kind === "prompted" && !!session.claudeSessionId;
     let prompt = implementer && !resuming ? `/do ${identifier}` : this.composePrompt(turn, identifier);
     if ((!implementer || resuming) && this.config.attachmentsEnabled) prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
     this.log.setTurnPrompt(turn.id, prompt);
@@ -142,6 +216,11 @@ export class SessionWorker {
     keepalive.unref();
     const mcpConfigJson = JSON.stringify({ mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp",
       headers: { Authorization: `Bearer ${this.config.linearApiKey}` } } } });
+    const durableProfile = session.profile ?? "sol";
+    if (session.profile === null && !this.legacyProfileLogged.has(turn.linearSessionId)) {
+      this.legacyProfileLogged.add(turn.linearSessionId);
+      this.logger.log(jsonLog({ event: "legacy_session_profile_defaulted", linearSessionId: turn.linearSessionId, profile: "sol" }));
+    }
     const common = {
       cwd: worktree.path, permissionMode: implementer ? this.config.doPermissionMode : this.config.claudePermissionMode,
       maxTurns: implementer ? this.config.doMaxTurns : this.config.claudeMaxTurns,
@@ -152,28 +231,43 @@ export class SessionWorker {
       onEvent: (event: ClaudeEvent) => progress.push(event.type === "text"
         ? { type: "thought", body: event.text } : toolUseContent(event)),
     };
-    const runtimeArgv = runtime === "claudex" ? this.config.claudexArgv! : this.config.claudeArgv;
+    const runtimeArgv = runtime === "claudex" ? this.config.claudexArgv!
+      : durableProfile === "fable" ? this.config.fableArgv : this.config.claudeArgv;
     const cleanupRejectedRun = async (error: unknown): Promise<never> => {
       clearInterval(keepalive);
       await progress.cancelAndWait();
       throw error;
     };
-    let result = await runTurn({ ...common, prompt,
-        ...(resuming ? { resumeSessionId: session.claudeSessionId! } : {}), argv: runtimeArgv,
-        ...(runtime === "claudex" && this.config.claudexEnv ? { trustedEnv: this.config.claudexEnv } : {}),
-        onSessionId: id => { if (!runtimeDegraded) this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()); },
+    const run = (argv: string[], runPrompt = prompt, resume = resuming,
+      trustedEnv = runtime === "claudex" ? this.config.claudexEnv : undefined) => runTurn({ ...common, prompt: runPrompt,
+        ...(resume ? { resumeSessionId: session.claudeSessionId! } : {}), argv,
+        ...(trustedEnv ? { trustedEnv } : {}),
+        onSessionId: id => { this.log.updateClaudeSessionId(turn.linearSessionId, id, this.now()); },
       }).catch(cleanupRejectedRun);
+    let result: RunTurnResult;
+    if (!runtimeArgv) {
+      const launcher = runtime === "claudex" ? "CLAUDEX_BIN" : "FABLE_BIN";
+      this.logger.error(jsonLog({ event: "profile_launcher_unconfigured", linearSessionId: turn.linearSessionId,
+        profile: durableProfile, runtime, launcher }));
+      result = { ok: false, isError: true, exitCode: null, signal: null,
+        spawnError: runtime === "claudex"
+          ? "Claudex runtime launcher is not configured; set CLAUDEX_BIN"
+          : "Fable profile launcher is not configured; set FABLE_BIN after validating fable-models.env",
+        permissionDenials: [], sawResult: false, capacityEvidence: [] };
+    } else result = await run(runtimeArgv);
     let fallbackCause: string | undefined;
     let fallbackAttempted = false;
-    if (!result.ok && result.capacityEvidence.length && runtime === "claude")
-      fallbackCause = result.capacityEvidence.join(", ");
-    if (fallbackCause && this.config.claudexArgv && !this.stopRequested.has(turn.id)) {
+    const applyCapacityFallback = async (candidate: RunTurnResult,
+      originalRuntime = durableProfile === "fable" ? "fable" : "claude"): Promise<RunTurnResult> => {
+      if (candidate.ok || !candidate.capacityEvidence.length || runtime !== "claude") return candidate;
+      fallbackCause = candidate.capacityEvidence.join(", ");
+      // Structured capacity evidence is narrower than provider unavailability and always wins classification.
+      if (!this.config.claudexArgv || this.stopRequested.has(turn.id)) return candidate;
       fallbackAttempted = true;
-      this.log.clearClaudeSessionId(turn.linearSessionId, this.now());
-      progress.push({ type: "thought", body: `Claude capacity limit detected (${fallbackCause}); retrying once with Claudex.` });
+      progress.push({ type: "thought", body: `${originalRuntime === "fable" ? "Fable" : "Claude"} capacity limit detected (${fallbackCause}); retrying once with Claudex.` });
       this.logger.log(jsonLog({ event: "session_capacity_fallback", turnId: turn.id, issueIdentifier: identifier,
-        linearSessionId: turn.linearSessionId, originalRuntime: "claude", fallbackRuntime: "claudex", evidence: result.capacityEvidence }));
-      const fallbackContext = `Runtime fallback context: original runtime claude; fallback runtime claudex; classified cause ${fallbackCause}; effective review lanes are single/Codex-only regardless of any dual request.`;
+        linearSessionId: turn.linearSessionId, originalRuntime, fallbackRuntime: "claudex", evidence: candidate.capacityEvidence }));
+      const fallbackContext = `Runtime fallback context: original runtime ${originalRuntime}; fallback runtime claudex; classified cause ${fallbackCause}; effective review lanes are single/Codex-only regardless of any dual request.`;
       const retryPrompt = implementer
         ? `/do ${identifier}\n\nResume where we left off.\n\n${fallbackContext}`
         : `${prompt}\n\nResume where we left off.\n\n${fallbackContext}`;
@@ -182,9 +276,46 @@ export class SessionWorker {
         ...(this.config.claudexEnv ? { trustedEnv: this.config.claudexEnv } : {}),
         onSessionId: id => { fallbackSessionId = id; },
       }).catch(cleanupRejectedRun);
-      result = fallbackResult;
+      if (fallbackResult.ok && !fallbackSessionId) return { ...fallbackResult, ok: false, isError: true,
+        spawnError: "Claudex fallback completed without a session ID" };
       if (fallbackResult.ok && !this.stopRequested.has(turn.id))
-        this.log.recordRuntimeFallback(turn.linearSessionId, fallbackSessionId, fallbackCause, this.now());
+        this.log.recordRuntimeFallback(turn.linearSessionId, fallbackSessionId!, fallbackCause, this.now());
+      return fallbackResult;
+    };
+    result = await applyCapacityFallback(result);
+    const recordProviderFailure = (profile: "fable" | "sol", provider: "claude" | "codex",
+      classified: { state: string; reason: string }): number => {
+      const cooldownUntil = this.now() + PROVIDER_COOLDOWN_MS;
+      this.log.setProviderCooldown(provider, cooldownUntil, classified.reason, this.now());
+      this.logger.log(jsonLog({ event: "provider_state_changed", provider, status: "cooldown",
+        reason: classified.reason, cooldownUntil }));
+      this.logger.error(jsonLog({ event: "provider_failure_classified", linearSessionId: turn.linearSessionId,
+        profile, provider, classifiedState: classified.state, reason: classified.reason, cooldownUntil }));
+      return cooldownUntil;
+    };
+    if (!result.ok && !fallbackCause) {
+      const classified = classifyProviderFailure(result);
+      if (classified) {
+        const provider = runtime === "claudex" ? "codex" : durableProfile === "fable" ? "claude" : "codex";
+        const cooldownUntil = recordProviderFailure(durableProfile, provider, classified);
+        const fresh = this.log.getSession(turn.linearSessionId);
+        if (runtime === "claude" && durableProfile === "fable" && !fresh?.claudeSessionId
+          && this.log.applyPreEstablishmentFallback(turn.linearSessionId)) {
+          this.logger.log(jsonLog({ event: "profile_fallback", linearSessionId: turn.linearSessionId, from: "fable", to: "sol",
+            provider, classifiedState: classified.state, reason: classified.reason, cooldownUntil }));
+          if (!this.config.claudexArgv) {
+            result = { ok: false, isError: true, exitCode: null, signal: null,
+              spawnError: "Claudex runtime launcher is not configured; set CLAUDEX_BIN",
+              permissionDenials: [], sawResult: false, capacityEvidence: [] };
+          } else {
+            result = await run(this.config.claudexArgv, prompt, false, this.config.claudexEnv);
+          }
+          if (!result.ok && !fallbackCause) {
+            const solClassified = classifyProviderFailure(result);
+            if (solClassified) recordProviderFailure("sol", "codex", solClassified);
+          }
+        }
+      }
     }
     clearInterval(keepalive);
     const finishedAt = this.now();
@@ -249,6 +380,7 @@ export class SessionWorker {
   private async scanDispatchMarkers(): Promise<void> {
     if (this.stopped) return;
     try {
+      // Dispatch scanning only visits sessions with durable worktrees, so it cannot assign a profile.
       for (const session of this.log.sessionsWithWorktrees()) {
         if (!session.worktreePath || this.log.hasOpenTurn(session.linearSessionId)) continue;
         if (!DISPATCH_OWNER_PATTERN.test(session.linearSessionId)) {
