@@ -49,6 +49,10 @@ MARKER='# managed by codex-provider-gate.sh — removed on gate failure'
 work_dir="$(mktemp -d)"
 gate_home="${CODEX_HOME:-${work_dir}/codex-home}"
 mkdir -p "${gate_home}"
+# The caller's cwd may be unreadable for the invoking user (e.g. provision
+# launches this via runuser from an operator home dir); run from the gate's
+# own workdir so codex never inherits an unusable working directory.
+cd "${work_dir}"
 
 cleanup() {
   local status=$?
@@ -157,7 +161,7 @@ run_detached() {
   else
     # shellcheck disable=SC2016
     nohup perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec failed: $!"' \
-      sh -c 'perl -e '\''alarm shift; exec @ARGV or die "exec failed: $!"'\'' "$1" "$2" exec resume --last -o "$3" "$4"; status=$?; echo "$status" > "$5.tmp" && mv "$5.tmp" "$5"' \
+      sh -c 'perl -e '\''alarm shift; exec @ARGV or die "exec failed: $!"'\'' "$1" "$2" exec resume --last --yolo --skip-git-repo-check -o "$3" "$4"; status=$?; echo "$status" > "$5.tmp" && mv "$5.tmp" "$5"' \
       gate-resume "${GATE_TIMEOUT_SECONDS}" "${CODEX_BIN}" "${report}" "$1" "${done_file}" >"${log}" 2>&1 </dev/null &
   fi
   local deadline=$((SECONDS + GATE_TIMEOUT_SECONDS + 15))
