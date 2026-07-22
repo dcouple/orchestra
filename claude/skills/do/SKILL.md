@@ -50,9 +50,8 @@ morning. These rules make that safe:
   - **Green — do it unattended:** code, tests, docs, new files, and
     **staging** schema changes that are *both* additive/nullable *and*
     reversible (a new nullable column or new table you could drop with no data
-    loss) — anything self-undoing. Apply it without asking — a green action
-    is never gated on a conversational confirmation; note the production
-    counterpart in Deploy notes.
+    loss) — anything self-undoing. Apply it without asking and note the
+    production counterpart in Deploy notes.
   - **Red — never executed by you:** **anything touching production** — the
     production database, production config, real users, or money — full stop,
     even if it looks trivial and even if the human approves it; **anything
@@ -93,10 +92,10 @@ keys, a browser for computer-use); and the **harness permission modes** —
 the orchestrator session runs under `claude --dangerously-skip-permissions`
 and every codex dispatch uses `--yolo`; approvals must never gate an
 unattended run. Not in bypass mode → preflight note with the exact relaunch
-command. Prove each credential with a token-producing probe, never a
-listing (`gcloud auth print-access-token` — plus the application-default
-variant when terraform is in play; `gcloud auth list` proves nothing), and
-note each token's expiry horizon against the run's expected length.
+command. Prove each credential with a token-producing probe
+(`gcloud auth print-access-token`, plus the application-default variant
+when terraform is in play), never a listing, and note each token's expiry
+horizon against the run's expected length.
 Resolvable from config or a quick check →
 just confirm it silently. If nothing is missing, say so in one line and
 proceed. A missing green-tier dependency is a preflight note, not a
@@ -362,10 +361,10 @@ workaround — stop the verify loop and ask the user for the missing
 instructions or access. When verification needs the running app, apply Step
 0's `AGENTS.md`-sourced launch rule and stop what the pipeline started. A
 service the verification needs alive runs detached (nohup + pidfile under
-`./tmp/<id>/`), never inside a tool-lifetime-bounded background task — a
-harness timeout that reaps a server mid-evidence poisons the next boot with
-orphans. Tear down the recorded pids explicitly, and when freeing ports
-kill only pids enumerated before the next launch.
+`./tmp/<id>/`) so its lifetime is owned by the run rather than a tool
+timeout — a reaped server poisons the next boot with orphans. Tear down
+the recorded pids explicitly, and when freeing ports kill only pids
+enumerated before the next launch.
 
 **Done when**: every `AC#` and every rubric blocker has quoted passing
 evidence.
@@ -433,7 +432,7 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 Reviews run against the open PR and fixes land on it — self-correction
 happens on the artifact, not before it exists. The turn in which a reviewer
 or verifier report arrives publishes its results (body edit, evidence
-comment) before ending — a returned report is never parked for a later turn.
+comment) before ending.
 
 - Run the review lanes over the PR diff (zone 0: both reviewers,
   dispatched together in one message — Agent tool + detached `codex exec`
