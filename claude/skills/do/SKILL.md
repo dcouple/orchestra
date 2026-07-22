@@ -28,24 +28,30 @@ sub-agent.
 ## Autonomy & safety (read first)
 
 This run is meant to finish unattended — started at night, reviewed in the
-morning. Three rules make that safe:
+morning. These rules make that safe:
 
 - **A phase or step boundary is not a turn boundary.** Chain straight into the
   next step while work is ready. A detached Codex dispatch may remain
   outstanding when a turn ends: its completion marker survives, turn-start
   pickup recovers its report, and the daemon auto-resumes the run. Claude-lane
   Agent-tool background sub-agents cannot be detached and die with the parent
-  process, so they must be awaited within the turn. If you are ever about to
-  yield with work left while waiting on external state, schedule a self-wakeup
-  (`ScheduleWakeup`) so the run resumes on its own instead of idling until a
-  human nudges it. Idle-waiting on a human nudge is a pipeline bug.
+  process, so they must be awaited within the turn. Ending a turn with work
+  remaining — including a turn whose only outstanding work is background
+  dispatches — **requires** a scheduled self-wakeup (`ScheduleWakeup`): a hung
+  dispatch never sends a completion notification. While dispatches are
+  outstanding the fallback interval is ≤600s; the longer 1200s+ heartbeat is
+  for turns with nothing in flight. Idle-waiting on a human nudge is a
+  pipeline bug.
+- **A plain human message mid-run — "continue", "still running?", "does it
+  work?" — is genuine input, never a task notification.** Inspect the dispatch
+  markers and durable outputs, answer from them, and resume immediately.
 - **Action tiers decide what you may do alone. When unsure which tier an
   action is, it is red — always err toward caution.**
   - **Green — do it unattended:** code, tests, docs, new files, and
     **staging** schema changes that are *both* additive/nullable *and*
     reversible (a new nullable column or new table you could drop with no data
-    loss) — anything self-undoing. Apply it; note the production counterpart
-    in Deploy notes.
+    loss) — anything self-undoing. Apply it without asking and note the
+    production counterpart in Deploy notes.
   - **Red — never executed by you:** **anything touching production** — the
     production database, production config, real users, or money — full stop,
     even if it looks trivial and even if the human approves it; **anything
@@ -86,7 +92,11 @@ keys, a browser for computer-use); and the **harness permission modes** —
 the orchestrator session runs under `claude --dangerously-skip-permissions`
 and every codex dispatch uses `--yolo`; approvals must never gate an
 unattended run. Not in bypass mode → preflight note with the exact relaunch
-command. Resolvable from config or a quick check →
+command. Prove each credential with a token-producing probe
+(`gcloud auth print-access-token`, plus the application-default variant
+when terraform is in play), never a listing, and note each token's expiry
+horizon against the run's expected length.
+Resolvable from config or a quick check →
 just confirm it silently. If nothing is missing, say so in one line and
 proceed. A missing green-tier dependency is a preflight note, not a
 stop — the human clears it while you work; only a dependency the run truly
@@ -99,7 +109,10 @@ dependencies, run the project's own idempotent install (a no-op when the
 tree is already current), detecting the toolchain from the repo's
 `AGENTS.md`/manifests rather than assuming one — always in the toolchain's
 reproducible mode (locked versions) and with lifecycle scripts suppressed
-where the toolchain supports it. A missing toolchain or failed install
+where the toolchain supports it. Compare installed linter/build-tool
+versions against the versions the repo's `AGENTS.md`/CI pin — a mismatch is
+a preflight note, and the pinned install can start in the background before
+implement. A missing toolchain or failed install
 emits an **environment note** in the preflight message or run chat naming
 the workspace and tool; continue per the action tiers and carry a
 persistent note into the wrap-up/PR notes. If a later stage fails on an
@@ -165,9 +178,12 @@ These preflight items are only checkable now that the item is loaded:
   **YOU MUST NOT** prompt for tracker authentication.
 - When verification criteria imply driving the running app (UI acceptance
   criteria, manual flows), confirm the repo `AGENTS.md`'s testing-accounts
-  section exists and is filled — it is the verifier's credentials source.
-  Missing or unfilled → an immediate preflight follow-up note asking the human,
-  so the gap surfaces now instead of when the verifier blocks mid-run.
+  section exists and is filled — it is the verifier's credentials source —
+  and prove the readiness executable, not documentary: the browser-automation
+  transport connects and the named test sessions/credentials are actually
+  reachable. Either half missing → an immediate preflight follow-up note
+  naming each missing half, so the gap surfaces now instead of when the
+  verifier blocks mid-run.
 - When any stage will need the running app — verification, reproduction, or a
   staging prerequisite — confirm the repo `AGENTS.md` documents its launch
   command, flags, port/URL, and env. Missing or unfilled → an immediate
@@ -175,9 +191,15 @@ These preflight items are only checkable now that the item is loaded:
   start the app in the background when needed and must stop what it started;
   never invent a launch command.
 
+Check branch state before any work builds on it: `git fetch origin
+<default>` and note in one line whether the default branch has moved past
+the branch point, and `gh pr list --head <branch>` — a branch already
+carrying an open PR is handled like the default branch below: surface it
+and stop for a fresh branch, decided now, before the first push.
+
 Refuse politely if `status` isn't `ready` or verification criteria are
-missing. Never create a branch — if on the default branch, stop and ask the
-user to set one up.
+missing. Never create a branch — if on the default branch, or on a branch
+whose open PR this run must not amend, stop and ask the user to set one up.
 
 **Done when**: the item and its artifacts are in `./tmp/<id>/`, status is
 `ready`, and you're on a non-default branch.
@@ -217,7 +239,10 @@ wherever the *item* and the repo disagree, name the conflict in the plan's
 Known mismatches with how the plan resolves it — and record what you
 imported or dropped in the plan's Reconciliation notes.
 
-Research beyond that as the item actually needs — you judge. If the item
+Research beyond that as the item actually needs — you judge. A change
+touching an environment listed in `.references/known-issues/` (e.g.
+Windows-runner CI) reads the matching page at plan time and carries it
+into the implementer dispatch. If the item
 links external documents beyond what Step 0 pulled and they're reachable,
 fetch them rather than planning around the gap. Then write
 `./tmp/<id>/plan.md` following this skill's `references/implementation-plan.md` —
@@ -259,6 +284,11 @@ more research and deepening the plan; a materially revised plan earns a
 fresh review pass (it's a new artifact), an unchanged one never does. The
 score recorded after the last pass is final.
 Never a reason to stop the run.
+
+A plan that pins a dependency the repo's install gates will refuse without
+human approval (a release-age allowlist, a license gate) surfaces that
+approval request in a notify at plan-exit — never as a blocking gate the
+implement wave discovers.
 
 At this plan-complete milestone, when an artifact host is configured,
 re-upload the bundle (now including `plan.md`) using the artifact-host step in
@@ -329,7 +359,12 @@ verifier reports it has no testing instructions for the app, or can't test
 for lack of credentials, environment, or tooling, don't retry or improvise a
 workaround — stop the verify loop and ask the user for the missing
 instructions or access. When verification needs the running app, apply Step
-0's `AGENTS.md`-sourced launch rule and stop what the pipeline started.
+0's `AGENTS.md`-sourced launch rule and stop what the pipeline started. A
+service the verification needs alive runs detached (nohup + pidfile under
+`./tmp/<id>/`) so its lifetime is owned by the run rather than a tool
+timeout — a reaped server poisons the next boot with orphans. Tear down
+the recorded pids explicitly, and when freeing ports kill only pids
+enumerated before the next launch.
 
 **Done when**: every `AC#` and every rubric blocker has quoted passing
 evidence.
@@ -379,7 +414,12 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   on the rolling assets prerelease per Step 5's evidence rule, filenames
   keyed to the work item id;
   flow-/boundary-/lifecycle-shaped changes lead with the before → after
-  diagram per the `excalidraw-pr-diagrams` skill; the
+  diagram per the `excalidraw-pr-diagrams` skill — and for a change with
+  **no user-visible surface**, the diagram lands with the QA drive's first
+  body update instead of blocking PR open: open with
+  `Visual overview: diagram landing with the first body update`, author the
+  diagram while the post-PR lanes run, and embed it before the QA results
+  close; the
   **User journeys** section carries both a journey map and — for branching
   flows — a fork map cross-tagged into the Manual tests; the deploy-notes
   scan above feeds the **Deploy notes** section. Follow
@@ -390,7 +430,9 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 ## Step 5: Post-PR review + QA
 
 Reviews run against the open PR and fixes land on it — self-correction
-happens on the artifact, not before it exists.
+happens on the artifact, not before it exists. The turn in which a reviewer
+or verifier report arrives publishes its results (body edit, evidence
+comment) before ending.
 
 - Run the review lanes over the PR diff (zone 0: both reviewers,
   dispatched together in one message — Agent tool + detached `codex exec`
@@ -414,7 +456,11 @@ happens on the artifact, not before it exists.
   derived from zone unless the epic's own `review_lanes:` says otherwise).
   Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** — loop those findings back to the matching
-  implementer, push the fixes, re-review; (b) the two lanes' reports
+  implementer, stage the fix commit against `git status --short` (the
+  status output is the checklist of the fix round's edits — Step 4's
+  selective-commit rule still governs, so unrelated dirty paths stay
+  unstaged), never from a remembered file list, push the fixes,
+  re-review; (b) the two lanes' reports
   **diverge sharply** (little overlap in what they caught, or conflicting
   overall verdicts) — one extra pass to confirm convergence. **A pass with
   zero Must Fix from every lane ends the loop**, even with Should Fixes
@@ -504,7 +550,9 @@ happens on the artifact, not before it exists.
   links (GitHub only inline-plays web-UI uploads). Expiring temp hosts are
   forbidden for evidence — a dead link months later is no evidence at all.
   On a private repo, note that inline rendering may fail for viewers
-  without repo access; the links still work.
+  without repo access; the links still work — and unauthenticated fetches
+  (curl, markdown proxies) get 404s from `releases/download/...` URLs, so
+  verify an upload via its API asset id, never a bare curl.
 - After the loop and QA, post surviving Should Fix / Nice to Have findings
   as line-anchored inline PR comments (`gh api` reviews, event `COMMENT` —
   never `REQUEST_CHANGES`: the loop owns Must Fix, and capped survivors are
@@ -516,7 +564,9 @@ happens on the artifact, not before it exists.
 - Assemble the dial record's **run record** before writing: `gh pr view
   --json changedFiles,additions,deletions` for `pr_size`; per-role Codex
   tokens summed from the dispatches' `CODEX <role>: … · tokens <n>` lines;
-  Claude sub-agent tokens from the harness's task summaries where shown;
+  Claude main-loop and sub-agent tokens scripted from the session
+  transcript JSONL (group by `message.id`, keep the final usage snapshot
+  per id; harness task summaries are a cross-check only);
   the `agents` roster (role, model, effort, dispatches, duration, tokens)
   and `spend_ratio`. Record `unknown` where a source didn't expose a
   number — never estimate. This record is what the postmortem and the

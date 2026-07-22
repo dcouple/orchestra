@@ -143,12 +143,17 @@ its command with the following so session context survives:
 
 ```bash
 perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' 2700 \
-  codex exec resume --last -o <owner dir>/<name>.md \
+  codex exec resume --last --yolo -o <owner dir>/<name>.md \
   "$(cat <owner dir>/<name>.prompt)" </dev/null
 status=$?
 echo "$status" > <owner dir>/<name>.done.tmp && \
   mv <owner dir>/<name>.done.tmp <owner dir>/<name>.done
 ```
+
+A resume dispatch carries `--yolo` exactly like a fresh one — a resumed
+session that loses it runs sandboxed and blocks the very tests the fix
+round must run. `resume` takes no `-C`: it matches recorded sessions by
+cwd, so launch it from the same repo root as the original dispatch.
 
 The marker convention is: `<name>.md` is the final report, `<name>.log` is
 durable stdout/stderr including the `tokens used` summary, and `<name>.done`
@@ -178,7 +183,9 @@ confidence word · backend-verifier: `**Verdict:**` pass|fail). Capture the
 token usage `codex exec` prints in its end-of-run summary from the dispatch's
 sibling `.log` file (the line after `tokens used`); per-turn detail lives in
 `~/.codex/sessions/<date>/rollout-*.jsonl` `token_count` events. `unknown` is
-only legal after checking both. Return the
+only legal after checking both. For a resumed session the printed figure is
+**cumulative**: record the delta from the previous dispatch's figure as the
+round's cost and the final figure as the role total. Return the
 report verbatim to the caller, prefixed with one line:
 `CODEX <role>: <status line> · tokens <n | unknown>` — the Overseer sums
 these per role into the wrap-up's run record.
@@ -186,8 +193,15 @@ these per role into the wrap-up's run record.
 Exit 142 (a SIGALRM watchdog reap) classifies the dispatch as a hung run. Retry
 a hung, errored, timed-out, or status-line-missing run once: make a fresh
 dispatch for an ephemeral role, or use `resume --last` for the implementer so
-its session context survives. After that retry, return the error plus whatever
-output exists to the caller.
+its session context survives. A retry that is also reaped never gets a third
+Codex dispatch — a workload that wedged twice stays wedged: reviewer,
+researcher, and verifier work routes to a Claude sub-agent dispatch instead;
+the implementer has no Claude counterpart, so a twice-reaped implementer
+returns the error plus whatever output exists to the caller. Otherwise return
+the error plus whatever output exists after the single retry. A report of `listen EPERM` (the sandbox denied loopback
+binds) is a completed run, not a failure: accept the edits and run the blocked
+check at the Overseer, or hand it to the next verifier dispatch, instead of
+re-dispatching.
 
 **Success criteria**: caller received a well-formed report (or the error
 after one retry).

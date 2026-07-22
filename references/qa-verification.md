@@ -49,6 +49,10 @@ Before a long flow, verify the tools it needs are alive: authenticated CLIs
 test-mode keys wherever the flow touches money. A flow that dies at step 7
 for a missing login wastes the run — fail fast at step 0.
 
+Probe HTTP responses with `GET` (`curl -sS -D - -o /dev/null`), never
+HEAD, unless HEAD support is itself a criterion — a GET-only service fails
+a HEAD probe as a false negative.
+
 ## Test-mode safety
 
 Stay in test/staging mode by default. Real production mutations — payments,

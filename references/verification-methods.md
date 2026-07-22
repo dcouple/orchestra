@@ -50,3 +50,8 @@ type and require its evidence.
   the mock. Exercise at least one real boundary.
 - **A flaky gate is a finding, not a pass.** A check that needed retries to
   go green gets reported, not retried into silence.
+- **Prove Git scope locally before any network clone.** Verify a committed
+  branch with a temporary `git clone --shared --no-checkout .` detached at
+  the target SHA — never spend a network-clone timeout on a proof that
+  needs no remote objects; when remote confirmation is separately required,
+  cap it at 60 seconds and fall back.

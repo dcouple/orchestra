@@ -62,20 +62,25 @@ Parse the transcripts and derive:
      `cache_read_input_tokens`, `cache_creation_input_tokens`) plus
      `message.model` — bucket them by timestamp into the per-step windows and
      report output and cache read/write separately (cache reads usually
-     dominate raw volume and price differently).
+     dominate raw volume and price differently). Group assistant events by
+     `message.id` and keep only the final usage snapshot per id before
+     summing — the harness writes multiple streaming snapshots for one
+     message, and summing every line double-counts the request.
   2. **Claude sub-agents**: each dispatch has its own transcript at
      `<session-dir>/subagents/agent-<id>.jsonl` with the same per-event
-     usage; the harness also prints a `subagent_tokens` total in every
-     completion notification — cross-check the two.
+     usage (same `message.id` dedup applies); the harness also prints a
+     `subagent_tokens` total in every completion notification — a
+     final-context cross-check, not billing usage; the transcript's
+     deduplicated sum is the number of record.
   3. **Codex dispatches**: `codex exec` prints a `tokens used` total at
      end-of-run — it sits in the dispatch's sibling `.log` under the
      `.codex-dispatches/<owner>/` marker convention (grep for the line after
      `tokens used`); per-turn
      granularity lives in `~/.codex/sessions/<date>/rollout-*.jsonl` as
      `token_count` events (input / cached_input / output / reasoning).
-  **Cost**: tokens × the per-model price table, with cache reads/writes priced
-  at their own rates — the transcripts carry the model id, so mixed-model runs
-  attribute correctly. Cross-check the wrap-up's `tokens:` block against what
+  **Cost**: tokens × the rates in `model-prices.md` (this directory), summed
+  per token class with cache reads/writes at their own rates — the transcripts
+  carry the model id, so mixed-model runs attribute correctly. Cross-check the wrap-up's `tokens:` block against what
   you computed; report both when they disagree. Pair tokens with the
   review-pass findings: **tokens spent per pass vs Must Fixes that pass
   caught** is the single best signal for right-sizing the loop.
@@ -137,10 +142,18 @@ operational leak outweighs any outcome gap.
 **Timeline visualization (render it, attach it).** Turn the per-step table
 into a Gantt: one row per dispatch (plus an Overseer row for the main loop's
 own working segments) over the fixed time axis, phase bands behind, so
-parallel-vs-sequential reads at a glance. Build it as a small self-contained
-HTML/SVG page, render a screenshot headless, and **embed the PNG where the
+parallel-vs-sequential reads at a glance. Start from the postmortem skill's
+`references/run-timeline-template.html` — fill its `RUN` object with the
+scripted data (phases, dispatches with tokens and yield, idle gaps); the
+stats, axis, chart height, and accessible table derive from it. Render the
+PNG with the sibling `render-timeline.sh` (cross-platform: discovers
+Chrome/Chromium/Edge on macOS, Linux, or Windows, then installed
+Playwright; `--check` reports the renderer a machine will use — cheap to
+run at preflight on any box that publishes postmortems; on `NO_RENDERER`
+attach the HTML and note the missing PNG — never improvise a renderer
+mid-run) and **embed the PNG where the
 humans already look** — the anchor PR (host on the repo's rolling `qa-assets`
 prerelease, `<pr#>-run-timeline.png`) and the tracker issue — rather than
 only linking an external page. Each bar carries its token count (label or
-tooltip), so the timeline shows spend as well as time. The HTML source lives
-in `./tmp/<id>/refs/` alongside the postmortem.
+tooltip), so the timeline shows spend as well as time. The filled HTML
+source lives in `./tmp/<id>/refs/` alongside the postmortem.

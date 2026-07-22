@@ -52,14 +52,16 @@ findings: {plan: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: 
            post_pr: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}}}
 verifiers: {frontend: <ran|skipped>, qa_pass: <ran|trimmed|skipped>}
 qa_findings: <n>
-wall_clock: <h:mm, run start to wrap-up — computed from timestamps (dispatch output mtimes, commit times, PR createdAt), never estimated from memory; the postmortem re-derives this and a mismatch is a finding>
+wall_clock: <h:mm, run start to wrap-up — script the session transcript JSONL (first event → now), scanning every session of a resumed/compacted run; dispatch output mtimes / commit times / PR createdAt are the fallback only when no transcript is readable; never estimated from memory — the postmortem re-derives this and a mismatch is a finding>
 deviations: <none | "escalated <z>→<z-1>: reason">
 pr_size: {files_changed: <n>, additions: <n>, deletions: <n>}  # gh pr view --json changedFiles,additions,deletions
 tokens:                # per source; "unknown" is honest, a guess is not
   codex: {total: <n>, by_role: {implementer: <n>, plan_reviewer: <n>, code_reviewer: <n>, ...}}
                        # summed from each dispatch's "CODEX <role>: … · tokens <n>" line
-  claude_subagents: <n | unknown>   # from the harness's task-completion summaries
-  overseer: <n | unknown>           # main session, when the harness exposes it
+  claude_subagents: <n | unknown>   # scripted from the sub-agent transcript JSONLs — group by
+                                    # message.id, keep the final usage snapshot per id; harness
+                                    # task-completion summaries are a cross-check only
+  overseer: <n | unknown>           # main session transcript JSONL, same message.id dedup
   total: <n — sum of the known>
 spend_ratio: <tokens.total ÷ (additions + deletions), 1 decimal — append " (lower bound)"
               whenever any token source above is unknown: a partial total presented as the
