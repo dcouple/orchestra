@@ -32,14 +32,20 @@ startup interruption reconciliation and does not enqueue continuations.
 
 Updates use `/opt/orchestra-source`, whose `origin` must be HTTPS and whose clean `HEAD` must
 equal `/var/lib/linear-agent-operations/accepted-commit`. Both default and explicit refs must
-be fast-forward descendants. The immutable candidate runs install, typecheck, build, tests,
-and shell syntax as the dedicated `linear-validator` user with an empty allowlisted
-environment. A transient systemd sandbox makes the candidate tree and validator home the
-only persistent writable paths, provides a private temporary directory, and denies daemon
-credential access; root only creates/removes the Git worktree and runs the committed-diff
-check. The accepted marker advances only after provision, service-active, and loopback-health
-acceptance; failed deployment rolls back to the previous accepted commit before claims can
-resume.
+be fast-forward descendants. A transient unit first runs script-free `pnpm fetch
+--ignore-pnpmfile --ignore-scripts --frozen-lockfile` as the dedicated `linear-validator`
+user. Ignoring package hooks and lifecycle scripts keeps candidate code out of the
+network-capable step. That fetch may reach public package infrastructure but denies
+loopback, link-local/cloud metadata, carrier-grade NAT, RFC 1918, and IPv6 unique-local
+networks. A second transient boundary runs
+`pnpm install --offline --frozen-lockfile`, native dependency setup, typecheck, build, tests,
+and shell syntax in a private network namespace. Both use an empty allowlisted environment;
+the candidate tree and validator home are the only persistent writable paths, and the
+validator cannot read daemon credentials. If systemd cannot apply any isolation property,
+validation fails closed. Root only creates/removes the Git worktree and runs the
+committed-diff check. The accepted marker advances only after provision, service-active, and
+loopback-health acceptance; failed deployment rolls back to the previous accepted commit
+before claims can resume.
 
 For a human production smoke, run the three read-only commands first, dry-run every mutator,
 then use disposable turns/accounts to prove idle restart, busy drain and ingestion, config

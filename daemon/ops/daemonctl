@@ -175,12 +175,33 @@ command_restart() {
 }
 
 run_candidate_command() {
-  local worktree="$1"; shift
+  local network_mode="$1" worktree="$2"; shift 2
+  local -a network_properties
+  if [[ "${network_mode}" == fetch ]]; then
+    network_properties=(
+      --property=PrivateNetwork=no
+      --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
+      --property=IPAddressDeny=127.0.0.0/8
+      --property=IPAddressDeny=::1/128
+      --property=IPAddressDeny=10.0.0.0/8
+      --property=IPAddressDeny=172.16.0.0/12
+      --property=IPAddressDeny=192.168.0.0/16
+      --property=IPAddressDeny=100.64.0.0/10
+      --property=IPAddressDeny=169.254.0.0/16
+      --property=IPAddressDeny=fe80::/10
+      --property=IPAddressDeny=fc00::/7
+    )
+  elif [[ "${network_mode}" == offline ]]; then
+    network_properties=(--property=PrivateNetwork=yes)
+  else
+    die "invalid candidate network mode"
+  fi
   "${VALIDATOR_RUN}" --quiet --wait --pipe --collect --service-type=exec \
     --uid="${VALIDATOR_USER}" --gid="${VALIDATOR_GROUP}" \
     --property=NoNewPrivileges=yes --property=PrivateTmp=yes \
     --property=ProtectSystem=strict --property=ProtectHome=yes \
     --property="ReadWritePaths=${worktree}" --property="ReadWritePaths=${VALIDATOR_HOME}" \
+    "${network_properties[@]}" \
     --working-directory="${worktree}/daemon" \
     /usr/bin/env -i HOME="${VALIDATOR_HOME}" PATH=/usr/local/bin:/usr/bin:/bin CI=1 "$@"
 }
@@ -193,11 +214,15 @@ validate_update_candidate() {
     return 1
   fi
   local rc=0
-  run_candidate_command "${worktree}" "${PNPM_BIN}" install --frozen-lockfile || rc=$?
-  (( rc )) || run_candidate_command "${worktree}" "${PNPM_BIN}" typecheck || rc=$?
-  (( rc )) || run_candidate_command "${worktree}" "${PNPM_BIN}" build || rc=$?
-  (( rc )) || run_candidate_command "${worktree}" "${PNPM_BIN}" test || rc=$?
-  (( rc )) || run_candidate_command "${worktree}" /bin/bash -n ops/provision.sh ops/daemonctl ops/proxy-accounts.sh ops/claudex ops/claudex-fable ops/codex-provider-gate.sh || rc=$?
+  # Fetch lockfile content without candidate lifecycle scripts, with host/private
+  # address ranges denied. All candidate-controlled execution is offline in a
+  # private network namespace, including native dependency setup.
+  run_candidate_command fetch "${worktree}" "${PNPM_BIN}" fetch --ignore-pnpmfile --ignore-scripts --frozen-lockfile || rc=$?
+  (( rc )) || run_candidate_command offline "${worktree}" "${PNPM_BIN}" install --offline --frozen-lockfile || rc=$?
+  (( rc )) || run_candidate_command offline "${worktree}" "${PNPM_BIN}" typecheck || rc=$?
+  (( rc )) || run_candidate_command offline "${worktree}" "${PNPM_BIN}" build || rc=$?
+  (( rc )) || run_candidate_command offline "${worktree}" "${PNPM_BIN}" test || rc=$?
+  (( rc )) || run_candidate_command offline "${worktree}" /bin/bash -n ops/provision.sh ops/daemonctl ops/proxy-accounts.sh ops/claudex ops/claudex-fable ops/codex-provider-gate.sh || rc=$?
   (( rc )) || "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" diff --check "${accepted}..${target}" || rc=$?
   "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" worktree remove --force "${worktree}" >/dev/null 2>&1 || true
   return "${rc}"
@@ -225,7 +250,7 @@ command_update() {
     if [[ -n "${ref}" ]]; then target="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" ls-remote origin "${ref}" | awk 'NR==1{print $1}')"
     else target="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" ls-remote origin HEAD | awk 'NR==1{print $1}')"; fi
     [[ "${target}" =~ ^[0-9a-fA-F]{40}$ ]] || die "update validation failed: ref is unresolved"
-    printf 'would validate immutable commit %s from HTTPS origin with pnpm install --frozen-lockfile, typecheck, build, test, shell syntax, and git diff --check %s..%s; then drain, provision, restart, health-check, mark accepted, and advance checkout\n' "${target}" "${accepted}" "${target}"
+    printf 'would validate immutable commit %s from HTTPS origin with script-free pnpm fetch, private-network offline install, typecheck, build, test, shell syntax, and git diff --check %s..%s; then drain, provision, restart, health-check, mark accepted, and advance checkout\n' "${target}" "${accepted}" "${target}"
     return
   fi
   if [[ -n "${ref}" ]]; then "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" fetch --no-tags origin "${ref}"; target="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" rev-parse 'FETCH_HEAD^{commit}')"

@@ -59,6 +59,16 @@ done
 [[ "$*" == *'--uid=linear-validator'* && "$*" == *'--gid=linear-validator'* && "$*" == *'NoNewPrivileges=yes'* && "$*" == *'ProtectSystem=strict'* ]]
 (( command_index >= 0 )); cd "$workdir"
 candidate=("\${args[@]:$command_index}")
+if [[ "$*" == *' fetch --ignore-pnpmfile --ignore-scripts --frozen-lockfile'* ]]; then
+  [[ "$*" == *'PrivateNetwork=no'* && "$*" == *'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6'* ]]
+  for denied in 127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 fe80::/10 fc00::/7; do
+    [[ "$*" == *"IPAddressDeny=$denied"* ]]
+  done
+  [[ "$*" != *'PrivateNetwork=yes'* ]]
+else
+  [[ "$*" == *'PrivateNetwork=yes'* ]]
+fi
+if [[ "\${FAKE_VALIDATOR_REJECT_ISOLATION:-0}" == 1 ]]; then exit 125; fi
 if [[ "\${FAKE_PNPM_FAIL_ACTION:-}" != "" ]]; then
   for value in "\${candidate[@]}"; do [[ "$value" == "$FAKE_PNPM_FAIL_ACTION" ]] && exit 1; done
 fi

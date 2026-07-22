@@ -25,11 +25,11 @@ describe("validated Git update boundary", () => {
     expect(readFileSync(f.provisionLog, "utf8")).toContain(`${repo.main}|`);
     expect(readNumber(f.restartCount)).toBe(1);
     const pnpm = readFileSync(join(f.dir, "pnpm.log"), "utf8").trim().split("\n").map(line => line.split("|")[1]);
-    expect(pnpm).toEqual(["install --frozen-lockfile", "typecheck", "build", "test"]);
+    expect(pnpm).toEqual(["fetch --ignore-pnpmfile --ignore-scripts --frozen-lockfile", "install --offline --frozen-lockfile", "typecheck", "build", "test"]);
     const validatorLog = readFileSync(String(f.env.FAKE_VALIDATOR_LOG), "utf8").trim().split("\n");
     expect(validatorLog[0]).toContain(`-R linear-validator:linear-validator`);
     const validatorCommands = validatorLog.filter(line => line.startsWith("--quiet"));
-    expect(validatorCommands).toHaveLength(5);
+    expect(validatorCommands).toHaveLength(6);
     for (const command of validatorCommands) {
       expect(command).toContain("--uid=linear-validator");
       expect(command).toContain("--gid=linear-validator");
@@ -42,6 +42,16 @@ describe("validated Git update boundary", () => {
       expect(command).toContain("PATH=/usr/local/bin:/usr/bin:/bin CI=1");
       expect(command).not.toMatch(/DB_PATH|SECRET_TOKEN|CLIPROXY|LINEAR|ANTHROPIC|OPENAI/);
     }
+    const fetchCommand = validatorCommands[0]!;
+    expect(fetchCommand).toContain("PrivateNetwork=no");
+    expect(fetchCommand).toContain("RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6");
+    for (const denied of ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16", "fe80::/10", "fc00::/7"]) {
+      expect(fetchCommand).toContain(`IPAddressDeny=${denied}`);
+    }
+    expect(fetchCommand).not.toContain("PrivateNetwork=yes");
+    expect(fetchCommand).toContain("fetch --ignore-pnpmfile --ignore-scripts --frozen-lockfile");
+    for (const command of validatorCommands.slice(1)) expect(command).toContain("PrivateNetwork=yes");
+    expect(validatorCommands[1]).toContain("install --offline --frozen-lockfile");
     expect(result.stdout).toContain(`deployed ${repo.accepted} -> ${repo.main}`);
     const done = join(f.requests, readdirSync(f.requests).find(name => name.endsWith(".done"))!);
     expect(JSON.parse(readFileSync(done, "utf8"))).toMatchObject({ previous_commit: repo.accepted, target_commit: repo.main, target_ref: "origin/HEAD" });
@@ -88,6 +98,13 @@ describe("validated Git update boundary", () => {
     {
       const f = opsFixture(), repo = updateRepo(f);
       const result = f.run(["update"], { ...repo.env, FAKE_PNPM_FAIL_ACTION: "test" });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("candidate gate");
+      expectNoUpdateMutation(f, repo);
+    }
+    {
+      const f = opsFixture(), repo = updateRepo(f);
+      const result = f.run(["update"], { ...repo.env, FAKE_VALIDATOR_REJECT_ISOLATION: "1" });
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("candidate gate");
       expectNoUpdateMutation(f, repo);
