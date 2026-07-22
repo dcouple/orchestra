@@ -47,6 +47,16 @@ GATE_TIMEOUT_SECONDS="${GATE_TIMEOUT_SECONDS:-900}"
 GATE_COUNTER_WINDOW_SECONDS="${GATE_COUNTER_WINDOW_SECONDS:-15}"
 MARKER='# managed by codex-provider-gate.sh — removed on gate failure'
 work_dir="$(mktemp -d)"
+# Relative path overrides keep their caller-cwd meaning even though the gate
+# changes directory below.
+caller_pwd="$PWD"
+absolutize() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "${caller_pwd}" "$1" ;; esac; }
+CLIPROXY_ENV_FILE="$(absolutize "${CLIPROXY_ENV_FILE}")"
+CLIPROXY_VERSION_MARKER="$(absolutize "${CLIPROXY_VERSION_MARKER}")"
+CLIPROXY_BIN="$(absolutize "${CLIPROXY_BIN}")"
+TARGET_CONFIG="$(absolutize "${TARGET_CONFIG}")"
+if [[ -n "${CODEX_HOME:-}" ]]; then CODEX_HOME="$(absolutize "${CODEX_HOME}")"; fi
+case "${CODEX_BIN}" in */*) CODEX_BIN="$(absolutize "${CODEX_BIN}")" ;; esac
 gate_home="${CODEX_HOME:-${work_dir}/codex-home}"
 mkdir -p "${gate_home}"
 # The caller's cwd may be unreadable for the invoking user (e.g. provision
