@@ -1,8 +1,67 @@
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { get } from "node:http";
+import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EventLog } from "../src/eventlog.js";
 import { git, opsFixture, readNumber, treeSnapshot, updateRepo, type OpsFixture, type UpdateRepo } from "./operations-fixtures.js";
+
+const systemdRun = existsSync("/usr/bin/systemd-run") ? "/usr/bin/systemd-run" : "/bin/systemd-run";
+const curl = existsSync("/usr/bin/curl") ? "/usr/bin/curl" : "/bin/curl";
+const canProbeSystemdNetwork = process.platform === "linux"
+  && typeof process.getuid === "function"
+  && process.getuid() === 0
+  && existsSync("/run/systemd/system")
+  && existsSync(systemdRun)
+  && existsSync(curl)
+  && spawnSync("systemctl", ["show", "--property=Version", "--value"], { stdio: "ignore" }).status === 0;
+
+const fetchNetworkProperties = [
+  "--property=PrivateNetwork=no",
+  "--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+  ...["0.0.0.0/8", "127.0.0.0/8", "::/128", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16", "fe80::/10", "fc00::/7"]
+    .map(cidr => `--property=IPAddressDeny=${cidr}`),
+];
+
+function listen(server: Server, host: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, host, () => {
+      server.off("error", reject);
+      const address = server.address();
+      if (!address || typeof address === "string") reject(new Error("server address unavailable"));
+      else resolve(address.port);
+    });
+  });
+}
+
+function close(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+}
+
+function getText(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    get(url, response => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", chunk => { body += String(chunk); });
+      response.once("end", () => resolve(body));
+    }).once("error", reject);
+  });
+}
+
+function runTransient(command: string, args: string[]): Promise<{ status: number | null; stderr: string }> {
+  return new Promise(resolve => {
+    const child = spawn(systemdRun, ["--quiet", "--wait", "--pipe", "--collect", "--service-type=exec", ...fetchNetworkProperties, command, ...args],
+      { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", chunk => { stderr += String(chunk); });
+    child.once("error", error => resolve({ status: null, stderr: String(error) }));
+    child.once("close", status => resolve({ status, stderr }));
+  });
+}
 
 describe("validated Git update boundary", () => {
   function expectNoUpdateMutation(f: OpsFixture, repo: UpdateRepo): void {
@@ -45,7 +104,7 @@ describe("validated Git update boundary", () => {
     const fetchCommand = validatorCommands[0]!;
     expect(fetchCommand).toContain("PrivateNetwork=no");
     expect(fetchCommand).toContain("RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6");
-    for (const denied of ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16", "fe80::/10", "fc00::/7"]) {
+    for (const denied of ["0.0.0.0/8", "127.0.0.0/8", "::/128", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16", "fe80::/10", "fc00::/7"]) {
       expect(fetchCommand).toContain(`IPAddressDeny=${denied}`);
     }
     expect(fetchCommand).not.toContain("PrivateNetwork=yes");
@@ -162,4 +221,38 @@ describe("validated Git update boundary", () => {
     expect(git(["rev-parse", "HEAD"], crashRepo.checkout)).toBe(crashRepo.main);
     expect(readFileSync(h.provisionLog, "utf8").trim().split("\n")).toHaveLength(1);
   }, 30_000);
+
+  it.skipIf(!canProbeSystemdNetwork)("real Linux/root/systemd boundary denies 0.0.0.0 and routable IPv6 unspecified destinations (skipped without Linux root systemd + curl)", async () => {
+    const ipv4 = createServer(socket => { socket.end("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"); });
+    let ipv4Hits = 0;
+    ipv4.on("connection", () => { ipv4Hits += 1; });
+    const ipv4Port = await listen(ipv4, "127.0.0.1");
+    try {
+      expect(await getText(`http://0.0.0.0:${ipv4Port}`)).toBe("ok");
+      const propertyProbe = await runTransient("/bin/true", []);
+      expect(propertyProbe, propertyProbe.stderr).toMatchObject({ status: 0 });
+      const denied = await runTransient(curl, ["--noproxy", "*", "--fail", "--silent", "--show-error", "--connect-timeout", "2", "--max-time", "3", `http://0.0.0.0:${ipv4Port}`]);
+      expect(denied.status, denied.stderr).not.toBe(0);
+      expect(ipv4Hits).toBe(1);
+    } finally {
+      await close(ipv4);
+    }
+
+    const ipv6 = createServer(socket => { socket.end("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"); });
+    let ipv6Hits = 0;
+    ipv6.on("connection", () => { ipv6Hits += 1; });
+    try {
+      const ipv6Port = await listen(ipv6, "::1");
+      try {
+        expect(await getText(`http://[::]:${ipv6Port}`)).toBe("ok");
+      } catch {
+        return;
+      }
+      const denied = await runTransient(curl, ["--noproxy", "*", "--fail", "--silent", "--show-error", "--connect-timeout", "2", "--max-time", "3", `http://[::]:${ipv6Port}`]);
+      expect(denied.status, denied.stderr).not.toBe(0);
+      expect(ipv6Hits).toBe(1);
+    } finally {
+      if (ipv6.listening) await close(ipv6);
+    }
+  }, 15_000);
 });

@@ -181,7 +181,9 @@ run_candidate_command() {
     network_properties=(
       --property=PrivateNetwork=no
       --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
+      --property=IPAddressDeny=0.0.0.0/8
       --property=IPAddressDeny=127.0.0.0/8
+      --property=IPAddressDeny=::/128
       --property=IPAddressDeny=::1/128
       --property=IPAddressDeny=10.0.0.0/8
       --property=IPAddressDeny=172.16.0.0/12

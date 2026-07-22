@@ -36,8 +36,10 @@ be fast-forward descendants. A transient unit first runs script-free `pnpm fetch
 --ignore-pnpmfile --ignore-scripts --frozen-lockfile` as the dedicated `linear-validator`
 user. Ignoring package hooks and lifecycle scripts keeps candidate code out of the
 network-capable step. That fetch may reach public package infrastructure but denies
-loopback, link-local/cloud metadata, carrier-grade NAT, RFC 1918, and IPv6 unique-local
-networks. A second transient boundary runs
+IPv4/IPv6 unspecified destinations (`0.0.0.0/8` and `::/128`), loopback,
+link-local/cloud metadata, carrier-grade NAT, RFC 1918, and IPv6 unique-local networks.
+Unspecified destinations are denied because Linux may route them to host-local services. A
+second transient boundary runs
 `pnpm install --offline --frozen-lockfile`, native dependency setup, typecheck, build, tests,
 and shell syntax in a private network namespace. Both use an empty allowlisted environment;
 the candidate tree and validator home are the only persistent writable paths, and the

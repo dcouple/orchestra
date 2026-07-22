@@ -52,11 +52,12 @@ and quoting so operator values remain daemonctl arguments rather than local or r
 syntax. Update candidates run as the dedicated `linear-validator` identity in a transient
 systemd filesystem sandbox with a cleared environment; that identity is not `linear-daemon`
 and cannot read daemon credentials. Dependency artifacts are fetched without lifecycle
-scripts while loopback, link-local/metadata, carrier-grade NAT, and private address ranges
-are denied. The offline install and every candidate-controlled script/test then run in a
-private network namespace. Failure to apply either transient-unit policy rejects the
-candidate. See `ops/runbook.md` for pending/blocked recovery,
-accepted-commit rules, and the human-only production smoke procedure.
+scripts while IPv4/IPv6 unspecified and loopback destinations, link-local/metadata,
+carrier-grade NAT, and private address ranges are denied. This includes `0.0.0.0/8` and
+`::/128`, which can otherwise route to host-local services. The offline install and every
+candidate-controlled script/test then run in a private network namespace. Failure to apply
+either transient-unit policy rejects the candidate. See `ops/runbook.md` for pending/blocked
+recovery, accepted-commit rules, and the human-only production smoke procedure.
 
 ## Run locally
 

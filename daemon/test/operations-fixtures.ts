@@ -61,7 +61,7 @@ done
 candidate=("\${args[@]:$command_index}")
 if [[ "$*" == *' fetch --ignore-pnpmfile --ignore-scripts --frozen-lockfile'* ]]; then
   [[ "$*" == *'PrivateNetwork=no'* && "$*" == *'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6'* ]]
-  for denied in 127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 fe80::/10 fc00::/7; do
+  for denied in 0.0.0.0/8 127.0.0.0/8 ::/128 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 fe80::/10 fc00::/7; do
     [[ "$*" == *"IPAddressDeny=$denied"* ]]
   done
   [[ "$*" != *'PrivateNetwork=yes'* ]]
