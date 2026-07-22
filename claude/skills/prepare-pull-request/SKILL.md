@@ -57,7 +57,24 @@ fidelity joins the lines of attack).
 
 Run both reviewers over the diff in parallel, as `/do` does: the `codex`
 skill with role `code-reviewer`, and the Claude `code-reviewer` agent. The
-Must-Fix gate is the union of both reports.
+Must-Fix gate is the union of both reports. Persist each untouched report under
+`./tmp/pr-<branch>/reviews/pass-<k>-<lane>.md` before mapping or synthesis; the
+original reports are the audit trail. Every checkable claim must name a
+concrete artifact and explain why it proves the finding.
+
+When lanes conflict over a Must Fix, adjudicate it yourself — never dispatch a
+general-purpose opinion agent. Separate agreed facts from the disputed claim,
+then use the cheapest conclusive evidence path: direct repository inspection or
+`code-researcher` for repository facts, the applicable verifier for observable
+behavior, and `investigator` for causality or a difficult failure. One
+conclusive specialist result may settle a mixed claim; dispatch another only
+when the first explicitly leaves material uncertainty. Residual normative or
+tradeoff judgment is yours. Record each ruling in
+`./tmp/pr-<branch>/reviews/pass-<k>-adjudication.md`: agreed facts, remaining
+uncertainty or tradeoff, and why the Must Fix was accepted or dismissed. Never
+dismiss without evidence. If material risk remains unresolved, accept a bounded
+Must Fix; escalate a high-stakes, irreversible, or preference-dependent
+decision to the user.
 
 - Fix Must-Fix findings yourself (these are your own session's changes —
   there is no separate implementer), then re-run both reviewers on the

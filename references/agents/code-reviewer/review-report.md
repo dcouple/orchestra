@@ -16,11 +16,14 @@
 
 ## Must Fix  *(blocks merge; loop back to Implement)*
 - **MF-1** `(security)` — `<what>` · `<file:line>` · `<fix>` · violates `<D# / AC# | "new issue">`
+  - **Evidence:** `<concrete code, test, trace, or command output>` — `<why it proves the finding>`
   - **Failure scenario:** `<concrete way this breaks in production>`   *(required for correctness/security findings)*
 - **MF-2** — `<what>` · `<file:line>` · `<fix>` · violates `<…>`
+  - **Evidence:** `<artifact>` — `<why it proves the finding>`
 
 ## Should Fix  *(important, non-blocking)*
 - **SF-1** — `<what>` · `<file:line>` · `<fix>`
+  - **Evidence:** `<artifact>` — `<why it supports the finding>`
 
 ## Nice to Have  *(omit section if empty)*
 - `<nit or thought>`
@@ -38,6 +41,9 @@
 over-engineering · adequate tests · clear naming · does the diff actually fulfill the
 intent (not just the task list) · house rules per `code-quality.md` (discovered
 from this repo, source cited, never Must Fix alone). Every finding cites `file:line`.
+Every checkable finding at every severity names the concrete artifact inspected and
+explains the inference; unsupported claims belong under Cannot verify with the evidence
+needed to settle them.
 
 **Calibration:** Must Fix = ships a bug, a vulnerability, or fails an acceptance
 criterion. Should Fix = materially better code, but mergeable without it. Everything

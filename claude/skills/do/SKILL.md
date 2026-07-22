@@ -15,8 +15,9 @@ Every judgment call is yours — the effective zone (one escalation notch), how 
 the plan needs, when the plan is ready, when review findings are resolved. Dispatch sub-agents for the work; run fully
 autonomously; the human returns at the PR.
 
-**Sub-agents:** code-researcher, implementer, backend-verifier,
-plan-reviewer, and code-reviewer run on Codex via the `codex` skill; each
+**Sub-agents:** code-researcher, investigator, implementer,
+backend-verifier, plan-reviewer, and code-reviewer run on Codex via the
+`codex` skill; each
 review runs the Codex and Claude reviewers in parallel and weighs both
 reports at zone 0; zones 1–3 run the Codex lane alone. **All
 implementation runs on the Codex `implementer`** at effort `medium`,
@@ -267,10 +268,25 @@ the Codex reviewer as a detached dispatch per the codex skill — then awaits
 the Agent-tool sub-agent within the turn and picks up the Codex report from its
 marker; running one lane to completion before
 starting the other serializes the pass and doubles its wall-clock.
-A head-on Must Fix disagreement between the lanes here gets the same
-second-voice consult as the post-PR loop: a background `discussant`
-dispatch with both findings and the disputed plan section, weighed
-alongside the lanes' arguments before you rule.
+Persist every lane's untouched report before mapping or synthesis under
+`./tmp/<id>/refs/reviews/plan-pass-<k>-<lane>.md`; the original reports are
+the audit trail, not disposable prompt context. Every checkable review claim
+must identify a concrete artifact and explain why it proves the finding; an
+unsupported assertion is uncertainty, not evidence.
+
+When lanes conflict over a Must Fix, adjudicate it yourself — never dispatch a
+general-purpose opinion agent. Separate agreed facts from the disputed claim,
+then take the cheapest conclusive evidence path: inspect the repo directly or
+dispatch `code-researcher` for repository facts; dispatch the applicable
+verifier for observable behavior; dispatch `investigator` for causality or a
+difficult failure. One conclusive specialist result may settle a mixed claim;
+dispatch another only when the first result explicitly leaves material
+uncertainty. Residual normative or tradeoff judgment is yours. Record each
+ruling in `./tmp/<id>/refs/reviews/plan-pass-<k>-adjudication.md`: agreed facts,
+remaining uncertainty or tradeoff, and why the Must Fix was accepted or
+dismissed. Never dismiss without evidence. If material risk remains unresolved,
+accept a bounded Must Fix; escalate a high-stakes, irreversible, or
+preference-dependent decision to the user.
 The loop continues until
 the plan is ready — same exit rule as the post-PR loop: a pass returning
 zero Must Fix from every lane (Codex tiers: P0/P1 count as Must Fix) ends
@@ -442,15 +458,27 @@ comment) before ending.
   (correctness + security, `(security)` tags). A Codex report may arrive
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format — map it, never re-dispatch over format: P0/P1 ≡
-  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the two lanes
-  disagree head-on about a Must Fix, get a second voice before ruling:
-  dispatch the `discussant` sub-agent (background) with both findings and
-  the disputed diff hunks, weigh its take alongside the lanes', then rule.
-  This is the one Overseer meta-call with no adversarial check and no
-  downstream net — a wrongly dismissed Must Fix ships, because the loop
-  ends on zero Must Fix. Every other judgment call (zone escalation,
-  readiness, research depth) stays single-voice — they're bounded or
-  self-correcting.
+  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. Persist every lane's untouched
+  report before mapping or synthesis under
+  `./tmp/<id>/refs/reviews/code-pass-<k>-<lane>.md`; these originals remain the
+  audit trail. Every checkable review claim must identify a concrete artifact
+  and explain why it proves the finding; an unsupported assertion is
+  uncertainty, not evidence.
+
+  When lanes conflict over a Must Fix, adjudicate it yourself — never dispatch
+  a general-purpose opinion agent. Separate agreed facts from the disputed
+  claim, then take the cheapest conclusive evidence path: inspect the repo
+  directly or dispatch `code-researcher` for repository facts; dispatch the
+  applicable verifier for observable behavior; dispatch `investigator` for
+  causality or a difficult failure. One conclusive specialist result may settle
+  a mixed claim; dispatch another only when the first result explicitly leaves
+  material uncertainty. Residual normative or tradeoff judgment is yours.
+  Record each ruling in
+  `./tmp/<id>/refs/reviews/code-pass-<k>-adjudication.md`: agreed facts,
+  remaining uncertainty or tradeoff, and why the Must Fix was accepted or
+  dismissed. Never dismiss without evidence. If material risk remains
+  unresolved, accept a bounded Must Fix; escalate a high-stakes, irreversible,
+  or preference-dependent decision to the user.
 - **Another pass runs only on a trigger — the caps are ceilings, never
   quotas** (cap 3 passes; zones 2–3: 1; epics always 3 passes, with lanes
   derived from zone unless the epic's own `review_lanes:` says otherwise).

@@ -48,7 +48,7 @@ REMOVED_CLAUDE_SKILLS=(idea-duel dialectic)
 for name in "${REMOVED_CLAUDE_SKILLS[@]}"; do
   rm -rf "$CONSUMER/.claude/skills/$name"
 done
-REMOVED_CLAUDE_AGENTS=(frontend-implementer)
+REMOVED_CLAUDE_AGENTS=(frontend-implementer discussant)
 for name in "${REMOVED_CLAUDE_AGENTS[@]}"; do
   rm -f "$CONSUMER/.claude/agents/$name.md"
 done

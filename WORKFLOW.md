@@ -69,7 +69,6 @@ consumer repos, so the skills' restatement is what actually executes.
 | --- | --- | --- |
 | Overseer (conducts `/do`, all judgment) | main session — Fable | |
 | Web research | Claude `web-researcher` — Sonnet | |
-| Second voice (Must-Fix tie-break consults) | Claude `discussant` — Sonnet | background dispatch when the review lanes disagree head-on |
 | App-driving QA (one run, post-PR: UI ACs + Manual tests, journey captures) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-plan |
 | Verify backend (tests/scripts) | **Codex** GPT-5.6 `low` | |
 | Explore codebase | **Codex** GPT-5.6 `low` | Claude `code-researcher` (Sonnet) as backup |
@@ -91,8 +90,16 @@ Codex report tiered P0–P3 maps rather than reformats (P0/P1 ≡ Must Fix,
 P2 ≡ Should Fix, P3 ≡ Nice to Have). Caps are ceilings, never quotas: a
 zero-Must-Fix pass ends the loop even with Should Fixes open (the Overseer
 applies those at its discretion, no re-review), and the only other trigger
-for an extra pass is the two lanes sharply diverging. The Overseer flags
-anything left unresolved at a cap in the wrap-up. Codex efforts are defaults — `medium` for the
+for an extra pass is the two lanes sharply diverging. Every lane's original
+report is retained. When lanes conflict over a Must Fix, the Overseer rules
+directly: checkable uncertainty goes to the cheapest conclusive evidence path
+(repository inspection or researcher, verifier, or investigator), while
+residual tradeoffs remain an Overseer judgment. The ruling records agreed
+facts, remaining uncertainty or tradeoff, and why the finding was accepted or
+dismissed; dismissal requires evidence. Unresolved material risk stays a
+bounded Must Fix, or goes to the user when the decision is high-stakes,
+irreversible, or preference-dependent. The Overseer flags anything left
+unresolved at a cap in the wrap-up. Codex efforts are defaults — `medium` for the
 implementer, `low` for every other role; the dispatcher may raise a
 reviewer to `medium` or `high` rarely, when the zone warrants it (zone 0
 or an epic), with the reason stated in the dispatch — never above `high`. `/do` and
