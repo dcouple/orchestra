@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { ArtifactNotFoundError, type ArtifactFile, ArtifactStore, InvalidArtifactError } from "./artifacts.js";
 import type { AppName, Config } from "./config.js";
 import type { EventLog } from "./eventlog.js";
+import { readCliproxyManagementKey } from "./sessions.js";
 import { verifyWebhook } from "./verify.js";
 import { renderViewer } from "./viewer.js";
 
@@ -51,13 +52,10 @@ export class WebhookServer {
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     try {
       if (request.method === "GET" && request.url === "/healthz") {
-        const claude = this.options.log.getProviderState("claude");
-        const codex = this.options.log.getProviderState("codex");
-        this.earlyJson(request, response, 200, { ok: true, providers: {
-          claude: { status: claude?.status ?? "not_ready", reason: claude?.reason ?? "state_missing",
-            ...(claude?.cooldownUntil != null ? { cooldownUntil: claude.cooldownUntil } : {}), updatedAt: claude?.updatedAt ?? 0 },
-          codex: { status: codex?.status ?? "ready", ...(codex?.cooldownUntil != null ? { cooldownUntil: codex.cooldownUntil } : {}) },
-        } }); return;
+        if (!await this.managementAuthorized(request)) {
+          this.earlyJson(request, response, 200, { ok: true }); return;
+        }
+        this.earlyJson(request, response, 200, this.providerHealth()); return;
       }
       const pathname = (request.url ?? "").split("?", 1)[0] ?? "";
       if (pathname === "/a" || pathname === "/a/" || pathname.startsWith("/a/")) {
@@ -227,6 +225,26 @@ export class WebhookServer {
     const expectedHash = createHash("sha256").update(expected).digest();
     const suppliedHash = createHash("sha256").update(supplied).digest();
     return timingSafeEqual(expectedHash, suppliedHash);
+  }
+
+  private async managementAuthorized(request: IncomingMessage): Promise<boolean> {
+    const authorization = Array.isArray(request.headers.authorization) ? request.headers.authorization[0] : request.headers.authorization;
+    const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+    let expected: string;
+    try { expected = await readCliproxyManagementKey(this.options.config.cliproxyEnvFile); } catch { expected = ""; }
+    const expectedHash = createHash("sha256").update(expected).digest();
+    const suppliedHash = createHash("sha256").update(supplied).digest();
+    return expected.length > 0 && timingSafeEqual(expectedHash, suppliedHash);
+  }
+
+  private providerHealth(): Record<string, unknown> {
+    const claude = this.options.log.getProviderState("claude");
+    const codex = this.options.log.getProviderState("codex");
+    return { ok: true, providers: {
+      claude: { status: claude?.status ?? "not_ready", reason: claude?.reason ?? "state_missing",
+        ...(claude?.cooldownUntil != null ? { cooldownUntil: claude.cooldownUntil } : {}), updatedAt: claude?.updatedAt ?? 0 },
+      codex: { status: codex?.status ?? "ready", ...(codex?.cooldownUntil != null ? { cooldownUntil: codex.cooldownUntil } : {}) },
+    } };
   }
 
   private logArtifactWrite(method: string, bundleId: string | undefined, fileCount: number | undefined, outcome: string, status: number): void {

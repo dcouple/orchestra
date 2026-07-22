@@ -469,7 +469,11 @@ sudoedit /etc/linear-agent-daemon/fable-models.env
 # FABLE_FABLE_MODEL=claude-<confirmed-fable>
 sudo sh -c 'printf "\nFABLE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex-fable\n" >> /etc/linear-agent-daemon/env'
 sudo systemctl restart linear-agent-daemon
-curl -fsS http://127.0.0.1:8787/healthz | python3 -m json.tool
+sudo -u linear-daemon -H sh -c '
+  . /etc/linear-agent-daemon/cliproxyapi.env
+  printf "header = \"Authorization: Bearer %s\"\n" "$CLIPROXY_MANAGEMENT_KEY" |
+    curl -fsS -K - http://127.0.0.1:8787/healthz
+' | python3 -m json.tool
 ```
 
 The health response must show `providers.claude.status` as `ready` before a new Fable
@@ -485,10 +489,15 @@ sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
 sudo systemctl restart linear-agent-daemon
 sudo journalctl -u linear-agent-daemon --since '-10 min' -o cat |
   grep -E 'session_profile_assigned|provider_state_changed|provider_failure_classified|profile_fallback|profile_launcher_unconfigured'
-curl -fsS http://127.0.0.1:8787/healthz | python3 -m json.tool
+sudo -u linear-daemon -H sh -c '
+  . /etc/linear-agent-daemon/cliproxyapi.env
+  printf "header = \"Authorization: Bearer %s\"\n" "$CLIPROXY_MANAGEMENT_KEY" |
+    curl -fsS -K - http://127.0.0.1:8787/healthz
+' | python3 -m json.tool
 ```
 
-Those journal and health commands are the supporting AC6 schema/redaction evidence; verify
+The public health response is only `{ "ok": true }`; provider details require the management-key
+header used above. Those journal and authorized-health commands are the supporting AC6 schema/redaction evidence; verify
 they contain no key, token, or account email. For AC7, temporarily put a `gpt-*` alias in one
 `FABLE_*_MODEL` entry and run `claudex-fable -p test`: it must exit nonzero naming that
 variable before sending a model request. Restore the confirmed mapping afterward. Legacy
@@ -501,7 +510,7 @@ cd /opt/linear-agent-daemon
 pnpm vitest run test/sessions.test.ts -t 'persists Fable for planner and implementer|probes readiness' # AC1, AC3
 pnpm vitest run test/sessions.test.ts -t 'reopens SQLite|child-restart'                                # AC4
 pnpm vitest run test/sessions.test.ts -t 'falls back once|launcher is unconfigured'                   # AC5, AC7
-pnpm vitest run test/server.test.ts test/sessions.test.ts -t 'reports durable|probes readiness'        # AC6
+pnpm vitest run test/server.test.ts test/sessions.test.ts -t 'keeps provider health private|probes readiness' # AC6
 ```
 
 ## Planner-session smoke

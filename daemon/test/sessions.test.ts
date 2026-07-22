@@ -148,6 +148,7 @@ describe("SessionWorker", () => {
     const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
     const fixtureEmail = "secret@example.com"; const fixtureKey = "management-secret";
     seeded.config.linearApiKey = fixtureKey;
+    writeFileSync(seeded.config.cliproxyEnvFile, `CLIPROXY_MANAGEMENT_KEY=${fixtureKey}\n`);
     const logger = new CapturingLogger();
     await new ProviderReadinessPoller(log, seeded.config, logger, async () => ({ files: [
       { provider: "claude", disabled: false, failed: false, email: fixtureEmail },
@@ -185,7 +186,8 @@ describe("SessionWorker", () => {
     expect(starts).toHaveLength(4);
     const healthServer = new WebhookServer({ config: seeded.config, log, logger });
     const healthAddress = await healthServer.listen();
-    const healthBody = await (await fetch(`http://127.0.0.1:${healthAddress.port}/healthz`)).json();
+    const healthBody = await (await fetch(`http://127.0.0.1:${healthAddress.port}/healthz`,
+      { headers: { Authorization: `Bearer ${fixtureKey}` } })).json();
     const routingNames = new Set(["session_profile_assigned", "provider_state_changed", "provider_failure_classified",
       "profile_fallback", "profile_launcher_unconfigured", "legacy_session_profile_defaulted"]);
     const capturedRoutingEvents = logger.entries().filter(entry => routingNames.has(String(entry.event)));
@@ -194,6 +196,28 @@ describe("SessionWorker", () => {
     })).toBe(true);
     await healthServer.close();
     log.close();
+  });
+  it("classifies both pools when Fable and its one Sol retry fail before establishment", async () => {
+    const seeded = setup(); seeded.log.close(); const poster = new Poster(); const logger = new CapturingLogger();
+    const log = new EventLog(seeded.config.dbPath, () => ({ profile: "fable", reason: "claude_ready" }));
+    seeded.config.fableArgv = [process.execPath, resolve("test/fixtures/fake-claude.mjs"), "--fable-launcher"];
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(seeded.dir, "two-provider-failures.jsonl");
+    process.env.CLAUDE_FAKE_MODE = "provider-fail-pre-id";
+    append(log, "d1", "session", "created");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, seeded.config, { pollMs: 10, logger });
+    worker.start(); await waitFor(() => log.turnStates()[0]?.status === "failed"); await worker.stop();
+    expect(log.getSession("session")).toMatchObject({ profile: "sol", profileFallback: 1, claudeSessionId: null });
+    expect(log.getProviderState("claude")).toMatchObject({ status: "cooldown", reason: "connection_refused" });
+    expect(log.getProviderState("codex")).toMatchObject({ status: "cooldown", reason: "connection_refused" });
+    expect(logger.entries().filter(entry => entry.event === "provider_failure_classified"))
+      .toEqual([expect.objectContaining({ linearSessionId: "session", profile: "fable", provider: "claude" }),
+        expect.objectContaining({ linearSessionId: "session", profile: "sol", provider: "codex" })]);
+    expect(logger.entries().filter(entry => entry.event === "profile_fallback")).toHaveLength(1);
+    expect(poster.posts.filter(post => !post.ephemeral)).toHaveLength(1);
+    const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+      .map(line => JSON.parse(line)).filter(row => row.phase === "start");
+    expect(starts).toHaveLength(2); expect(starts[0].args).toContain("--fable-launcher");
+    expect(starts[1].args).not.toContain("--fable-launcher"); log.close();
   });
   it("persists Fable for planner and implementer before their first launch", async () => {
     const seeded = setup(); seeded.log.close();

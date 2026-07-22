@@ -37,6 +37,13 @@ export function selectSessionProfile(log: EventLog, config: Config, now = Date.n
   return { profile: "fable", reason: "claude_ready" };
 }
 
+export async function readCliproxyManagementKey(path: string): Promise<string> {
+  const source = await readFile(path, "utf8").catch(() => { throw new Error("probe_env_unreadable"); });
+  const key = /^\s*(?:export\s+)?CLIPROXY_MANAGEMENT_KEY=(?:['"]?)([^'"\s#]+)(?:['"]?)\s*(?:#.*)?$/m.exec(source)?.[1];
+  if (!key) throw new Error("probe_management_key_missing");
+  return key;
+}
+
 export class ProviderReadinessPoller {
   private timer?: NodeJS.Timeout;
   private probing: Promise<void> | undefined;
@@ -69,9 +76,7 @@ export class ProviderReadinessPoller {
         reason: after.reason, cooldownUntil: after.cooldownUntil }));
   }
   private async fetchAuthFiles(): Promise<unknown> {
-    const source = await readFile(this.config.cliproxyEnvFile, "utf8").catch(() => { throw new Error("probe_env_unreadable"); });
-    const key = /^\s*(?:export\s+)?CLIPROXY_MANAGEMENT_KEY=(?:['"]?)([^'"\s#]+)(?:['"]?)\s*(?:#.*)?$/m.exec(source)?.[1];
-    if (!key) throw new Error("probe_management_key_missing");
+    const key = await readCliproxyManagementKey(this.config.cliproxyEnvFile);
     const signal = AbortSignal.timeout(this.config.providerInitialProbeTimeoutMs);
     const response = await fetch(`${this.config.cliproxyUrl}/v0/management/auth-files`, {
       headers: { Authorization: `Bearer ${key}` }, signal,
@@ -227,6 +232,7 @@ export class SessionWorker {
       onEvent: (event: ClaudeEvent) => progress.push(event.type === "text"
         ? { type: "thought", body: event.text } : toolUseContent(event)),
     };
+    // CLAUDE_BIN may name the host's Sol launcher; CLAUDEX_BIN is the distinct #101 capacity-fallback target.
     const runtimeArgv = runtime === "claudex" ? this.config.claudexArgv!
       : durableProfile === "fable" ? this.config.fableArgv : this.config.claudeArgv;
     const cleanupRejectedRun = async (error: unknown): Promise<never> => {
@@ -274,16 +280,21 @@ export class SessionWorker {
       return fallbackResult;
     };
     result = await applyCapacityFallback(result);
+    const recordProviderFailure = (profile: "fable" | "sol", provider: "claude" | "codex",
+      classified: { state: string; reason: string }): number => {
+      const cooldownUntil = this.now() + PROVIDER_COOLDOWN_MS;
+      this.log.setProviderCooldown(provider, cooldownUntil, classified.reason, this.now());
+      this.logger.log(jsonLog({ event: "provider_state_changed", provider, status: "cooldown",
+        reason: classified.reason, cooldownUntil }));
+      this.logger.error(jsonLog({ event: "provider_failure_classified", linearSessionId: turn.linearSessionId,
+        profile, provider, classifiedState: classified.state, reason: classified.reason, cooldownUntil }));
+      return cooldownUntil;
+    };
     if (!result.ok && !fallbackCause) {
       const classified = classifyProviderFailure(result);
       if (classified) {
         const provider = runtime === "claudex" ? "codex" : durableProfile === "fable" ? "claude" : "codex";
-        const cooldownUntil = this.now() + PROVIDER_COOLDOWN_MS;
-        this.log.setProviderCooldown(provider, cooldownUntil, classified.reason, this.now());
-        this.logger.log(jsonLog({ event: "provider_state_changed", provider, status: "cooldown",
-          reason: classified.reason, cooldownUntil }));
-        this.logger.error(jsonLog({ event: "provider_failure_classified", linearSessionId: turn.linearSessionId,
-          profile: durableProfile, provider, classifiedState: classified.state, reason: classified.reason, cooldownUntil }));
+        const cooldownUntil = recordProviderFailure(durableProfile, provider, classified);
         const fresh = this.log.getSession(turn.linearSessionId);
         if (runtime === "claude" && durableProfile === "fable" && !fresh?.claudeSessionId
           && this.log.applyPreEstablishmentFallback(turn.linearSessionId)) {
@@ -291,6 +302,10 @@ export class SessionWorker {
             provider, classifiedState: classified.state, reason: classified.reason, cooldownUntil }));
           result = await run(this.config.claudeArgv, prompt, false, undefined);
           result = await applyCapacityFallback(result, "claude");
+          if (!result.ok && !fallbackCause) {
+            const solClassified = classifyProviderFailure(result);
+            if (solClassified) recordProviderFailure("sol", "codex", solClassified);
+          }
         }
       }
     }
