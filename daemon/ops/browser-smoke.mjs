@@ -51,7 +51,7 @@ export async function runBrowserSmoke(options = {}) {
   const targetUrl = options.targetUrl ?? url;
   const transport = new StdioClientTransport({ command: mcpBin,
     args: ["--browser", "chrome", "--executable-path", chromeBin, "--headless", "--isolated", "--output-dir", evidenceDir, "--output-mode", "file", "--caps", "devtools"],
-    env: { ...process.env, TMPDIR: stateDir, TEMP: stateDir, TMP: stateDir, PWTEST_SOCKETS_DIR: socketAlias } });
+    env: { ...process.env, TMPDIR: socketAlias, TEMP: socketAlias, TMP: socketAlias, PWTEST_SOCKETS_DIR: socketAlias } });
   const client = new Client({ name: "orchestra-browser-smoke", version: "1.0.0" });
   const call = async (name, args = {}) => {
     const result = await client.callTool({ name, arguments: args });

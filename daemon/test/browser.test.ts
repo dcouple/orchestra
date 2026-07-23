@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -67,6 +67,27 @@ describe("official Playwright MCP browser", () => {
     }
     expect(new Set([first.attempt, second.attempt, third.attempt]).size).toBe(3);
   }, 60_000);
+
+  it("keeps runtime temporary paths short while storing state beneath the attempt", async () => {
+    const attempt = await createBrowserAttempt({ artifactsDir: resolve(outputDir, `long-${"x".repeat(96)}`), browserEnabled: true,
+      playwrightMcpBin: mcpBin, playwrightChromeBin: chromeBin }, "long-runtime-run");
+    try {
+      expect(attempt.stateDir.length).toBeGreaterThan(108);
+      expect(attempt.socketAlias.length).toBeLessThan(80);
+      expect(readlinkSync(attempt.socketAlias)).toBe(attempt.stateDir);
+      expect(attempt.mcpServer.env).toMatchObject({
+        TMPDIR: attempt.socketAlias, TEMP: attempt.socketAlias, TMP: attempt.socketAlias,
+        PWTEST_SOCKETS_DIR: attempt.socketAlias,
+      });
+    } finally { await cleanupBrowserAttempt(attempt); }
+  });
+
+  it("launches Chrome when the evidence root exceeds the socket path limit", async () => {
+    const result = await runBrowserSmoke({ mcpBin, chromeBin, outputDir: resolve(outputDir, `long-${"y".repeat(96)}`) });
+    expect(result.stateDir.length).toBeGreaterThan(108);
+    expect(existsSync(result.stateDir)).toBe(false);
+    expect(result.manifest).toMatchObject({ status: "completed", observedProfile: true, storageWasClean: true });
+  }, 30_000);
 
   it("classifies absent MCP and Chrome prerequisites instead of skipping", async () => {
     await expect(runBrowserSmoke({ mcpBin: "/missing/playwright-mcp", chromeBin, outputDir })).rejects.toThrow("mcp_unavailable");
