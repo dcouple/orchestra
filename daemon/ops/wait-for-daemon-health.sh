@@ -4,6 +4,7 @@ set -euo pipefail
 HEALTH_URL="${1:-http://127.0.0.1:8787/healthz}"
 CURL_BIN="${CURL_BIN:-curl}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+SLEEP_BIN="${SLEEP_BIN:-sleep}"
 DAEMON_HEALTH_MAX_ATTEMPTS="${DAEMON_HEALTH_MAX_ATTEMPTS:-30}"
 DAEMON_HEALTH_RETRY_DELAY_SECONDS="${DAEMON_HEALTH_RETRY_DELAY_SECONDS:-1}"
 
@@ -23,7 +24,7 @@ for ((attempt = 1; attempt <= DAEMON_HEALTH_MAX_ATTEMPTS; attempt++)); do
     exit 0
   fi
   if (( attempt < DAEMON_HEALTH_MAX_ATTEMPTS )); then
-    sleep "${DAEMON_HEALTH_RETRY_DELAY_SECONDS}"
+    "${SLEEP_BIN}" "${DAEMON_HEALTH_RETRY_DELAY_SECONDS}"
   fi
 done
 

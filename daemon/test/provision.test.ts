@@ -50,6 +50,7 @@ describe("daemon provisioning", () => {
   });
   it("installs a root-only operation boundary without weakening the daemon sandbox", () => {
     expect(provision).toContain("/usr/local/sbin/daemonctl");
+    expect(provision).toContain("/usr/local/sbin/wait-for-daemon-health.sh");
     expect(provision).toContain("linear-agent-operation.path");
     expect(provision).toContain("https://github.com/dcouple/orchestra.git");
     expect(operationUnit).toContain("User=root");
@@ -74,8 +75,10 @@ describe("daemon provisioning", () => {
   });
   it("retries daemon health until startup is accepted", () => {
     expect(provision).toContain('bash "${SOURCE_DIR}/ops/wait-for-daemon-health.sh"');
+    expect(daemonctl).toContain('bash "${HEALTH_WAITER}" "${HEALTH_URL}"');
     expect(healthWaiter).toContain("DAEMON_HEALTH_MAX_ATTEMPTS");
     expect(healthWaiter).toContain("DAEMON_HEALTH_RETRY_DELAY_SECONDS");
+    expect(healthWaiter).toContain('SLEEP_BIN="${SLEEP_BIN:-sleep}"');
 
     const dir = mkdtempSync(join(tmpdir(), "daemon-health-"));
     const attemptsFile = join(dir, "attempts");

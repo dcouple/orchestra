@@ -19,6 +19,7 @@ Hard restart interrupts executing turns and never requeues them automatically.
 EOF
 }
 
+DAEMONCTL_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DB_PATH="${DB_PATH:-/var/lib/linear-agent-daemon/events.db}"
 REQUEST_DIR="${DAEMONCTL_REQUEST_DIR:-/var/lib/linear-agent-operations/requests}"
 STATE_DIR="${DAEMONCTL_STATE_DIR:-/var/lib/linear-agent-operations}"
@@ -42,6 +43,7 @@ FLOCK_BIN="${FLOCK_BIN:-flock}"
 SERVICE="${DAEMONCTL_SERVICE:-linear-agent-daemon.service}"
 OPERATION_SERVICE="${DAEMONCTL_OPERATION_SERVICE:-linear-agent-operation.service}"
 HEALTH_URL="${DAEMONCTL_HEALTH_URL:-http://127.0.0.1:8787/healthz}"
+HEALTH_WAITER="${DAEMONCTL_HEALTH_WAITER:-${DAEMONCTL_SCRIPT_DIR}/wait-for-daemon-health.sh}"
 PROVISION="${DAEMONCTL_PROVISION:-${SOURCE_CHECKOUT}/daemon/ops/provision.sh}"
 PROXY_ACCOUNTS="${DAEMONCTL_PROXY_ACCOUNTS:-/opt/linear-agent-daemon/ops/proxy-accounts.sh}"
 MAX_ATTEMPTS="${DAEMONCTL_MAX_ATTEMPTS:-3}"
@@ -63,8 +65,7 @@ json_count_running() { ops_cli running | python3 -c 'import json,sys; print(len(
 
 health_accept() {
   "${SYSTEMCTL}" is-active --quiet "${SERVICE}" || return 1
-  "${CURL}" -fsS --connect-timeout 2 --max-time 10 "${HEALTH_URL}" \
-    | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("ok") is True else 1)'
+  CURL_BIN="${CURL}" SLEEP_BIN="${SLEEP_BIN}" bash "${HEALTH_WAITER}" "${HEALTH_URL}"
 }
 service_pid() { "${SYSTEMCTL}" show "${SERVICE}" --property=MainPID --value 2>/dev/null || echo unknown; }
 copy_preserving_metadata() { cp -p "$1" "$2"; }

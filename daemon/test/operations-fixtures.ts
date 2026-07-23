@@ -59,6 +59,7 @@ PY`), flock = executable(join(bin, "flock"), `exit 0`), sleep = executable(join(
     DAEMONCTL_REQUEST_DIR: requests, DAEMONCTL_ACCEPTED_COMMIT_FILE: accepted, DAEMONCTL_DEPLOYED_COMMIT_FILE: deployed,
     DAEMONCTL_OPS_CLI: resolve("dist/operations-cli.js"), DAEMONCTL_PROVISION: provision,
     DAEMONCTL_BIN: daemonctl, SYSTEMCTL: systemctl, CURL: curl, STAT_BIN: stat, FLOCK_BIN: flock, SLEEP_BIN: sleep, UPTIME_BIN: uptime, PS_BIN: ps, DF_BIN: df,
+    DAEMON_HEALTH_MAX_ATTEMPTS: "1", DAEMON_HEALTH_RETRY_DELAY_SECONDS: "0",
     RUNUSER: runuser, FAKE_SERVICE_LOG: serviceLog, FAKE_PROVISION_LOG: provisionLog, FAKE_HEALTH_COUNT: healthCount, FAKE_RESTART_COUNT: restartCount,
     FAKE_PID_FILE: pidFile, FAKE_RESTART_FAILURES: restartFailures, FAKE_HEALTH_FAILURES: healthFailures, FAKE_PROVISION_FAILURES: provisionFailures,
     FAKE_RUNUSER_LOG: join(dir, "runuser.log") };

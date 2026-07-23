@@ -289,12 +289,13 @@ rsync -a --delete \
   "${SOURCE_DIR}/" /opt/linear-agent-daemon/
 chown -R linear-daemon:linear-daemon /opt/linear-agent-daemon
 chmod 0755 /opt/linear-agent-daemon/ops/proxy-accounts.sh /opt/linear-agent-daemon/ops/codex-provider-gate.sh
-chmod 0755 /opt/linear-agent-daemon/ops/daemonctl
+chmod 0755 /opt/linear-agent-daemon/ops/daemonctl /opt/linear-agent-daemon/ops/wait-for-daemon-health.sh
 runuser -u linear-daemon -- bash -c 'cd /opt/linear-agent-daemon && pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod'
 
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/cliproxyapi.service" /etc/systemd/system/cliproxyapi.service
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-daemon.service" /etc/systemd/system/linear-agent-daemon.service
 install -o root -g root -m 0755 "${SOURCE_DIR}/ops/daemonctl" /usr/local/sbin/daemonctl
+install -o root -g root -m 0755 "${SOURCE_DIR}/ops/wait-for-daemon-health.sh" /usr/local/sbin/wait-for-daemon-health.sh
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-operation.service" /etc/systemd/system/linear-agent-operation.service
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-operation.path" /etc/systemd/system/linear-agent-operation.path
 

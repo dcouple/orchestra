@@ -125,6 +125,13 @@ describe("public config and restart execution", () => {
     expect(readNumber(f.restartCount)).toBe(1); expect(result.stdout).toContain('"state":"succeeded"');
     expect(result.stdout).toContain("service active and health accepted");
   });
+
+  it("retries normal restart health acceptance while the daemon listener starts", () => {
+    const f = opsFixture(); writeFileSync(join(f.dir, "health.failures"), "2\n");
+    const result = f.run(["restart"], { DAEMON_HEALTH_MAX_ATTEMPTS: "3" });
+    expect(result.status).toBe(0); expect(readNumber(f.restartCount)).toBe(1); expect(readNumber(f.healthCount)).toBe(3);
+    expect(result.stdout).toContain("service active and health accepted");
+  });
 });
 
 describe("privileged request/executor boundary", () => {
