@@ -137,7 +137,9 @@ fi
 
   it("installs a claudex executable with the GPT-5.6 Sol defaults", () => {
     expect(provision).toContain('"${SOURCE_DIR}/ops/claudex"');
-    expect(claudex).toContain(". /etc/linear-agent-daemon/cliproxyapi.env");
+    expect(claudex).toContain('CLIPROXY_ENV_FILE="${CLIPROXY_ENV_FILE:-/etc/linear-agent-daemon/cliproxyapi.env}"');
+    expect(claudex).not.toMatch(/^\.\s+.*cliproxyapi\.env/m);
+    expect(claudex).toContain("CLIPROXY_API_KEY unavailable");
     expect(claudex).toContain(
       "export ANTHROPIC_BASE_URL=http://127.0.0.1:8317",
     );
@@ -185,7 +187,9 @@ fi
     writeFileSync(proxyEnv, "CLIPROXY_API_KEY=test-key\n");
     writeFileSync(fakeClaude, `#!/bin/sh\nprintf '%s\\n' "$*" > ${argsFile}\n`);
     chmodSync(fakeClaude, 0o755);
-    const server = createServer((_request, response) => {
+    const authorizations: Array<string | undefined> = [];
+    const server = createServer((request, response) => {
+      authorizations.push(request.headers.authorization);
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ data: [{ id: "claude-real" }] }));
     });
@@ -193,7 +197,10 @@ fi
       server.listen(0, "127.0.0.1", resolveListen),
     );
     const port = (server.address() as { port: number }).port;
-    const run = (models: string) =>
+    const run = (
+      models: string,
+      envOverrides: Record<string, string> = {},
+    ) =>
       new Promise<{ code: number | null; stderr: string }>((resolveRun) => {
         writeFileSync(modelsEnv, models);
         const child = spawn("sh", [resolve("ops/claudex-fable"), "--flag"], {
@@ -203,6 +210,8 @@ fi
             FABLE_MODELS_ENV_FILE: modelsEnv,
             PROXY_URL: `http://127.0.0.1:${port}`,
             FABLE_CLAUDE_BIN: fakeClaude,
+            CLIPROXY_API_KEY: "",
+            ...envOverrides,
           },
           stdio: ["ignore", "ignore", "pipe"],
         });
@@ -215,9 +224,16 @@ fi
     const valid =
       "FABLE_MAIN_MODEL=claude-real\nFABLE_HAIKU_MODEL=claude-real\nFABLE_SONNET_MODEL=claude-real\nFABLE_OPUS_MODEL=claude-real\nFABLE_FABLE_MODEL=claude-real\n";
     expect((await run(valid)).code).toBe(0);
+    expect(authorizations.at(-1)).toBe("Bearer test-key");
     expect(readFileSync(argsFile, "utf8")).toContain(
       "--model claude-real --flag",
     );
+    const callerKey = await run(valid, {
+      CLIPROXY_API_KEY: "caller-key",
+      CLIPROXY_ENV_FILE: join(dir, "unreadable.env"),
+    });
+    expect(callerKey.code).toBe(0);
+    expect(authorizations.at(-1)).toBe("Bearer caller-key");
     const wrong = await run(
       valid.replace(
         "FABLE_MAIN_MODEL=claude-real",
@@ -234,6 +250,11 @@ fi
     );
     expect(missing.code).not.toBe(0);
     expect(missing.stderr).toContain("FABLE_MAIN_MODEL model absent");
+    writeFileSync(proxyEnv, "CLIPROXY_MANAGEMENT_KEY=do-not-expose\n");
+    const missingApiKey = await run(valid);
+    expect(missingApiKey.code).not.toBe(0);
+    expect(missingApiKey.stderr).toContain("CLIPROXY_API_KEY unavailable");
+    expect(missingApiKey.stderr).not.toContain("do-not-expose");
     await new Promise<void>((resolveClose) =>
       server.close(() => resolveClose()),
     );

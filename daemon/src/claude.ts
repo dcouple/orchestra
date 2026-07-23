@@ -3,10 +3,23 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 
 export type ClaudeEvent =
   | { type: "text"; text: string }
-  | { type: "toolUse"; name: string; input: unknown }
+  | { type: "toolUse"; toolUseId: string; name: string; input: unknown }
+  | {
+      type: "toolResult";
+      toolUseId: string;
+      outcome: "success" | "error";
+    }
+  | { type: "linearMcpInit"; status: string }
+  | {
+      type: "linearMcpToolResult";
+      toolUseId: string;
+      toolName: string;
+      outcome: "success" | "error";
+    }
   | { type: "agentStart"; toolUseId: string; role: string; prompt: string }
   | {
       type: "agentResult";
@@ -24,11 +37,49 @@ export interface RunTurnOptions {
   maxTurns: number;
   maxBudgetUsd?: number;
   mcpConfigJson: string;
+  toolHook?: {
+    dbPath: string;
+    turnId: number;
+    operationsCliPath?: string;
+  };
   env?: NodeJS.ProcessEnv;
   trustedEnv?: Record<string, string>;
   onEvent?: (event: ClaudeEvent) => void | Promise<void>;
   onSessionId?: (id: string) => void | Promise<void>;
   signal?: AbortSignal;
+}
+
+interface CommandHook {
+  type: "command";
+  command: string;
+  args: string[];
+  timeout: number;
+}
+
+export function buildToolHookSettings(
+  dbPath: string,
+  turnId: number,
+  operationsCliPath = fileURLToPath(
+    new URL("./operations-cli.js", import.meta.url),
+  ),
+): Record<string, unknown> {
+  if (!Number.isSafeInteger(turnId) || turnId <= 0)
+    throw new Error("tool hook turn id must be a positive integer");
+  if (!dbPath || !operationsCliPath)
+    throw new Error("tool hook paths must not be empty");
+  const hook = (command: "tool-hook-open" | "tool-hook-complete"): CommandHook => ({
+    type: "command",
+    command: process.execPath,
+    args: [operationsCliPath, command, dbPath, String(turnId)],
+    timeout: 10,
+  });
+  return {
+    hooks: {
+      PreToolUse: [{ hooks: [hook("tool-hook-open")] }],
+      PostToolUse: [{ hooks: [hook("tool-hook-complete")] }],
+      PostToolUseFailure: [{ hooks: [hook("tool-hook-complete")] }],
+    },
+  };
 }
 export interface TurnUsage {
   inputTokens: number | undefined;
@@ -54,6 +105,7 @@ export interface RunTurnResult {
   processGroupExited?: boolean;
   usage?: TurnUsage;
   modelUsage?: Record<string, unknown>;
+  linearMcpInitialized?: boolean;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -64,6 +116,23 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function nonnegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function linearMcpInitStatus(event: Record<string, unknown>): string | undefined {
+  const servers = event.mcp_servers;
+  let rawStatus: unknown;
+  if (Array.isArray(servers)) {
+    const linear = servers
+      .map(record)
+      .find((server) => server?.name === "linear");
+    rawStatus = linear?.status;
+  } else {
+    const linear = record(servers)?.linear;
+    rawStatus = typeof linear === "string" ? linear : record(linear)?.status;
+  }
+  if (typeof rawStatus !== "string") return undefined;
+  const status = rawStatus.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+  return status ? status.slice(0, 64) : "unknown";
 }
 
 const OTEL_CHILD_ENV_KEYS: ReadonlySet<string> = new Set([
@@ -81,6 +150,25 @@ const OTEL_CHILD_ENV_KEYS: ReadonlySet<string> = new Set([
   "OTEL_LOG_USER_PROMPTS",
   "OTEL_LOG_ASSISTANT_RESPONSES",
 ]);
+
+const DAEMON_OWNED_CHILD_ENV_KEYS: ReadonlySet<string> = new Set([
+  "CLIPROXY_API_KEY",
+  "BASH_DEFAULT_TIMEOUT_MS",
+  "BASH_MAX_TIMEOUT_MS",
+  "LINEAR_API_KEY",
+]);
+
+function isDeniedChildSecret(key: string): boolean {
+  return (
+    key === "CLIPROXY_MANAGEMENT_KEY" ||
+    key === "ARTIFACT_TOKEN" ||
+    key.endsWith("_WEBHOOK_SECRET") ||
+    key.endsWith("_LINEAR_CLIENT_SECRET") ||
+    key.endsWith("_LINEAR_TOKEN") ||
+    key.startsWith("OAUTH_") ||
+    key.endsWith("_OAUTH_TOKEN")
+  );
+}
 
 function childEnv(
   extra: NodeJS.ProcessEnv | undefined,
@@ -105,6 +193,9 @@ function childEnv(
       key.startsWith("LC_") ||
       key.startsWith("ANTHROPIC_") ||
       key.startsWith("CLAUDE_") ||
+      key === "CLIPROXY_API_KEY" ||
+      key === "BASH_DEFAULT_TIMEOUT_MS" ||
+      key === "BASH_MAX_TIMEOUT_MS" ||
       key === "LINEAR_API_KEY" ||
       key === "GH_TOKEN" ||
       key === "GITHUB_TOKEN" ||
@@ -123,11 +214,14 @@ function childEnv(
     include(key, value, true);
   for (const [key, value] of Object.entries(trusted ?? {}))
     if (
+      !DAEMON_OWNED_CHILD_ENV_KEYS.has(key) &&
       !key.startsWith("OTEL_") &&
       key !== "TRACEPARENT" &&
       key !== "ORCHESTRA_OTEL_RELAY_ENDPOINT"
     )
       allowed[key] = value;
+  for (const key of Object.keys(allowed))
+    if (isDeniedChildSecret(key)) delete allowed[key];
   return allowed;
 }
 
@@ -189,6 +283,19 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   const configDir = await mkdtemp(join(tmpdir(), "linear-claude-mcp-"));
   const configPath = join(configDir, "mcp-config.json");
   await writeFile(configPath, options.mcpConfigJson, { mode: 0o600 });
+  const settingsPath = join(configDir, "settings.json");
+  if (options.toolHook)
+    await writeFile(
+      settingsPath,
+      JSON.stringify(
+        buildToolHookSettings(
+          options.toolHook.dbPath,
+          options.toolHook.turnId,
+          options.toolHook.operationsCliPath,
+        ),
+      ),
+      { mode: 0o600 },
+    );
   const args = [
     ...prefix,
     "-p",
@@ -198,6 +305,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     "--verbose",
   ];
   if (options.resumeSessionId) args.push("--resume", options.resumeSessionId);
+  if (options.toolHook) args.push("--settings", settingsPath);
   args.push(
     "--permission-mode",
     options.permissionMode,
@@ -225,6 +333,9 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   let usage: TurnUsage | undefined;
   let modelUsageResult: Record<string, unknown> | undefined;
   let eventQueue = Promise.resolve();
+  const toolNames = new Map<string, string>();
+  const agentToolUses = new Set<string>();
+  let sawLinearMcpInit = false;
   const emit = (event: ClaudeEvent): void => {
     if (options.onEvent)
       eventQueue = eventQueue.then(() => options.onEvent!(event));
@@ -241,6 +352,13 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     const event = record(value);
     if (!event) return;
     collectCapacityEvidence(event, capacityEvidence);
+    if (event.type === "system" && event.subtype === "init") {
+      const status = linearMcpInitStatus(event);
+      if (status) {
+        sawLinearMcpInit = true;
+        emit({ type: "linearMcpInit", status });
+      }
+    }
     if (typeof event.session_id === "string" && event.session_id !== latestId) {
       latestId = event.session_id;
       if (options.onSessionId)
@@ -254,13 +372,24 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
           if (!block) continue;
           if (block.type === "text" && typeof block.text === "string")
             emit({ type: "text", text: block.text });
-          if (block.type === "tool_use" && typeof block.name === "string") {
-            emit({ type: "toolUse", name: block.name, input: block.input });
+          if (
+            block.type === "tool_use" &&
+            typeof block.id === "string" &&
+            typeof block.name === "string"
+          ) {
+            toolNames.set(block.id, block.name);
+            emit({
+              type: "toolUse",
+              toolUseId: block.id,
+              name: block.name,
+              input: block.input,
+            });
             const input = record(block.input);
             if (
-              (block.name === "Agent" || block.name === "Task") &&
-              typeof block.id === "string"
-            )
+              block.name === "Agent" ||
+              block.name === "Task"
+            ) {
+              agentToolUses.add(block.id);
               emit({
                 type: "agentStart",
                 toolUseId: block.id,
@@ -270,6 +399,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
                     : "agent",
                 prompt: typeof input?.prompt === "string" ? input.prompt : "",
               });
+            }
           }
         }
     }
@@ -283,6 +413,21 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
             typeof block.tool_use_id !== "string"
           )
             continue;
+          const outcome = block.is_error === true ? "error" : "success";
+          emit({
+            type: "toolResult",
+            toolUseId: block.tool_use_id,
+            outcome,
+          });
+          const toolName = toolNames.get(block.tool_use_id);
+          if (toolName?.startsWith("mcp__linear__"))
+            emit({
+              type: "linearMcpToolResult",
+              toolUseId: block.tool_use_id,
+              toolName: toolName.slice(0, 120),
+              outcome,
+            });
+          if (!agentToolUses.has(block.tool_use_id)) continue;
           const report =
             typeof block.content === "string"
               ? block.content
@@ -301,7 +446,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
             type: "agentResult",
             toolUseId: block.tool_use_id,
             report,
-            outcome: block.is_error === true ? "error" : "success",
+            outcome,
           });
         }
     }
@@ -397,7 +542,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
       await awaitGroupExit(1_000);
     }
     await Promise.allSettled(sessionQueue);
-    await eventQueue.catch(() => {});
+    await eventQueue;
     const ok =
       !spawnError &&
       closed.code === 0 &&
@@ -420,6 +565,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
       processGroupExited: !groupAlive(),
       ...(usage ? { usage } : {}),
       ...(modelUsageResult ? { modelUsage: modelUsageResult } : {}),
+      ...(sawLinearMcpInit ? { linearMcpInitialized: true } : {}),
     };
   } finally {
     if (killTimer) clearTimeout(killTimer);

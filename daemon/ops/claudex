@@ -1,7 +1,26 @@
 #!/bin/sh
 set -eu
 
-. /etc/linear-agent-daemon/cliproxyapi.env
+CLIPROXY_ENV_FILE="${CLIPROXY_ENV_FILE:-/etc/linear-agent-daemon/cliproxyapi.env}"
+
+fail() { echo "claudex: $1" >&2; exit 1; }
+if [ -z "${CLIPROXY_API_KEY:-}" ]; then
+  [ -r "$CLIPROXY_ENV_FILE" ] || fail "CLIPROXY_API_KEY unavailable"
+  CLIPROXY_API_KEY="$(
+    awk '
+      /^[[:space:]]*(export[[:space:]]+)?CLIPROXY_API_KEY[[:space:]]*=/ {
+        value = $0
+        sub(/^[[:space:]]*(export[[:space:]]+)?CLIPROXY_API_KEY[[:space:]]*=[[:space:]]*/, "", value)
+        sub(/[[:space:]]*(#.*)?$/, "", value)
+        if ((substr(value, 1, 1) == "\"" && substr(value, length(value), 1) == "\"") ||
+            (substr(value, 1, 1) == "\047" && substr(value, length(value), 1) == "\047"))
+          value = substr(value, 2, length(value) - 2)
+        if (value != "") { print value; exit }
+      }
+    ' "$CLIPROXY_ENV_FILE"
+  )"
+fi
+[ -n "${CLIPROXY_API_KEY:-}" ] || fail "CLIPROXY_API_KEY unavailable"
 
 export CLIPROXY_API_KEY
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8317

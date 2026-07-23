@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import {
   mkdir,
   open,
-  readFile,
   readdir,
+  readFile,
   realpath,
   unlink,
 } from "node:fs/promises";
@@ -31,6 +31,10 @@ import type {
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
 import { buildTurnSpan, mintSpanId, postSpans, traceContext } from "./otel.js";
 import type { OtlpRelay, RelayCapability } from "./otel-relay.js";
+import {
+  readCliproxyApiKey,
+  readCliproxyManagementKey,
+} from "./proxy-env.js";
 import { WorktreeManager } from "./worktrees.js";
 
 interface Logger {
@@ -48,6 +52,7 @@ export interface SessionWorkerOptions {
   onTurnComplete?: () => void;
   relay?: OtlpRelay;
 }
+export type ShutdownPolicy = "recover" | "hard_restart";
 
 const PROVIDER_COOLDOWN_MS = 10 * 60_000;
 
@@ -110,18 +115,6 @@ export function selectSessionProfile(
       reason: state.reason ?? "claude_not_ready",
     };
   return { profile: "fable", runtime: "claude", reason: "claude_ready" };
-}
-
-export async function readCliproxyManagementKey(path: string): Promise<string> {
-  const source = await readFile(path, "utf8").catch(() => {
-    throw new Error("probe_env_unreadable");
-  });
-  const key =
-    /^\s*(?:export\s+)?CLIPROXY_MANAGEMENT_KEY=(?:['"]?)([^'"\s#]+)(?:['"]?)\s*(?:#.*)?$/m.exec(
-      source,
-    )?.[1];
-  if (!key) throw new Error("probe_management_key_missing");
-  return key;
 }
 
 export class ProviderReadinessPoller {
@@ -332,6 +325,8 @@ export class SessionWorker {
     }
   >();
   private readonly stopRequested = new Set<number>();
+  private readonly shutdownDeferred = new Set<number>();
+  private shutdownPolicy: ShutdownPolicy = "recover";
   private readonly now: () => number;
   private readonly logger: Logger;
   private readonly worktrees: WorktreeManager;
@@ -352,7 +347,18 @@ export class SessionWorker {
   }
   start(): void {
     this.stopped = false;
-    this.log.interruptStaleRunning(this.now());
+    for (const disposition of this.log.recoverStaleRunning(this.now()))
+      this.logger.log(
+        jsonLog({
+          event: "restart_turn_disposition",
+          turnId: disposition.turnId,
+          outcome: disposition.outcome,
+          reason: disposition.reason,
+          ...(disposition.resumeTurnId !== null
+            ? { resumeTurnId: disposition.resumeTurnId }
+            : {}),
+        }),
+      );
     this.timer = setInterval(() => {
       void this.drain();
       void this.triggerActivityDrain();
@@ -398,6 +404,18 @@ export class SessionWorker {
                   event: "session_turn_stopped",
                   turnId: turn.id,
                   linearSessionId: turn.linearSessionId,
+                }),
+              );
+              return;
+            }
+            if (this.shutdownDeferred.has(turn.id)) {
+              this.logger.log(
+                jsonLog({
+                  event: "session_turn_deferred",
+                  turnId: turn.id,
+                  linearSessionId: turn.linearSessionId,
+                  reason: "service_shutdown",
+                  policy: this.shutdownPolicy,
                 }),
               );
               return;
@@ -454,6 +472,9 @@ export class SessionWorker {
     const implementer = session.mode === "implementer";
     const runtime = session.runtime;
     const resuming = turn.kind === "prompted" && !!session.claudeSessionId;
+    const cliproxyApiKey = await readCliproxyApiKey(
+      this.config.cliproxyEnvFile,
+    );
     let prompt =
       implementer && !resuming
         ? `/do ${identifier}`
@@ -496,7 +517,7 @@ export class SessionWorker {
       mcpServers: {
         linear: {
           type: "http",
-          url: "https://mcp.linear.app/mcp",
+          url: this.config.linearMcpUrl,
           headers: { Authorization: `Bearer ${this.config.linearApiKey}` },
         },
       },
@@ -564,6 +585,22 @@ export class SessionWorker {
         }),
       );
     }
+    let linearMcpInitialized = false;
+    let linearMcpCloseLogged = false;
+    let eventCallbackError: unknown;
+    const logLinearMcpClose = (
+      classification: "turn_completed" | "runner_failed" | "daemon_shutdown",
+    ): void => {
+      if (!linearMcpInitialized || linearMcpCloseLogged) return;
+      linearMcpCloseLogged = true;
+      this.logger.log(
+        jsonLog({
+          event: "linear_mcp_turn_close",
+          turnId: turn.id,
+          classification,
+        }),
+      );
+    };
     const common = {
       cwd: worktree.path,
       permissionMode: implementer
@@ -576,7 +613,14 @@ export class SessionWorker {
         ? { maxBudgetUsd: this.config.doMaxBudgetUsd }
         : {}),
       mcpConfigJson: linearMcpConfigJson,
+      toolHook: {
+        dbPath: this.config.dbPath,
+        turnId: turn.id,
+      },
       env: {
+        CLIPROXY_API_KEY: cliproxyApiKey,
+        BASH_DEFAULT_TIMEOUT_MS: String(this.config.bashDefaultTimeoutMs),
+        BASH_MAX_TIMEOUT_MS: String(this.config.bashMaxTimeoutMs),
         LINEAR_API_KEY: this.config.linearApiKey!,
         GH_TOKEN: process.env.GH_TOKEN,
         GITHUB_TOKEN: process.env.GITHUB_TOKEN,
@@ -588,54 +632,89 @@ export class SessionWorker {
       },
       signal,
       onEvent: async (event: ClaudeEvent) => {
-        if (event.type === "text")
-          progress.push({ type: "thought", body: event.text });
-        else if (event.type === "toolUse") progress.push(toolUseContent(event));
-        else if (event.type === "agentStart") {
-          this.log.claimClaudeInvocation({
-            linearSessionId: turn.linearSessionId,
-            turnId: turn.id,
-            toolUseId: event.toolUseId,
-            role: event.role,
-            prompt: event.prompt,
-            traceId: session.traceId,
-            startedAt: this.now(),
-          });
-          if (capability)
-            this.options.relay?.registerAgent(capability, {
+        try {
+          if (event.type === "text")
+            progress.push({ type: "thought", body: event.text });
+          else if (event.type === "toolUse") {
+            this.log.recordTurnToolCallStarted(
+              turn.id,
+              event.toolUseId,
+              event.name,
+              this.now(),
+            );
+            progress.push(toolUseContent(event));
+          } else if (event.type === "toolResult") {
+            this.log.recordTurnToolCallCompleted(
+              turn.id,
+              event.toolUseId,
+              this.now(),
+            );
+          } else if (event.type === "linearMcpInit") {
+            linearMcpInitialized = true;
+            this.logger.log(
+              jsonLog({
+                event: "linear_mcp_turn_init",
+                turnId: turn.id,
+                status: event.status,
+              }),
+            );
+          } else if (event.type === "linearMcpToolResult") {
+            this.logger.log(
+              jsonLog({
+                event: "linear_mcp_tool_result",
+                turnId: turn.id,
+                toolName: event.toolName,
+                outcome: event.outcome,
+              }),
+            );
+          } else if (event.type === "agentStart") {
+            this.log.claimClaudeInvocation({
               linearSessionId: turn.linearSessionId,
+              turnId: turn.id,
               toolUseId: event.toolUseId,
               role: event.role,
               prompt: event.prompt,
+              traceId: session.traceId,
+              startedAt: this.now(),
             });
-        } else {
-          const completedAt = this.now();
-          this.log.completeClaudeStream(
-            turn.linearSessionId,
-            event.toolUseId,
-            event.report,
-            event.outcome,
-            completedAt,
-            completedAt + 30_000,
-          );
-          if (capability) {
-            const row = this.log
-              .invocations(turn.linearSessionId)
-              .find(
-                (item) =>
-                  item.sourceKey ===
-                  `claude:${turn.linearSessionId}:${event.toolUseId}`,
-              );
-            this.options.relay?.completeAgent(capability, {
-              linearSessionId: turn.linearSessionId,
-              toolUseId: event.toolUseId,
-              role: row?.role ?? "agent",
-              prompt: row?.prompt ?? "",
-              report: event.report,
-              outcome: event.outcome,
-              streamCompletedAt: completedAt,
-            });
+            if (capability)
+              this.options.relay?.registerAgent(capability, {
+                linearSessionId: turn.linearSessionId,
+                toolUseId: event.toolUseId,
+                role: event.role,
+                prompt: event.prompt,
+              });
+          } else {
+            const completedAt = this.now();
+            this.log.completeClaudeStream(
+              turn.linearSessionId,
+              event.toolUseId,
+              event.report,
+              event.outcome,
+              completedAt,
+              completedAt + 30_000,
+            );
+            if (capability) {
+              const row = this.log
+                .invocations(turn.linearSessionId)
+                .find(
+                  (item) =>
+                    item.sourceKey ===
+                    `claude:${turn.linearSessionId}:${event.toolUseId}`,
+                );
+              this.options.relay?.completeAgent(capability, {
+                linearSessionId: turn.linearSessionId,
+                toolUseId: event.toolUseId,
+                role: row?.role ?? "agent",
+                prompt: row?.prompt ?? "",
+                report: event.report,
+                outcome: event.outcome,
+                streamCompletedAt: completedAt,
+              });
+            }
           }
+        } catch (error) {
+          eventCallbackError ??= error;
         }
       },
     };
@@ -648,6 +727,11 @@ export class SessionWorker {
     const cleanupRejectedRun = async (error: unknown): Promise<never> => {
       clearInterval(keepalive);
       await progress.cancelAndWait();
+      logLinearMcpClose(
+        this.shutdownDeferred.has(turn.id)
+          ? "daemon_shutdown"
+          : "runner_failed",
+      );
       throw error;
     };
     let browserRequired = session.browserRequired === 1;
@@ -706,6 +790,7 @@ export class SessionWorker {
             );
           },
         });
+        if (eventCallbackError !== undefined) throw eventCallbackError;
         return timeout?.aborted && !signal.aborted
           ? {
               ...turnResult,
@@ -816,6 +901,24 @@ export class SessionWorker {
         }
       }
     }
+    if (
+      this.shutdownDeferred.has(turn.id) &&
+      !this.stopRequested.has(turn.id)
+    ) {
+      clearInterval(keepalive);
+      await progress.cancelAndWait();
+      logLinearMcpClose("daemon_shutdown");
+      this.logger.log(
+        jsonLog({
+          event: "session_turn_deferred",
+          turnId: turn.id,
+          linearSessionId: turn.linearSessionId,
+          reason: "service_shutdown",
+          policy: this.shutdownPolicy,
+        }),
+      );
+      return;
+    }
     const recordProviderFailure = (
       profile: "fable" | "sol",
       provider: "claude" | "codex",
@@ -872,6 +975,7 @@ export class SessionWorker {
     clearInterval(keepalive);
     const finishedAt = this.now();
     if (this.stopRequested.has(turn.id)) {
+      logLinearMcpClose("runner_failed");
       this.log.markTurnStopped(turn.id, finishedAt);
       this.logger.log(
         jsonLog({
@@ -885,6 +989,7 @@ export class SessionWorker {
       this.log.clearTurnProgressBarrier(turn.id);
       return;
     }
+    logLinearMcpClose(result.ok ? "turn_completed" : "runner_failed");
     if (implementer && result.resultText) {
       const url = this.extractPullRequestUrl(result.resultText);
       if (url)
@@ -1677,12 +1782,16 @@ export class SessionWorker {
     }
     void this.triggerActivityDrain();
   }
-  async stop(): Promise<void> {
+  async stop(policy: ShutdownPolicy = "recover"): Promise<void> {
     this.stopped = true;
+    this.shutdownPolicy = policy;
     if (this.timer) clearInterval(this.timer);
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
     if (this.dispatchTimer) clearInterval(this.dispatchTimer);
-    for (const active of this.active.values()) active.controller.abort();
+    for (const [turnId, active] of this.active) {
+      if (!this.stopRequested.has(turnId)) this.shutdownDeferred.add(turnId);
+      active.controller.abort();
+    }
     await Promise.allSettled(
       [...this.active.values()].map((active) => active.promise),
     );

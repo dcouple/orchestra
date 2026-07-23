@@ -487,6 +487,124 @@ describe("EventLog", () => {
     reopened.close();
   });
 
+  it("persists bounded tool-call state and resumes a safe stale turn exactly once", () => {
+    const dbPath = path();
+    let log = new EventLog(dbPath);
+    log.append(event());
+    log.updateClaudeSessionId("session-1", "claude-1", 1001);
+    expect(log.claimNextTurn(1100)?.id).toBe(1);
+    log.recordTurnToolCallStarted(1, "tool-1", "mcp__linear__get_issue", 1101);
+    expect(log.openTurnToolCalls(1)).toEqual([
+      expect.objectContaining({
+        turnId: 1,
+        toolUseId: "tool-1",
+        toolName: "mcp__linear__get_issue",
+        state: "open",
+      }),
+    ]);
+    expect(log.recordTurnToolCallCompleted(1, "tool-1", 1102)).toBe(true);
+    log.close();
+
+    log = new EventLog(dbPath);
+    expect(log.openTurnToolCalls(1)).toEqual([]);
+    expect(log.recoverStaleRunning(1200)).toEqual([
+      {
+        turnId: 1,
+        outcome: "resumed",
+        reason: "safe_boundary",
+        resumeTurnId: 2,
+      },
+    ]);
+    expect(log.turnStates()).toEqual([
+      expect.objectContaining({ id: 1, status: "interrupted" }),
+      expect.objectContaining({
+        id: 2,
+        status: "pending",
+        kind: "prompted",
+        sourceKey: "restart-resume:1",
+      }),
+    ]);
+    expect(log.pendingTurnActivities(1200)).toEqual([]);
+    expect(log.recoverStaleRunning(1201)).toEqual([]);
+    expect(log.turnStates()).toHaveLength(2);
+    expect(log.claimNextTurn(1202)).toMatchObject({ id: 2, status: "running" });
+    log.close();
+  });
+
+  it("requires human review exactly once at an unresolved external-tool boundary", () => {
+    const log = new EventLog(path());
+    log.append(event());
+    log.updateClaudeSessionId("session-1", "claude-1", 1001);
+    log.claimNextTurn(1100);
+    log.recordTurnToolCallStarted(
+      1,
+      "x".repeat(300),
+      "dangerous-tool".repeat(20),
+      1101,
+    );
+    expect(log.openTurnToolCalls(1)[0]).toMatchObject({
+      toolUseId: expect.stringMatching(/^sha256:/),
+      toolName: expect.stringMatching(/^dangerous-tool/),
+    });
+    expect(log.openTurnToolCalls(1)[0]!.toolName).toHaveLength(120);
+    expect(log.recoverStaleRunning(1200)).toEqual([
+      {
+        turnId: 1,
+        outcome: "human_required",
+        reason: "unresolved_tool_call",
+        resumeTurnId: null,
+      },
+    ]);
+    expect(log.pendingTurnActivities(1200)).toEqual([
+      expect.objectContaining({
+        turnId: 1,
+        activityId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        ),
+        kind: "error",
+      }),
+    ]);
+    expect(log.turnStates()).toHaveLength(1);
+    expect(log.recoverStaleRunning(1201)).toEqual([]);
+    expect(log.pendingTurnActivities(1201)).toHaveLength(1);
+    log.close();
+  });
+
+  it("atomically retains hard-restart intent when stale disposition rolls back", () => {
+    const dbPath = path();
+    const log = new EventLog(dbPath);
+    log.append(event());
+    log.updateClaudeSessionId("session-1", "claude-1", 1001);
+    log.claimNextTurn(1100);
+    expect(log.recordRestartIntent("operator restart", 1101)).toEqual({
+      policy: "interrupt",
+      reason: "operator restart",
+      createdAt: 1101,
+    });
+    const db = new Database(dbPath);
+    db.exec(`CREATE TRIGGER fail_restart_human BEFORE INSERT ON turn_activities
+      WHEN NEW.turn_id=1
+      BEGIN SELECT RAISE(ABORT, 'fixture disposition crash'); END;`);
+    expect(() => log.recoverStaleRunning(1200)).toThrow(
+      /fixture disposition crash/,
+    );
+    expect(log.turnStates()[0]).toMatchObject({ status: "running" });
+    expect(log.restartIntent()).toMatchObject({ policy: "interrupt" });
+    db.exec("DROP TRIGGER fail_restart_human");
+    expect(log.recoverStaleRunning(1201)).toEqual([
+      {
+        turnId: 1,
+        outcome: "human_required",
+        reason: "hard_restart",
+        resumeTurnId: null,
+      },
+    ]);
+    expect(log.restartIntent()).toBeUndefined();
+    expect(log.turnStates()).toHaveLength(1);
+    db.close();
+    log.close();
+  });
+
   it("survives close/reopen with ack state and tokens", () => {
     const dbPath = path();
     const first = new EventLog(dbPath);

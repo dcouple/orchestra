@@ -21,6 +21,11 @@ describe("loadConfig", () => {
     expect(config.artifactMaxBodyBytes).toBe(32 * 1024 * 1024);
     expect(config.reconcileIntervalMs).toBe(60_000);
     expect(config.reconcileRequestTimeoutMs).toBe(10_000);
+    expect(config).toMatchObject({
+      linearMcpUrl: "https://mcp.linear.app/mcp",
+      linearMcpMonitorIntervalMs: 60_000,
+      linearMcpMonitorTimeoutMs: 10_000,
+    });
     expect(config.apps.planner.staticToken).toBe("pt");
     expect(config.apps.planner.harness).toBe("claude");
     expect(config.apps.implementer.harness).toBe("claude");
@@ -31,6 +36,7 @@ describe("loadConfig", () => {
     expect(config).toMatchObject({ cliproxyEnvFile: "/etc/linear-agent-daemon/cliproxyapi.env",
       cliproxyUrl: "http://127.0.0.1:8317", providerProbeIntervalMs: 60_000,
       providerStateStaleMs: 300_000, providerInitialProbeTimeoutMs: 5_000 });
+    expect(config).toMatchObject({ bashDefaultTimeoutMs: 900_000, bashMaxTimeoutMs: 900_000 });
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
   });
   it("loads independent harness preferences and names invalid settings", () => {
@@ -56,6 +62,42 @@ describe("loadConfig", () => {
         providerProbeIntervalMs: 2000, providerStateStaleMs: 9000, providerInitialProbeTimeoutMs: 750,
       });
     expect(() => loadConfig({ ...base, PROVIDER_INITIAL_PROBE_TIMEOUT_MS: "0" })).toThrow("PROVIDER_INITIAL_PROBE_TIMEOUT_MS");
+  });
+  it("validates Claude Bash timeout overrides", () => {
+    expect(loadConfig({ ...base, BASH_DEFAULT_TIMEOUT_MS: "360000",
+      BASH_MAX_TIMEOUT_MS: "1200000" })).toMatchObject({
+        bashDefaultTimeoutMs: 360_000, bashMaxTimeoutMs: 1_200_000,
+      });
+    for (const [name, value] of [
+      ["BASH_DEFAULT_TIMEOUT_MS", "0"],
+      ["BASH_DEFAULT_TIMEOUT_MS", "1.5"],
+      ["BASH_MAX_TIMEOUT_MS", "nope"],
+    ])
+      expect(() => loadConfig({ ...base, [name]: value })).toThrow(name);
+    expect(() => loadConfig({ ...base, BASH_DEFAULT_TIMEOUT_MS: "900001",
+      BASH_MAX_TIMEOUT_MS: "900000" })).toThrow(
+        "BASH_MAX_TIMEOUT_MS must be greater than or equal to BASH_DEFAULT_TIMEOUT_MS",
+      );
+  });
+  it("loads and validates Linear MCP monitor settings", () => {
+    expect(loadConfig({
+      ...base,
+      LINEAR_MCP_URL: "https://linear.example.test/mcp/",
+      LINEAR_MCP_MONITOR_INTERVAL_MS: "30000",
+      LINEAR_MCP_MONITOR_TIMEOUT_MS: "2500",
+    })).toMatchObject({
+      linearMcpUrl: "https://linear.example.test/mcp",
+      linearMcpMonitorIntervalMs: 30_000,
+      linearMcpMonitorTimeoutMs: 2_500,
+    });
+    expect(() => loadConfig({
+      ...base,
+      LINEAR_MCP_MONITOR_INTERVAL_MS: "0",
+    })).toThrow("LINEAR_MCP_MONITOR_INTERVAL_MS");
+    expect(() => loadConfig({
+      ...base,
+      LINEAR_MCP_MONITOR_TIMEOUT_MS: "nope",
+    })).toThrow("LINEAR_MCP_MONITOR_TIMEOUT_MS");
   });
   it("forces production do-mode autonomy and parses its budget",()=>{
     expect(()=>loadConfig({...base,DAEMON_TEST_MODE:undefined,WEBHOOK_BASE_URL:"https://agent.example.com",DO_PERMISSION_MODE:"plan"})).toThrow("DO_PERMISSION_MODE");

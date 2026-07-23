@@ -83,6 +83,29 @@ export interface TurnRow {
   turnSpanId: string | null;
   executionFinishedAt: number | null;
 }
+export interface RestartIntentRow {
+  policy: "interrupt";
+  reason: string;
+  createdAt: number;
+}
+export interface TurnToolCallRow {
+  turnId: number;
+  toolUseId: string;
+  toolName: string;
+  state: "open" | "completed";
+  openedAt: number;
+  completedAt: number | null;
+}
+export interface RestartDisposition {
+  turnId: number;
+  outcome: "resumed" | "human_required";
+  reason:
+    | "safe_boundary"
+    | "hard_restart"
+    | "missing_claude_session"
+    | "unresolved_tool_call";
+  resumeTurnId: number | null;
+}
 export type EnrichmentState =
   | "pending"
   | "enriched"
@@ -238,6 +261,14 @@ function randomHex(bytes: number): string {
   let value = randomBytes(bytes).toString("hex");
   while (/^0+$/.test(value)) value = randomBytes(bytes).toString("hex");
   return value;
+}
+
+function deterministicUuid(key: string): string {
+  const bytes = createHash("sha256").update(key).digest().subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export interface AckRow {
@@ -480,6 +511,23 @@ export class EventLog {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_one_active
         ON operations((1)) WHERE state IN ('pending','draining','executing','accepting','rolling_back','blocked');
+      CREATE TABLE IF NOT EXISTS restart_intents (
+        singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+        policy TEXT NOT NULL CHECK(policy='interrupt'),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 240),
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS turn_tool_calls (
+        turn_id INTEGER NOT NULL REFERENCES turns(id),
+        tool_use_id TEXT NOT NULL CHECK(length(tool_use_id) BETWEEN 1 AND 240),
+        tool_name TEXT NOT NULL CHECK(length(tool_name) BETWEEN 1 AND 120),
+        state TEXT NOT NULL CHECK(state IN ('open','completed')),
+        opened_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        PRIMARY KEY(turn_id,tool_use_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_turn_tool_calls_open
+        ON turn_tool_calls(turn_id) WHERE state='open';
     `);
     this.migrateEventColumns();
     this.migrateSessionColumns();
@@ -1322,24 +1370,202 @@ export class EventLog {
       )
       .run(now, turnId);
   }
-  interruptStaleRunning(now = Date.now()): number[] {
+  recordRestartIntent(reason: string, now = Date.now()): RestartIntentRow {
+    const normalized = reason.trim();
+    if (
+      normalized.length === 0 ||
+      normalized.length > 240 ||
+      normalized.includes("\n") ||
+      normalized.includes("\r")
+    )
+      throw new Error("restart intent reason must be one line of at most 240 characters");
+    this.db
+      .prepare(
+        `INSERT INTO restart_intents(singleton,policy,reason,created_at)
+      VALUES(1,'interrupt',?,?)
+      ON CONFLICT(singleton) DO UPDATE SET policy='interrupt',reason=excluded.reason,created_at=excluded.created_at`,
+      )
+      .run(normalized, now);
+    return this.restartIntent()!;
+  }
+  restartIntent(): RestartIntentRow | undefined {
+    return this.db
+      .prepare(
+        `SELECT policy,reason,created_at createdAt
+      FROM restart_intents WHERE singleton=1`,
+      )
+      .get() as RestartIntentRow | undefined;
+  }
+  clearRestartIntent(): boolean {
+    return (
+      this.db.prepare("DELETE FROM restart_intents WHERE singleton=1").run()
+        .changes === 1
+    );
+  }
+  recordTurnToolCallStarted(
+    turnId: number,
+    toolUseId: string,
+    toolName: string,
+    now = Date.now(),
+  ): void {
+    const id = this.boundedToolUseId(toolUseId);
+    const name = toolName.trim().slice(0, 120) || "unknown";
+    const turn = this.db
+      .prepare("SELECT status FROM turns WHERE id=?")
+      .get(turnId) as { status: string } | undefined;
+    if (turn?.status !== "running")
+      throw new Error("tool call turn is not running");
+    const inserted = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO turn_tool_calls
+      (turn_id,tool_use_id,tool_name,state,opened_at)
+      VALUES(?,?,?,'open',?)`,
+      )
+      .run(turnId, id, name, now);
+    if (inserted.changes === 1) return;
+    const existing = this.db
+      .prepare(
+        `SELECT tool_name toolName,state FROM turn_tool_calls
+      WHERE turn_id=? AND tool_use_id=?`,
+      )
+      .get(turnId, id) as
+      | { toolName: string; state: "open" | "completed" }
+      | undefined;
+    if (existing?.state !== "open" || existing.toolName !== name)
+      throw new Error("tool use id conflicts with durable tool-call state");
+  }
+  recordTurnToolCallCompleted(
+    turnId: number,
+    toolUseId: string,
+    now = Date.now(),
+  ): boolean {
+    const changed = this.db
+        .prepare(
+          `UPDATE turn_tool_calls SET state='completed',completed_at=?
+        WHERE turn_id=? AND tool_use_id=? AND state='open'`,
+        )
+        .run(now, turnId, this.boundedToolUseId(toolUseId));
+    if (changed.changes === 1) return true;
+    const existing = this.db
+      .prepare(
+        `SELECT state FROM turn_tool_calls
+      WHERE turn_id=? AND tool_use_id=?`,
+      )
+      .get(turnId, this.boundedToolUseId(toolUseId)) as
+      | { state: "open" | "completed" }
+      | undefined;
+    if (existing?.state === "completed") return false;
+    throw new Error("tool call completion has no durable open record");
+  }
+  openTurnToolCalls(turnId: number): TurnToolCallRow[] {
+    return this.db
+      .prepare(
+        `SELECT turn_id turnId,tool_use_id toolUseId,tool_name toolName,state,
+      opened_at openedAt,completed_at completedAt
+      FROM turn_tool_calls WHERE turn_id=? AND state='open' ORDER BY opened_at,tool_use_id`,
+      )
+      .all(turnId) as TurnToolCallRow[];
+  }
+  recoverStaleRunning(now = Date.now()): RestartDisposition[] {
     return this.db.transaction(() => {
       this.db
         .prepare(
           "UPDATE turn_activities SET progress_barrier=0 WHERE progress_barrier=1",
         )
         .run();
+      const hardRestart = this.restartIntent() !== undefined;
       const rows = this.db
         .prepare(
-          `SELECT t.id,e.app FROM turns t JOIN events e ON e.id=t.event_id WHERE t.status='running'`,
+          `SELECT t.id,t.linear_session_id linearSessionId,t.issue_id issueId,
+        e.app,s.issue_identifier issueIdentifier,s.claude_session_id claudeSessionId,
+        EXISTS(SELECT 1 FROM turn_tool_calls c WHERE c.turn_id=t.id AND c.state='open') hasOpenTool
+        FROM turns t
+        JOIN events e ON e.id=t.event_id
+        LEFT JOIN sessions s ON s.linear_session_id=t.linear_session_id
+        WHERE t.status='running'
+        ORDER BY t.id`,
         )
-        .all() as Array<{ id: number; app: AppName }>;
+        .all() as Array<{
+        id: number;
+        linearSessionId: string;
+        issueId: string;
+        app: AppName;
+        issueIdentifier: string | null;
+        claudeSessionId: string | null;
+        hasOpenTool: number;
+      }>;
+      const dispositions: RestartDisposition[] = [];
       for (const row of rows) {
         this.db
           .prepare(
             "UPDATE turns SET status='interrupted', error='daemon restarted during turn', finished_at=? WHERE id=?",
           )
           .run(now, row.id);
+        const reason: RestartDisposition["reason"] = hardRestart
+          ? "hard_restart"
+          : row.hasOpenTool
+            ? "unresolved_tool_call"
+            : !row.claudeSessionId
+              ? "missing_claude_session"
+              : "safe_boundary";
+        if (reason === "safe_boundary") {
+          const sourceKey = `restart-resume:${row.id}`;
+          this.db
+            .prepare(
+              `INSERT OR IGNORE INTO events
+            (delivery_id,app,action,agent_session_id,source_activity_id,issue_id,issue_identifier,received_at,raw_body)
+            VALUES (?,?,'prompted',?,?,?,?,?,?)`,
+            )
+            .run(
+              sourceKey,
+              row.app,
+              row.linearSessionId,
+              sourceKey,
+              row.issueId,
+              row.issueIdentifier,
+              now,
+              Buffer.from(
+                JSON.stringify({
+                  agentActivity: {
+                    body: "Continue from the interrupted daemon turn. Review the current worktree state before proceeding.",
+                  },
+                }),
+              ),
+            );
+          const event = this.db
+            .prepare("SELECT id FROM events WHERE delivery_id=?")
+            .get(sourceKey) as { id: number };
+          this.db
+            .prepare(
+              `INSERT OR IGNORE INTO turns
+            (event_id,linear_session_id,issue_id,source_key,kind,status)
+            VALUES (?,?,?,?, 'prompted','pending')`,
+            )
+            .run(
+              event.id,
+              row.linearSessionId,
+              row.issueId,
+              sourceKey,
+            );
+          const resume = this.db
+            .prepare("SELECT id FROM turns WHERE source_key=?")
+            .get(sourceKey) as { id: number };
+          dispositions.push({
+            turnId: row.id,
+            outcome: "resumed",
+            reason,
+            resumeTurnId: resume.id,
+          });
+          continue;
+        }
+        const body =
+          reason === "hard_restart"
+            ? "The run was interrupted by an explicit hard restart and was not resumed. Please review the current state before continuing."
+            : reason === "unresolved_tool_call"
+              ? "The run was interrupted while an external tool call may have been in flight. Please review its effects before continuing."
+              : row.app === "implementer"
+                ? "The implementation run was interrupted before a resumable Claude session was saved. Assign bloom-implementer again to retry."
+                : "The planner session was interrupted before a resumable Claude session was saved. Please prompt again to continue.";
         this.db
           .prepare(
             `INSERT OR IGNORE INTO turn_activities
@@ -1348,16 +1574,31 @@ export class EventLog {
           )
           .run(
             row.id,
-            randomUUID(),
-            row.app === "implementer"
-              ? "The implementation run was interrupted by a daemon restart. Assign bloom-implementer again to retry."
-              : "The planner session was interrupted by a daemon restart. Please prompt again to continue.",
+            deterministicUuid(`restart-human:${row.id}`),
+            body,
             now,
             now,
           );
+        dispositions.push({
+          turnId: row.id,
+          outcome: "human_required",
+          reason,
+          resumeTurnId: null,
+        });
       }
-      return rows.map((row) => row.id);
+      this.db.prepare("DELETE FROM restart_intents WHERE singleton=1").run();
+      return dispositions;
     })();
+  }
+  interruptStaleRunning(now = Date.now()): number[] {
+    return this.recoverStaleRunning(now).map((row) => row.turnId);
+  }
+  private boundedToolUseId(toolUseId: string): string {
+    const normalized = toolUseId.trim();
+    if (!normalized) throw new Error("tool use id must not be empty");
+    return normalized.length <= 240
+      ? normalized
+      : `sha256:${createHash("sha256").update(normalized).digest("hex")}`;
   }
   pendingTurnActivities(
     now = Date.now(),

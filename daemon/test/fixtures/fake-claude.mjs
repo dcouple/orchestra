@@ -6,6 +6,7 @@ const args = process.argv.slice(2);
 const resumeAt = args.indexOf("--resume");
 const resumed = resumeAt >= 0 ? args[resumeAt + 1] : undefined;
 const mode = process.env.CLAUDE_FAKE_MODE || process.env.FAKE_MODE || "happy";
+const mcpTelemetry = ["mcp-telemetry", "mcp-runner-failed", "mcp-shutdown"].includes(mode);
 const argsFile = process.env.CLAUDE_FAKE_ARGS_FILE || process.env.FAKE_ARGS_FILE;
 if (argsFile) await appendFile(argsFile,
   `${JSON.stringify({ args, cwd: process.cwd(), at: Date.now(), phase: "start" })}\n`);
@@ -17,7 +18,8 @@ if (mode === "provider-fail-pre-id") {
   process.exit(7);
 }
 const session = resumed || (mode === "do-pr" || mode === "do-pr-error" ? "claude-do-session" : "claude-session-1");
-emit({ type: "system", subtype: "init", session_id: session, uuid: "init" });
+emit({ type: "system", subtype: "init", session_id: session, uuid: "init",
+  ...(mcpTelemetry ? { mcp_servers: [{ name: "linear", status: "connected" }] } : {}) });
 if (mode === "browser-relaunch" && process.env.ORCHESTRA_BROWSER_REQUEST_FILE && !resumed) {
   await writeFile(process.env.ORCHESTRA_BROWSER_REQUEST_FILE, JSON.stringify({ requested: true }));
   emit({ type: "result", subtype: "success", is_error: false,
@@ -78,16 +80,38 @@ if (mode === "stderr-fail") {
   process.exit(9);
 }
 emit({ type: "assistant", session_id: session, message: { content: [
-  { type: "text", text: "thinking" }, { type: "tool_use", name: "Read", input: { description: "ticket" } },
+  { type: "text", text: "thinking" }, { type: "tool_use", id: "toolu_read_1", name: "Read", input: { description: "ticket" } },
+] } });
+if (mode === "tool-hang") {
+  setInterval(() => {}, 1_000);
+  await new Promise(() => {});
+}
+emit({ type: "user", session_id: session, message: { content: [
+  { type: "tool_result", tool_use_id: "toolu_read_1", content: "read complete", is_error: false },
 ] } });
 if(mode==="agent"){
   emit({type:"assistant",session_id:session,message:{content:[{type:"tool_use",id:"toolu_agent_1",name:"Agent",input:{subagent_type:"code-researcher",prompt:"inspect the daemon"}}]}});
   emit({type:"user",session_id:session,message:{content:[{type:"tool_result",tool_use_id:"toolu_agent_1",content:"research complete",is_error:false}]}});
 }
+if (mcpTelemetry) {
+  emit({ type: "assistant", session_id: session, message: { content: [
+    { type: "tool_use", id: "toolu_linear_1", name: "mcp__linear__get_issue",
+      input: { issueId: "private-payload" } },
+  ] } });
+  emit({ type: "user", session_id: session, message: { content: [
+    { type: "tool_result", tool_use_id: "toolu_linear_1",
+      content: "private Linear result", is_error: true },
+  ] } });
+}
+if (mode === "mcp-shutdown") {
+  setInterval(() => {}, 1_000);
+  await new Promise(() => {});
+}
 if (mode === "new-id") emit({ type: "assistant", session_id: "claude-session-2", message: { content: [{ type: "text", text: "compacted" }] } });
 if (mode === "slow") await new Promise(resolve => setTimeout(resolve, Number(process.env.CLAUDE_FAKE_DELAY_MS || process.env.FAKE_DELAY_MS || 100)));
 const finalSession = mode === "new-id" ? "claude-session-2" : session;
-const errorResult = mode === "denied" || mode === "do-pr-error" || mode === "error-result-exit";
+const errorResult = mode === "denied" || mode === "do-pr-error" ||
+  mode === "error-result-exit" || mode === "mcp-runner-failed";
 emit({ type: "result", subtype: errorResult ? "error" : "success", is_error: errorResult,
   result: mode === "do-pr" || mode === "do-pr-error" ? "Opened https://github.com/dcouple/example/pull/42" : resumed ? `resumed ${resumed}` : "planner answer", session_id: finalSession,
   ...(mode !== "no-usage" ? {

@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { ArtifactNotFoundError, type ArtifactFile, ArtifactStore, InvalidArtifactError } from "./artifacts.js";
 import type { AppName, Config } from "./config.js";
 import type { EventLog } from "./eventlog.js";
-import { readCliproxyManagementKey } from "./sessions.js";
+import { readCliproxyManagementKey } from "./proxy-env.js";
 import { verifyWebhook } from "./verify.js";
 import { renderViewer } from "./viewer.js";
 

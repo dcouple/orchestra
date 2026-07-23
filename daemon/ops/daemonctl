@@ -349,7 +349,18 @@ command_restart() {
       else [[ -t 0 ]] || die "hard restart confirmation requires a TTY or --yes"; read -r -p "Interrupt these turns and restart once? Type HARD-RESTART: " answer; fi
       [[ "${answer}" == HARD-RESTART ]] || { echo "unchanged"; return; }
     fi
-    "${SYSTEMCTL}" restart "${SERVICE}"
+    local pre_pid post_pid
+    pre_pid="$(service_pid)"
+    ops_cli restart-intent-set "${reason}" >/dev/null
+    if ! "${SYSTEMCTL}" restart "${SERVICE}"; then
+      post_pid="$(service_pid)"
+      if [[ "${pre_pid}" =~ ^[1-9][0-9]*$ && "${post_pid}" == "${pre_pid}" ]] \
+          && "${SYSTEMCTL}" is-active --quiet "${SERVICE}"; then
+        ops_cli restart-intent-clear >/dev/null \
+          || die "hard restart failed and the confirmed original daemon remains active, but restart intent could not be cleared"
+      fi
+      die "hard restart command failed; restart intent retained unless the original daemon was confirmed active"
+    fi
     health_accept || die "hard restart failed at health acceptance"
     echo "hard restart accepted; interrupted turns remain unqueued"
     return
