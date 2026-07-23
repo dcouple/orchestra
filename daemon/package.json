@@ -11,11 +11,16 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --exclude test/browser.test.ts",
+    "test:browser": "vitest run test/browser.test.ts",
+    "test:browser-contract": "vitest run test/browser-contract.test.ts",
+    "browser:smoke": "node ops/browser-smoke.mjs",
     "dev": "node --watch --enable-source-maps dist/index.js"
   },
   "dependencies": {
     "@linear/sdk": "88.1.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@playwright/mcp": "0.0.78",
     "better-sqlite3": "12.4.1"
   },
   "devDependencies": {

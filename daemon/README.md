@@ -20,6 +20,10 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 pnpm test
+PLAYWRIGHT_MCP_BIN="$PWD/node_modules/.bin/playwright-mcp" \
+PLAYWRIGHT_CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+BROWSER_E2E_OUTPUT_DIR="../tmp/browser-smoke" pnpm test:browser
+pnpm test:browser-contract
 bash -n ops/provision.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
 ```
 
@@ -102,6 +106,18 @@ Claudex/GPT-Sol immediately without probing Fable. The resolved harness and sess
 persisted together, so later prompts, restarts, fix rounds, and preference changes continue
 on the established harness. Missing `CLAUDEX_BIN` fails a selected Claudex session closed;
 it never starts a replacement Claude session.
+
+Browser verification is opt-in with `BROWSER_ENABLED=1` and remains off by
+default. `PLAYWRIGHT_MCP_BIN` defaults to `/usr/local/bin/playwright-mcp`,
+`PLAYWRIGHT_CHROME_BIN` to `/usr/bin/google-chrome`, and
+`BROWSER_ATTEMPT_TIMEOUT_MS` to four hours. A fresh `/do` turn starts with
+Linear MCP only and a private request file. After `/do` loads the authoritative
+item, browser-required work writes the marker and returns the internal relaunch
+sentinel; the daemon persists the browser run id and resumes the same session
+with official Playwright MCP. Each execution gets isolated `state/` and
+retained `evidence/` roots. MCP/Chrome/target failures are classified and fail
+browser proof; non-browser, planner, reviewer, and backend paths never attach
+Playwright.
 Set `NTFY_URL` to an ntfy topic URL (e.g. `https://ntfy.sh/<topic>`) to push a one-way
 notification whenever an agent posts a terminal response or error — errors post at high
 priority. Unset means no notifications. A public ntfy topic is readable by anyone who knows

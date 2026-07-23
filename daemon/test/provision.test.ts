@@ -15,6 +15,15 @@ const daemonUnit = readFileSync(resolve("ops/linear-agent-daemon.service"), "utf
 const sessions = readFileSync(resolve("src/sessions.ts"), "utf8");
 
 describe("daemon provisioning", () => {
+  it("derives the pinned Playwright MCP wrapper from package.json", () => {
+    const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
+    expect(packageJson.dependencies["@playwright/mcp"]).toBe("0.0.78");
+    expect(packageJson.dependencies["@modelcontextprotocol/sdk"]).toBe("1.29.0");
+    expect(provision).toContain('p.dependencies?.["@playwright/mcp"]');
+    expect(provision).toContain('pnpm add --global "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}"');
+    expect(provision).toContain("/usr/local/bin/playwright-mcp");
+    expect(provision).toContain("google-chrome");
+  });
   it("pins and checksum-verifies CLIProxyAPI for supported architectures", () => {
     expect(provision).toContain('CLIPROXY_VERSION="7.2.93"');
     expect(provision).toContain('CLIPROXY_ARCH="amd64"');

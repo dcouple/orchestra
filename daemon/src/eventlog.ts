@@ -23,6 +23,7 @@ export interface SessionRow {
   worktreePath: string | null; branch: string | null; claudeSessionId: string | null;
   runtime: "claude" | "claudex"; fallbackCause: string | null;
   profile: "fable" | "sol" | null; profileFallback: number | null;
+  browserRequired: number; browserRunId: string | null;
   mode: string; status: string; lastSeenAt: number; lastSeenActivityAt: number | null;
 }
 export interface ProviderStateRow {
@@ -126,6 +127,8 @@ export class EventLog {
         fallback_cause TEXT,
         profile TEXT CHECK(profile IS NULL OR profile IN ('fable','sol')),
         profile_fallback INTEGER,
+        browser_required INTEGER NOT NULL DEFAULT 0,
+        browser_run_id TEXT,
         mode TEXT NOT NULL DEFAULT 'planner',
         status TEXT NOT NULL DEFAULT 'active',
         last_seen_at INTEGER NOT NULL,
@@ -212,6 +215,8 @@ export class EventLog {
     if (!columns.has("fallback_cause")) this.db.prepare("ALTER TABLE sessions ADD COLUMN fallback_cause TEXT").run();
     if (!columns.has("profile")) this.db.prepare("ALTER TABLE sessions ADD COLUMN profile TEXT CHECK(profile IS NULL OR profile IN ('fable','sol'))").run();
     if (!columns.has("profile_fallback")) this.db.prepare("ALTER TABLE sessions ADD COLUMN profile_fallback INTEGER").run();
+    if (!columns.has("browser_required")) this.db.prepare("ALTER TABLE sessions ADD COLUMN browser_required INTEGER NOT NULL DEFAULT 0").run();
+    if (!columns.has("browser_run_id")) this.db.prepare("ALTER TABLE sessions ADD COLUMN browser_run_id TEXT").run();
   }
 
   private migrateTurnColumns(): void {
@@ -377,12 +382,14 @@ export class EventLog {
     return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
       runtime, fallback_cause fallbackCause, profile, profile_fallback profileFallback,
+      browser_required browserRequired, browser_run_id browserRunId,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt FROM sessions WHERE linear_session_id=?`).get(linearSessionId) as SessionRow | undefined;
   }
   sessionByIssueIdentifier(identifier: string): SessionRow | undefined {
     const query = (mode: string) => this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
       runtime, fallback_cause fallbackCause, profile, profile_fallback profileFallback,
+      browser_required browserRequired, browser_run_id browserRunId,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt FROM sessions WHERE issue_identifier=? AND mode=? ORDER BY last_seen_at DESC LIMIT 1`)
       .get(identifier, mode) as SessionRow | undefined;
     return query("implementer") ?? query("planner");
@@ -391,6 +398,7 @@ export class EventLog {
     return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
       runtime, fallback_cause fallbackCause, profile, profile_fallback profileFallback,
+      browser_required browserRequired, browser_run_id browserRunId,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt
       FROM sessions WHERE app='planner' AND mode='planner' ORDER BY last_seen_at`)
       .all() as SessionRow[];
@@ -399,6 +407,7 @@ export class EventLog {
     return this.db.prepare(`SELECT linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
       runtime, fallback_cause fallbackCause, profile, profile_fallback profileFallback,
+      browser_required browserRequired, browser_run_id browserRunId,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt
       FROM sessions WHERE worktree_path IS NOT NULL ORDER BY last_seen_at`).all() as SessionRow[];
   }
@@ -422,6 +431,10 @@ export class EventLog {
   }
   clearClaudeSessionId(linearSessionId: string, now = Date.now()): void {
     this.db.prepare("UPDATE sessions SET claude_session_id=NULL, last_seen_at=? WHERE linear_session_id=?").run(now, linearSessionId);
+  }
+  requireBrowser(linearSessionId: string, runId: string, now = Date.now()): boolean {
+    return this.db.prepare(`UPDATE sessions SET browser_required=1, browser_run_id=COALESCE(browser_run_id, ?), last_seen_at=?
+      WHERE linear_session_id=? AND browser_required=0`).run(runId, now, linearSessionId).changes === 1;
   }
   recordRuntimeFallback(linearSessionId: string, claudexSessionId: string, cause: string, now = Date.now()): void {
     this.db.prepare(`UPDATE sessions SET profile='sol', runtime='claudex', fallback_cause=?, claude_session_id=?, last_seen_at=?

@@ -31,6 +31,10 @@ export interface Config {
   webhookBaseUrl: string;
   artifactToken?: string;
   artifactsDir: string;
+  browserEnabled: boolean;
+  playwrightMcpBin: string;
+  playwrightChromeBin: string;
+  browserAttemptTimeoutMs: number;
   artifactMaxBodyBytes: number;
   reconcileIntervalMs: number;
   reconcileRequestTimeoutMs: number;
@@ -152,6 +156,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
     ...(artifactToken ? { artifactToken } : {}),
     artifactsDir: env.ARTIFACTS_DIR?.trim() || `${dirname(dbPath)}/artifacts`,
+    browserEnabled: enabled(env, "BROWSER_ENABLED", false),
+    playwrightMcpBin: env.PLAYWRIGHT_MCP_BIN?.trim() || "/usr/local/bin/playwright-mcp",
+    playwrightChromeBin: env.PLAYWRIGHT_CHROME_BIN?.trim() || "/usr/bin/google-chrome",
+    browserAttemptTimeoutMs: positiveInteger(env, "BROWSER_ATTEMPT_TIMEOUT_MS", 4 * 60 * 60 * 1000),
     artifactMaxBodyBytes: positiveInteger(env, "ARTIFACT_MAX_BODY_BYTES", 32 * 1024 * 1024),
     reconcileIntervalMs: positiveInteger(env, "RECONCILE_INTERVAL_MS", 60_000),
     reconcileRequestTimeoutMs: positiveInteger(env, "RECONCILE_REQUEST_TIMEOUT_MS", 10_000),

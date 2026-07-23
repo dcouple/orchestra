@@ -30,12 +30,18 @@
 |------|-------|-----------|
 | <absolute scratchpad path> | <one line — the UI state> | <AC# / J# / checklist item> |
 
+## Evidence manifest
+`<absolute current-attempt path>/evidence-manifest.json` — status `completed`;
+run id and attempt id match the dispatched environment. Enumerate every
+manifest artifact in Captures, including trace, console, network, media
+validation, and video, not only screenshots.
+
 Every screenshot taken during the run is a row here — the caller hosts and
 embeds from this table, so a capture not listed does not exist. Journey
 videos are rows too (`<journey>.mp4` — one line: journey + duration); mark
 video rows so the caller knows they host as links/attachments, not inline
-embeds. UI-surface criteria with no capture row: state why (headless
-harness, no browser).
+embeds. A browser-required criterion with no completed current-attempt
+manifest fails; headless operation is not a reason to omit browser captures.
 
 ## Anomalies   (omit section if none)
 

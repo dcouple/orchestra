@@ -1,6 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -94,6 +94,56 @@ async function healthy(port: number, child: ChildProcess): Promise<void> {
 }
 
 describe("SessionWorker", () => {
+  it("relaunches a browser-required /do once and keeps non-browser turns Linear-only", async () => {
+    const { log, config, dir } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "browser-relaunch";
+    process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "browser-env.jsonl");
+    Object.assign(config, { browserEnabled: true, playwrightMcpBin: process.execPath, playwrightChromeBin: process.execPath,
+      browserAttemptTimeoutMs: 5000, artifactsDir: join(dir, "artifacts") });
+    appendImplementer(log, "browser", "browser-session");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    await waitFor(() => ["done", "failed"].includes(log.turnStates()[0]?.status ?? ""));
+    expect(log.turnStates()[0]?.status, JSON.stringify(logger.entries())).toBe("done");
+    expect(log.getSession("browser-session")).toMatchObject({ browserRequired: 1, browserRunId: expect.any(String) });
+    const rows = readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line).env);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].ORCHESTRA_BROWSER_REQUEST_FILE).toBeTruthy();
+    expect(rows[0].ORCHESTRA_BROWSER_EVIDENCE_DIR).toBeUndefined();
+    expect(rows[1]).toMatchObject({ ORCHESTRA_BROWSER_RUN_ID: expect.any(String), ORCHESTRA_BROWSER_ATTEMPT_ID: expect.stringMatching(/^attempt-/) });
+    expect(rows[1].ORCHESTRA_BROWSER_REQUEST_FILE).toBeUndefined();
+    expect(existsSync(rows[1].ORCHESTRA_BROWSER_STATE_DIR)).toBe(false);
+    expect(existsSync(rows[1].ORCHESTRA_BROWSER_EVIDENCE_DIR)).toBe(true);
+    expect(logger.entries().filter(entry => entry.event === "browser_relaunch_required")).toHaveLength(1);
+    await worker.stop(); log.close();
+  });
+  it.each([["crash", 5000], ["hang", 40]])("removes browser state but retains evidence after %s", async (mode, timeout) => {
+    const { log, config, dir } = setup(); const poster = new Poster();
+    process.env.CLAUDE_FAKE_MODE = mode; process.env.CLAUDE_FAKE_ENV_FILE = join(dir, `${mode}-env.jsonl`);
+    Object.assign(config, { browserEnabled: true, playwrightMcpBin: process.execPath, playwrightChromeBin: process.execPath,
+      browserAttemptTimeoutMs: timeout, artifactsDir: join(dir, "artifacts") });
+    appendImplementer(log, mode, `${mode}-session`); log.requireBrowser(`${mode}-session`, `${mode}-run`);
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    const row = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim()).env;
+    expect(existsSync(row.ORCHESTRA_BROWSER_STATE_DIR)).toBe(false);
+    expect(existsSync(row.ORCHESTRA_BROWSER_EVIDENCE_DIR)).toBe(true);
+    if (mode === "hang") expect(activityBody(poster.posts.find(post => !post.ephemeral)?.content)).toContain("timed out");
+    await worker.stop(); log.close();
+  });
+  it("removes browser state after an explicit worker abort", async () => {
+    const { log, config, dir } = setup(); const poster = new Poster();
+    process.env.CLAUDE_FAKE_MODE = "hang"; process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "abort-env.jsonl");
+    Object.assign(config, { browserEnabled: true, playwrightMcpBin: process.execPath, playwrightChromeBin: process.execPath,
+      browserAttemptTimeoutMs: 5000, artifactsDir: join(dir, "artifacts") });
+    appendImplementer(log, "abort", "abort-session"); log.requireBrowser("abort-session", "abort-run");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    await waitFor(() => existsSync(process.env.CLAUDE_FAKE_ENV_FILE!));
+    const row = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim()).env;
+    await worker.stop();
+    expect(existsSync(row.ORCHESTRA_BROWSER_STATE_DIR)).toBe(false);
+    expect(existsSync(row.ORCHESTRA_BROWSER_EVIDENCE_DIR)).toBe(true);
+    log.close();
+  });
   it("classifies only conservative provider failures", () => {
     const base = { ok: false, isError: true, exitCode: 1, signal: null, permissionDenials: [], sawResult: false } as const;
     expect(classifyProviderFailure({ ...base, spawnError: "spawn ECONNREFUSED" })).toMatchObject({ reason: "spawn_econnrefused" });

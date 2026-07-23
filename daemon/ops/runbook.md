@@ -614,6 +614,34 @@ Install founder subscription OAuth only through the documented interactive proxy
 copy raw token values or unrelated personal credentials onto the host. All other credentials
 are installed only in their owning phase.
 
+## Browser verification rollout and rollback
+
+Provisioning reads the exact `@playwright/mcp` version from `package.json`,
+installs that global package, and maintains `/usr/local/bin/playwright-mcp`.
+After deploying the additive SQLite migration, set `BROWSER_ENABLED=1`, restart
+the service, and run this mandatory human-owned hardened-host smoke (the
+implementation pipeline must not execute production actions):
+
+```bash
+sudo systemctl restart linear-agent-daemon
+sudo systemd-run --wait --collect --pipe \
+  --uid=linear-daemon --gid=linear-daemon \
+  --property=PrivateTmp=yes \
+  --property=ProtectSystem=strict \
+  --property=ReadWritePaths=/var/lib/linear-agent-daemon \
+  --setenv=HOME=/var/lib/linear-agent-daemon \
+  --setenv=PLAYWRIGHT_MCP_BIN=/usr/local/bin/playwright-mcp \
+  --setenv=PLAYWRIGHT_CHROME_BIN=/usr/bin/google-chrome \
+  --setenv=BROWSER_E2E_OUTPUT_DIR=/var/lib/linear-agent-daemon/artifacts/browser-smoke/$(date -u +%Y%m%dT%H%M%SZ) \
+  /usr/bin/node /opt/linear-agent-daemon/ops/browser-smoke.mjs
+```
+
+The fixture binds only to `127.0.0.1:0`; MCP uses stdio and exposes no network
+listener. Record the zero exit status, completed manifest, removed `state/`,
+and absence of MCP/Chrome descendants. To roll back, set `BROWSER_ENABLED=0`
+and restart. The additive columns and retained evidence may remain; existing
+Linear routing and non-browser sessions continue unchanged.
+
 ## Logs and recovery
 
 ```bash
