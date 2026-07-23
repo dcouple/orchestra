@@ -106,7 +106,12 @@ OPERATIONS_REQUEST_DIR="${OPERATIONS_REQUEST_DIR:-${OPERATIONS_STATE_DIR}/reques
 ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/accepted-commit}"
 DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/deployed-commit}"
 SOURCE_CHECKOUT="${SOURCE_CHECKOUT:-/opt/orchestra-source}"
+OPERATION_ENV_FILE="${OPERATION_ENV_FILE:-/etc/linear-agent-daemon/operation.env}"
 install -d -o root -g root -m 0700 "${OPERATIONS_STATE_DIR}" "${OPERATIONS_REQUEST_DIR}" "${OPERATIONS_STATE_DIR}/worktrees"
+operation_env_tmp="${OPERATION_ENV_FILE}.tmp.$$"
+install -o root -g root -m 0600 /dev/null "${operation_env_tmp}"
+printf 'DAEMON_HOST=%s\n' "${DAEMON_HOST}" > "${operation_env_tmp}"
+mv "${operation_env_tmp}" "${OPERATION_ENV_FILE}"
 if [[ ! -f /etc/linear-agent-daemon/env ]]; then
   install -o linear-daemon -g linear-daemon -m 0600 /dev/null /etc/linear-agent-daemon/env
   echo "created /etc/linear-agent-daemon/env; populate it before starting the service (see README.md Environment; optional ARTIFACT_TOKEN enables artifact hosting)" >&2
@@ -284,12 +289,13 @@ rsync -a --delete \
   "${SOURCE_DIR}/" /opt/linear-agent-daemon/
 chown -R linear-daemon:linear-daemon /opt/linear-agent-daemon
 chmod 0755 /opt/linear-agent-daemon/ops/proxy-accounts.sh /opt/linear-agent-daemon/ops/codex-provider-gate.sh
-chmod 0755 /opt/linear-agent-daemon/ops/daemonctl
+chmod 0755 /opt/linear-agent-daemon/ops/daemonctl /opt/linear-agent-daemon/ops/wait-for-daemon-health.sh
 runuser -u linear-daemon -- bash -c 'cd /opt/linear-agent-daemon && pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod'
 
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/cliproxyapi.service" /etc/systemd/system/cliproxyapi.service
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-daemon.service" /etc/systemd/system/linear-agent-daemon.service
 install -o root -g root -m 0755 "${SOURCE_DIR}/ops/daemonctl" /usr/local/sbin/daemonctl
+install -o root -g root -m 0755 "${SOURCE_DIR}/ops/wait-for-daemon-health.sh" /usr/local/sbin/wait-for-daemon-health.sh
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-operation.service" /etc/systemd/system/linear-agent-operation.service
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-operation.path" /etc/systemd/system/linear-agent-operation.path
 
@@ -425,8 +431,7 @@ if env_ready_for_restart; then
   if [[ -n "${SOURCE_COMMIT}" ]]; then
     write_commit_marker "${DEPLOYED_COMMIT_FILE}" "${SOURCE_COMMIT}"
   fi
-  if ! curl -fsS --connect-timeout 2 --max-time 10 http://127.0.0.1:8787/healthz \
-      | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("ok") is True else 1)'; then
+  if ! bash "${SOURCE_DIR}/ops/wait-for-daemon-health.sh"; then
     echo "daemon deployment failed at health acceptance" >&2
     exit 1
   fi

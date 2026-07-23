@@ -24,7 +24,7 @@ PLAYWRIGHT_MCP_BIN="$PWD/node_modules/.bin/playwright-mcp" \
 PLAYWRIGHT_CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
 BROWSER_E2E_OUTPUT_DIR="../tmp/browser-smoke" pnpm test:browser
 pnpm test:browser-contract
-bash -n ops/provision.sh ops/daemonctl ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
+bash -n ops/provision.sh ops/daemonctl ops/wait-for-daemon-health.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
 ```
 
 The Vitest suite is hermetic: it uses loopback HTTP servers and temporary real SQLite
