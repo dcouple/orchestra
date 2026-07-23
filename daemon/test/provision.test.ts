@@ -25,6 +25,15 @@ const daemonUnit = readFileSync(
   resolve("ops/linear-agent-daemon.service"),
   "utf8",
 );
+const operationUnit = readFileSync(
+  resolve("ops/linear-agent-operation.service"),
+  "utf8",
+);
+const operationPath = readFileSync(
+  resolve("ops/linear-agent-operation.path"),
+  "utf8",
+);
+const daemonctl = readFileSync(resolve("ops/daemonctl"), "utf8");
 const sessions = readFileSync(resolve("src/sessions.ts"), "utf8");
 
 describe("daemon provisioning", () => {
@@ -36,6 +45,23 @@ describe("daemon provisioning", () => {
     expect(provision).toContain('pnpm add --global "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}"');
     expect(provision).toContain("/usr/local/bin/playwright-mcp");
     expect(provision).toContain("google-chrome");
+  });
+  it("installs a root-only operation boundary without weakening the daemon sandbox", () => {
+    expect(provision).toContain("/usr/local/sbin/daemonctl");
+    expect(provision).toContain("linear-agent-operation.path");
+    expect(provision).toContain("https://github.com/dcouple/orchestra.git");
+    expect(operationUnit).toContain("User=root");
+    expect(operationUnit).toContain("ExecStart=/usr/local/sbin/daemonctl internal-execute");
+    expect(operationPath).toContain("*.ready");
+    expect(daemonUnit).toContain("NoNewPrivileges=true");
+    expect(daemonUnit).toContain("CapabilityBoundingSet=");
+    expect(daemonctl).toContain('SHA256SUM_BIN="${SHA256SUM_BIN:-sha256sum}"');
+    expect(daemonctl).toContain('"${STAT_BIN}" -c %u');
+    expect(provision).not.toContain("linear-validator");
+    expect(daemonctl).not.toContain("VALIDATOR_USER");
+    expect(daemonctl).not.toContain("run_candidate_command");
+    expect(provision).toContain('DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/deployed-commit}"');
+    expect(daemonctl).toContain('DEPLOYED_COMMIT_FILE="${DAEMONCTL_DEPLOYED_COMMIT_FILE:-${STATE_DIR}/deployed-commit}"');
   });
   it("pins and checksum-verifies CLIProxyAPI for supported architectures", () => {
     expect(provision).toContain('CLIPROXY_VERSION="7.2.93"');

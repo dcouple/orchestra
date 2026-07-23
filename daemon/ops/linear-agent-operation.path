@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for authenticated Linear agent maintenance requests
+
+[Path]
+PathExistsGlob=/var/lib/linear-agent-operations/requests/*.ready
+Unit=linear-agent-operation.service
+MakeDirectory=true
+
+[Install]
+WantedBy=multi-user.target

@@ -509,6 +509,16 @@ describe("EventLog", () => {
     reopened.close();
   });
 
+  it("survives close/reopen with an active maintenance drain", () => {
+    const dbPath = path(); const first = new EventLog(dbPath);
+    first.scheduleOperation({ id: "durable-op", requestDigest: "a".repeat(64), type: "update", reason: "release",
+      targetRef: "refs/heads/main", targetCommit: "b".repeat(40), previousCommit: "c".repeat(40) });
+    first.close();
+    const reopened = new EventLog(dbPath);
+    expect(reopened.operationStatus().pending).toMatchObject({ id: "durable-op", drainState: "pending", targetRef: "refs/heads/main" });
+    reopened.close();
+  });
+
   it("migrates a populated pre-usage turns table with null usage", () => {
     const dbPath = path();
     const old = new Database(dbPath);

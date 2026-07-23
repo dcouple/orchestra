@@ -101,6 +101,12 @@ fi
 install -d -o linear-daemon -g linear-daemon -m 0750 /opt/linear-agent-daemon /var/lib/linear-agent-daemon
 install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/worktrees /var/lib/linear-agent-daemon/repos /var/lib/linear-agent-daemon/artifacts
 install -d -o root -g linear-daemon -m 0750 /etc/linear-agent-daemon
+OPERATIONS_STATE_DIR="${OPERATIONS_STATE_DIR:-/var/lib/linear-agent-operations}"
+OPERATIONS_REQUEST_DIR="${OPERATIONS_REQUEST_DIR:-${OPERATIONS_STATE_DIR}/requests}"
+ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/accepted-commit}"
+DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/deployed-commit}"
+SOURCE_CHECKOUT="${SOURCE_CHECKOUT:-/opt/orchestra-source}"
+install -d -o root -g root -m 0700 "${OPERATIONS_STATE_DIR}" "${OPERATIONS_REQUEST_DIR}" "${OPERATIONS_STATE_DIR}/worktrees"
 if [[ ! -f /etc/linear-agent-daemon/env ]]; then
   install -o linear-daemon -g linear-daemon -m 0600 /dev/null /etc/linear-agent-daemon/env
   echo "created /etc/linear-agent-daemon/env; populate it before starting the service (see README.md Environment; optional ARTIFACT_TOKEN enables artifact hosting)" >&2
@@ -278,10 +284,26 @@ rsync -a --delete \
   "${SOURCE_DIR}/" /opt/linear-agent-daemon/
 chown -R linear-daemon:linear-daemon /opt/linear-agent-daemon
 chmod 0755 /opt/linear-agent-daemon/ops/proxy-accounts.sh /opt/linear-agent-daemon/ops/codex-provider-gate.sh
+chmod 0755 /opt/linear-agent-daemon/ops/daemonctl
 runuser -u linear-daemon -- bash -c 'cd /opt/linear-agent-daemon && pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod'
 
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/cliproxyapi.service" /etc/systemd/system/cliproxyapi.service
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-daemon.service" /etc/systemd/system/linear-agent-daemon.service
+install -o root -g root -m 0755 "${SOURCE_DIR}/ops/daemonctl" /usr/local/sbin/daemonctl
+install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-operation.service" /etc/systemd/system/linear-agent-operation.service
+install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-operation.path" /etc/systemd/system/linear-agent-operation.path
+
+# Updates use a separate persistent HTTPS checkout. Initial provisioning may bootstrap
+# it, but never rewrites a dirty or non-HTTPS checkout.
+if [[ ! -d "${SOURCE_CHECKOUT}/.git" ]]; then
+  git clone https://github.com/dcouple/orchestra.git "${SOURCE_CHECKOUT}"
+elif [[ -n "$(git -C "${SOURCE_CHECKOUT}" status --porcelain)" ]]; then
+  echo "persistent source checkout is dirty: ${SOURCE_CHECKOUT}" >&2
+  exit 1
+elif [[ "$(git -C "${SOURCE_CHECKOUT}" config --get remote.origin.url)" != https://* ]]; then
+  echo "persistent source checkout origin must use HTTPS" >&2
+  exit 1
+fi
 cat > /etc/caddy/Caddyfile <<EOF
 ${DAEMON_HOST} {
   request_body {
@@ -299,7 +321,7 @@ ufw allow 443/tcp
 ufw --force enable
 
 systemctl daemon-reload
-systemctl enable caddy cliproxyapi linear-agent-daemon
+systemctl enable caddy cliproxyapi linear-agent-daemon linear-agent-operation.path
 systemctl restart caddy cliproxyapi
 GATE_TARGET_CONFIG=/var/lib/linear-agent-daemon/.codex/config.toml
 cliproxy_has_enabled_codex_credential() {
@@ -379,6 +401,36 @@ env_ready_for_restart() {
   fi
   return 0
 }
+write_commit_marker() {
+  local marker="$1" commit="$2" marker_tmp="${1}.tmp.$$"
+  printf '%s\n' "${commit}" > "${marker_tmp}"
+  chmod 0600 "${marker_tmp}"
+  mv "${marker_tmp}" "${marker}"
+}
+SOURCE_COMMIT="${SOURCE_COMMIT:-}"
+if [[ -z "${SOURCE_COMMIT}" ]] && git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  SOURCE_COMMIT="$(git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse HEAD)"
+fi
+if [[ -n "${SOURCE_COMMIT}" ]]; then
+  [[ "${SOURCE_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "invalid SOURCE_COMMIT" >&2; exit 1; }
+  git -C "${SOURCE_CHECKOUT}" cat-file -e "${SOURCE_COMMIT}^{commit}" 2>/dev/null \
+    || { echo "SOURCE_COMMIT is not present in the operator-managed checkout" >&2; exit 1; }
+fi
 if env_ready_for_restart; then
   systemctl restart linear-agent-daemon
+  if ! systemctl is-active --quiet linear-agent-daemon; then
+    echo "daemon deployment failed: service is not active" >&2
+    exit 1
+  fi
+  if [[ -n "${SOURCE_COMMIT}" ]]; then
+    write_commit_marker "${DEPLOYED_COMMIT_FILE}" "${SOURCE_COMMIT}"
+  fi
+  if ! curl -fsS --connect-timeout 2 --max-time 10 http://127.0.0.1:8787/healthz \
+      | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("ok") is True else 1)'; then
+    echo "daemon deployment failed at health acceptance" >&2
+    exit 1
+  fi
+  if [[ -n "${SOURCE_COMMIT}" ]]; then
+    write_commit_marker "${ACCEPTED_COMMIT_FILE}" "${SOURCE_COMMIT}"
+  fi
 fi

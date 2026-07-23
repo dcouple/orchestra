@@ -391,6 +391,23 @@ describe("SessionWorker", () => {
     expect(existsSync(row.ORCHESTRA_BROWSER_EVIDENCE_DIR)).toBe(true);
     log.close();
   });
+  it("continues durable ingestion while an operation drain blocks every new claim", async () => {
+    const { dir, log, config } = setup(); const poster = new Poster();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "drain-args.jsonl"); process.env.CLAUDE_FAKE_MODE = "hang";
+    append(log, "running", "session-running", "created", "issue-running", "OPS-1");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10 }); worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "running");
+    log.scheduleOperation({ id: "operation", requestDigest: "a".repeat(64), type: "restart", reason: "test drain" });
+    append(log, "queued", "session-queued", "created", "issue-queued", "OPS-2"); worker.trigger();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(log.turnStates().find(turn => turn.issueId === "issue-queued")?.status).toBe("pending");
+    await worker.stop();
+    log.cancelOperation("operation");
+    process.env.CLAUDE_FAKE_MODE = "happy";
+    const resumed = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10 }); resumed.start();
+    await waitFor(() => log.turnStates().find(turn => turn.issueId === "issue-queued")?.status === "done");
+    await resumed.stop(); log.close();
+  });
   it("classifies only conservative provider failures", () => {
     const base = {
       ok: false,

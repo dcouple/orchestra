@@ -4,6 +4,53 @@ Provisioning and OAuth registration are human-controlled deploy gates. Do not ru
 runbook from an automated agent. Real Linear, Claude Code through CLIProxyAPI, and systemd
 acceptance is not closed until the live smoke checks below are captured.
 
+## Routine operations control
+
+Use the host-native command for routine work; from an orchestra checkout, the corresponding
+`make daemon-*` targets are thin wrappers around the same command.
+
+```bash
+sudo daemonctl status
+sudo daemonctl sessions
+sudo daemonctl top
+sudo daemonctl config --planner claude --implementer claudex --dry-run
+sudo daemonctl restart --dry-run
+sudo daemonctl reload --dry-run
+sudo daemonctl subscriptions list
+```
+
+Normal config, restart, and reload requests drain durable `running` turns, block all new
+claims, and leave webhook ingestion active. Status reports the pending type, safe reason,
+request time, target ref/commit, drain stage, and last outcome. Equivalent restarts converge.
+An operation that cannot prove acceptance or a safe rollback becomes `blocked`; queued work
+stays held. Correct the named stage, then use `sudo daemonctl operation retry <id>`. Cancel is
+allowed only before mutation or after verified rollback.
+
+`sudo daemonctl restart --hard` prints the affected app, issue identifier, runtime, state,
+and elapsed time, then requires `HARD-RESTART`. It terminates those turns through normal
+startup interruption reconciliation and does not enqueue continuations.
+
+Reloads use `/opt/orchestra-source`, whose `origin` must be HTTPS. The operator fetches,
+reviews, and fast-forwards this persistent checkout before running `sudo daemonctl reload`;
+the command itself never fetches, pulls, or runs candidate code as a validator. Its clean
+`HEAD` must be a fast-forward descendant of
+`/var/lib/linear-agent-operations/accepted-commit`. The executor revalidates the exact staged
+SHA after draining and provisions it from a detached worktree. Each operation worktree is
+authorized by atomic root-owned metadata outside the checkout; retries repair only an exact
+owned registration, while foreign or mismatched paths block without being removed. The executor
+records `deployed-commit` after
+the service becomes active, and advances `accepted-commit` only after loopback health
+acceptance. A failed deployment provisions the previous accepted commit before claims can
+resume. `sudo daemonctl status` compares the running, accepted, checkout, and cached remote
+tracking revisions without network access; use `status --refresh` for an explicit HTTPS
+fetch. `daemonctl update` remains a compatibility alias for `reload` and accepts no ref.
+
+For a human production smoke, run the three read-only commands first, dry-run every mutator,
+then use disposable turns/accounts to prove idle restart, busy drain and ingestion, config
+rollback, reload old/new commit reporting, hard-restart consequences, and subscription
+remove/reauth. Capture only redacted output. Direct `systemctl`, `sqlite3`, provisioner, and
+proxy helper commands below remain recovery tools, not the routine path.
+
 ## Host and DNS
 
 Use a Hetzner AX41-NVMe-class dedicated server with Ubuntu 24.04. Its bare-metal KVM is

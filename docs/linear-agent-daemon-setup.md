@@ -51,6 +51,15 @@ systemd units. Follow the **Host and DNS**
 and **Host checks** sections of `daemon/ops/runbook.md` for the SSH
 hardening steps and post-provision verification commands.
 
+Provisioning also installs `daemonctl`, its root-only systemd executor/path unit, a separate
+persistent HTTPS orchestra checkout, and root-owned deployed/accepted commit markers. After setup,
+use `sudo daemonctl status`, `sessions`, and `top` for safe inspection; use its config,
+restart, reload, and subscriptions subcommands for routine mutations (`update` remains a reload
+compatibility alias). Normal maintenance
+drains executing turns without stopping webhook ingestion. See **Routine operations
+control** in `daemon/ops/runbook.md` for dry-run, blocked-operation recovery, hard-restart
+consequences, and the human smoke checklist.
+
 ## 2. Register the two Linear OAuth apps
 
 In Linear: **Settings → API → OAuth applications**, create two
