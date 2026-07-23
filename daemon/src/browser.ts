@@ -68,7 +68,7 @@ export async function createBrowserAttempt(config: Pick<Config, "artifactsDir" |
       type: "stdio", command: config.playwrightMcpBin,
       args: ["--browser", "chrome", "--executable-path", config.playwrightChromeBin, "--headless", "--isolated",
         "--output-dir", evidenceDir, "--output-mode", "file", "--caps", "devtools"],
-      env: { TMPDIR: stateDir, TEMP: stateDir, TMP: stateDir, PWTEST_SOCKETS_DIR: socketAlias },
+      env: { TMPDIR: socketAlias, TEMP: socketAlias, TMP: socketAlias, PWTEST_SOCKETS_DIR: socketAlias },
     },
   };
 }
