@@ -37,7 +37,8 @@ sync_dir() {
 
 sync_dir "$ORCHESTRA_DIR/claude/skills" "$CONSUMER/.claude/skills"
 sync_dir "$ORCHESTRA_DIR/claude/agents" "$CONSUMER/.claude/agents"
-sync_dir "$ORCHESTRA_DIR/codex/skills"  "$CONSUMER/.codex/skills"
+sync_dir "$ORCHESTRA_DIR/codex/skills"  "$CONSUMER/.agents/skills"
+sync_dir "$ORCHESTRA_DIR/codex/agents"  "$CONSUMER/.codex/agents"
 sync_dir "$ORCHESTRA_DIR/references"    "$CONSUMER/.references"
 
 # Entries orchestra used to ship and has since removed or relocated: purged
@@ -53,5 +54,20 @@ for name in "${REMOVED_CLAUDE_AGENTS[@]}"; do
   rm -f "$CONSUMER/.claude/agents/$name.md"
 done
 
+REMOVED_CODEX_SKILLS=(
+  backend-verifier
+  code-researcher
+  code-reviewer
+  implementer
+  investigate
+  investigator
+  plan-reviewer
+)
+for name in "${REMOVED_CODEX_SKILLS[@]}"; do
+  rm -rf "$CONSUMER/.codex/skills/$name"
+done
+
 echo "synced orchestra -> $CONSUMER"
-git -C "$CONSUMER" status --short -- .claude/skills .claude/agents .codex/skills .references
+git -C "$CONSUMER" status --short -- \
+  .claude/skills .claude/agents .agents/skills .codex/agents \
+  .codex/skills .references

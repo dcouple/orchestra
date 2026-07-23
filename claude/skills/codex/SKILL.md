@@ -71,23 +71,21 @@ Inputs for this run:
 Print the report as your final message, in exactly the specified format.
 ```
 
-Role instructions: Codex-only roles (implementer, investigator,
-backend-verifier) → `.references/agents/<role>/instructions.md` · roles
-with a Claude twin (code-researcher, plan-reviewer, code-reviewer) →
-`.claude/agents/<role>.md` (tell Codex to follow the body and ignore the
-YAML frontmatter — it applies to a different harness).
+Role instructions: every detached role, including roles with another-harness
+twin, reads `.references/agents/<role>/instructions.md` directly.
 
-Format files, under `.references/agents/<role>/`: implementer →
-`implementation-result.md` · plan-reviewer / code-reviewer →
-`review-report.md` · code-researcher → `codebase-findings.md` ·
-investigator → `root-cause-finding.md` · backend-verifier →
-`../frontend-verifier/verification-result.md` (shared verifier format,
-verify mode).
+| Role | Instructions | Output format |
+| --- | --- | --- |
+| backend-verifier | `.references/agents/backend-verifier/instructions.md` | `.references/agents/frontend-verifier/verification-result.md` |
+| code-researcher | `.references/agents/code-researcher/instructions.md` | `.references/agents/code-researcher/codebase-findings.md` |
+| code-reviewer | `.references/agents/code-reviewer/instructions.md` | `.references/agents/code-reviewer/review-report.md` |
+| implementer | `.references/agents/implementer/instructions.md` | `.references/agents/implementer/implementation-result.md` |
+| investigator | `.references/agents/investigator/instructions.md` | `.references/agents/investigator/root-cause-finding.md` |
+| plan-reviewer | `.references/agents/plan-reviewer/instructions.md` | `.references/agents/plan-reviewer/review-report.md` |
 
-**Path resolution**: all paths are relative to the current repo root —
-`.references/` and `.claude/agents/` are synced into every consumer repo
-from `dcouple/orchestra`. Confirm both files exist before dispatching — a
-role that can't read its instructions improvises instead of failing.
+**Path resolution**: all paths are relative to the current repo root under
+`.references/agents/`. Confirm both files exist before dispatching — a role
+that can't read its instructions improvises instead of failing.
 
 **Success criteria**: prompt carries the role, both file paths (resolved
 per the rule above, existence checked), and every input the role needs —

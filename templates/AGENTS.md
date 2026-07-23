@@ -44,10 +44,10 @@ Only rules an agent would otherwise get wrong — not a style guide:
 
 ## Work-item tracking
 
-The workflow skills (`/create-plan`, `/create-epic`,
-`/do`) create work-item artifacts (item.md, refs/ including explainer.html,
-plan.md, wrapup.md) locally under `./tmp/<id>/`. `./tmp/` is scratch —
-never commit it.
+The workflow entrypoints (`/create-plan`, `/create-epic`, `/do` in Claude;
+`$create-plan`, `$create-epic`, `$do` in Codex) create work-item artifacts
+(item.md, refs/ including explainer.html, plan.md, wrapup.md) locally under
+`./tmp/<id>/`. `./tmp/` is scratch — never commit it.
 
 This section decides where work items get published. Describe the
 destination and the exact steps — the skills follow these instructions at

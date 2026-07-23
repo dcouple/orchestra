@@ -3,9 +3,9 @@
 ## What this project is
 
 orchestra is the canonical home of the dcouple skill system: Claude Code
-skills, sub-agent definitions, Codex role skills, and the shared
-`references/` documents, synced one-way into consumer repos. The one thing
-an agent must not break: everything under the synced directories
+skills and sub-agents, native Codex workflow skills and custom agents, and the
+shared harness-neutral `references/` contracts, synced one-way into consumer
+repos. The one thing an agent must not break: everything under the synced directories
 (`claude/`, `codex/`, `references/`) must stay repo-agnostic — no
 consumer-specific names, paths, or IDs.
 
@@ -17,7 +17,7 @@ Linear webhook daemon is a Node 22 / pnpm 11 TypeScript package.
 ```bash
 # sync into a consumer repo checkout:
 scripts/sync.sh <path-to-consumer-repo>
-# mirror into user-level ~/.claude and ~/.codex dirs:
+# mirror into user-level ~/.claude, ~/.agents, and ~/.codex dirs:
 scripts/sync-user.sh
 
 # daemon checks (run from daemon/):
@@ -37,16 +37,17 @@ host for live service-log inspection. Its canonical target command is
 ## Architecture
 
 See the Layout table in `README.md`. Canonical sources live in
-`claude/skills/`, `claude/agents/`, `codex/skills/`, and `references/`;
-`scripts/sync.sh` mirrors them into consumers' dot-directories.
+`claude/skills/`, `claude/agents/`, `codex/skills/`, `codex/agents/`, and
+`references/`; `scripts/sync.sh` mirrors them into consumers' documented
+discovery paths.
 
 `daemon/` is an orchestra-only service package. Neither sync script includes
 it, and daemon code must never be placed in a synced directory.
 
 This repo is also a consumer of itself: `.claude/skills`, `.claude/agents`,
-`.codex/skills`, and `.references` are **symlinks** to those canonical
-directories, so the skills are usable when working on orchestra and are
-always current. Unlike in consumer repos, editing under the dot-paths here
+`.agents/skills`, `.codex/agents`, and `.references` are **symlinks** to those
+canonical directories, so the skills are usable when working on orchestra and
+are always current. Unlike in consumer repos, editing under the dot-paths here
 edits the canonical copy — that is intended.
 
 ## Conventions
@@ -63,10 +64,10 @@ edits the canonical copy — that is intended.
 
 ## Work-item tracking
 
-The workflow skills (`/create-plan`, `/create-epic`,
-`/do`) create work-item artifacts (item.md, refs/ including explainer.html,
-plan.md, wrapup.md) locally under `./tmp/<id>/`. `./tmp/` is scratch —
-never commit it.
+The workflow entrypoints (`/create-plan`, `/create-epic`, `/do` in Claude;
+`$create-plan`, `$create-epic`, `$do` in Codex) create work-item artifacts
+(item.md, refs/ including explainer.html, plan.md, wrapup.md) locally under
+`./tmp/<id>/`. `./tmp/` is scratch — never commit it.
 
 ```yaml
 tracker: github
