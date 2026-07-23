@@ -53,7 +53,14 @@ describe("daemon provisioning", () => {
     expect(provision).toContain("linear-agent-operation.path");
     expect(provision).toContain("https://github.com/dcouple/orchestra.git");
     expect(operationUnit).toContain("User=root");
+    expect(operationUnit).toContain(
+      "EnvironmentFile=/etc/linear-agent-daemon/operation.env",
+    );
     expect(operationUnit).toContain("ExecStart=/usr/local/sbin/daemonctl internal-execute");
+    expect(provision).toContain(
+      'OPERATION_ENV_FILE="${OPERATION_ENV_FILE:-/etc/linear-agent-daemon/operation.env}"',
+    );
+    expect(provision).toContain("printf 'DAEMON_HOST=%s\\n'");
     expect(operationPath).toContain("*.ready");
     expect(daemonUnit).toContain("NoNewPrivileges=true");
     expect(daemonUnit).toContain("CapabilityBoundingSet=");

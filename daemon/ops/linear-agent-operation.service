@@ -8,6 +8,7 @@ StartLimitBurst=3
 Type=oneshot
 User=root
 Group=root
+EnvironmentFile=/etc/linear-agent-daemon/operation.env
 ExecStart=/usr/local/sbin/daemonctl internal-execute
 Restart=on-failure
 RestartSec=5s

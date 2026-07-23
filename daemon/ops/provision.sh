@@ -106,7 +106,12 @@ OPERATIONS_REQUEST_DIR="${OPERATIONS_REQUEST_DIR:-${OPERATIONS_STATE_DIR}/reques
 ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/accepted-commit}"
 DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/deployed-commit}"
 SOURCE_CHECKOUT="${SOURCE_CHECKOUT:-/opt/orchestra-source}"
+OPERATION_ENV_FILE="${OPERATION_ENV_FILE:-/etc/linear-agent-daemon/operation.env}"
 install -d -o root -g root -m 0700 "${OPERATIONS_STATE_DIR}" "${OPERATIONS_REQUEST_DIR}" "${OPERATIONS_STATE_DIR}/worktrees"
+operation_env_tmp="${OPERATION_ENV_FILE}.tmp.$$"
+install -o root -g root -m 0600 /dev/null "${operation_env_tmp}"
+printf 'DAEMON_HOST=%s\n' "${DAEMON_HOST}" > "${operation_env_tmp}"
+mv "${operation_env_tmp}" "${OPERATION_ENV_FILE}"
 if [[ ! -f /etc/linear-agent-daemon/env ]]; then
   install -o linear-daemon -g linear-daemon -m 0600 /dev/null /etc/linear-agent-daemon/env
   echo "created /etc/linear-agent-daemon/env; populate it before starting the service (see README.md Environment; optional ARTIFACT_TOKEN enables artifact hosting)" >&2
