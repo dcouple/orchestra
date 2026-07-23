@@ -34,6 +34,8 @@ const operationPath = readFileSync(
   "utf8",
 );
 const daemonctl = readFileSync(resolve("ops/daemonctl"), "utf8");
+const healthWaiterPath = resolve("ops/wait-for-daemon-health.sh");
+const healthWaiter = readFileSync(healthWaiterPath, "utf8");
 const sessions = readFileSync(resolve("src/sessions.ts"), "utf8");
 
 describe("daemon provisioning", () => {
@@ -63,6 +65,59 @@ describe("daemon provisioning", () => {
     expect(provision).toContain('DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/deployed-commit}"');
     expect(daemonctl).toContain('DEPLOYED_COMMIT_FILE="${DAEMONCTL_DEPLOYED_COMMIT_FILE:-${STATE_DIR}/deployed-commit}"');
   });
+  it("retries daemon health until startup is accepted", () => {
+    expect(provision).toContain('bash "${SOURCE_DIR}/ops/wait-for-daemon-health.sh"');
+    expect(healthWaiter).toContain("DAEMON_HEALTH_MAX_ATTEMPTS");
+    expect(healthWaiter).toContain("DAEMON_HEALTH_RETRY_DELAY_SECONDS");
+
+    const dir = mkdtempSync(join(tmpdir(), "daemon-health-"));
+    const attemptsFile = join(dir, "attempts");
+    const fakeCurl = join(dir, "curl");
+    writeFileSync(
+      fakeCurl,
+      `#!/usr/bin/env bash
+set -euo pipefail
+attempts=0
+if [[ -f "$FAKE_HEALTH_ATTEMPTS_FILE" ]]; then attempts="$(<"$FAKE_HEALTH_ATTEMPTS_FILE")"; fi
+attempts=$((attempts + 1))
+printf '%s\n' "$attempts" > "$FAKE_HEALTH_ATTEMPTS_FILE"
+if [[ "\${FAKE_HEALTH_MODE:-eventual}" == "eventual" && "$attempts" -ge 3 ]]; then
+  printf '{"ok":true}\n'
+else
+  printf '{"ok":false}\n'
+fi
+`,
+    );
+    chmodSync(fakeCurl, 0o755);
+
+    const run = (mode: "eventual" | "unhealthy", maxAttempts: string) =>
+      spawnSync("bash", [healthWaiterPath], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CURL_BIN: fakeCurl,
+          FAKE_HEALTH_ATTEMPTS_FILE: attemptsFile,
+          FAKE_HEALTH_MODE: mode,
+          DAEMON_HEALTH_MAX_ATTEMPTS: maxAttempts,
+          DAEMON_HEALTH_RETRY_DELAY_SECONDS: "0",
+        },
+      });
+
+    const eventual = run("eventual", "3");
+    expect(eventual.status).toBe(0);
+    expect(readFileSync(attemptsFile, "utf8").trim()).toBe("3");
+
+    rmSync(attemptsFile);
+    const unhealthy = run("unhealthy", "2");
+    expect(unhealthy.status).toBe(1);
+    expect(readFileSync(attemptsFile, "utf8").trim()).toBe("2");
+    expect(unhealthy.stderr).toContain(
+      "daemon health did not report ok=true after 2 attempts",
+    );
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("pins and checksum-verifies CLIProxyAPI for supported architectures", () => {
     expect(provision).toContain('CLIPROXY_VERSION="7.2.93"');
     expect(provision).toContain('CLIPROXY_ARCH="amd64"');

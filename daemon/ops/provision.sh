@@ -425,8 +425,7 @@ if env_ready_for_restart; then
   if [[ -n "${SOURCE_COMMIT}" ]]; then
     write_commit_marker "${DEPLOYED_COMMIT_FILE}" "${SOURCE_COMMIT}"
   fi
-  if ! curl -fsS --connect-timeout 2 --max-time 10 http://127.0.0.1:8787/healthz \
-      | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("ok") is True else 1)'; then
+  if ! bash "${SOURCE_DIR}/ops/wait-for-daemon-health.sh"; then
     echo "daemon deployment failed at health acceptance" >&2
     exit 1
   fi
