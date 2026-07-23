@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EventLog } from "../src/eventlog.js";
-import { appendTurn, git, opsFixture, readNumber, updateRepo } from "./operations-fixtures.js";
+import { appendTurn, git, opsFixture, readNumber, stageMain, updateRepo } from "./operations-fixtures.js";
 
 function runningFixture(identifier = "OPS-RUNNING") {
   const fixture = opsFixture();
@@ -65,9 +65,10 @@ describe("busy public operation drain and executor", () => {
   it("AC7/AC9 drains busy update, resumes after provision crash without replay, accepts health, and only then releases work", () => {
     const { fixture: f, running } = runningFixture();
     const repo = updateRepo(f);
-    const scheduled = f.run(["update"], repo.env);
+    stageMain(repo);
+    const scheduled = f.run(["reload"], repo.env);
     expect(scheduled.status).toBe(0);
-    expect(git(["rev-parse", "HEAD"], repo.checkout)).toBe(repo.accepted);
+    expect(git(["rev-parse", "HEAD"], repo.checkout)).toBe(repo.main);
     expect(readFileSync(f.accepted, "utf8").trim()).toBe(repo.accepted);
     expect(existsSync(f.provisionLog)).toBe(false);
     expect(readNumber(f.restartCount)).toBe(0);

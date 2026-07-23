@@ -59,10 +59,12 @@ PATH='${bin}:/usr/bin:/bin' /bin/sh -c "$command"
     expect(existsSync(localSentinel)).toBe(false);
     expect(existsSync(remoteSentinel)).toBe(false);
 
-    const ref = `refs/heads/release; touch ${remoteSentinel}`;
-    const update = run("daemon-update", [`REF=${ref}`, `ARGS=--reason "release's candidate"`]);
+    const update = run("daemon-update", [`ARGS=--reason "release's candidate"`]);
     expect(update.status, update.stderr).toBe(0);
-    expect(sudoArgv()).toEqual(["/usr/local/sbin/daemonctl", "update", "--ref", ref, "--reason", "release's candidate"]);
+    expect(sudoArgv()).toEqual(["/usr/local/sbin/daemonctl", "update", "--reason", "release's candidate"]);
+    const reload = run("daemon-reload", [`ARGS=--reason "reload's checkout; touch ${remoteSentinel}"`]);
+    expect(reload.status, reload.stderr).toBe(0);
+    expect(sudoArgv()).toEqual(["/usr/local/sbin/daemonctl", "reload", "--reason", `reload's checkout; touch ${remoteSentinel}`]);
     expect(existsSync(localSentinel)).toBe(false);
     expect(existsSync(remoteSentinel)).toBe(false);
   }, 15_000);

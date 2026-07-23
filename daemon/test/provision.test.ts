@@ -57,11 +57,11 @@ describe("daemon provisioning", () => {
     expect(daemonUnit).toContain("CapabilityBoundingSet=");
     expect(daemonctl).toContain('SHA256SUM_BIN="${SHA256SUM_BIN:-sha256sum}"');
     expect(daemonctl).toContain('"${STAT_BIN}" -c %u');
-    expect(provision).toContain("useradd --system --home-dir /var/lib/linear-agent-validator");
-    expect(provision).toContain("install -d -o linear-validator -g linear-validator -m 0700 /var/lib/linear-agent-validator");
-    expect(daemonctl).toContain('--uid="${VALIDATOR_USER}"');
-    expect(daemonctl).toContain("--property=ProtectSystem=strict");
-    expect(daemonctl).toContain('/usr/bin/env -i HOME="${VALIDATOR_HOME}" PATH=/usr/local/bin:/usr/bin:/bin CI=1');
+    expect(provision).not.toContain("linear-validator");
+    expect(daemonctl).not.toContain("VALIDATOR_USER");
+    expect(daemonctl).not.toContain("run_candidate_command");
+    expect(provision).toContain('DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/deployed-commit}"');
+    expect(daemonctl).toContain('DEPLOYED_COMMIT_FILE="${DAEMONCTL_DEPLOYED_COMMIT_FILE:-${STATE_DIR}/deployed-commit}"');
   });
   it("pins and checksum-verifies CLIProxyAPI for supported architectures", () => {
     expect(provision).toContain('CLIPROXY_VERSION="7.2.93"');

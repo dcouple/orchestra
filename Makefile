@@ -12,16 +12,15 @@ override DAEMON_REMOTE_PROJECT := $(value DAEMON_PROJECT)
 override DAEMON_REMOTE_ZONE := $(value DAEMON_ZONE)
 override DAEMON_REMOTE_DAEMONCTL := $(value DAEMONCTL)
 override DAEMON_REMOTE_ARGS := $(value ARGS)
-override DAEMON_REMOTE_REF := $(value REF)
 override DAEMON_REMOTE_PLANNER := $(value PLANNER)
 override DAEMON_REMOTE_IMPLEMENTER := $(value IMPLEMENTER)
 export DAEMON_REMOTE_GCLOUD DAEMON_REMOTE_HOST DAEMON_REMOTE_PROJECT DAEMON_REMOTE_ZONE
-export DAEMON_REMOTE_DAEMONCTL DAEMON_REMOTE_ARGS DAEMON_REMOTE_REF
+export DAEMON_REMOTE_DAEMONCTL DAEMON_REMOTE_ARGS
 export DAEMON_REMOTE_PLANNER DAEMON_REMOTE_IMPLEMENTER
 
 REMOTE_DAEMONCTL := python3 daemon/ops/daemonctl-remote.py
 
-.PHONY: daemon-status daemon-sessions daemon-top daemon-restart daemon-hard-restart daemon-config daemon-update daemon-subscriptions
+.PHONY: daemon-status daemon-sessions daemon-top daemon-restart daemon-hard-restart daemon-config daemon-reload daemon-update daemon-subscriptions
 
 daemon-status:
 	$(REMOTE_DAEMONCTL) status
@@ -40,6 +39,9 @@ daemon-hard-restart:
 
 daemon-config:
 	$(REMOTE_DAEMONCTL) config
+
+daemon-reload:
+	$(REMOTE_DAEMONCTL) reload
 
 daemon-update:
 	$(REMOTE_DAEMONCTL) update

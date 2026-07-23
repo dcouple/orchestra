@@ -6,13 +6,15 @@ usage() {
 usage: daemonctl config --planner claude|claudex --implementer claude|claudex [--reason TEXT] [--dry-run]
        daemonctl restart [--reason TEXT] [--dry-run]
        daemonctl restart --hard [--yes] [--dry-run]
-       daemonctl update [--ref GIT_REF] [--reason TEXT] [--dry-run]
-       daemonctl status | sessions | top [--watch SECONDS] [--count N]
+       daemonctl reload [--reason TEXT] [--dry-run]
+       daemonctl update [--reason TEXT] [--dry-run]  # compatibility alias for reload
+       daemonctl status [--refresh] | sessions | top [--watch SECONDS] [--count N]
        daemonctl subscriptions list|add|remove|reauth ... [--dry-run]
        daemonctl operation retry|cancel OPERATION_ID [--dry-run]
        daemonctl --help
 
-Normal config, restart, and update requests drain executing turns and block new claims.
+Normal config, restart, and reload requests drain executing turns and block new claims.
+The operator updates the persistent checkout before reload; daemonctl never pulls implicitly.
 Hard restart interrupts executing turns and never requeues them automatically.
 EOF
 }
@@ -23,13 +25,13 @@ STATE_DIR="${DAEMONCTL_STATE_DIR:-/var/lib/linear-agent-operations}"
 ENV_FILE="${DAEMONCTL_ENV_FILE:-/etc/linear-agent-daemon/env}"
 SOURCE_CHECKOUT="${DAEMONCTL_SOURCE_CHECKOUT:-/opt/orchestra-source}"
 ACCEPTED_COMMIT_FILE="${DAEMONCTL_ACCEPTED_COMMIT_FILE:-${STATE_DIR}/accepted-commit}"
+DEPLOYED_COMMIT_FILE="${DAEMONCTL_DEPLOYED_COMMIT_FILE:-${STATE_DIR}/deployed-commit}"
 OPS_CLI="${DAEMONCTL_OPS_CLI:-/opt/linear-agent-daemon/dist/operations-cli.js}"
 NODE_BIN="${NODE_BIN:-node}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 RUNUSER="${RUNUSER:-runuser}"
 CURL="${CURL:-curl}"
 GIT_BIN="${GIT_BIN:-git}"
-PNPM_BIN="${PNPM_BIN:-pnpm}"
 PS_BIN="${PS_BIN:-ps}"
 UPTIME_BIN="${UPTIME_BIN:-uptime}"
 DF_BIN="${DF_BIN:-df}"
@@ -37,11 +39,6 @@ SLEEP_BIN="${SLEEP_BIN:-sleep}"
 STAT_BIN="${STAT_BIN:-stat}"
 SHA256SUM_BIN="${SHA256SUM_BIN:-sha256sum}"
 FLOCK_BIN="${FLOCK_BIN:-flock}"
-CHOWN_BIN="${CHOWN_BIN:-chown}"
-VALIDATOR_RUN="${DAEMONCTL_VALIDATOR_RUN:-systemd-run}"
-VALIDATOR_USER="${DAEMONCTL_VALIDATOR_USER:-linear-validator}"
-VALIDATOR_GROUP="${DAEMONCTL_VALIDATOR_GROUP:-linear-validator}"
-VALIDATOR_HOME="${DAEMONCTL_VALIDATOR_HOME:-/var/lib/linear-agent-validator}"
 SERVICE="${DAEMONCTL_SERVICE:-linear-agent-daemon.service}"
 OPERATION_SERVICE="${DAEMONCTL_OPERATION_SERVICE:-linear-agent-operation.service}"
 HEALTH_URL="${DAEMONCTL_HEALTH_URL:-http://127.0.0.1:8787/healthz}"
@@ -86,6 +83,194 @@ fault_after() {
     echo "fixture crash after $1" >&2
     exit 99
   fi
+}
+
+registered_worktree_head() {
+  local checkout="$1" path="$2"
+  "${GIT_BIN}" -C "${checkout}" worktree list --porcelain -z \
+    | python3 -c 'import os,sys
+path=os.path.realpath(sys.argv[1])
+matched=False
+for field in sys.stdin.buffer.read().split(b"\0"):
+    text=field.decode("utf-8", "surrogateescape")
+    if text.startswith("worktree "):
+        matched=os.path.realpath(text[9:])==path
+    elif matched and text.startswith("HEAD "):
+        print(text[5:]); break' "${path}"
+}
+
+worktree_owner_file() {
+  local id="$1" role="$2"
+  printf '%s/worktree-owners/%s.%s.json\n' "${STATE_DIR}" "${id}" "${role}"
+}
+
+write_worktree_owner() {
+  local owner="$1" id="$2" role="$3" checkout="$4" path="$5" expected="$6" state="$7"
+  local owner_dir tmp
+  owner_dir="$(dirname "${owner}")"; install -d -m 0700 "${owner_dir}" || return 1
+  tmp="${owner}.tmp.$$"
+  python3 - "${tmp}" "${id}" "${role}" "${checkout}" "${path}" "${expected}" "${state}" <<'PY'
+import json,os,sys
+target,operation_id,role,checkout,path,commit,state=sys.argv[1:]
+payload={"version":1,"operationId":operation_id,"role":role,
+         "checkout":os.path.realpath(checkout),"path":os.path.realpath(path),
+         "commit":commit,"state":state}
+with open(target,"w") as stream:
+    json.dump(payload,stream,sort_keys=True,separators=(",",":"))
+    stream.write("\n"); stream.flush(); os.fsync(stream.fileno())
+PY
+  chmod 0600 "${tmp}" || return 1
+  python3 -c 'import os,sys; f=open(sys.argv[1],"rb"); os.fsync(f.fileno()); f.close()' "${tmp}" || return 1
+  mv "${tmp}" "${owner}" || return 1
+  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_DIRECTORY); os.fsync(fd); os.close(fd)' "${owner_dir}"
+}
+
+validate_worktree_owner() {
+  local owner="$1" id="$2" role="$3" checkout="$4" path="$5" expected="$6"
+  [[ ! -L "${owner}" && -f "${owner}" ]] \
+    || { echo "operation worktree ownership metadata is missing or not a regular file: ${owner}" >&2; return 1; }
+  [[ "$("${STAT_BIN}" -c %a "${owner}")" == 600 ]] \
+    || { echo "operation worktree ownership metadata must have mode 0600: ${owner}" >&2; return 1; }
+  if [[ "${DAEMONCTL_ALLOW_NON_ROOT:-0}" != 1 ]]; then
+    [[ "$("${STAT_BIN}" -c %u "${owner}")" == 0 ]] \
+      || { echo "operation worktree ownership metadata must be root-owned: ${owner}" >&2; return 1; }
+  fi
+  python3 - "${owner}" "${id}" "${role}" "${checkout}" "${path}" "${expected}" <<'PY'
+import json,os,sys
+owner,operation_id,role,checkout,path,commit=sys.argv[1:]
+try:
+    payload=json.load(open(owner))
+except (OSError,ValueError):
+    raise SystemExit(1)
+expected={"version":1,"operationId":operation_id,"role":role,
+          "checkout":os.path.realpath(checkout),"path":os.path.realpath(path),
+          "commit":commit}
+if any(payload.get(key)!=value for key,value in expected.items()):
+    raise SystemExit(1)
+state=payload.get("state")
+if state not in ("creating","created"):
+    raise SystemExit(1)
+print(state)
+PY
+}
+
+validate_registered_operation_worktree() {
+  local checkout="$1" path="$2" expected="$3" registered actual
+  registered="$(registered_worktree_head "${checkout}" "${path}")" || return 1
+  [[ ! -L "${path}" && -d "${path}" ]] \
+    || { echo "operation worktree path is missing or not a directory: ${path}" >&2; return 1; }
+  [[ "${registered}" == "${expected}" ]] \
+    || { echo "operation worktree is not registered at the expected commit: ${path}" >&2; return 1; }
+  actual="$("${GIT_BIN}" -C "${path}" rev-parse 'HEAD^{commit}' 2>/dev/null)" \
+    || { echo "operation worktree HEAD is unreadable: ${path}" >&2; return 1; }
+  [[ "${actual}" == "${expected}" && -z "$("${GIT_BIN}" -C "${path}" status --porcelain 2>/dev/null)" ]] \
+    || { echo "operation worktree is dirty or at the wrong commit: ${path}" >&2; return 1; }
+}
+
+quarantine_owned_partial_worktree() {
+  local path="$1" quarantine_dir destination
+  quarantine_dir="${STATE_DIR}/worktree-quarantine"
+  install -d -m 0700 "${quarantine_dir}" || return 1
+  destination="${quarantine_dir}/$(basename "${path}").partial.$(date -u +%s).$$"
+  [[ ! -e "${destination}" && ! -L "${destination}" ]] || return 1
+  mv "${path}" "${destination}" \
+    || { echo "cannot quarantine partial operation worktree: ${path}" >&2; return 1; }
+}
+
+prepare_operation_worktree() {
+  local id="$1" role="$2" checkout="$3" path="$4" expected="$5"
+  local owner owner_state registered
+  owner="$(worktree_owner_file "${id}" "${role}")"
+  registered="$(registered_worktree_head "${checkout}" "${path}")" \
+    || { echo "cannot inspect registered operation worktrees" >&2; return 1; }
+  if [[ -e "${owner}" || -L "${owner}" ]]; then
+    owner_state="$(validate_worktree_owner "${owner}" "${id}" "${role}" "${checkout}" "${path}" "${expected}")" \
+      || { echo "operation worktree ownership metadata does not match the request" >&2; return 1; }
+  else
+    if [[ -e "${path}" || -L "${path}" || -n "${registered}" ]]; then
+      echo "refusing operation worktree without exact ownership metadata: ${path}" >&2
+      return 1
+    fi
+    write_worktree_owner "${owner}" "${id}" "${role}" "${checkout}" "${path}" "${expected}" creating \
+      || { echo "cannot reserve operation worktree ownership" >&2; return 1; }
+    fault_after worktree_owner_reserved
+    owner_state=creating
+  fi
+
+  registered="$(registered_worktree_head "${checkout}" "${path}")" \
+    || { echo "cannot inspect registered operation worktrees" >&2; return 1; }
+  if [[ -n "${registered}" && "${registered}" != "${expected}" ]]; then
+    echo "owned operation path is registered at the wrong commit: ${path}" >&2
+    return 1
+  fi
+  if [[ "${registered}" == "${expected}" ]] \
+      && validate_registered_operation_worktree "${checkout}" "${path}" "${expected}" 2>/dev/null; then
+    if [[ "${owner_state}" != created ]]; then
+      write_worktree_owner "${owner}" "${id}" "${role}" "${checkout}" "${path}" "${expected}" created \
+        || { echo "cannot confirm operation worktree ownership" >&2; return 1; }
+      fault_after worktree_owner_confirmed
+    fi
+    return 0
+  fi
+
+  if [[ "${registered}" == "${expected}" ]]; then
+    [[ ! -L "${path}" ]] \
+      || { echo "refusing symlink at owned operation worktree path: ${path}" >&2; return 1; }
+    if [[ -e "${path}" ]]; then
+      quarantine_owned_partial_worktree "${path}" || return 1
+    fi
+    "${GIT_BIN}" -C "${checkout}" worktree remove --force "${path}" >/dev/null \
+      || { echo "cannot remove exact stale operation worktree registration: ${path}" >&2; return 1; }
+    registered="$(registered_worktree_head "${checkout}" "${path}")" || return 1
+    [[ -z "${registered}" ]] \
+      || { echo "exact stale operation worktree registration remains: ${path}" >&2; return 1; }
+  fi
+  if [[ -e "${path}" || -L "${path}" ]]; then
+    [[ ! -L "${path}" ]] \
+      || { echo "refusing symlink at owned partial worktree path: ${path}" >&2; return 1; }
+    quarantine_owned_partial_worktree "${path}" || return 1
+  fi
+  "${GIT_BIN}" -C "${checkout}" worktree add --detach "${path}" "${expected}" >/dev/null \
+    || { echo "cannot create operation worktree: ${path}" >&2; return 1; }
+  fault_after worktree_create
+  validate_registered_operation_worktree "${checkout}" "${path}" "${expected}" || return 1
+  write_worktree_owner "${owner}" "${id}" "${role}" "${checkout}" "${path}" "${expected}" created \
+    || { echo "cannot confirm operation worktree ownership" >&2; return 1; }
+  fault_after worktree_owner_confirmed
+}
+
+remove_operation_worktree() {
+  local id="$1" role="$2" checkout="$3" path="$4" expected="$5"
+  local owner registered
+  owner="$(worktree_owner_file "${id}" "${role}")"
+  registered="$(registered_worktree_head "${checkout}" "${path}")" \
+    || { echo "cannot inspect registered operation worktrees" >&2; return 1; }
+  if [[ ! -e "${owner}" && ! -L "${owner}" && ! -e "${path}" && ! -L "${path}" && -z "${registered}" ]]; then return 0; fi
+  validate_worktree_owner "${owner}" "${id}" "${role}" "${checkout}" "${path}" "${expected}" >/dev/null \
+    || { echo "refusing cleanup without exact operation worktree ownership metadata" >&2; return 1; }
+  if [[ -n "${registered}" && "${registered}" != "${expected}" ]]; then
+    echo "refusing cleanup of operation path registered at the wrong commit: ${path}" >&2
+    return 1
+  fi
+  if [[ "${registered}" == "${expected}" ]]; then
+    [[ ! -L "${path}" ]] \
+      || { echo "refusing cleanup of symlinked operation worktree: ${path}" >&2; return 1; }
+    if [[ -e "${path}" ]] \
+        && ! validate_registered_operation_worktree "${checkout}" "${path}" "${expected}" 2>/dev/null; then
+      quarantine_owned_partial_worktree "${path}" || return 1
+    fi
+    "${GIT_BIN}" -C "${checkout}" worktree remove --force "${path}" >/dev/null \
+      || { echo "cannot remove exact owned operation worktree: ${path}" >&2; return 1; }
+  elif [[ -e "${path}" || -L "${path}" ]]; then
+    [[ ! -L "${path}" ]] \
+      || { echo "refusing cleanup of symlinked partial worktree: ${path}" >&2; return 1; }
+    quarantine_owned_partial_worktree "${path}" || return 1
+  fi
+  registered="$(registered_worktree_head "${checkout}" "${path}")" || return 1
+  [[ -z "${registered}" && ! -e "${path}" && ! -L "${path}" ]] \
+    || { echo "operation worktree cleanup did not clear the exact path" >&2; return 1; }
+  rm -f -- "${owner}"
+  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_DIRECTORY); os.fsync(fd); os.close(fd)' "$(dirname "${owner}")"
 }
 
 write_request_and_schedule() {
@@ -174,96 +359,107 @@ command_restart() {
   write_request_and_schedule restart "${reason}" "${payload}"
 }
 
-run_candidate_command() {
-  local network_mode="$1" worktree="$2"; shift 2
-  local -a network_properties
-  if [[ "${network_mode}" == fetch ]]; then
-    network_properties=(
-      --property=PrivateNetwork=no
-      --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
-      --property=IPAddressDeny=0.0.0.0/8
-      --property=IPAddressDeny=127.0.0.0/8
-      --property=IPAddressDeny=::/128
-      --property=IPAddressDeny=::1/128
-      --property=IPAddressDeny=10.0.0.0/8
-      --property=IPAddressDeny=172.16.0.0/12
-      --property=IPAddressDeny=192.168.0.0/16
-      --property=IPAddressDeny=100.64.0.0/10
-      --property=IPAddressDeny=169.254.0.0/16
-      --property=IPAddressDeny=fe80::/10
-      --property=IPAddressDeny=fc00::/7
-    )
-  elif [[ "${network_mode}" == offline ]]; then
-    network_properties=(--property=PrivateNetwork=yes)
-  else
-    die "invalid candidate network mode"
-  fi
-  "${VALIDATOR_RUN}" --quiet --wait --pipe --collect --service-type=exec \
-    --uid="${VALIDATOR_USER}" --gid="${VALIDATOR_GROUP}" \
-    --property=NoNewPrivileges=yes --property=PrivateTmp=yes \
-    --property=ProtectSystem=strict --property=ProtectHome=yes \
-    --property="ReadWritePaths=${worktree}" --property="ReadWritePaths=${VALIDATOR_HOME}" \
-    "${network_properties[@]}" \
-    --working-directory="${worktree}/daemon" \
-    /usr/bin/env -i HOME="${VALIDATOR_HOME}" PATH=/usr/local/bin:/usr/bin:/bin CI=1 "$@"
-}
-
-validate_update_candidate() {
-  local target="$1" accepted="$2" worktree="$3"
-  "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" worktree add --detach "${worktree}" "${target}" >/dev/null || return 1
-  if ! "${CHOWN_BIN}" -R "${VALIDATOR_USER}:${VALIDATOR_GROUP}" "${worktree}"; then
-    "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" worktree remove --force "${worktree}" >/dev/null 2>&1 || true
-    return 1
-  fi
-  local rc=0
-  # Fetch lockfile content without candidate lifecycle scripts, with host/private
-  # address ranges denied. All candidate-controlled execution is offline in a
-  # private network namespace, including native dependency setup.
-  run_candidate_command fetch "${worktree}" "${PNPM_BIN}" fetch --ignore-pnpmfile --ignore-scripts --frozen-lockfile || rc=$?
-  (( rc )) || run_candidate_command offline "${worktree}" "${PNPM_BIN}" install --offline --frozen-lockfile || rc=$?
-  (( rc )) || run_candidate_command offline "${worktree}" "${PNPM_BIN}" typecheck || rc=$?
-  (( rc )) || run_candidate_command offline "${worktree}" "${PNPM_BIN}" build || rc=$?
-  (( rc )) || run_candidate_command offline "${worktree}" "${PNPM_BIN}" test || rc=$?
-  (( rc )) || run_candidate_command offline "${worktree}" /bin/bash -n ops/provision.sh ops/daemonctl ops/proxy-accounts.sh ops/claudex ops/claudex-fable ops/codex-provider-gate.sh || rc=$?
-  (( rc )) || "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" diff --check "${accepted}..${target}" || rc=$?
-  "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" worktree remove --force "${worktree}" >/dev/null 2>&1 || true
-  return "${rc}"
-}
-
-command_update() {
+command_reload() {
   require_root
-  local ref="" reason="operator update" dry=0
-  while (( $# )); do case "$1" in --ref) [[ $# -ge 2 ]] || usage_error "--ref needs a value"; ref="$2"; shift ;;
+  local reason="operator reload" dry=0
+  while (( $# )); do case "$1" in
     --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason="$2"; shift ;;
-    --dry-run) dry=1 ;; *) usage_error "unknown update argument: $1" ;; esac; shift; done
+    --dry-run) dry=1 ;;
+    *) usage_error "unknown reload argument: $1" ;;
+  esac; shift; done
   validate_reason "${reason}"
-  if [[ -n "${ref}" && ! "${ref}" =~ ^[A-Za-z0-9][A-Za-z0-9._/@{}^~:+-]{0,239}$ ]]; then usage_error "invalid update ref"; fi
-  [[ -d "${SOURCE_CHECKOUT}/.git" ]] || die "persistent checkout missing: ${SOURCE_CHECKOUT}"
-  [[ -z "$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" status --porcelain)" ]] || die "update validation failed: checkout is dirty"
-  local remote accepted head target worktree
+  [[ -d "${SOURCE_CHECKOUT}/.git" ]] || die "reload validation failed: persistent checkout missing: ${SOURCE_CHECKOUT}"
+  [[ -z "$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" status --porcelain)" ]] || die "reload validation failed: checkout is dirty"
+  local remote accepted deployed target
   remote="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" config --get remote.origin.url)"
-  [[ "${remote}" == https://* ]] || die "update validation failed: origin must use HTTPS"
-  [[ -f "${ACCEPTED_COMMIT_FILE}" ]] || die "update validation failed: accepted commit marker missing"
+  [[ "${remote}" == https://* ]] || die "reload validation failed: origin must use HTTPS"
+  [[ -f "${ACCEPTED_COMMIT_FILE}" ]] || die "reload validation failed: accepted commit marker missing"
   accepted="$(<"${ACCEPTED_COMMIT_FILE}")"
-  [[ "${accepted}" =~ ^[0-9a-fA-F]{40}$ ]] || die "update validation failed: malformed accepted commit marker"
-  head="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" rev-parse HEAD)"
-  [[ "${head}" == "${accepted}" ]] || die "update validation failed: checkout and accepted marker diverge"
+  [[ "${accepted}" =~ ^[0-9a-fA-F]{40}$ ]] || die "reload validation failed: malformed accepted commit marker"
+  deployed="$(marker_value "${DEPLOYED_COMMIT_FILE}")"
+  target="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" rev-parse 'HEAD^{commit}')"
+  "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" cat-file -e "${accepted}^{commit}" 2>/dev/null \
+    || die "reload validation failed: accepted commit is not present in the checkout"
+  "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" merge-base --is-ancestor "${accepted}" "${target}" \
+    || die "reload validation failed: checkout HEAD is not a fast-forward descendant of accepted commit"
+  if [[ "${target}" == "${accepted}" && "${deployed}" == "${accepted}" ]]; then printf 'already deployed and accepted: %s\n' "${accepted}"; return; fi
   if (( dry )); then
-    if [[ -n "${ref}" ]]; then target="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" ls-remote origin "${ref}" | awk 'NR==1{print $1}')"
-    else target="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" ls-remote origin HEAD | awk 'NR==1{print $1}')"; fi
-    [[ "${target}" =~ ^[0-9a-fA-F]{40}$ ]] || die "update validation failed: ref is unresolved"
-    printf 'would validate immutable commit %s from HTTPS origin with script-free pnpm fetch, private-network offline install, typecheck, build, test, shell syntax, and git diff --check %s..%s; then drain, provision, restart, health-check, mark accepted, and advance checkout\n' "${target}" "${accepted}" "${target}"
+    printf 'would deploy exact clean checkout commit %s over accepted commit %s without fetching; drain turns; provision a detached worktree; restart; record deployed commit; health-check; mark accepted; rollback on failure\n' "${target}" "${accepted}"
     return
   fi
-  if [[ -n "${ref}" ]]; then "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" fetch --no-tags origin "${ref}"; target="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" rev-parse 'FETCH_HEAD^{commit}')"
-  else "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" fetch --no-tags origin; target="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" rev-parse 'refs/remotes/origin/HEAD^{commit}')"; fi
-  "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" merge-base --is-ancestor "${accepted}" "${target}" || die "update validation failed: target is not a fast-forward descendant"
-  if [[ "${target}" == "${accepted}" ]]; then printf 'already deployed and accepted: %s\n' "${accepted}"; return; fi
-  worktree="$(mktemp -d)"; rmdir "${worktree}"
-  validate_update_candidate "${target}" "${accepted}" "${worktree}" || die "update validation failed: candidate gate"
   local payload; payload="$(mktemp)"; trap 'rm -f "${payload:-}"' RETURN
-  make_payload "${payload}" update checkout "${SOURCE_CHECKOUT}" previous_commit "${accepted}" target_commit "${target}" target_ref "${ref:-origin/HEAD}"
-  write_request_and_schedule update "${reason}" "${payload}" "${ref:-origin/HEAD}" "${target}" "${accepted}"
+  make_payload "${payload}" update checkout "${SOURCE_CHECKOUT}" previous_commit "${accepted}" target_commit "${target}" target_ref "checkout/HEAD"
+  write_request_and_schedule update "${reason}" "${payload}" checkout/HEAD "${target}" "${accepted}"
+}
+
+marker_value() {
+  local path="$1"
+  if [[ ! -f "${path}" ]]; then printf 'missing\n'; return; fi
+  local value; value="$(<"${path}")"
+  if [[ "${value}" =~ ^[0-9a-fA-F]{40}$ ]]; then printf '%s\n' "${value}"
+  else printf 'malformed\n'; fi
+}
+
+command_status() {
+  require_root
+  local refresh=0
+  while (( $# )); do case "$1" in --refresh) refresh=1 ;; *) usage_error "unknown status argument: $1" ;; esac; shift; done
+  local checkout_state="missing" checkout_commit="" remote_commit="" remote_url="" refreshed=0
+  if [[ -d "${SOURCE_CHECKOUT}/.git" ]]; then
+    remote_url="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" config --get remote.origin.url 2>/dev/null || true)"
+    if (( refresh )); then
+      [[ "${remote_url}" == https://* ]] || die "status refresh failed: origin must use HTTPS"
+      "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" fetch --no-tags origin
+      refreshed=1
+    fi
+    checkout_commit="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" rev-parse 'HEAD^{commit}' 2>/dev/null || true)"
+    if [[ -n "$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" status --porcelain 2>/dev/null || true)" ]]; then checkout_state=dirty
+    elif [[ "${checkout_commit}" =~ ^[0-9a-fA-F]{40}$ ]]; then checkout_state=clean
+    else checkout_state=invalid; fi
+    remote_commit="$("${GIT_BIN}" -C "${SOURCE_CHECKOUT}" rev-parse 'refs/remotes/origin/HEAD^{commit}' 2>/dev/null || true)"
+  fi
+  local accepted deployed accepted_to_checkout=0 checkout_to_remote=0
+  accepted="$(marker_value "${ACCEPTED_COMMIT_FILE}")"
+  deployed="$(marker_value "${DEPLOYED_COMMIT_FILE}")"
+  if [[ "${accepted}" =~ ^[0-9a-fA-F]{40}$ && "${checkout_commit}" =~ ^[0-9a-fA-F]{40}$ ]] \
+      && "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" merge-base --is-ancestor "${accepted}" "${checkout_commit}" 2>/dev/null; then accepted_to_checkout=1; fi
+  if [[ "${checkout_commit}" =~ ^[0-9a-fA-F]{40}$ && "${remote_commit}" =~ ^[0-9a-fA-F]{40}$ ]] \
+      && "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" merge-base --is-ancestor "${checkout_commit}" "${remote_commit}" 2>/dev/null; then checkout_to_remote=1; fi
+  local operation_status; operation_status="$(ops_cli status)"
+  python3 - "${operation_status}" "${accepted}" "${deployed}" "${checkout_state}" "${checkout_commit}" "${remote_commit}" "${refreshed}" "${accepted_to_checkout}" "${checkout_to_remote}" <<'PY'
+import json,sys
+status=json.loads(sys.argv[1])
+accepted,deployed,checkout_state,checkout,remote,refreshed,accepted_to_checkout,checkout_to_remote=sys.argv[2:]
+valid=lambda value: len(value)==40 and all(c in "0123456789abcdefABCDEF" for c in value)
+pending=status.get("pending")
+if pending:
+    reconciliation="operation_pending"
+elif checkout_state=="dirty":
+    reconciliation="dirty_checkout"
+elif not (valid(accepted) and valid(deployed) and valid(checkout)):
+    reconciliation="incomplete"
+elif accepted!=deployed or accepted_to_checkout!="1":
+    reconciliation="diverged"
+elif checkout!=accepted:
+    reconciliation="checkout_ahead_reload_required"
+elif valid(remote) and remote!=checkout:
+    reconciliation="remote_ahead_pull_required" if checkout_to_remote=="1" else "diverged"
+else:
+    reconciliation="current"
+status["revision"]={
+    "runningCommit": deployed if valid(deployed) else None,
+    "deployedMarker": "valid" if valid(deployed) else deployed,
+    "acceptedCommit": accepted if valid(accepted) else None,
+    "acceptedMarker": "valid" if valid(accepted) else accepted,
+    "checkoutCommit": checkout if valid(checkout) else None,
+    "checkoutState": checkout_state,
+    "remoteTrackingCommit": remote if valid(remote) else None,
+    "remoteTrackingRef": "refs/remotes/origin/HEAD",
+    "refreshed": refreshed=="1",
+    "reconciliation": reconciliation,
+}
+print(json.dumps(status,separators=(",",":")))
+PY
 }
 
 replace_harness_env() {
@@ -359,34 +555,46 @@ execute_request() {
     update)
       local checkout previous target update_tree
       checkout="$(json_field "${file}" checkout)"; previous="$(json_field "${file}" previous_commit)"; target="$(json_field "${file}" target_commit)"
-      local accepted_now; accepted_now="$(<"${ACCEPTED_COMMIT_FILE}")"
-      if [[ "${accepted_now}" == "${target}" ]]; then
-        "${GIT_BIN}" -C "${checkout}" reset --keep "${target}"
+      local accepted_now deployed_now; accepted_now="$(<"${ACCEPTED_COMMIT_FILE}")"; deployed_now="$(marker_value "${DEPLOYED_COMMIT_FILE}")"
+      if [[ "${accepted_now}" == "${target}" && "${deployed_now}" == "${target}" ]]; then
         local recovered_tree="${STATE_DIR}/worktrees/${id}"
-        if [[ -d "${recovered_tree}" ]]; then "${GIT_BIN}" -C "${checkout}" worktree remove --force "${recovered_tree}" >/dev/null 2>&1 || true; fi
+        if ! remove_operation_worktree "${id}" deploy "${checkout}" "${recovered_tree}" "${target}"; then
+          operation_error "${id}" worktree_cleanup "cannot safely clean the recovered operation worktree"
+          ops_cli transition "${id}" blocked worktree_cleanup 'exact operation ownership is missing or cleanup failed; inspect owner metadata and Git registration' worktree_cleanup 1 - >/dev/null; return 1
+        fi
         ops_cli transition "${id}" accepting recovered_acceptance - - 1 - >/dev/null
         health_accept || { ops_cli transition "${id}" blocked health - health 1 - >/dev/null; return 1; }
         ops_cli transition "${id}" succeeded accepted "service active and recovered deployment accepted" - 1 - >/dev/null
         mv "${file}" "${file%.ready}.done"; return 0
       fi
-      [[ "${accepted_now}" == "${previous}" && -z "$("${GIT_BIN}" -C "${checkout}" status --porcelain)" && "$("${GIT_BIN}" -C "${checkout}" rev-parse HEAD)" == "${previous}" ]] || { operation_error "${id}" revalidate "checkout or accepted marker diverged"; ops_cli transition "${id}" blocked revalidate - revalidate 1 - >/dev/null; return 1; }
+      [[ "${accepted_now}" == "${previous}" && -z "$("${GIT_BIN}" -C "${checkout}" status --porcelain)" && "$("${GIT_BIN}" -C "${checkout}" rev-parse HEAD)" == "${target}" ]] || { operation_error "${id}" revalidate "checkout or accepted marker diverged from the scheduled commits"; ops_cli transition "${id}" blocked revalidate - revalidate 1 - >/dev/null; return 1; }
       "${GIT_BIN}" -C "${checkout}" merge-base --is-ancestor "${previous}" "${target}" || { operation_error "${id}" fast_forward "target is not a descendant"; ops_cli transition "${id}" failed fast_forward - fast_forward 0 - >/dev/null; return 1; }
-      update_tree="${STATE_DIR}/worktrees/${id}"; install -d -m 0700 "${STATE_DIR}/worktrees"; "${GIT_BIN}" -C "${checkout}" worktree add --detach "${update_tree}" "${target}" >/dev/null
+      update_tree="${STATE_DIR}/worktrees/${id}"; install -d -m 0700 "${STATE_DIR}/worktrees"
+      if ! prepare_operation_worktree "${id}" deploy "${checkout}" "${update_tree}" "${target}"; then
+        operation_error "${id}" worktree_prepare "cannot safely prepare the operation worktree"
+        ops_cli transition "${id}" blocked worktree_prepare 'exact operation ownership is missing, invalid, or could not be repaired; inspect owner metadata and Git registration' worktree_prepare 1 - >/dev/null; return 1
+      fi
       ops_cli transition "${id}" executing provision - - 1 - >/dev/null
-      if ! SOURCE_COMMIT="${target}" ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE}" "${PROVISION}" "${update_tree}/daemon"; then
-        operation_error "${id}" provision "candidate provision failed; rolling back"
+      if ! SOURCE_COMMIT="${target}" ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE}" DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE}" "${PROVISION}" "${update_tree}/daemon"; then
+        operation_error "${id}" provision "checkout provision failed; rolling back"
         ops_cli transition "${id}" rolling_back provision_failed - provision 1 - >/dev/null
-        "${GIT_BIN}" -C "${checkout}" worktree remove --force "${update_tree}" >/dev/null 2>&1 || true
-        local rollback_tree="${STATE_DIR}/worktrees/${id}-rollback"; "${GIT_BIN}" -C "${checkout}" worktree add --detach "${rollback_tree}" "${previous}" >/dev/null
-        if SOURCE_COMMIT="${previous}" ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE}" "${PROVISION}" "${rollback_tree}/daemon" && health_accept; then
-          "${GIT_BIN}" -C "${checkout}" worktree remove --force "${rollback_tree}" >/dev/null 2>&1 || true
-          ops_cli transition "${id}" failed rolled_back 'update failed; rollback accepted' provision 1 1 >/dev/null; return 1
+        remove_operation_worktree "${id}" deploy "${checkout}" "${update_tree}" "${target}" >/dev/null 2>&1 || true
+        local rollback_tree="${STATE_DIR}/worktrees/${id}-rollback"
+        if ! prepare_operation_worktree "${id}" rollback "${checkout}" "${rollback_tree}" "${previous}"; then
+          operation_error "${id}" rollback_prepare "cannot safely prepare the rollback worktree"
+          ops_cli transition "${id}" blocked rollback_prepare 'exact rollback ownership is missing, invalid, or could not be repaired; inspect owner metadata and Git registration' rollback_prepare 1 - >/dev/null; return 1
+        fi
+        if SOURCE_COMMIT="${previous}" ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE}" DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE}" "${PROVISION}" "${rollback_tree}/daemon" && health_accept; then
+          remove_operation_worktree "${id}" rollback "${checkout}" "${rollback_tree}" "${previous}" >/dev/null 2>&1 || true
+          ops_cli transition "${id}" failed rolled_back 'reload failed; rollback accepted' provision 1 1 >/dev/null; return 1
         fi
         ops_cli transition "${id}" blocked rollback_acceptance - rollback_acceptance 1 - >/dev/null; return 1
       fi
       fault_after provision
-      "${GIT_BIN}" -C "${checkout}" reset --keep "${target}"
-      "${GIT_BIN}" -C "${checkout}" worktree remove --force "${update_tree}" >/dev/null 2>&1 || true
+      if ! remove_operation_worktree "${id}" deploy "${checkout}" "${update_tree}" "${target}"; then
+        operation_error "${id}" worktree_cleanup "cannot safely clean the operation worktree"
+        ops_cli transition "${id}" blocked worktree_cleanup 'exact operation ownership is missing or cleanup failed; inspect owner metadata and Git registration' worktree_cleanup 1 - >/dev/null; return 1
+      fi
       ;;
     *) ops_cli transition "${id}" cancelled authorization - authorization 0 - >/dev/null; return 1 ;;
   esac
@@ -461,8 +669,8 @@ case "${1:-}" in
   --help|-h) [[ $# -eq 1 ]] || usage_error "unexpected arguments"; usage ;;
   config) shift; command_config "$@" ;;
   restart) shift; command_restart "$@" ;;
-  update) shift; command_update "$@" ;;
-  status) [[ $# -eq 1 ]] || usage_error "status takes no arguments"; ops_cli status ;;
+  reload|update) shift; command_reload "$@" ;;
+  status) shift; command_status "$@" ;;
   sessions) [[ $# -eq 1 ]] || usage_error "sessions takes no arguments"; result="$(ops_cli running)"; [[ "${result}" != '[]' ]] && echo "${result}" || echo 'no running turns' ;;
   top)
     shift; watch=0; count=0

@@ -39,7 +39,7 @@ redaction. Real account, Linear, Claude, and systemd acceptance remains a deploy
 ## Host operations
 
 `sudo daemonctl --help` is the production control surface. It provides narrow harness
-configuration, idle-aware restart and validated HTTPS update, safe status/running-turn and
+configuration, idle-aware restart and checkout reload, safe status/running-turn and
 compute views, and interactive subscription maintenance. Normal mutations persist one
 operation and stop new turn claims while signed webhooks continue to be stored and
 acknowledged. A root-owned request file authorizes the privileged executor; SQLite alone
@@ -49,15 +49,12 @@ turns, requires explicit confirmation, and never requeues them.
 The root repository `Makefile` forwards the same commands over GCE SSH; it contains no
 deployment logic. Its local transport builds an argv vector and uses Python `shlex` parsing
 and quoting so operator values remain daemonctl arguments rather than local or remote shell
-syntax. Update candidates run as the dedicated `linear-validator` identity in a transient
-systemd filesystem sandbox with a cleared environment; that identity is not `linear-daemon`
-and cannot read daemon credentials. Dependency artifacts are fetched without lifecycle
-scripts while IPv4/IPv6 unspecified and loopback destinations, link-local/metadata,
-carrier-grade NAT, and private address ranges are denied. This includes `0.0.0.0/8` and
-`::/128`, which can otherwise route to host-local services. The offline install and every
-candidate-controlled script/test then run in a private network namespace. Failure to apply
-either transient-unit policy rejects the candidate. See `ops/runbook.md` for pending/blocked
-recovery, accepted-commit rules, and the human-only production smoke procedure.
+syntax. The operator alone fetches, reviews, and fast-forwards the persistent HTTPS checkout;
+`daemonctl reload` never fetches or runs candidate validation. It deploys that exact clean
+checkout commit through the existing provisioner, records deployed and accepted markers
+around health acceptance, and rolls back to the prior accepted commit on failure.
+`daemonctl update` remains a compatibility alias. See `ops/runbook.md` for pending/blocked
+recovery, revision reconciliation, and the human-only production smoke procedure.
 
 ## Run locally
 

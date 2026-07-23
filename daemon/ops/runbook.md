@@ -15,11 +15,11 @@ sudo daemonctl sessions
 sudo daemonctl top
 sudo daemonctl config --planner claude --implementer claudex --dry-run
 sudo daemonctl restart --dry-run
-sudo daemonctl update --dry-run
+sudo daemonctl reload --dry-run
 sudo daemonctl subscriptions list
 ```
 
-Normal config, restart, and update requests drain durable `running` turns, block all new
+Normal config, restart, and reload requests drain durable `running` turns, block all new
 claims, and leave webhook ingestion active. Status reports the pending type, safe reason,
 request time, target ref/commit, drain stage, and last outcome. Equivalent restarts converge.
 An operation that cannot prove acceptance or a safe rollback becomes `blocked`; queued work
@@ -30,28 +30,24 @@ allowed only before mutation or after verified rollback.
 and elapsed time, then requires `HARD-RESTART`. It terminates those turns through normal
 startup interruption reconciliation and does not enqueue continuations.
 
-Updates use `/opt/orchestra-source`, whose `origin` must be HTTPS and whose clean `HEAD` must
-equal `/var/lib/linear-agent-operations/accepted-commit`. Both default and explicit refs must
-be fast-forward descendants. A transient unit first runs script-free `pnpm fetch
---ignore-pnpmfile --ignore-scripts --frozen-lockfile` as the dedicated `linear-validator`
-user. Ignoring package hooks and lifecycle scripts keeps candidate code out of the
-network-capable step. That fetch may reach public package infrastructure but denies
-IPv4/IPv6 unspecified destinations (`0.0.0.0/8` and `::/128`), loopback,
-link-local/cloud metadata, carrier-grade NAT, RFC 1918, and IPv6 unique-local networks.
-Unspecified destinations are denied because Linux may route them to host-local services. A
-second transient boundary runs
-`pnpm install --offline --frozen-lockfile`, native dependency setup, typecheck, build, tests,
-and shell syntax in a private network namespace. Both use an empty allowlisted environment;
-the candidate tree and validator home are the only persistent writable paths, and the
-validator cannot read daemon credentials. If systemd cannot apply any isolation property,
-validation fails closed. Root only creates/removes the Git worktree and runs the
-committed-diff check. The accepted marker advances only after provision, service-active, and
-loopback-health acceptance; failed deployment rolls back to the previous accepted commit
-before claims can resume.
+Reloads use `/opt/orchestra-source`, whose `origin` must be HTTPS. The operator fetches,
+reviews, and fast-forwards this persistent checkout before running `sudo daemonctl reload`;
+the command itself never fetches, pulls, or runs candidate code as a validator. Its clean
+`HEAD` must be a fast-forward descendant of
+`/var/lib/linear-agent-operations/accepted-commit`. The executor revalidates the exact staged
+SHA after draining and provisions it from a detached worktree. Each operation worktree is
+authorized by atomic root-owned metadata outside the checkout; retries repair only an exact
+owned registration, while foreign or mismatched paths block without being removed. The executor
+records `deployed-commit` after
+the service becomes active, and advances `accepted-commit` only after loopback health
+acceptance. A failed deployment provisions the previous accepted commit before claims can
+resume. `sudo daemonctl status` compares the running, accepted, checkout, and cached remote
+tracking revisions without network access; use `status --refresh` for an explicit HTTPS
+fetch. `daemonctl update` remains a compatibility alias for `reload` and accepts no ref.
 
 For a human production smoke, run the three read-only commands first, dry-run every mutator,
 then use disposable turns/accounts to prove idle restart, busy drain and ingestion, config
-rollback, update old/new commit reporting, hard-restart consequences, and subscription
+rollback, reload old/new commit reporting, hard-restart consequences, and subscription
 remove/reauth. Capture only redacted output. Direct `systemctl`, `sqlite3`, provisioner, and
 proxy helper commands below remain recovery tools, not the routine path.
 

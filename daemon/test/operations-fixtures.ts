@@ -24,7 +24,7 @@ export function treeSnapshot(paths: string[]): string {
   }; for (const path of paths) visit(path); return rows.join("\n");
 }
 export interface OpsFixture {
-  dir: string; db: string; envFile: string; state: string; requests: string; accepted: string; serviceLog: string; provisionLog: string;
+  dir: string; db: string; envFile: string; state: string; requests: string; accepted: string; deployed: string; serviceLog: string; provisionLog: string;
   healthCount: string; restartCount: string; pidFile: string; env: NodeJS.ProcessEnv;
   run(args: string[], extra?: NodeJS.ProcessEnv): ReturnType<typeof spawnSync>;
 }
@@ -43,52 +43,29 @@ if [[ "$action" == is-active ]]; then [[ "\${FAKE_SERVICE_INACTIVE:-0}" != 1 ]];
 if [[ "$action" == restart ]]; then n=$(<"$FAKE_RESTART_COUNT"); printf '%s\\n' "$((n+1))" > "$FAKE_RESTART_COUNT"; failures=$(<"$FAKE_RESTART_FAILURES"); if (( failures > 0 )); then printf '%s\\n' "$((failures-1))" > "$FAKE_RESTART_FAILURES"; exit 1; fi; pid=$(<"$FAKE_PID_FILE"); printf '%s\\n' "$((pid+1))" > "$FAKE_PID_FILE"; exit 0; fi
 if [[ "$action" == start && "$*" == *linear-agent-operation.service* ]]; then [[ "$*" == *--no-block* && "\${FAKE_EXECUTE_NO_BLOCK:-0}" != 1 ]] && exit 0; "$DAEMONCTL_BIN" internal-execute; fi`);
   const curl = executable(join(bin, "curl"), `n=$(<"$FAKE_HEALTH_COUNT"); printf '%s\\n' "$((n+1))" > "$FAKE_HEALTH_COUNT"; failures=$(<"$FAKE_HEALTH_FAILURES"); if (( failures > 0 )); then printf '%s\\n' "$((failures-1))" > "$FAKE_HEALTH_FAILURES"; echo 'health fixture failure' >&2; exit 22; fi; printf '{"ok":true}\\n'`);
-  const stat = executable(join(bin, "stat"), `if [[ "$2" == %a ]]; then echo 600; else id -u; fi`), flock = executable(join(bin, "flock"), `exit 0`), sleep = executable(join(bin, "sleep"), `exit 0`);
+  const stat = executable(join(bin, "stat"), `python3 - "$2" "$3" <<'PY'
+import os,stat,sys
+metadata=os.stat(sys.argv[2])
+print(format(stat.S_IMODE(metadata.st_mode),"o") if sys.argv[1]=="%a" else metadata.st_uid)
+PY`), flock = executable(join(bin, "flock"), `exit 0`), sleep = executable(join(bin, "sleep"), `exit 0`);
   const uptime = executable(join(bin, "uptime"), `echo '14:00 up 3 days, load averages: 1.00 0.50 0.25'`);
   const ps = executable(join(bin, "ps"), `if [[ "$*" == *'pid=,ppid='* ]]; then printf '101 1 3.5 1.2 claude planted-secret-argv-token raw-session-id\\n102 1 2.0 0.8 claudex another-secret\\n103 1 1.0 0.5 codex prompt-secret\\n104 1 9.0 9.0 bash shell-secret\\n'; else printf '%%CPU %%MEM PID PPID COMMAND\\n3.5 1.2 101 1 claude\\n'; fi`);
   const df = executable(join(bin, "df"), `printf 'Filesystem Size Used Avail Capacity Mounted on\\nfixture 100G 10G 90G 10%% /fixture\\n'`);
-  const pnpmLog = join(dir, "pnpm.log"), validatorLog = join(dir, "validator.log"), validatorHome = join(dir, "validator-home");
-  mkdirSync(validatorHome);
-  const pnpm = executable(join(bin, "pnpm"), `printf '%s|%s\\n' "$PWD" "$*" >> '${pnpmLog}'`);
-  const validatorRun = executable(join(bin, "validator-run"), `
-printf '%s\\n' "$*" >> '${validatorLog}'
-args=("$@"); workdir=""; command_index=-1
-for ((i=0; i<\${#args[@]}; i++)); do
-  case "\${args[$i]}" in --working-directory=*) workdir="\${args[$i]#*=}" ;; /usr/bin/env) command_index=$i; break ;; esac
-done
-[[ "$*" == *'--uid=linear-validator'* && "$*" == *'--gid=linear-validator'* && "$*" == *'NoNewPrivileges=yes'* && "$*" == *'ProtectSystem=strict'* ]]
-(( command_index >= 0 )); cd "$workdir"
-candidate=("\${args[@]:$command_index}")
-if [[ "$*" == *' fetch --ignore-pnpmfile --ignore-scripts --frozen-lockfile'* ]]; then
-  [[ "$*" == *'PrivateNetwork=no'* && "$*" == *'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6'* ]]
-  for denied in 0.0.0.0/8 127.0.0.0/8 ::/128 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 fe80::/10 fc00::/7; do
-    [[ "$*" == *"IPAddressDeny=$denied"* ]]
-  done
-  [[ "$*" != *'PrivateNetwork=yes'* ]]
-else
-  [[ "$*" == *'PrivateNetwork=yes'* ]]
-fi
-if [[ "\${FAKE_VALIDATOR_REJECT_ISOLATION:-0}" == 1 ]]; then exit 125; fi
-if [[ "\${FAKE_PNPM_FAIL_ACTION:-}" != "" ]]; then
-  for value in "\${candidate[@]}"; do [[ "$value" == "$FAKE_PNPM_FAIL_ACTION" ]] && exit 1; done
-fi
-exec "\${candidate[@]}"
-`);
-  const chown = executable(join(bin, "chown"), `printf '%s\\n' "$*" >> '${validatorLog}'`);
-  const provision = executable(join(bin, "provision"), `printf '%s|%s\\n' "$SOURCE_COMMIT" "$1" >> "$FAKE_PROVISION_LOG"; failures=$(<"$FAKE_PROVISION_FAILURES"); if (( failures > 0 )); then printf '%s\\n' "$((failures-1))" > "$FAKE_PROVISION_FAILURES"; exit 1; fi; "$SYSTEMCTL" restart linear-agent-daemon.service; printf '%s\\n' "$SOURCE_COMMIT" > "$ACCEPTED_COMMIT_FILE"`);
+  const provision = executable(join(bin, "provision"), `printf '%s|%s\n' "$SOURCE_COMMIT" "$1" >> "$FAKE_PROVISION_LOG"; if [[ "\${FAKE_PROVISION_INTERRUPT:-0}" == 1 ]]; then kill -KILL "$PPID"; exit 137; fi; failures=$(<"$FAKE_PROVISION_FAILURES"); if (( failures > 0 )); then printf '%s\n' "$((failures-1))" > "$FAKE_PROVISION_FAILURES"; exit 1; fi; "$SYSTEMCTL" restart linear-agent-daemon.service; printf '%s\n' "$SOURCE_COMMIT" > "$DEPLOYED_COMMIT_FILE"; printf '%s\n' "$SOURCE_COMMIT" > "$ACCEPTED_COMMIT_FILE"`);
   const runuser = executable(join(bin, "runuser"), `printf '%s\\n' "$*" >> "$FAKE_RUNUSER_LOG"; [[ "$1" == -u && "$2" == linear-daemon && "$3" == -- ]]; shift 3; exec "$@"`);
   const restartFailures = join(dir, "restart.failures"), healthFailures = join(dir, "health.failures"), provisionFailures = join(dir, "provision.failures"); for (const path of [restartFailures, healthFailures, provisionFailures]) writeFileSync(path, "0\n");
+  const accepted = join(state, "accepted-commit"), deployed = join(state, "deployed-commit");
   const env: NodeJS.ProcessEnv = { ...process.env, DAEMONCTL_ALLOW_NON_ROOT: "1", DB_PATH: db, DAEMONCTL_ENV_FILE: envFile, DAEMONCTL_STATE_DIR: state,
-    DAEMONCTL_REQUEST_DIR: requests, DAEMONCTL_ACCEPTED_COMMIT_FILE: join(state, "accepted-commit"), DAEMONCTL_OPS_CLI: resolve("dist/operations-cli.js"), DAEMONCTL_PROVISION: provision,
+    DAEMONCTL_REQUEST_DIR: requests, DAEMONCTL_ACCEPTED_COMMIT_FILE: accepted, DAEMONCTL_DEPLOYED_COMMIT_FILE: deployed,
+    DAEMONCTL_OPS_CLI: resolve("dist/operations-cli.js"), DAEMONCTL_PROVISION: provision,
     DAEMONCTL_BIN: daemonctl, SYSTEMCTL: systemctl, CURL: curl, STAT_BIN: stat, FLOCK_BIN: flock, SLEEP_BIN: sleep, UPTIME_BIN: uptime, PS_BIN: ps, DF_BIN: df,
-    PNPM_BIN: pnpm, RUNUSER: runuser, CHOWN_BIN: chown, DAEMONCTL_VALIDATOR_RUN: validatorRun, DAEMONCTL_VALIDATOR_HOME: validatorHome,
-    FAKE_SERVICE_LOG: serviceLog, FAKE_PROVISION_LOG: provisionLog, FAKE_HEALTH_COUNT: healthCount, FAKE_RESTART_COUNT: restartCount,
+    RUNUSER: runuser, FAKE_SERVICE_LOG: serviceLog, FAKE_PROVISION_LOG: provisionLog, FAKE_HEALTH_COUNT: healthCount, FAKE_RESTART_COUNT: restartCount,
     FAKE_PID_FILE: pidFile, FAKE_RESTART_FAILURES: restartFailures, FAKE_HEALTH_FAILURES: healthFailures, FAKE_PROVISION_FAILURES: provisionFailures,
-    FAKE_PNPM_LOG: pnpmLog, FAKE_VALIDATOR_LOG: validatorLog, FAKE_RUNUSER_LOG: join(dir, "runuser.log") };
-  return { dir, db, envFile, state, requests, accepted: join(state, "accepted-commit"), serviceLog, provisionLog, healthCount, restartCount, pidFile, env,
+    FAKE_RUNUSER_LOG: join(dir, "runuser.log") };
+  return { dir, db, envFile, state, requests, accepted, deployed, serviceLog, provisionLog, healthCount, restartCount, pidFile, env,
     run: (args, extra = {}) => spawnSync(daemonctl, args, { env: { ...env, ...extra }, encoding: "utf8" }) };
 }
-export interface UpdateRepo { checkout: string; seed: string; origin: string; accepted: string; main: string; release: string; env: NodeJS.ProcessEnv }
+export interface UpdateRepo { checkout: string; origin: string; accepted: string; main: string; env: NodeJS.ProcessEnv }
 export function git(args: string[], cwd?: string, env?: NodeJS.ProcessEnv): string { return execFileSync("git", args, { cwd, env: { ...process.env, ...env }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }
 export function updateRepo(f: OpsFixture): UpdateRepo {
   const seed = join(f.dir, "source-seed"), origin = join(f.dir, "source-origin.git"), checkout = join(f.dir, "source-checkout"); mkdirSync(seed); git(["init", "-b", "main"], seed); git(["config", "user.email", "fixture@example.test"], seed); git(["config", "user.name", "Fixture"], seed); mkdirSync(join(seed, "daemon", "ops"), { recursive: true });
@@ -96,8 +73,12 @@ export function updateRepo(f: OpsFixture): UpdateRepo {
   for (const name of ["provision.sh", "daemonctl", "proxy-accounts.sh", "claudex", "claudex-fable", "codex-provider-gate.sh"]) writeFileSync(join(seed, "daemon", "ops", name), "#!/usr/bin/env bash\nset -euo pipefail\n");
   writeFileSync(join(seed, "release.txt"), "accepted\n"); git(["add", "."], seed); git(["commit", "-m", "accepted"], seed); const accepted = git(["rev-parse", "HEAD"], seed); git(["clone", "--bare", seed, origin]); git(["clone", origin, checkout]); git(["remote", "set-url", "origin", "https://fixture/orchestra.git"], checkout);
   writeFileSync(join(seed, "release.txt"), "main candidate\n"); git(["add", "."], seed); git(["commit", "-m", "main candidate"], seed); const main = git(["rev-parse", "HEAD"], seed); git(["remote", "add", "origin", origin], seed); git(["push", "origin", "main"], seed);
-  git(["checkout", "-b", "release"], seed); writeFileSync(join(seed, "release.txt"), "explicit descendant\n"); git(["add", "."], seed); git(["commit", "-m", "release candidate"], seed); const release = git(["rev-parse", "HEAD"], seed); git(["push", "origin", "release"], seed); git(["checkout", "main"], seed);
   const env: NodeJS.ProcessEnv = { GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: `url.file://${origin}.insteadOf`, GIT_CONFIG_VALUE_0: "https://fixture/orchestra.git",
-    GIT_CONFIG_KEY_1: "protocol.file.allow", GIT_CONFIG_VALUE_1: "always", DAEMONCTL_SOURCE_CHECKOUT: checkout }; writeFileSync(f.accepted, `${accepted}\n`);
-  return { checkout, seed, origin, accepted, main, release, env };
+    GIT_CONFIG_KEY_1: "protocol.file.allow", GIT_CONFIG_VALUE_1: "always", DAEMONCTL_SOURCE_CHECKOUT: checkout };
+  writeFileSync(f.accepted, `${accepted}\n`); writeFileSync(f.deployed, `${accepted}\n`);
+  return { checkout, origin, accepted, main, env };
+}
+export function stageMain(repo: UpdateRepo): void {
+  git(["fetch", "--no-tags", "origin"], repo.checkout, repo.env);
+  git(["merge", "--ff-only", "refs/remotes/origin/main"], repo.checkout, repo.env);
 }

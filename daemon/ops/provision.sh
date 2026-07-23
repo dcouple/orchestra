@@ -98,16 +98,13 @@ fi
 if ! id linear-daemon >/dev/null 2>&1; then
   useradd --system --home-dir /var/lib/linear-agent-daemon --create-home --shell /usr/sbin/nologin linear-daemon
 fi
-if ! id linear-validator >/dev/null 2>&1; then
-  useradd --system --home-dir /var/lib/linear-agent-validator --create-home --shell /usr/sbin/nologin linear-validator
-fi
 install -d -o linear-daemon -g linear-daemon -m 0750 /opt/linear-agent-daemon /var/lib/linear-agent-daemon
 install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/worktrees /var/lib/linear-agent-daemon/repos /var/lib/linear-agent-daemon/artifacts
 install -d -o root -g linear-daemon -m 0750 /etc/linear-agent-daemon
-install -d -o linear-validator -g linear-validator -m 0700 /var/lib/linear-agent-validator
 OPERATIONS_STATE_DIR="${OPERATIONS_STATE_DIR:-/var/lib/linear-agent-operations}"
 OPERATIONS_REQUEST_DIR="${OPERATIONS_REQUEST_DIR:-${OPERATIONS_STATE_DIR}/requests}"
 ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/accepted-commit}"
+DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE:-${OPERATIONS_STATE_DIR}/deployed-commit}"
 SOURCE_CHECKOUT="${SOURCE_CHECKOUT:-/opt/orchestra-source}"
 install -d -o root -g root -m 0700 "${OPERATIONS_STATE_DIR}" "${OPERATIONS_REQUEST_DIR}" "${OPERATIONS_STATE_DIR}/worktrees"
 if [[ ! -f /etc/linear-agent-daemon/env ]]; then
@@ -404,28 +401,36 @@ env_ready_for_restart() {
   fi
   return 0
 }
+write_commit_marker() {
+  local marker="$1" commit="$2" marker_tmp="${1}.tmp.$$"
+  printf '%s\n' "${commit}" > "${marker_tmp}"
+  chmod 0600 "${marker_tmp}"
+  mv "${marker_tmp}" "${marker}"
+}
+SOURCE_COMMIT="${SOURCE_COMMIT:-}"
+if [[ -z "${SOURCE_COMMIT}" ]] && git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  SOURCE_COMMIT="$(git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse HEAD)"
+fi
+if [[ -n "${SOURCE_COMMIT}" ]]; then
+  [[ "${SOURCE_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "invalid SOURCE_COMMIT" >&2; exit 1; }
+  git -C "${SOURCE_CHECKOUT}" cat-file -e "${SOURCE_COMMIT}^{commit}" 2>/dev/null \
+    || { echo "SOURCE_COMMIT is not present in the operator-managed checkout" >&2; exit 1; }
+fi
 if env_ready_for_restart; then
   systemctl restart linear-agent-daemon
-  if ! systemctl is-active --quiet linear-agent-daemon \
-      || ! curl -fsS --connect-timeout 2 --max-time 10 http://127.0.0.1:8787/healthz \
-        | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("ok") is True else 1)'; then
+  if ! systemctl is-active --quiet linear-agent-daemon; then
+    echo "daemon deployment failed: service is not active" >&2
+    exit 1
+  fi
+  if [[ -n "${SOURCE_COMMIT}" ]]; then
+    write_commit_marker "${DEPLOYED_COMMIT_FILE}" "${SOURCE_COMMIT}"
+  fi
+  if ! curl -fsS --connect-timeout 2 --max-time 10 http://127.0.0.1:8787/healthz \
+      | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("ok") is True else 1)'; then
     echo "daemon deployment failed at health acceptance" >&2
     exit 1
   fi
-  SOURCE_COMMIT="${SOURCE_COMMIT:-}"
-  if [[ -z "${SOURCE_COMMIT}" ]] && git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    SOURCE_COMMIT="$(git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse HEAD)"
-  fi
   if [[ -n "${SOURCE_COMMIT}" ]]; then
-    [[ "${SOURCE_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "invalid SOURCE_COMMIT" >&2; exit 1; }
-    if [[ ! -f "${ACCEPTED_COMMIT_FILE}" ]]; then
-      git -C "${SOURCE_CHECKOUT}" cat-file -e "${SOURCE_COMMIT}^{commit}" 2>/dev/null \
-        || git -C "${SOURCE_CHECKOUT}" fetch --no-tags origin "${SOURCE_COMMIT}"
-      git -C "${SOURCE_CHECKOUT}" reset --keep "${SOURCE_COMMIT}"
-    fi
-    marker_tmp="${ACCEPTED_COMMIT_FILE}.tmp.$$"
-    printf '%s\n' "${SOURCE_COMMIT}" > "${marker_tmp}"
-    chmod 0600 "${marker_tmp}"
-    mv "${marker_tmp}" "${ACCEPTED_COMMIT_FILE}"
+    write_commit_marker "${ACCEPTED_COMMIT_FILE}" "${SOURCE_COMMIT}"
   fi
 fi

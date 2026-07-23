@@ -17,6 +17,7 @@ COMMANDS = {
     "restart",
     "hard-restart",
     "config",
+    "reload",
     "update",
     "subscriptions",
 }
@@ -49,9 +50,6 @@ def daemon_args(command: str) -> list[str]:
         planner = required_env("DAEMON_REMOTE_PLANNER")
         implementer = required_env("DAEMON_REMOTE_IMPLEMENTER")
         return ["config", "--planner", planner, "--implementer", implementer, *extras]
-    if command == "update":
-        ref = os.environ.get("DAEMON_REMOTE_REF", "")
-        return ["update", *(["--ref", ref] if ref else []), *extras]
     if command == "subscriptions" and not extras:
         fail("set ARGS to list, add, remove, or reauth arguments")
     return [command, *extras]
@@ -59,7 +57,7 @@ def daemon_args(command: str) -> list[str]:
 
 def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] not in COMMANDS:
-        fail("usage: daemonctl-remote.py status|sessions|top|restart|hard-restart|config|update|subscriptions")
+        fail("usage: daemonctl-remote.py status|sessions|top|restart|hard-restart|config|reload|update|subscriptions")
     command = sys.argv[1]
     remote = shlex.join(["sudo", required_env("DAEMON_REMOTE_DAEMONCTL"), *daemon_args(command)])
     argv = [
