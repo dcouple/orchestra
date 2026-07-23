@@ -20,6 +20,7 @@ export interface RunTurnResult {
   ok: boolean; sessionId?: string; resultText?: string; isError: boolean; exitCode: number | null;
   signal: NodeJS.Signals | null; spawnError?: string; permissionDenials: unknown[]; sawResult: boolean;
   stderrTail?: string; capacityEvidence: string[];
+  processGroupTerminationAttempted?: boolean; processGroupExited?: boolean;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -129,6 +130,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   child.stderr?.on("data", chunk => { stderrTail = appendTail(stderrTail, chunk as Buffer); });
   child.once("error", error => { spawnError = error.message; });
   let killTimer: NodeJS.Timeout | undefined;
+  let processGroupTerminationAttempted = false;
   const killGroup = (signal: NodeJS.Signals): void => {
     if (!child.pid) return;
     try { process.kill(-child.pid, signal); } catch { try { child.kill(signal); } catch {} }
@@ -143,7 +145,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   };
   const abort = (): void => {
     if (child.exitCode !== null || child.signalCode !== null) return;
-    killGroup("SIGTERM");
+    processGroupTerminationAttempted = true; killGroup("SIGTERM");
     killTimer = setTimeout(() => killGroup("SIGKILL"), 5_000); killTimer.unref();
   };
   options.signal?.addEventListener("abort", abort, { once: true });
@@ -156,14 +158,15 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     options.signal?.removeEventListener("abort", abort);
     // The stream process may exit before stdio MCP/browser descendants. End and
     // await the detached group before callers remove attempt-scoped state.
-    if (groupAlive()) { killGroup("SIGTERM"); await awaitGroupExit(1_000); }
-    if (groupAlive()) { killGroup("SIGKILL"); await awaitGroupExit(1_000); }
+    if (groupAlive()) { processGroupTerminationAttempted = true; killGroup("SIGTERM"); await awaitGroupExit(1_000); }
+    if (groupAlive()) { processGroupTerminationAttempted = true; killGroup("SIGKILL"); await awaitGroupExit(1_000); }
     await Promise.allSettled(pending);
     const ok = !spawnError && closed.code === 0 && closed.signal === null && sawResult && !isError;
     return {
       ok, ...(latestId ? { sessionId: latestId } : {}), ...(resultText !== undefined ? { resultText } : {}), isError,
       exitCode: closed.code, signal: closed.signal, ...(spawnError ? { spawnError } : {}), permissionDenials: denials, sawResult,
       ...(stderrTail ? { stderrTail } : {}), capacityEvidence: [...capacityEvidence],
+      processGroupTerminationAttempted, processGroupExited: !groupAlive(),
     };
   } finally {
     if (killTimer) clearTimeout(killTimer);
