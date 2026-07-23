@@ -220,12 +220,10 @@ if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
   chmod 0755 /usr/local/bin/pnpm
 fi
 
-CODEX_VERSION="0.144.5"
-if ! command -v codex >/dev/null || [[ "$(codex --version)" != *"${CODEX_VERSION}"* ]]; then
+CODEX_VERSION="0.144.6"
+if [[ ! -x /opt/pnpm/bin/codex ]] || [[ "$(/opt/pnpm/bin/codex --version)" != *"${CODEX_VERSION}"* ]]; then
   env PNPM_HOME=/opt/pnpm PATH="/opt/pnpm/bin:${PATH}" \
     pnpm add --global "@openai/codex@${CODEX_VERSION}"
-  printf '#!/bin/sh\nexec /opt/pnpm/bin/codex "$@"\n' > /usr/local/bin/codex
-  chmod 0755 /usr/local/bin/codex
 fi
 
 PLAYWRIGHT_MCP_VERSION="$(node -e 'const p=require(process.argv[1]); const v=p.dependencies?.["@playwright/mcp"]; if(!/^\d+\.\d+\.\d+$/.test(v||"")) process.exit(1); process.stdout.write(v)' "${SOURCE_DIR}/package.json")" \
@@ -236,6 +234,7 @@ if ! command -v playwright-mcp >/dev/null || [[ "$(playwright-mcp --version)" !=
 fi
 printf '#!/bin/sh\nexec /opt/pnpm/bin/playwright-mcp "$@"\n' > /usr/local/bin/playwright-mcp
 chmod 0755 /usr/local/bin/playwright-mcp
+install -m 0755 "${SOURCE_DIR}/ops/codex-otel-wrapper.sh" /usr/local/bin/codex
 
 if [[ "${INSTALL_ANDROID:-0}" == "1" ]]; then
   ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-35}"

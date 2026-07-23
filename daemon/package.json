@@ -10,6 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
+    "generate:otel-proto": "node scripts/generate-otel-proto.mjs",
+    "check:otel-proto": "node scripts/generate-otel-proto.mjs --check",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude test/browser.test.ts",
     "test:browser": "vitest run test/browser.test.ts",
@@ -21,11 +23,13 @@
     "@linear/sdk": "88.1.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@playwright/mcp": "0.0.78",
-    "better-sqlite3": "12.4.1"
+    "better-sqlite3": "12.4.1",
+    "protobufjs": "8.7.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "22.19.11",
+    "protobufjs-cli": "2.6.1",
     "typescript": "5.9.3",
     "vitest": "4.0.17"
   }
