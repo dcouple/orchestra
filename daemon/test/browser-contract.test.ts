@@ -13,14 +13,19 @@ describe("browser publication contract", () => {
   });
 
   it("requires completed current-attempt manifests and clean publication", () => {
-    const verifier = readFileSync(resolve("../claude/agents/frontend-verifier.md"), "utf8");
+    const verifier = readFileSync(resolve("../references/agents/frontend-verifier/instructions.md"), "utf8");
     const result = readFileSync(resolve("../references/agents/frontend-verifier/verification-result.md"), "utf8");
     const qa = readFileSync(resolve("../references/qa-verification.md"), "utf8");
-    const doSkill = readFileSync(resolve("../claude/skills/do/SKILL.md"), "utf8");
-    for (const text of [verifier, result, qa, doSkill]) expect(text).toContain("evidence-manifest.json");
+    const doWorkflow = readFileSync(resolve("../references/workflows/do.md"), "utf8");
+    const claudeAdapter = readFileSync(resolve("../claude/skills/do/SKILL.md"), "utf8");
+    const codexAdapter = readFileSync(resolve("../codex/skills/do/SKILL.md"), "utf8");
+    for (const text of [verifier, result, qa, doWorkflow]) expect(text).toContain("evidence-manifest.json");
     for (const kind of ["screenshot", "trace", "console", "network", "video"]) expect(`${verifier}\n${result}`).toContain(kind);
-    expect(doSkill).toContain("git status --short");
-    expect(doSkill).toContain("ORCHESTRA_BROWSER_RELAUNCH_REQUIRED");
-    expect(doSkill).toContain("older-attempt");
+    expect(doWorkflow).toContain("git status --short");
+    expect(doWorkflow).toContain("ORCHESTRA_BROWSER_RELAUNCH_REQUIRED");
+    expect(doWorkflow).toContain("older-attempt");
+    for (const adapter of [claudeAdapter, codexAdapter]) {
+      expect(adapter).toContain(".references/workflows/do.md");
+    }
   });
 });

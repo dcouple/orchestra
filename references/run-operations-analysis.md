@@ -142,8 +142,9 @@ operational leak outweighs any outcome gap.
 **Timeline visualization (render it, attach it).** Turn the per-step table
 into a Gantt: one row per dispatch (plus an Overseer row for the main loop's
 own working segments) over the fixed time axis, phase bands behind, so
-parallel-vs-sequential reads at a glance. Start from the postmortem skill's
-`references/run-timeline-template.html` — fill its `RUN` object with the
+parallel-vs-sequential reads at a glance. Start from
+`.references/workflows/formats-and-assets/postmortem/run-timeline-template.html`
+— fill its `RUN` object with the
 scripted data (phases, dispatches with tokens and yield, idle gaps); the
 stats, axis, chart height, and accessible table derive from it. Render the
 PNG with the sibling `render-timeline.sh` (cross-platform: discovers

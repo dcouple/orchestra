@@ -6,7 +6,8 @@ artifacts go) is defined in `AGENTS.md` — the skills read it from there.
 
 ## Claude-specific notes
 
-- `.claude/`, `.codex/`, and `.references/` are symlinks to this repo's own
-  canonical `claude/`, `codex/`, and `references/` directories — orchestra
-  consumes its own skills. Editing under the dot-paths edits the canonical
-  copy, which here (unlike in consumer repos) is exactly right.
+- `.claude/`, `.agents/skills`, `.codex/agents`, and `.references/` are
+  symlinks to this repo's own canonical `claude/`, `codex/`, and `references/`
+  directories — orchestra consumes its own skills. Editing under the dot-paths
+  edits the canonical copy, which here (unlike in consumer repos) is exactly
+  right.

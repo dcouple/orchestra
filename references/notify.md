@@ -79,7 +79,7 @@ Blocks: Phase 4 verify (lapse-release leg).
 
 ALTER TABLE welcome_surveys ADD COLUMN foo STRING(MAX);
 
-Run: bloomapi/bloom-mono @ onboarding-overhaul
+Run: owner/repo @ feature-branch
 ```
 
 ## When to fire it

@@ -1,8 +1,11 @@
 # The workflow
 
-A dual-harness development workflow. Claude Code is the orchestrating
-harness: Fable makes the judgment calls and dispatches sub-agents; Codex
-(GPT-5.6) runs the engineering-heavy roles.
+A dual-harness development workflow with one semantic contract. In Claude
+Code, Fable is the Overseer and may dispatch Claude-native agents or detached
+Codex engineering leaves. In native Codex, GPT-Sol is the Overseer and
+delegates every role through native project custom agents. Harness adapters
+live in `claude/skills/` and `codex/skills/`; shared workflow and role contracts
+live in `references/`.
 
 The whole system at a glance:
 
@@ -12,13 +15,13 @@ _Source: [docs/workflow-map.excalidraw](docs/workflow-map.excalidraw)_
 
 The flow separates *clarity*, *capture*, and *execution*:
 
-1. **`/discussion`** — clarify, understand, figure out. General-purpose: it
+1. **`/discussion` / `$discussion`** — clarify, understand, figure out. General-purpose: it
    dispatches the code-researcher / `web-researcher` for questions and the
    investigator (with `frontend-verifier` for reproduction) when the topic is a
    defect. It produces clarity plus a dated decision log
    (`./tmp/discussions/`) that the `/create-*` drafting step reads — never
    deliverables.
-2. **`/create-plan` · `/create-epic`** — capture skills invoked by the user or
+2. **`/create-plan` · `/create-epic` / `$create-plan` · `$create-epic`** — capture skills invoked by the user or
    by the model when a conversation converges. Each turns what the conversation
    established into a lean work item at `./tmp/<id>/item.md` (Feature Ticket, Epic Spec, or Bug
    Report, raw sources in `./tmp/<id>/refs/`) with verification criteria,
@@ -35,7 +38,7 @@ The flow separates *clarity*, *capture*, and *execution*:
    section — travel with the published item. Intensity scales with the item:
    straightforward drafts fast-pass with 0–2 questions; epics always get the
    full challenge.
-3. **`/do <item ref or path>`** — the autonomous pipeline: pull the work
+3. **`/do <item ref or path>` / `$do <item ref or path>`** — the autonomous pipeline: pull the work
    item's artifacts into `./tmp/<id>/` (fetched per the project
    `AGENTS.md`'s `Work-item tracking` instructions — e.g. harvested from a
    GitHub issue's artifact comments — or read from `./tmp/<id>/` when the
@@ -47,7 +50,7 @@ The flow separates *clarity*, *capture*, and *execution*:
    PR comment at the end. Deliberately high-level:
    the Overseer applies the item's zone (escalating one notch at most), how much research a plan needs, and when
    each review loop has converged.
-4. **`/prepare-pull-request`** — the exit ramp for ad-hoc changes made in a
+4. **`/prepare-pull-request` / `$prepare-pull-request`** — the exit ramp for ad-hoc changes made in a
    session *outside* `/do` (which handles its own PR prep). It retrofits
    the pipeline's gates before anything goes up: the Overseer materializes
    an `intent.md` + diff under `./tmp/pr-<branch>/`, Socrates challenges
@@ -55,35 +58,34 @@ The flow separates *clarity*, *capture*, and *execution*:
    fidelity joins the attack lines), both code reviewers gate correctness
    (union Must-Fix, cap 3 passes), then build gate → commit → PR in the
    repo's documented format.
-5. **`/postmortem`** — when a result falls short, root-cause it in *our
+5. **`/postmortem` / `$postmortem`** — when a result falls short, root-cause it in *our
    system* (skill/agent/template), not just the code.
 
 ## Model routing
 
-This table is the single source of truth for model routing — the guides and
-skills point here; update it first when routing changes, and update `/do`'s
-**Sub-agents** paragraph in the same commit: this file is not synced to
-consumer repos, so the skills' restatement is what actually executes.
+This table is the single source of truth for model routing. Shared contracts
+name roles, not dispatch mechanisms; the two thin adapters map those roles to
+their harness-native execution surface.
 
-| Role | Runs on | Notes |
-| --- | --- | --- |
-| Overseer (conducts `/do`, all judgment) | main session — Fable | |
-| Web research | Claude `web-researcher` — Sonnet | |
-| App-driving QA (one run, post-PR: UI ACs + Manual tests, journey captures) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-plan |
-| Verify backend (tests/scripts) | **Codex** GPT-5.6 `low` | |
-| Explore codebase | **Codex** GPT-5.6 `low` | Claude `code-researcher` (Sonnet) as backup |
-| Reproduce & root-cause | **Codex** GPT-5.6 `low` | |
-| Write the diff — all surfaces, one dispatch per vertical slice | **Codex** GPT-5.6 `medium` | fix rounds resume the same session; repo statically green after every dispatch |
-| Challenge the draft work item (Socratic gate) | Claude `socrates` — Fable | always invoked by both `/create-*` skills; self-calibrates — fast-passes straightforward drafts, full challenge for epics/unargued items |
-| Review the plan | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `low` + Claude `plan-reviewer` (Opus) | Must-Fix gate = union of both |
-| Review the diff + security | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `low` + Claude `code-reviewer` (Opus) | Must-Fix gate = union of both |
+| Role | Claude root | Codex root | Default effort |
+| --- | --- | --- | --- |
+| Overseer | Fable main session | GPT-Sol main session | root-owned |
+| Web research | Claude `web-researcher` | native `web-researcher` | low |
+| App-driving QA / reproduction | Claude `frontend-verifier` | native `frontend-verifier` | low |
+| Verify backend | detached Codex `backend-verifier` | native `backend-verifier` | low |
+| Explore codebase | detached Codex `code-researcher` (Claude backup available) | native `code-researcher` | low |
+| Reproduce and root-cause | detached Codex `investigator` | native `investigator` | low |
+| Write the diff | detached persistent Codex `implementer` | native `implementer` | medium |
+| Socratic challenge | Claude `socrates` | native `socrates` | high |
+| Review the plan | parallel detached Codex + Claude `plan-reviewer` | parallel native reviewers | low/high by lane |
+| Review the diff + security | parallel detached Codex + Claude `code-reviewer` | parallel native reviewers | low/high by lane |
 
-Every Codex role is dispatched by the **`codex` skill**
-(`claude/skills/codex/`), the one place that knows the `codex exec`
-mechanics per role — model, effort, session mode (`--yolo` for every role;
-reviewers/researchers ephemeral and no-edit by charter; implementer
-persistent with `resume --last` across fix rounds), output capture, and
-status-line parsing.
+Under a Claude root, every detached Codex role is dispatched by the
+infrastructure-only **`codex` skill** (`claude/skills/codex/`), which owns
+`codex exec` mechanics, output capture, and resumption. Under a Codex root,
+workflow adapters explicitly spawn and await project-scoped
+`.codex/agents/*.toml` roles through native collaboration tools; those agents
+are leaves and never launch another agent or agent CLI.
 
 Review loops exit when **no Must Fix remains from either reviewer** — a
 Codex report tiered P0–P3 maps rather than reformats (P0/P1 ≡ Must Fix,
@@ -93,38 +95,39 @@ applies those at its discretion, no re-review), and the only other trigger
 for an extra pass is the two lanes sharply diverging. When reviewers disagree,
 the Overseer adjudicates directly, using sub-agents to understand what is true
 when needed. The Overseer flags anything left unresolved at a cap in the
-wrap-up. Codex efforts are defaults — `medium` for the
-implementer, `low` for every other role; the dispatcher may raise a
-reviewer to `medium` or `high` rarely, when the zone warrants it (zone 0
-or an epic), with the reason stated in the dispatch — never above `high`. `/do` and
-`/prepare-pull-request` are user-invoked only (`disable-model-invocation`). The two
-`/create-*` capture skills are model-invocable at convergence, with publish still gated by
-their alignment pause.
+wrap-up. Codex efforts are defaults — `medium` for the implementer and `low`
+for every other role. A native dual-review pass explicitly starts distinct
+low- and high-effort children for the same input; a single pass retains the
+low default unless a recorded escalation is warranted, never above `high`.
+The do and prepare-pull-request workflows are user-invoked only in both
+harnesses. The two create capture workflows remain model-invocable at
+convergence, with publish still gated by their alignment pause.
 
 ## Where formats live (single copy each — no duplicates to drift)
 
-- **`references/`** (synced to `.references/` in each consumer repo —
-  harness-neutral) — anything referenced by more than
-  one skill, or by any agent: the shared blocks (`verification-criteria.md`,
+- **`references/workflows/`** (synced to `.references/workflows/`) — one
+  harness-neutral semantic contract per workflow plus shared
+  `formats-and-assets/`. No dispatch syntax or harness-specific lifecycle
+  behavior lives here.
+- **`references/agents/`** — one role charter and one output-format contract
+  per delegated role, shared by Claude agent definitions, detached Codex
+  leaves, and native Codex custom agents.
+- **`references/`** (synced to `.references/` in each consumer repo) —
+  other shared blocks (`verification-criteria.md`,
   `verification-methods.md`, `rubrics/` — per-surface verification rubrics,
   `code-quality.md` — the reviewers' house-rules rubric, `qa-verification.md`
   — the QA pass's external-evidence discipline, `system-analysis.md`,
   `publish-work-item.md`, `draft-work-item.md`,
   `socratic-gate.md`) and every agent's output format
-  (`references/agents/<agent>/…`). Agents are flat `.md` files by design
-  (Claude Code has no agent-folder format), so each agent's body carries a
-  pointer — "Read `.references/agents/<name>/<format>.md`" — plus a few
-  non-negotiable lines as a safety net if the file is missing.
-- **`claude/skills/<name>/references/`** — document formats produced by
-  exactly one skill (feature-ticket, epic-spec, bug-report,
-  implementation-plan, wrap-up-report, postmortem).
+  (`references/agents/<agent>/…`).
+- **`claude/skills/` and `codex/skills/`** — thin harness adapters only.
+  Claude definitions retain Claude frontmatter and lifecycle rules; Codex
+  definitions use explicit `$skill` entrypoints and native collaboration.
 
-The six workflow skills above, plus two infrastructure skills the others
-invoke — `codex` (dispatches Codex roles) and `excalidraw-pr-diagrams` (the
-PR visual-overview standard `/do`'s PR step uses) — are the whole surface. Web research is the
-`web-researcher` sub-agent, review lives inside `/do` (plan review before
-implement, code review + QA after the PR opens), and all commit/PR prep
-lives in `/do`'s PR step.
+The advertised Codex skill surface contains orchestrator-facing workflows
+only. Engineering roles are native custom agents, not duplicate role skills.
+Claude retains the private `codex` dispatcher because its detached leaves use
+`codex exec` directly.
 
 ## Keeping in sync
 

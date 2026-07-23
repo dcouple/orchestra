@@ -16,8 +16,9 @@ Run notifications (one-way phone pings at gates/completion) are configured in
 
 ## Claude-specific notes
 
-- Sub-agent and skill definitions live in this repo (`.claude/`, `.codex/`,
-  `.references/`), synced one-way from `dcouple/orchestra` — never edit them
-  here; change them in orchestra and let the sync PR bring them in.
+- Skill, agent, and shared workflow definitions live in this repo
+  (`.claude/`, `.agents/skills`, `.codex/agents`, `.references/`), synced
+  one-way from `dcouple/orchestra` — never edit them here; change them in
+  orchestra and let the sync PR bring them in.
 - <anything else only Claude needs: MCP servers to prefer, browser-automation
   notes for the frontend-verifier agent, model-routing exceptions for this project>
