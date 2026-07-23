@@ -103,9 +103,8 @@ PLANNER_HARNESS=claude
 IMPLEMENTER_HARNESS=claude
 CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
 FABLE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex-fable
-# Capacity fallback: a validated Claude usage/rate-limit failure retries once through
-# the Claudex proxy wrapper (ops/claudex, installed by provision.sh; it carries the
-# proxy env itself, so CLAUDEX_ENV is not needed with it):
+# Direct Claudex route for sessions assigned to Sol (ops/claudex is installed by
+# provision.sh and carries the proxy env itself, so CLAUDEX_ENV is normally absent):
 CLAUDEX_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
 # CLAUDEX_ENV optionally supplies extra child env as a JSON string map when CLAUDEX_BIN
 # points at a bare claude binary instead of the wrapper; it requires CLAUDEX_BIN:
@@ -132,69 +131,113 @@ OTEL_METRICS_EXPORTER=none
 OTEL_LOGS_EXPORTER=none
 OTEL_LOG_USER_PROMPTS=1
 OTEL_LOG_ASSISTANT_RESPONSES=1
-OTEL_LOG_TOOL_DETAILS=1
 ```
 
 The harness settings are independent and accept only `claude` or `claudex`; both default
 to `claude`. Use `claudex` to send new sessions for that role directly to GPT-Sol without a
-Fable readiness probe. A `claude` preference retains readiness routing and the one-time
-capacity fallback, so both `FABLE_BIN` and `CLAUDEX_BIN` must be usable for full protection.
-Changes affect only new sessions: established prompts, daemon restarts, and implementer fix
-rounds resume the persisted harness and session ID. If an established or selected Claudex
-session has no `CLAUDEX_BIN`, it fails closed and keeps its durable state.
+Fable readiness probe. Readiness and cooldown affect only the first assignment. Once a
+Linear session is created, its Fable/Claude or Sol/Claudex route is sticky across prompts,
+marker resumes, and daemon restarts. Capacity, authentication, or transport failure ends
+that turn without launching the other harness; switching harnesses requires a new Linear
+session. If a selected launcher is absent, the turn fails closed and the route stays intact.
 
 Langfuse's OTLP endpoint ingests traces only. Keep metrics and logs explicitly disabled;
 otherwise exporter defaults can repeatedly send unsupported signals to Langfuse's 404/400
 endpoints. `OTEL_EXPORTER_OTLP_HEADERS` is secret material: keep it only in the mode-0600
-env file, never in argv or logs. With this configuration, prompts, tool details, and
-span-carried identity attributes (`user.email`, `user.id`, and `organization.id`) leave the
-VM for Langfuse Cloud. The daemon also re-exports each assistant response over a second
-channel, in the `daemon.assistant_response` span's `response.content` attribute. Restart
-`linear-agent-daemon` after changing any of these values.
+env file, never in argv or logs. The daemon keeps the upstream endpoint and header inside
+its process and gives each turn only a random loopback capability and W3C context. Blanket
+tool-content/detail export remains off. The relay selectively enriches only native Agent
+tool spans with the daemon-captured delegated prompt/report; unrelated tool content and
+selected-account identity are not exported. Claude Code v2.1.214 or newer is required.
+
+One persisted trace covers the entire Linear planner or implementer session. Each prompt or
+marker resume is one `orchestra.turn` child with a distinct span ID. The session root is
+emitted once, after issue completion, marker ingestion, every Claude Agent enrichment has
+settled or reached its 30-second degraded deadline, and no turn is executing. Parent token
+values use `orchestra.canonical_tokens.*` metadata; provider generation usage remains only
+on native leaf generations. A degraded root explicitly sets both completeness flags false.
 
 ### Codex telemetry
 
-Codex tracing is opt-in during provisioning. Pass the full traces endpoint (including
-`/v1/traces`), which is deliberately different from Claude's base OTLP endpoint above:
+Provisioning pins the real Codex binary at `/opt/pnpm/bin/codex` and idempotently installs
+the authoritative `/usr/local/bin/codex` wrapper. The provider gate continues to own Codex
+routing configuration; provisioning does not write a static `[otel]` section. For a valid
+daemon dispatch the wrapper validates the owner/report/capability, mints the dispatch span
+ID before launch, and gives native Codex only the capability endpoint and rewritten parent.
+It writes a credential-free atomic `.otel.json` sidecar beside the prompt/report/log/done
+artifacts. Non-daemon invocations pass through unchanged.
+
+Dispatch basenames are `<role>-<epoch>-<pid>-<sequence>`; the wrapper preserves a
+hyphenated role by removing all three numeric suffixes. The sidecar deadline is 2700
+seconds only for `implementer` and 900 seconds for every ephemeral role. For daemon
+dispatches, common/traces/logs/metrics OTel endpoint, header, and protocol overrides,
+ambient trace state/baggage, proxy credentials, and selected-account variables are removed
+before the real Codex starts. TERM, INT, HUP, QUIT, ALRM, watchdog expiry, and ordinary
+exit are forwarded to and reap the real child before atomically replacing `running` with a
+terminal sidecar.
+
+The capability remains valid for 3600 seconds even after the orchestrator turn exits: 4096
+requests, 256 MiB cumulative, 8 MiB/request, 8 active requests per capability, and 32 active
+globally. Marker ingestion sorts one provider conversation by start/end time and converts
+cumulative Codex totals to deltas. Resume gaps, stale/out-of-order evidence, and fresh-ID
+collisions remain auditable but contribute no canonical tokens and do not advance a
+checkpoint. Native descendants may arrive before their late completed parent.
+
+The relay retains a bounded cross-request span graph so native Agent spans and descendant
+LLM spans exported in different batches settle together. Exact protobuf re-encoding is the
+safety test for mutation: malformed gzip/protobuf or a future wire field that cannot be
+preserved is forwarded byte-for-byte with its original content encoding. Requests reserve
+count, concurrency, and streamed byte budgets before asynchronous work; decoded buffering
+is capped at 32 MiB per capability and 128 MiB globally.
+
+Completed-root delivery is intentionally at most once. A stale pre-send lease is retryable,
+but restart/timeout/connection loss after `sending` becomes terminal `delivery_unknown` and
+is never replayed automatically because Langfuse v4 can duplicate same-span-ID ingestion.
+This may lose telemetry in an ambiguous case, but it cannot duplicate totals or block the
+functional outcome and cleanup.
+
+### Phase-4 production deploy and live proof (operator only)
+
+Do not run these steps from an implementation or verification agent. On the daemon host,
+the operator backs up the SQLite file, deploys the daemon package/wrapper, verifies the CLI
+minimum, then restarts the service:
 
 ```bash
-sudo CODEX_OTEL_ENDPOINT=https://us.cloud.langfuse.com/api/public/otel/v1/traces \
-  DAEMON_HOST=linear-agent.example.com ops/provision.sh "$PWD"
+sudo systemctl stop linear-agent-daemon
+sudo install -o linear-daemon -g linear-daemon -m 0600 \
+  /var/lib/linear-agent-daemon/events.db \
+  /var/lib/linear-agent-daemon/events.db.pre-phase4
+sudo DAEMON_HOST=linear-agent.example.com daemon/ops/provision.sh daemon
+sudo -u linear-daemon -H /var/lib/linear-agent-daemon/.local/bin/claude --version
+sudo -u linear-daemon -H /opt/pnpm/bin/codex --version
+sudo systemctl restart linear-agent-daemon
+sudo systemctl is-active linear-agent-daemon
 ```
 
-The provisioner owns only the `[otel]` section of
-`/var/lib/linear-agent-daemon/.codex/config.toml`, preserves all other Codex settings,
-validates the result as TOML, and installs it mode `0600` for `linear-daemon`. It manages:
+The Claude version must be at least `2.1.214`. Complete one scratch issue with two user
+turns, one Claude Agent invocation, overlapping fresh/resumed Codex dispatches, a daemon
+restart between turns, and one dispatch that finishes after its parent turn. After moving
+the issue to a completed state, inspect only metadata from SQLite:
 
-```toml
-[otel]
-environment = "prod"
-log_user_prompt = true
-trace_exporter = { otlp-http = { endpoint = "https://us.cloud.langfuse.com/api/public/otel/v1/traces", protocol = "binary" } }
+```bash
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select linear_session_id,trace_id,root_span_id,started_at,completed_at,runtime,profile from sessions where issue_identifier='ORCH-PHASE4-SMOKE';"
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select id,turn_span_id,started_at,execution_finished_at,status from turns where linear_session_id='<scratch-session>' order by id;"
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select source,role,enrichment_state,usage_classification,delta_total_tokens from agent_invocations where linear_session_id='<scratch-session>' order by started_at,id;"
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select state,attempts,send_started_at,acknowledged_at,last_error from telemetry_outbox where session_id='<scratch-session>';"
 ```
 
-The config is secret-free. Codex's exporter reads authorization from the same
-`OTEL_EXPORTER_OTLP_HEADERS` / `OTEL_EXPORTER_OTLP_TRACES_HEADERS` values in the daemon's
-mode-`0600` env file; those values flow through Claude's Bash subprocess environment. Do
-not put the authorization header in `config.toml`. For clarity: Claude receives the base
-`https://…/api/public/otel` endpoint and appends the signal path, while Codex requires the
-full `https://…/api/public/otel/v1/traces` path in its managed config.
-
-The recorded phase-3 `traceparent-experiment.md` proves Codex 0.144.6 continues an inbound
-W3C `TRACEPARENT`. The daemon mints and stores one trace context per turn; Claude's
-interaction and Bash tool spans, then each Bash-dispatched `codex exec`, continue that same
-trace. A Codex root span's `parentSpanId` joins it one-to-one to its Claude Bash tool span;
-the tool detail supplies the role while the Codex subtree supplies start/end timestamps and
-per-dispatch token attributes. Those fields make the run Gantt constructible from one trace.
-
-After persisting terminal turn state, the daemon asynchronously posts `daemon.turn` and,
-when response text exists, its child `daemon.assistant_response` to that trace. Collector
-failures never change turn status; investigate the body-free
-`telemetry_span_post_failed` journal event. Codex currently emits verbose infrastructure
-spans (often hundreds per run), so measure Langfuse unit consumption against the Hobby
-allowance of 50,000 units/month during the first week. Codex OTel metrics remain unavailable
-because of the upstream `openai/codex#12913` gap; SQLite and the existing harvest remain the
-accounting source.
+Use a root-owned mode-0600 curl config containing the Langfuse read authorization; never put
+that header in argv or shell history. Query the trace ID above through the region's Langfuse
+API and confirm one root, distinct turn spans, exactly one row per real delegation, real
+overlap, canonical totals, and nested native detail. Capture redacted child-env/argv/journal
+evidence and search it for authorization material, proxy keys, OAuth data, emails, raw
+account filenames, and foreign `TRACEPARENT`; every search must be empty. Finally replay the
+capability only in the scratch environment after expiry and over budget to confirm 404/413,
+and inject one selected-route failure to confirm the persisted route never changes.
 
 The daemon requests 30-day client-credentials app tokens with
 `read,write,app:assignable,app:mentionable,admin` and persists their expiry in SQLite. It
@@ -565,7 +608,7 @@ sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
   'select linear_session_id,profile,claude_session_id from sessions order by last_seen_at desc limit 5;'
 sudo systemctl restart linear-agent-daemon
 sudo journalctl -u linear-agent-daemon --since '-10 min' -o cat |
-  grep -E 'session_profile_assigned|provider_state_changed|provider_failure_classified|profile_fallback|profile_launcher_unconfigured'
+  grep -E 'session_profile_assigned|provider_state_changed|provider_failure_classified|profile_launcher_unconfigured'
 sudo -u linear-daemon -H sh -c '
   . /etc/linear-agent-daemon/cliproxyapi.env
   printf "header = \"Authorization: Bearer %s\"\n" "$CLIPROXY_MANAGEMENT_KEY" |
@@ -586,7 +629,7 @@ Preserve the automated host evidence for the fixture-drivable criteria as well:
 cd /opt/linear-agent-daemon
 pnpm vitest run test/sessions.test.ts -t 'persists Fable for planner and implementer|probes readiness' # AC1, AC3
 pnpm vitest run test/sessions.test.ts -t 'reopens SQLite|child-restart'                                # AC4
-pnpm vitest run test/sessions.test.ts -t 'falls back once|launcher is unconfigured'                   # AC5, AC7
+pnpm vitest run test/sessions.test.ts -t 'keeps Fable sticky|selected pool|launcher is unconfigured' # sticky-route AC
 pnpm vitest run test/server.test.ts test/sessions.test.ts -t 'keeps provider health private|probes readiness' # AC6
 ```
 

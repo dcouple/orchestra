@@ -80,6 +80,10 @@ if (mode === "stderr-fail") {
 emit({ type: "assistant", session_id: session, message: { content: [
   { type: "text", text: "thinking" }, { type: "tool_use", name: "Read", input: { description: "ticket" } },
 ] } });
+if(mode==="agent"){
+  emit({type:"assistant",session_id:session,message:{content:[{type:"tool_use",id:"toolu_agent_1",name:"Agent",input:{subagent_type:"code-researcher",prompt:"inspect the daemon"}}]}});
+  emit({type:"user",session_id:session,message:{content:[{type:"tool_result",tool_use_id:"toolu_agent_1",content:"research complete",is_error:false}]}});
+}
 if (mode === "new-id") emit({ type: "assistant", session_id: "claude-session-2", message: { content: [{ type: "text", text: "compacted" }] } });
 if (mode === "slow") await new Promise(resolve => setTimeout(resolve, Number(process.env.CLAUDE_FAKE_DELAY_MS || process.env.FAKE_DELAY_MS || 100)));
 const finalSession = mode === "new-id" ? "claude-session-2" : session;
