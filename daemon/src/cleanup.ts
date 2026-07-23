@@ -240,7 +240,8 @@ export class CleanupWorker {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     }
-    let earliest: number | undefined;
+    const now = this.now();
+    let earliestFuture: number | undefined;
     for (const file of files.filter(
       (name) => name.endsWith(".prompt") || name.endsWith(".sh"),
     )) {
@@ -263,10 +264,13 @@ export class CleanupWorker {
         const info = await stat(resolve(directory, file));
         deadline = info.mtimeMs + 2_700_000;
       }
-      earliest =
-        earliest === undefined ? deadline : Math.min(earliest, deadline);
+      if (deadline > now)
+        earliestFuture =
+          earliestFuture === undefined
+            ? deadline
+            : Math.min(earliestFuture, deadline);
     }
-    return earliest;
+    return earliestFuture;
   }
   private async postNotification(note: CleanupNotificationRow): Promise<void> {
     const result = await this.gateway.postActivity(

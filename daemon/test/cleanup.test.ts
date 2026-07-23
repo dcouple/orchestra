@@ -516,4 +516,54 @@ describe("CleanupWorker", () => {
     expect(s.log.cleanupStates()[0]?.status).toBe("done");
     s.log.close();
   });
+
+  it("AC7/AC11 keeps a shared worktree while any unfinished dispatch deadline remains active", async () => {
+    const s = await setup();
+    s.log.stageExternalUrl(
+      "session",
+      "implementer",
+      "Pull Request",
+      "https://github.com/dcouple/example/pull/42",
+      3,
+    );
+    const dispatches = join(s.tree.path, ".codex-dispatches", "session");
+    mkdirSync(dispatches, { recursive: true });
+    writeFileSync(join(dispatches, "expired.prompt"), "expired");
+    writeFileSync(
+      join(dispatches, "expired.otel.json"),
+      JSON.stringify({ deadline_at: 15 * 60_000 }),
+    );
+    writeFileSync(join(dispatches, "active.sh"), "active");
+    writeFileSync(
+      join(dispatches, "active.otel.json"),
+      JSON.stringify({ deadline_at: 45 * 60_000 }),
+    );
+    writeFileSync(join(dispatches, "completed.prompt"), "completed");
+    writeFileSync(
+      join(dispatches, "completed.otel.json"),
+      JSON.stringify({ deadline_at: 60 * 60_000 }),
+    );
+    writeFileSync(join(dispatches, "completed.done"), "done");
+    complete(s.log);
+
+    let now = 16 * 60_000;
+    const worker = new CleanupWorker(
+      s.log,
+      new Poster() as unknown as LinearGateway,
+      s.root,
+      s.repo,
+      { pollMs: 10_000, reconcileMs: 10_000, now: () => now },
+    );
+    await worker.trigger();
+    expect(s.log.cleanupStates()[0]?.status).toBe("pending");
+    expect(s.log.outbox("session")).toBeUndefined();
+    expect(existsSync(s.tree.path)).toBe(true);
+
+    now = 46 * 60_000;
+    await worker.trigger();
+    expect(s.log.outbox("session")?.state).toBe("failed");
+    expect(s.log.cleanupStates()[0]?.status).toBe("done");
+    expect(existsSync(s.tree.path)).toBe(false);
+    s.log.close();
+  });
 });
