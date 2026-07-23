@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { runTurn } from "../src/claude.js";
+import { buildToolHookSettings, runTurn } from "../src/claude.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -38,6 +38,95 @@ async function waitFor(
 }
 
 describe("runTurn", () => {
+  it("generates daemon-owned command hooks with argv-safe durable recorder arguments", () => {
+    expect(
+      buildToolHookSettings(
+        "/var/lib/linear agent/events.db",
+        42,
+        "/opt/linear agent/dist/operations-cli.js",
+      ),
+    ).toEqual({
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: process.execPath,
+                args: [
+                  "/opt/linear agent/dist/operations-cli.js",
+                  "tool-hook-open",
+                  "/var/lib/linear agent/events.db",
+                  "42",
+                ],
+                timeout: 10,
+              },
+            ],
+          },
+        ],
+        PostToolUse: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: process.execPath,
+                args: [
+                  "/opt/linear agent/dist/operations-cli.js",
+                  "tool-hook-complete",
+                  "/var/lib/linear agent/events.db",
+                  "42",
+                ],
+                timeout: 10,
+              },
+            ],
+          },
+        ],
+        PostToolUseFailure: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: process.execPath,
+                args: [
+                  "/opt/linear agent/dist/operations-cli.js",
+                  "tool-hook-complete",
+                  "/var/lib/linear agent/events.db",
+                  "42",
+                ],
+                timeout: 10,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("passes the per-turn hook settings file to Claude", async () => {
+    const dir = cwd();
+    const argsFile = join(dir, "args.jsonl");
+    const result = await runTurn(
+      options({
+        cwd: dir,
+        env: { CLAUDE_FAKE_ARGS_FILE: argsFile },
+        toolHook: {
+          dbPath: join(dir, "events with spaces.db"),
+          turnId: 7,
+          operationsCliPath: join(dir, "operations cli.js"),
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    const args = (
+      JSON.parse(readFileSync(argsFile, "utf8").trim().split("\n")[0]!) as {
+        args: string[];
+      }
+    ).args;
+    const settingsAt = args.indexOf("--settings");
+    expect(settingsAt).toBeGreaterThan(-1);
+    expect(args[settingsAt + 1]).toMatch(/settings\.json$/);
+  });
+
   it("parses every mixed assistant block and captures the first session id", async () => {
     const events: unknown[] = [];
     const ids: string[] = [];
@@ -64,7 +153,17 @@ describe("runTurn", () => {
     });
     expect(events).toEqual([
       { type: "text", text: "thinking" },
-      { type: "toolUse", name: "Read", input: { description: "ticket" } },
+      {
+        type: "toolUse",
+        toolUseId: "toolu_read_1",
+        name: "Read",
+        input: { description: "ticket" },
+      },
+      {
+        type: "toolResult",
+        toolUseId: "toolu_read_1",
+        outcome: "success",
+      },
     ]);
     expect(ids).toEqual(["claude-session-1"]);
   });
@@ -95,6 +194,34 @@ describe("runTurn", () => {
     expect(result.modelUsage).toEqual({
       "claude-fable-5": { inputTokens: 2, outputTokens: 4 },
     });
+  });
+  it("emits bounded Linear MCP lifecycle and tool outcomes without result payloads", async () => {
+    const events: unknown[] = [];
+    const result = await runTurn(
+      options({
+        env: { CLAUDE_FAKE_MODE: "mcp-telemetry" },
+        onEvent: (event: unknown) => events.push(event),
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.linearMcpInitialized).toBe(true);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        { type: "linearMcpInit", status: "connected" },
+        {
+          type: "linearMcpToolResult",
+          toolUseId: "toolu_linear_1",
+          toolName: "mcp__linear__get_issue",
+          outcome: "error",
+        },
+      ]),
+    );
+    expect(events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "linearMcpClose" }),
+      ]),
+    );
+    expect(JSON.stringify(events)).not.toContain("private Linear result");
   });
   it("omits usage for a usage-free result", async () => {
     const result = await runTurn(
@@ -191,9 +318,13 @@ describe("runTurn", () => {
     const oldHeaders = process.env.OTEL_EXPORTER_OTLP_HEADERS;
     const oldControl = process.env.OTEL_X;
     const oldToolContent = process.env.OTEL_LOG_TOOL_CONTENT;
+    const oldManagementKey = process.env.CLIPROXY_MANAGEMENT_KEY;
+    const oldArtifactToken = process.env.ARTIFACT_TOKEN;
     process.env.OTEL_EXPORTER_OTLP_HEADERS = "process-header";
     process.env.OTEL_X = "process-control";
     process.env.OTEL_LOG_TOOL_CONTENT = "process-tool-content";
+    process.env.CLIPROXY_MANAGEMENT_KEY = "ambient-management";
+    process.env.ARTIFACT_TOKEN = "ambient-artifact";
     try {
       const result = await runTurn(
         options({
@@ -202,6 +333,9 @@ describe("runTurn", () => {
           maxBudgetUsd: 12.5,
           env: {
             CLAUDE_FAKE_ENV_FILE: envFile,
+            CLIPROXY_API_KEY: "api-key",
+            BASH_DEFAULT_TIMEOUT_MS: "900000",
+            BASH_MAX_TIMEOUT_MS: "1200000",
             LINEAR_API_KEY: "linear-key",
             GH_TOKEN: "github-key",
             OTEL_RESOURCE_ATTRIBUTES: "service.namespace=daemon",
@@ -220,6 +354,9 @@ describe("runTurn", () => {
         env: Record<string, string>;
       };
       expect(row.env.LINEAR_API_KEY).toBe("linear-key");
+      expect(row.env.CLIPROXY_API_KEY).toBe("api-key");
+      expect(row.env.BASH_DEFAULT_TIMEOUT_MS).toBe("900000");
+      expect(row.env.BASH_MAX_TIMEOUT_MS).toBe("1200000");
       expect(row.env.GH_TOKEN).toBe("github-key");
       expect(row.env.OTEL_EXPORTER_OTLP_HEADERS).toBeUndefined();
       expect(row.env.OTEL_RESOURCE_ATTRIBUTES).toBe("service.namespace=daemon");
@@ -229,6 +366,8 @@ describe("runTurn", () => {
       expect(row.env.PLANNER_WEBHOOK_SECRET).toBeUndefined();
       expect(row.env.PLANNER_LINEAR_CLIENT_SECRET).toBeUndefined();
       expect(row.env.IMPLEMENTER_LINEAR_CLIENT_SECRET).toBeUndefined();
+      expect(row.env.CLIPROXY_MANAGEMENT_KEY).toBeUndefined();
+      expect(row.env.ARTIFACT_TOKEN).toBeUndefined();
       expect(row.args).toContain("--mcp-config");
       expect(row.args).toEqual(
         expect.arrayContaining(["--max-budget-usd", "12.5"]),
@@ -244,6 +383,11 @@ describe("runTurn", () => {
       if (oldToolContent === undefined)
         delete process.env.OTEL_LOG_TOOL_CONTENT;
       else process.env.OTEL_LOG_TOOL_CONTENT = oldToolContent;
+      if (oldManagementKey === undefined)
+        delete process.env.CLIPROXY_MANAGEMENT_KEY;
+      else process.env.CLIPROXY_MANAGEMENT_KEY = oldManagementKey;
+      if (oldArtifactToken === undefined) delete process.env.ARTIFACT_TOKEN;
+      else process.env.ARTIFACT_TOKEN = oldArtifactToken;
     }
   });
   it("passes only the named browser handshake and attempt context", async () => {
@@ -263,8 +407,22 @@ describe("runTurn", () => {
     const result = await runTurn(
       options({
         cwd: dir,
-        env: { CLAUDE_FAKE_ENV_FILE: envFile },
-        trustedEnv: { ENABLE_TOOL_SEARCH: "true", CLAUDE_FAKE_MODE: "happy" },
+        env: {
+          CLAUDE_FAKE_ENV_FILE: envFile,
+          CLIPROXY_API_KEY: "daemon-api",
+          BASH_DEFAULT_TIMEOUT_MS: "900000",
+          BASH_MAX_TIMEOUT_MS: "900000",
+        },
+        trustedEnv: {
+          ENABLE_TOOL_SEARCH: "true",
+          CLAUDE_FAKE_MODE: "happy",
+          CLIPROXY_API_KEY: "trusted-api",
+          BASH_DEFAULT_TIMEOUT_MS: "1",
+          CLIPROXY_MANAGEMENT_KEY: "management-secret",
+          PLANNER_WEBHOOK_SECRET: "webhook-secret",
+          ARTIFACT_TOKEN: "artifact-secret",
+          OAUTH_ACCESS_TOKEN: "oauth-secret",
+        },
       }),
     );
     expect(result.ok).toBe(true);
@@ -272,6 +430,12 @@ describe("runTurn", () => {
       env: Record<string, string>;
     };
     expect(row.env.ENABLE_TOOL_SEARCH).toBe("true");
+    expect(row.env.CLIPROXY_API_KEY).toBe("daemon-api");
+    expect(row.env.BASH_DEFAULT_TIMEOUT_MS).toBe("900000");
+    expect(row.env.CLIPROXY_MANAGEMENT_KEY).toBeUndefined();
+    expect(row.env.PLANNER_WEBHOOK_SECRET).toBeUndefined();
+    expect(row.env.ARTIFACT_TOKEN).toBeUndefined();
+    expect(row.env.OAUTH_ACCESS_TOKEN).toBeUndefined();
   });
   it("admits TRACEPARENT only from the per-call environment", async () => {
     const dir = cwd();

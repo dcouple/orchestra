@@ -116,6 +116,9 @@ extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
 `CLIPROXY_ENV_FILE`, `CLIPROXY_URL`, `PROVIDER_PROBE_INTERVAL_MS`,
 `PROVIDER_STATE_STALE_MS`, and `PROVIDER_INITIAL_PROBE_TIMEOUT_MS`,
 `CLAUDE_PERMISSION_MODE` (`bypassPermissions`), `CLAUDE_MAX_TURNS` (100),
+`BASH_DEFAULT_TIMEOUT_MS` (900000) and `BASH_MAX_TIMEOUT_MS` (900000),
+`LINEAR_MCP_MONITOR_INTERVAL_MS` (60000) and
+`LINEAR_MCP_MONITOR_TIMEOUT_MS` (10000),
 `DO_PERMISSION_MODE` (`bypassPermissions`; production rejects every other value),
 `DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),
 `SESSION_CONCURRENCY` (2), `KEEPALIVE_MS` (900000), `ATTACHMENTS_ENABLED` (1), and
@@ -126,6 +129,41 @@ Claudex/GPT-Sol immediately without probing Fable. The resolved harness and sess
 persisted together, so later prompts, restarts, fix rounds, and preference changes continue
 on the established harness. Missing `CLAUDEX_BIN` fails a selected Claudex session closed;
 it never starts a replacement Claude session.
+
+Immediately before each turn, the daemon reads only `CLIPROXY_API_KEY` from
+`CLIPROXY_ENV_FILE` and passes that value plus the two Bash timeout settings to the selected
+child. This picks up key rotation without restarting the daemon and keeps the management key
+out of child environments. Do not add `cliproxyapi.env` as a systemd `EnvironmentFile`: it
+also contains `CLIPROXY_MANAGEMENT_KEY`. For standalone use outside a daemon turn, the
+installed `claudex` and `claudex-fable` wrappers preserve an already supplied API key or parse
+only `CLIPROXY_API_KEY` from the configured proxy file; an unreadable file or missing key
+fails nonzero without printing a credential. Both Bash timeout values must be positive, and
+the maximum must be at least the default. The independent Codex dispatch watchdogs remain
+900 seconds for ephemeral roles and 2700 seconds for implementers.
+
+On startup, a stale running turn is automatically resumed exactly once only when it has a
+persisted Claude session and no unresolved tool call. The old turn remains interrupted and a
+deterministically keyed continuation resumes the same session. An unresolved tool boundary,
+missing Claude session, explicit user stop, or recorded hard restart requires human review;
+the daemon never guesses whether an external action completed. Routine `daemonctl` config,
+restart, and reload operations still drain running turns before mutation. Daemon-owned
+`PreToolUse`, `PostToolUse`, and `PostToolUseFailure` hooks enforce those boundaries:
+`PreToolUse` must durably record the turn, tool-use ID, and bounded tool name before execution,
+and exits nonzero to block the tool if that record fails. The post hooks mark the boundary
+completed without storing tool inputs or results. Structured `shutdown` records contain only
+the signal, recovery or hard-restart policy, and safe summaries of running turns.
+
+When sessions are enabled, the Linear MCP monitor performs an authenticated
+connect/`listTools`/close probe at `LINEAR_MCP_MONITOR_INTERVAL_MS`, bounded by
+`LINEAR_MCP_MONITOR_TIMEOUT_MS`. Its `linear_mcp_probe` structured records contain state,
+previous state, transition status, consecutive failure/retry count, duration, and a normalized
+error category/code. They never contain the Linear token, request headers, raw response
+bodies, or returned tool schemas. Ordinary monitor failures are observability evidence, do
+not fail an active turn, and retry at the next interval. A `cleanup_timeout` disables further
+monitor probes until the daemon restarts so unresolved client or transport resources cannot
+accumulate. Active turns separately emit bounded `linear_mcp_turn_init`,
+`linear_mcp_tool_result`, and `linear_mcp_turn_close` records; close classification is exactly
+`turn_completed`, `runner_failed`, or `daemon_shutdown`.
 
 Browser verification is opt-in with `BROWSER_ENABLED=1` and remains off by
 default. `PLAYWRIGHT_MCP_BIN` defaults to `/usr/local/bin/playwright-mcp`,

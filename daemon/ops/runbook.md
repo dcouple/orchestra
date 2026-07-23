@@ -30,6 +30,21 @@ allowed only before mutation or after verified rollback.
 and elapsed time, then requires `HARD-RESTART`. It terminates those turns through normal
 startup interruption reconciliation and does not enqueue continuations.
 
+For an unplanned daemon restart, startup resumes a stale turn exactly once only when the
+database contains its Claude session ID and no open tool call. The interrupted row remains
+auditable and a deterministic `restart-resume:<turn-id>` source key identifies the same-session
+continuation. If an external tool call is still open, the session ID is missing, the user
+explicitly stopped the turn, or a hard-restart intent exists, the turn is never automatically
+resumed. Startup posts one human-required activity for stale unresolved, missing-session, and
+hard-restart cases; explicit user stops retain their normal stop acknowledgement. Review the
+worktree and any external side effects before prompting or assigning again; never treat an
+unresolved tool call as safe to replay. Daemon-owned `PreToolUse`, `PostToolUse`, and
+`PostToolUseFailure` hooks make this fail closed: the pre hook durably records the turn,
+tool-use ID, and bounded tool name before execution, and blocks the tool if that write fails;
+the post hooks mark it completed without retaining inputs or results. The structured
+`shutdown` record includes the signal, `recover` or `hard_restart` policy, and safe running-turn
+summaries only.
+
 Reloads use `/opt/orchestra-source`, whose `origin` must be HTTPS. The operator fetches,
 reviews, and fast-forwards this persistent checkout before running `sudo daemonctl reload`;
 the command itself never fetches, pulls, or runs candidate code as a validator. Its clean
@@ -142,6 +157,8 @@ IMPLEMENTER_LINEAR_CLIENT_SECRET=...
 IMPLEMENTER_APP_ACTOR_ID=...
 RECONCILE_INTERVAL_MS=60000
 RECONCILE_REQUEST_TIMEOUT_MS=10000
+LINEAR_MCP_MONITOR_INTERVAL_MS=60000
+LINEAR_MCP_MONITOR_TIMEOUT_MS=10000
 SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/bloom-mono
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
@@ -158,6 +175,8 @@ CLAUDEX_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
 # CLAUDEX_ENV={"ANTHROPIC_BASE_URL":"http://127.0.0.1:8317","ANTHROPIC_AUTH_TOKEN":"..."}
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_MAX_TURNS=100
+BASH_DEFAULT_TIMEOUT_MS=900000
+BASH_MAX_TIMEOUT_MS=900000
 DO_PERMISSION_MODE=bypassPermissions
 DO_MAX_TURNS=300
 # DO_MAX_BUDGET_USD=50
@@ -187,6 +206,29 @@ Linear session is created, its Fable/Claude or Sol/Claudex route is sticky acros
 marker resumes, and daemon restarts. Capacity, authentication, or transport failure ends
 that turn without launching the other harness; switching harnesses requires a new Linear
 session. If a selected launcher is absent, the turn fails closed and the route stays intact.
+
+`BASH_DEFAULT_TIMEOUT_MS` and `BASH_MAX_TIMEOUT_MS` are positive millisecond values passed to
+every Claude, Claudex, and Fable turn. The maximum must be greater than or equal to the
+default; both default to 900000 (15 minutes), which permits the six-minute acceptance check
+below. These settings do not change the separate 900-second ephemeral and 2700-second
+implementer Codex dispatch watchdogs.
+
+The daemon reads only `CLIPROXY_API_KEY` from `CLIPROXY_ENV_FILE` immediately before each
+turn, so rotation is visible without a daemon restart. Do not copy either proxy key into the
+main env file and do not add `/etc/linear-agent-daemon/cliproxyapi.env` as a systemd
+`EnvironmentFile`; that file also holds `CLIPROXY_MANAGEMENT_KEY`. The standalone `claudex`
+and `claudex-fable` wrappers preserve a caller-supplied API key. When none is supplied they
+parse only `CLIPROXY_API_KEY` from `CLIPROXY_ENV_FILE`, and fail nonzero with a redacted
+message if the file or key is unavailable.
+
+With sessions enabled, `LINEAR_MCP_MONITOR_INTERVAL_MS` defaults to 60000 and
+`LINEAR_MCP_MONITOR_TIMEOUT_MS` defaults to 10000. The monitor runs bounded authenticated
+connect, `listTools`, and close probes independently of active turns. An ordinary failed probe
+is logged and retried at the next interval; it does not fail a turn by itself. A
+`cleanup_timeout` instead blocks all subsequent monitor probes until the daemon restarts,
+preventing unresolved client or transport resources from accumulating. Per-turn MCP use emits
+bounded `linear_mcp_turn_init`, `linear_mcp_tool_result`, and `linear_mcp_turn_close` records.
+The close classification is exactly `turn_completed`, `runner_failed`, or `daemon_shutdown`.
 
 Langfuse's OTLP endpoint ingests traces only. Keep metrics and logs explicitly disabled;
 otherwise exporter defaults can repeatedly send unsupported signals to Langfuse's 404/400
@@ -334,7 +376,8 @@ routes the harness and every subagent through GPT-5.6 Sol via the Codex OAuth po
 loop uses high reasoning; Claude model pins map to low, medium, or xhigh proxy aliases, and
 Claude Code compacts against a 250k context budget. Separate local API and management keys
 are generated once in `/etc/linear-agent-daemon/cliproxyapi.env`; do not copy either key into
-the main daemon env file.
+the main daemon env file or configure that proxy file as a systemd `EnvironmentFile`. The
+daemon parses the API key alone for each turn and never passes the management key to children.
 
 Enroll both founders in both provider pools as `linear-daemon`. On a headless host, open each
 printed URL on another device and paste the callback URL or authorization code as prompted.
@@ -411,11 +454,22 @@ sudo stat -c '%a %U %G' \
   /etc/linear-agent-daemon/cliproxyapi.yaml
 sudo ss -ltnp | grep -E ':(443|8317|8787) '
 systemctl status cliproxyapi linear-agent-daemon caddy
+# Confirm exactly one nonempty API-key assignment without printing its value.
+sudo awk -F= '
+  /^[[:space:]]*(export[[:space:]]+)?CLIPROXY_API_KEY[[:space:]]*=/ {
+    count++; value=$0; sub(/^[^=]*=/, "", value); if (value !~ /^[[:space:]]*$/) nonempty++
+  }
+  END { print "cliproxy_api_key_assignments=" count, "nonempty=" nonempty;
+        exit !(count == 1 && nonempty == 1) }
+' /etc/linear-agent-daemon/cliproxyapi.env
+sudo systemctl show linear-agent-daemon -p EnvironmentFiles --value
 ```
 
 Expected: the daemon env is `600 linear-daemon linear-daemon`; proxy secret/config files are
 `640 root linear-daemon`; ports 8317 and 8787 listen on `127.0.0.1` only; Caddy listens on
-443; password authentication is `no`; and all three services are active. Verify the proxy's
+443; password authentication is `no`; all three services are active; the redacted assignment
+check reports `cliproxy_api_key_assignments=1 nonempty=1`; and the daemon unit lists only
+`/etc/linear-agent-daemon/env`, never `cliproxyapi.env`. Verify the proxy's
 model inventory without exposing its key in process argv:
 
 ```bash
@@ -438,6 +492,23 @@ sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
 Each record includes only name, email, provider, disabled, failed, and recent request
 counters. It must show two enabled Codex and two enabled Claude identities after enrollment.
 Never paste raw credential files into logs or artifacts.
+
+Inspect Linear MCP health without printing the token or connector response. Each record is
+bounded to state and timing metadata:
+
+```bash
+sudo journalctl -u linear-agent-daemon --since '-30 min' -o cat |
+  grep -E '"event":"linear_mcp_(probe|turn_init|tool_result|turn_close)"' |
+  tail -n 50
+```
+
+Healthy records show `state:"healthy"`, attempt duration, zero consecutive failures, and a
+transition flag. Failures add only a normalized `errorCategory`/`errorCode` plus consecutive
+failure and retry counts. If `errorCode` is `cleanup_timeout`, stop probing manually and
+restart the daemon after investigating; the monitor intentionally remains blocked until that
+restart. Turn-close records classify the outcome as `turn_completed`, `runner_failed`, or
+`daemon_shutdown`. The output must not contain `Authorization`, `Bearer`, the Linear API key,
+raw response bodies, tool inputs/results, or MCP tool schemas.
 
 The SQLite database is secret material because it stores raw webhook payloads and OAuth
 access tokens. Keep `/var/lib/linear-agent-daemon` owned by `linear-daemon:linear-daemon`
@@ -720,6 +791,102 @@ sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
 sudo sqlite3 /var/lib/linear-agent-daemon/events.db \
   "select issue_identifier,status,attempts,error from cleanup_jobs order by id desc limit 10;"
 ```
+
+## Runtime-reliability acceptance (operator only)
+
+Use disposable planner/implementer sessions and capture only issue identifiers, numeric turn
+IDs, states, reasons, and durations. Do not paste prompts, raw activities, environment values,
+or database files into the deploy record.
+
+First, ask a disposable daemon-managed session to run one Bash command that waits 360 seconds
+and then prints a fixed non-secret sentinel. Confirm the turn completes without a two-minute
+reap and that its elapsed time is at least six minutes:
+
+```bash
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select t.id,s.issue_identifier,t.status,
+          round((t.finished_at-t.started_at)/1000.0,1) elapsed_seconds
+   from turns t join sessions s on s.linear_session_id=t.linear_session_id
+   order by t.id desc limit 10;"
+```
+
+For safe-boundary recovery, start another disposable turn, wait until its Claude session ID is
+persisted, and choose a moment with no open tool call. Record the numeric turn ID, restart the
+service directly to simulate an unplanned daemon restart, and verify exactly one same-session
+continuation:
+
+```bash
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select t.id,s.issue_identifier,
+          case when s.claude_session_id is null then 0 else 1 end has_session,
+          exists(select 1 from turn_tool_calls c
+                 where c.turn_id=t.id and c.state='open') has_open_tool
+   from turns t join sessions s on s.linear_session_id=t.linear_session_id
+   where t.status='running';"
+# Continue only for a disposable row showing has_session=1 and has_open_tool=0.
+sudo systemctl restart linear-agent-daemon
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select id,source_key,status from turns
+   where source_key like 'restart-resume:%' order by id desc limit 10;"
+```
+
+The old turn must be `interrupted`; one pending/running/done row must have
+`source_key=restart-resume:<old-turn-id>` and resume the stored Claude session. A later restart
+must not create a second row with that source key.
+
+Next, start a disposable turn whose external Bash tool remains active long enough to observe
+an open `turn_tool_calls` row. That open row is the durable `PreToolUse` boundary and must
+exist before the external command begins; if the pre-execution write fails, the hook blocks
+the tool. Restart the service only after the row appears:
+
+```bash
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select c.turn_id,s.issue_identifier,c.tool_name,c.state
+   from turn_tool_calls c
+   join turns t on t.id=c.turn_id
+   join sessions s on s.linear_session_id=t.linear_session_id
+   where c.state='open' order by c.opened_at desc;"
+sudo systemctl restart linear-agent-daemon
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select t.id,t.status,t.source_key,
+          exists(select 1 from turns r
+                 where r.source_key='restart-resume:' || t.id) auto_resumed
+   from turns t where t.status='interrupted' order by t.id desc limit 10;"
+```
+
+That interrupted turn must show `auto_resumed=0`, and Linear must receive the human-review
+activity explaining that an external tool may have been in flight. Inspect the external
+system and worktree before continuing; do not repeat the action merely to make the test green.
+Do not induce a production database failure to test the blocking path; retain the automated
+hook failure test as that evidence.
+
+Finally, start one more disposable active turn and exercise the explicit hard path:
+
+```bash
+sudo daemonctl sessions
+sudo daemonctl restart --hard --yes
+sudo sqlite3 -header -column /var/lib/linear-agent-daemon/events.db \
+  "select t.id,t.status,t.source_key,
+          exists(select 1 from turns r
+                 where r.source_key='restart-resume:' || t.id) auto_resumed
+   from turns t where t.status='interrupted' order by t.id desc limit 10;"
+```
+
+The hard-restarted turn must remain unqueued with `auto_resumed=0` and a human-review
+activity. After all three cases, inspect the bounded shutdown, recovery, and Linear MCP
+records:
+
+```bash
+sudo journalctl -u linear-agent-daemon --since '-30 min' -o cat |
+  grep -E '"event":"(shutdown|linear_mcp_(probe|turn_init|tool_result|turn_close))"|restart.*(resum|human|required)' |
+  tail -n 100
+```
+
+Preserve records showing the recovery outcome; shutdown signal, policy, and safe running-turn
+summaries; per-turn MCP close classification; and monitor state, retry count, duration, and
+normalized error fields. A monitor `cleanup_timeout` must be followed by no additional probe
+attempt until daemon restart. Reject the evidence if it includes authorization headers,
+tokens, prompts, raw MCP responses, tool inputs/results, or tool schemas.
 
 ## Android emulator smoke
 

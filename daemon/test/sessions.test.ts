@@ -32,6 +32,10 @@ import {
 } from "../src/sessions.js";
 import { OtlpRelay } from "../src/otel-relay.js";
 import { resolveOtlpTraces } from "../src/otel.js";
+import {
+  readCliproxyApiKey,
+  readCliproxyManagementKey,
+} from "../src/proxy-env.js";
 const dirs: string[] = [];
 const oldMode = process.env.CLAUDE_FAKE_MODE;
 const oldArgs = process.env.CLAUDE_FAKE_ARGS_FILE;
@@ -107,6 +111,9 @@ function setup() {
     replayWindowMs: 60_000,
     linearGraphqlUrl: "http://unused",
     linearTokenUrl: "http://unused",
+    linearMcpUrl: "https://mcp.linear.app/mcp",
+    linearMcpMonitorIntervalMs: 60_000,
+    linearMcpMonitorTimeoutMs: 10_000,
     apps: {
       planner: {
         name: "planner",
@@ -128,6 +135,8 @@ function setup() {
     fableArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")],
     claudePermissionMode: "plan",
     claudeMaxTurns: 5,
+    bashDefaultTimeoutMs: 900_000,
+    bashMaxTimeoutMs: 900_000,
     cliproxyEnvFile: join(dir, "proxy.env"),
     cliproxyUrl: "http://127.0.0.1:1",
     providerProbeIntervalMs: 60_000,
@@ -142,6 +151,10 @@ function setup() {
     attachmentsEnabled: false,
     attachmentHosts: ["uploads.linear.app"],
   };
+  writeFileSync(
+    config.cliproxyEnvFile,
+    "CLIPROXY_API_KEY=api-key-one\nCLIPROXY_MANAGEMENT_KEY=management-key\n",
+  );
   return { dir, log, config };
 }
 class Poster {
@@ -341,6 +354,25 @@ async function healthy(port: number, child: ChildProcess): Promise<void> {
 }
 
 describe("SessionWorker", () => {
+  it("reads only exact proxy credential assignments with redacted failures", async () => {
+    const { dir } = setup();
+    const path = join(dir, "exact-proxy.env");
+    writeFileSync(
+      path,
+      "NOT_CLIPROXY_API_KEY=wrong\nexport CLIPROXY_API_KEY='api-key'\nCLIPROXY_MANAGEMENT_KEY=\"management-key\" # current\n",
+    );
+    await expect(readCliproxyApiKey(path)).resolves.toBe("api-key");
+    await expect(readCliproxyManagementKey(path)).resolves.toBe(
+      "management-key",
+    );
+    writeFileSync(path, "CLIPROXY_MANAGEMENT_KEY=management-key\n");
+    await expect(readCliproxyApiKey(path)).rejects.toThrow(
+      "proxy_api_key_missing",
+    );
+    await expect(readCliproxyApiKey(join(dir, "missing.env"))).rejects.toThrow(
+      "proxy_env_unreadable",
+    );
+  });
   it("relaunches a browser-required /do once and keeps non-browser turns Linear-only", async () => {
     const { log, config, dir } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
     process.env.CLAUDE_FAKE_MODE = "browser-relaunch";
@@ -560,7 +592,7 @@ describe("SessionWorker", () => {
     seeded.config.linearApiKey = fixtureKey;
     writeFileSync(
       seeded.config.cliproxyEnvFile,
-      `CLIPROXY_MANAGEMENT_KEY=${fixtureKey}\n`,
+      `CLIPROXY_API_KEY=sticky-api-key\nCLIPROXY_MANAGEMENT_KEY=${fixtureKey}\n`,
     );
     const logger = new CapturingLogger();
     await new ProviderReadinessPoller(log, seeded.config, logger, async () => ({
@@ -1365,6 +1397,9 @@ describe("SessionWorker", () => {
       "TEMP",
       "TMP",
       "LANG",
+      "CLIPROXY_API_KEY",
+      "BASH_DEFAULT_TIMEOUT_MS",
+      "BASH_MAX_TIMEOUT_MS",
       "LINEAR_API_KEY",
       "GH_TOKEN",
       "GITHUB_TOKEN",
@@ -1375,7 +1410,14 @@ describe("SessionWorker", () => {
     const expected = Object.fromEntries(
       expectedKeys.flatMap((key) => {
         const value =
-          key === "LINEAR_API_KEY" ? "linear-key" : process.env[key];
+          key === "LINEAR_API_KEY"
+            ? "linear-key"
+            : key === "CLIPROXY_API_KEY"
+              ? "api-key-one"
+              : key === "BASH_DEFAULT_TIMEOUT_MS" ||
+                  key === "BASH_MAX_TIMEOUT_MS"
+                ? "900000"
+                : process.env[key];
         return value === undefined ? [] : [[key, value]];
       }),
     );
@@ -1394,6 +1436,219 @@ describe("SessionWorker", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
+  it("reloads the proxy API key between turns and preserves timeout budgets", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const envFile = join(dir, "rotated-env.jsonl");
+    process.env.CLAUDE_FAKE_ENV_FILE = envFile;
+    append(log, "credential-one", "credential-session", "created");
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20 },
+    );
+    worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    writeFileSync(
+      config.cliproxyEnvFile,
+      "CLIPROXY_API_KEY=api-key-two\nCLIPROXY_MANAGEMENT_KEY=management-key\n",
+    );
+    append(log, "credential-two", "credential-session", "prompted");
+    worker.trigger();
+    await waitFor(() => log.turnStates().length === 2 &&
+      log.turnStates().every((turn) => turn.status === "done"));
+    await worker.stop();
+    const rows = readFileSync(envFile, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { env: Record<string, string> });
+    expect(rows.map((row) => row.env.CLIPROXY_API_KEY)).toEqual([
+      "api-key-one",
+      "api-key-two",
+    ]);
+    expect(rows.map((row) => [
+      row.env.BASH_DEFAULT_TIMEOUT_MS,
+      row.env.BASH_MAX_TIMEOUT_MS,
+    ])).toEqual([
+      ["900000", "900000"],
+      ["900000", "900000"],
+    ]);
+    log.close();
+  });
+  it("persists tool boundaries and logs bounded per-turn Linear MCP telemetry", async () => {
+    const { log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "mcp-telemetry";
+    append(log, "mcp-telemetry", "mcp-session", "created");
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20, logger },
+    );
+    worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    await worker.stop();
+    expect(log.openTurnToolCalls(1)).toEqual([]);
+    const db = new Database(config.dbPath, { readonly: true });
+    expect(
+      db.prepare(
+        "SELECT tool_use_id toolUseId,tool_name toolName,state FROM turn_tool_calls WHERE turn_id=1 ORDER BY tool_use_id",
+      ).all(),
+    ).toEqual([
+      { toolUseId: "toolu_linear_1", toolName: "mcp__linear__get_issue", state: "completed" },
+      { toolUseId: "toolu_read_1", toolName: "Read", state: "completed" },
+    ]);
+    db.close();
+    expect(logger.entries()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "linear_mcp_turn_init",
+          status: "connected",
+        }),
+        expect.objectContaining({
+          event: "linear_mcp_tool_result",
+          toolName: "mcp__linear__get_issue",
+          outcome: "error",
+        }),
+        expect.objectContaining({
+          event: "linear_mcp_turn_close",
+          classification: "turn_completed",
+        }),
+      ]),
+    );
+    expect(logger.lines.join("\n")).not.toContain("private-payload");
+    expect(logger.lines.join("\n")).not.toContain("private Linear result");
+    expect(
+      logger.entries().filter((entry) => entry.event === "linear_mcp_turn_close"),
+    ).toHaveLength(1);
+    log.close();
+  });
+  it.each([
+    ["mcp-runner-failed", "runner_failed"],
+    ["mcp-shutdown", "daemon_shutdown"],
+  ] as const)(
+    "classifies one Linear MCP close as %s context",
+    async (mode, classification) => {
+      const { log, config } = setup();
+      const poster = new Poster();
+      const logger = new CapturingLogger();
+      process.env.CLAUDE_FAKE_MODE = mode;
+      append(log, `close-${mode}`, `close-${mode}-session`, "created");
+      const worker = new SessionWorker(
+        log,
+        poster as unknown as LinearGateway,
+        config,
+        { pollMs: 10, reconcileMs: 20, logger },
+      );
+      worker.start();
+      if (mode === "mcp-shutdown") {
+        await waitFor(() =>
+          logger.entries().some(
+            (entry) => entry.event === "linear_mcp_turn_init",
+          ));
+        log.recordRestartIntent("test hard restart");
+        await worker.stop("hard_restart");
+        expect(log.turnStates()[0]?.status).toBe("running");
+        expect(
+          logger.entries().filter(
+            (entry) => entry.event === "session_turn_deferred",
+          ),
+        ).toEqual([
+          expect.objectContaining({ policy: "hard_restart" }),
+        ]);
+      } else {
+        await waitFor(() => log.turnStates()[0]?.status === "failed");
+        await worker.stop();
+      }
+      expect(
+        logger.entries().filter(
+          (entry) => entry.event === "linear_mcp_turn_close",
+        ),
+      ).toEqual([
+        expect.objectContaining({ classification }),
+      ]);
+      expect(logger.lines.join("\n")).not.toContain("toolu_linear_1");
+      log.close();
+    },
+  );
+  it("classifies one runner-failed MCP close when post-init persistence rejects", async () => {
+    const { log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "mcp-telemetry";
+    vi.spyOn(log, "recordTurnToolCallStarted").mockImplementation(() => {
+      throw new Error("test persistence rejected");
+    });
+    append(log, "mcp-persistence", "mcp-persistence-session", "created");
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20, logger },
+    );
+    worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    await worker.stop();
+    expect(
+      logger.entries().filter((entry) => entry.event === "linear_mcp_turn_close"),
+    ).toEqual([
+      expect.objectContaining({ classification: "runner_failed" }),
+    ]);
+    expect(
+      logger.entries().find((entry) => entry.event === "session_turn_unhandled"),
+    ).toMatchObject({
+      error: expect.stringContaining("test persistence rejected"),
+    });
+    expect(poster.posts.filter((post) => !post.ephemeral)).toHaveLength(1);
+    log.close();
+  });
+  it.each(["unreadable", "missing"] as const)(
+    "fails once without progress when the proxy API key is %s",
+    async (failure) => {
+      const { log, config } = setup();
+      const poster = new Poster();
+      const logger = new CapturingLogger();
+      if (failure === "unreadable")
+        rmSync(config.cliproxyEnvFile);
+      else
+        writeFileSync(
+          config.cliproxyEnvFile,
+          "CLIPROXY_MANAGEMENT_KEY=management-secret\n",
+        );
+      append(log, `proxy-${failure}`, `proxy-${failure}-session`, "created");
+      const worker = new SessionWorker(
+        log,
+        poster as unknown as LinearGateway,
+        config,
+        { pollMs: 10, reconcileMs: 20, logger },
+      );
+      worker.start();
+      await waitFor(
+        () =>
+          log.turnStates()[0]?.status === "failed" &&
+          poster.posts.some((post) => !post.ephemeral),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await worker.stop();
+      expect(poster.posts.filter((post) => post.ephemeral)).toEqual([]);
+      expect(poster.posts.filter((post) => !post.ephemeral)).toHaveLength(1);
+      const output = JSON.stringify({
+        posts: poster.posts,
+        logs: logger.lines,
+      });
+      expect(output).toContain(
+        failure === "unreadable"
+          ? "proxy_env_unreadable"
+          : "proxy_api_key_missing",
+      );
+      expect(output).not.toContain(config.cliproxyEnvFile);
+      expect(output).not.toContain("management-secret");
+      log.close();
+    },
+  );
   it("persists and logs usage for a completed turn", async () => {
     const { log, config } = setup();
     const poster = new Poster();
@@ -2938,6 +3193,108 @@ describe("SessionWorker", () => {
     await second.stop();
     reopened.close();
   });
+  it("defers a shutdown-interrupted safe boundary and resumes it exactly once on startup", async () => {
+    const { log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "slow";
+    process.env.CLAUDE_FAKE_DELAY_MS = "1000";
+    append(log, "shutdown-safe", "shutdown-safe-session", "created");
+    const first = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20, logger },
+    );
+    first.start();
+    await waitFor(
+      () =>
+        log.turnStates()[0]?.status === "running" &&
+        log.getSession("shutdown-safe-session")?.claudeSessionId ===
+          "claude-session-1" &&
+        log.openTurnToolCalls(1).length === 0,
+    );
+    await first.stop();
+    expect(log.turnStates()[0]?.status).toBe("running");
+
+    process.env.CLAUDE_FAKE_MODE = "happy";
+    const second = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20, logger },
+    );
+    second.start();
+    await waitFor(
+      () =>
+        log.turnStates().length === 2 &&
+        log.turnStates()[1]?.status === "done",
+    );
+    expect(log.turnStates().map((turn) => turn.status)).toEqual([
+      "interrupted",
+      "done",
+    ]);
+    expect(
+      logger.entries().filter(
+        (entry) =>
+          entry.event === "restart_turn_disposition" &&
+          entry.outcome === "resumed",
+      ),
+    ).toHaveLength(1);
+    await second.stop();
+    log.close();
+  });
+  it("requires human review after shutdown with an unresolved tool call", async () => {
+    const { log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    process.env.CLAUDE_FAKE_MODE = "tool-hang";
+    append(log, "shutdown-tool", "shutdown-tool-session", "created");
+    const first = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20, logger },
+    );
+    first.start();
+    await waitFor(
+      () =>
+        log.turnStates()[0]?.status === "running" &&
+        log.openTurnToolCalls(1).some(
+          (call) => call.toolUseId === "toolu_read_1",
+        ),
+    );
+    await first.stop();
+    expect(log.turnStates()[0]?.status).toBe("running");
+
+    process.env.CLAUDE_FAKE_MODE = "happy";
+    const second = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20, logger },
+    );
+    second.start();
+    await waitFor(
+      () =>
+        log.turnStates()[0]?.status === "interrupted" &&
+        poster.posts.some(
+          (post) =>
+            !post.ephemeral &&
+            activityBody(post.content)?.includes("external tool call"),
+        ),
+    );
+    expect(log.turnStates()).toHaveLength(1);
+    expect(
+      logger.entries().filter(
+        (entry) =>
+          entry.event === "restart_turn_disposition" &&
+          entry.reason === "unresolved_tool_call",
+      ),
+    ).toHaveLength(1);
+    await second.stop();
+    log.close();
+  });
   it("AC7 child-restart: SIGKILL then prompted resumes the persisted session", async () => {
     const { dir, log, config } = setup();
     log.close();
@@ -2976,7 +3333,10 @@ describe("SessionWorker", () => {
     await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
     const proxyPort = (proxy.address() as { port: number }).port;
     const proxyEnv = join(dir, "proxy.env");
-    writeFileSync(proxyEnv, "CLIPROXY_MANAGEMENT_KEY=management-key\n");
+    writeFileSync(
+      proxyEnv,
+      "CLIPROXY_API_KEY=integration-api-key\nCLIPROXY_MANAGEMENT_KEY=management-key\n",
+    );
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
     const env = {
       ...process.env,
@@ -3001,11 +3361,17 @@ describe("SessionWorker", () => {
       PROVIDER_INITIAL_PROBE_TIMEOUT_MS: "1000",
       LINEAR_GRAPHQL_URL: `http://127.0.0.1:${graphqlPort}/graphql`,
     };
-    const launch = () =>
-      spawn(process.execPath, [resolve("dist/index.js")], {
+    let daemonOutput = "";
+    const launch = () => {
+      const launched = spawn(process.execPath, [resolve("dist/index.js")], {
         env,
-        stdio: "ignore",
+        stdio: ["ignore", "pipe", "ignore"],
       });
+      launched.stdout?.on("data", (chunk) => {
+        daemonOutput += String(chunk);
+      });
+      return launched;
+    };
     const send = async (delivery: string, body: Record<string, unknown>) => {
       const encoded = JSON.stringify({ webhookTimestamp: Date.now(), ...body });
       const signature = createHmac("sha256", "planner-secret")
@@ -3061,8 +3427,25 @@ describe("SessionWorker", () => {
       db.close();
       return done;
     });
+    {
+      const db = new EventLog(config.dbPath);
+      db.recordRestartIntent("test hard restart policy");
+      db.close();
+    }
     child.kill("SIGTERM");
     await new Promise((resolve) => child.once("close", resolve));
+    expect(
+      daemonOutput
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find((entry) => entry.event === "shutdown"),
+    ).toMatchObject({
+      event: "shutdown",
+      signal: "SIGTERM",
+      policy: "hard_restart",
+      runningTurns: [],
+    });
     const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8")
       .trim()
       .split("\n")
@@ -3184,7 +3567,7 @@ describe("SessionWorker", () => {
       log.close();
     },
   );
-  it("AC7: signal death stays on Claude and preserves the queued terminal classification", async () => {
+  it("service shutdown defers signal death before provider or terminal classification", async () => {
     const { dir, log, config } = setup();
     const poster = new Poster();
     const logger = new CapturingLogger();
@@ -3223,9 +3606,8 @@ describe("SessionWorker", () => {
       .filter((row) => row.phase === "start");
     expect(starts).toHaveLength(1);
     expect(starts[0].args).not.toContain("--claudex-runtime");
-    expect(
-      log.pendingTurnActivities().map((activity) => activity.body),
-    ).toEqual(["Planner turn failed: Claude exited on SIGTERM"]);
+    expect(log.turnStates()[0]?.status).toBe("running");
+    expect(log.pendingTurnActivities()).toEqual([]);
     expect(
       logger
         .entries()
@@ -3233,10 +3615,13 @@ describe("SessionWorker", () => {
     ).toHaveLength(0);
     expect(
       logger.entries().filter((entry) => entry.event === "session_turn_failed"),
+    ).toEqual([]);
+    expect(
+      logger.entries().filter((entry) => entry.event === "session_turn_deferred"),
     ).toEqual([
       expect.objectContaining({
-        attempts: 1,
-        error: "Claude exited on SIGTERM",
+        turnId: 1,
+        reason: "service_shutdown",
       }),
     ]);
     expect(log.getSession("session")).toMatchObject({

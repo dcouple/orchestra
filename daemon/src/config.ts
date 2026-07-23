@@ -28,6 +28,9 @@ export interface Config {
   replayWindowMs: number;
   linearGraphqlUrl: string;
   linearTokenUrl: string;
+  linearMcpUrl: string;
+  linearMcpMonitorIntervalMs: number;
+  linearMcpMonitorTimeoutMs: number;
   webhookBaseUrl: string;
   artifactToken?: string;
   artifactsDir: string;
@@ -53,6 +56,8 @@ export interface Config {
   providerInitialProbeTimeoutMs: number;
   claudePermissionMode: string;
   claudeMaxTurns: number;
+  bashDefaultTimeoutMs: number;
+  bashMaxTimeoutMs: number;
   doPermissionMode: string;
   doMaxTurns: number;
   doMaxBudgetUsd?: number;
@@ -137,6 +142,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (claudexEnv && !claudexArgv) throw new Error("CLAUDEX_ENV requires CLAUDEX_BIN");
   const fableBin = env.FABLE_BIN?.trim();
   const providerProbeIntervalMs = positiveInteger(env, "PROVIDER_PROBE_INTERVAL_MS", 60_000);
+  const bashDefaultTimeoutMs = positiveInteger(env, "BASH_DEFAULT_TIMEOUT_MS", 900_000);
+  const bashMaxTimeoutMs = positiveInteger(env, "BASH_MAX_TIMEOUT_MS", 900_000);
+  if (bashMaxTimeoutMs < bashDefaultTimeoutMs) {
+    throw new Error("BASH_MAX_TIMEOUT_MS must be greater than or equal to BASH_DEFAULT_TIMEOUT_MS");
+  }
   const doPermissionMode = env.DO_PERMISSION_MODE?.trim() || "bypassPermissions";
   if (!testMode && doPermissionMode !== "bypassPermissions") {
     throw new Error("DO_PERMISSION_MODE must be bypassPermissions unless DAEMON_TEST_MODE=1");
@@ -153,6 +163,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     replayWindowMs: positiveInteger(env, "REPLAY_WINDOW_MS", 60_000),
     linearGraphqlUrl: env.LINEAR_GRAPHQL_URL?.trim() || "https://api.linear.app/graphql",
     linearTokenUrl: env.LINEAR_TOKEN_URL?.trim() || "https://api.linear.app/oauth/token",
+    linearMcpUrl: (env.LINEAR_MCP_URL?.trim() || "https://mcp.linear.app/mcp").replace(/\/+$/, ""),
+    linearMcpMonitorIntervalMs: positiveInteger(env, "LINEAR_MCP_MONITOR_INTERVAL_MS", 60_000),
+    linearMcpMonitorTimeoutMs: positiveInteger(env, "LINEAR_MCP_MONITOR_TIMEOUT_MS", 10_000),
     webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
     ...(artifactToken ? { artifactToken } : {}),
     artifactsDir: env.ARTIFACTS_DIR?.trim() || `${dirname(dbPath)}/artifacts`,
@@ -178,6 +191,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     providerInitialProbeTimeoutMs: positiveInteger(env, "PROVIDER_INITIAL_PROBE_TIMEOUT_MS", 5_000),
     claudePermissionMode: env.CLAUDE_PERMISSION_MODE?.trim() || "bypassPermissions",
     claudeMaxTurns: positiveInteger(env, "CLAUDE_MAX_TURNS", 100),
+    bashDefaultTimeoutMs,
+    bashMaxTimeoutMs,
     doPermissionMode,
     doMaxTurns: positiveInteger(env, "DO_MAX_TURNS", 300),
     ...(doMaxBudgetUsd !== undefined ? { doMaxBudgetUsd } : {}),

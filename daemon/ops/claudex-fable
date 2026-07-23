@@ -7,12 +7,28 @@ PROXY_URL="${PROXY_URL:-http://127.0.0.1:8317}"
 FABLE_CLAUDE_BIN="${FABLE_CLAUDE_BIN:-/var/lib/linear-agent-daemon/.local/bin/claude}"
 
 fail() { echo "claudex-fable: $1" >&2; exit 1; }
-[ -r "$CLIPROXY_ENV_FILE" ] || fail "missing proxy environment file: $CLIPROXY_ENV_FILE"
+if [ -z "${CLIPROXY_API_KEY:-}" ]; then
+  [ -r "$CLIPROXY_ENV_FILE" ] || fail "CLIPROXY_API_KEY unavailable"
+  CLIPROXY_API_KEY="$(
+    awk '
+      /^[[:space:]]*(export[[:space:]]+)?CLIPROXY_API_KEY[[:space:]]*=/ {
+        value = $0
+        sub(/^[[:space:]]*(export[[:space:]]+)?CLIPROXY_API_KEY[[:space:]]*=[[:space:]]*/, "", value)
+        sub(/[[:space:]]*(#.*)?$/, "", value)
+        if ((substr(value, 1, 1) == "\"" && substr(value, length(value), 1) == "\"") ||
+            (substr(value, 1, 1) == "\047" && substr(value, length(value), 1) == "\047"))
+          value = substr(value, 2, length(value) - 2)
+        if (value != "") { print value; exit }
+      }
+    ' "$CLIPROXY_ENV_FILE"
+  )"
+fi
+[ -n "${CLIPROXY_API_KEY:-}" ] || fail "CLIPROXY_API_KEY unavailable"
 [ -r "$FABLE_MODELS_ENV_FILE" ] || fail "missing Fable model file: $FABLE_MODELS_ENV_FILE"
-# shellcheck disable=SC1090
-. "$CLIPROXY_ENV_FILE"
+proxy_api_key="$CLIPROXY_API_KEY"
 # shellcheck disable=SC1090
 . "$FABLE_MODELS_ENV_FILE"
+CLIPROXY_API_KEY="$proxy_api_key"
 
 validate_model() {
   variable="$1" model="$2"
@@ -26,7 +42,6 @@ catalog_has_model() {
     "$model" || fail "$variable model absent from proxy catalog: $model"
 }
 
-[ -n "${CLIPROXY_API_KEY:-}" ] || fail "CLIPROXY_API_KEY is missing"
 validate_model FABLE_MAIN_MODEL "${FABLE_MAIN_MODEL:-}"
 validate_model FABLE_HAIKU_MODEL "${FABLE_HAIKU_MODEL:-}"
 validate_model FABLE_SONNET_MODEL "${FABLE_SONNET_MODEL:-}"

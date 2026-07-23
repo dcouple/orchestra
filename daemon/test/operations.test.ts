@@ -2,11 +2,150 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { EventLog } from "../src/eventlog.js";
 import { appendTurn, executable, fixture, opsFixture, readNumber, treeSnapshot, updateRepo } from "./operations-fixtures.js";
 
 describe("durable maintenance operations", () => {
+  it("records pre/post tool hooks synchronously and blocks when the prehook database is unavailable", () => {
+    const { dir, db } = fixture();
+    let log = new EventLog(db);
+    appendTurn(log, "hook", "OPS-HOOK");
+    log.updateClaudeSessionId("session-hook", "claude-hook", 1001);
+    log.claimNextTurn(1002);
+    log.close();
+    const cli = resolve("dist/operations-cli.js");
+    const hook = (
+      command: "tool-hook-open" | "tool-hook-complete",
+      database: string,
+      event: Record<string, unknown>,
+    ) =>
+      spawnSync(
+        process.execPath,
+        [cli, command, database, "1"],
+        { input: JSON.stringify(event), encoding: "utf8" },
+      );
+    const identity = {
+      tool_use_id: "toolu_hook_1",
+      tool_name: "mcp__linear__update_issue",
+    };
+    const opened = hook("tool-hook-open", db, {
+      hook_event_name: "PreToolUse",
+      ...identity,
+      tool_input: { private: "never persisted" },
+    });
+    expect(opened.status).toBe(0);
+    expect(opened.stdout).toBe("");
+    log = new EventLog(db);
+    expect(log.openTurnToolCalls(1)).toEqual([
+      expect.objectContaining({
+        toolUseId: "toolu_hook_1",
+        toolName: "mcp__linear__update_issue",
+      }),
+    ]);
+    log.close();
+    const completed = hook("tool-hook-complete", db, {
+      hook_event_name: "PostToolUseFailure",
+      ...identity,
+      error: "fixture failure",
+    });
+    expect(completed.status).toBe(0);
+    expect(completed.stdout).toBe("");
+    log = new EventLog(db);
+    expect(log.openTurnToolCalls(1)).toEqual([]);
+    log.close();
+
+    const blocked = hook("tool-hook-open", dir, {
+      hook_event_name: "PreToolUse",
+      ...identity,
+    });
+    expect(blocked.status).toBe(2);
+    expect(blocked.stderr).toBe(
+      "tool call blocked: durable pre-execution record failed\n",
+    );
+    expect(blocked.stderr).not.toContain(dir);
+  });
+
+  it("tool hooks leave unrelated startup-recovery state untouched", () => {
+    const { db } = fixture();
+    const log = new EventLog(db);
+    appendTurn(log, "outbox", "OPS-OUTBOX");
+    log.claimNextTurn(1000);
+    log.materializeOutbox("session-outbox", "[]", 1001);
+    expect(log.leaseOutbox("session-outbox", "worker", 1002)).toBeDefined();
+    expect(log.markOutboxSending("session-outbox", "worker", 1003)).toBe(true);
+    log.close();
+    const runHook = (
+      command: "tool-hook-open" | "tool-hook-complete",
+      hookEvent: "PreToolUse" | "PostToolUse",
+    ) =>
+      spawnSync(
+        process.execPath,
+        [resolve("dist/operations-cli.js"), command, db, "1"],
+        {
+          input: JSON.stringify({
+            hook_event_name: hookEvent,
+            tool_use_id: "toolu_outbox_1",
+            tool_name: "Read",
+          }),
+          encoding: "utf8",
+        },
+      );
+    const state = (): string => {
+      const raw = new Database(db, { readonly: true });
+      const row = raw
+        .prepare(
+          "SELECT state FROM telemetry_outbox WHERE session_id='session-outbox'",
+        )
+        .get() as { state: string };
+      raw.close();
+      return row.state;
+    };
+    const opened = runHook("tool-hook-open", "PreToolUse");
+    expect(opened.status).toBe(0);
+    expect(opened.stdout).toBe("");
+    expect(state()).toBe("sending");
+    const completed = runHook("tool-hook-complete", "PostToolUse");
+    expect(completed.status).toBe(0);
+    expect(completed.stdout).toBe("");
+    expect(state()).toBe("sending");
+  });
+
+  it("classifies a prehook-open tool as human-required after restart", () => {
+    const { db } = fixture();
+    let log = new EventLog(db);
+    appendTurn(log, "hook-restart", "OPS-HOOK-RESTART");
+    log.updateClaudeSessionId(
+      "session-hook-restart",
+      "claude-hook-restart",
+      1001,
+    );
+    log.claimNextTurn(1002);
+    log.close();
+    const result = spawnSync(
+      process.execPath,
+      [resolve("dist/operations-cli.js"), "tool-hook-open", db, "1"],
+      {
+        input: JSON.stringify({
+          hook_event_name: "PreToolUse",
+          tool_use_id: "toolu_restart_1",
+          tool_name: "Bash",
+        }),
+        encoding: "utf8",
+      },
+    );
+    expect(result.status).toBe(0);
+    log = new EventLog(db);
+    expect(log.recoverStaleRunning(1100)).toEqual([
+      expect.objectContaining({
+        outcome: "human_required",
+        reason: "unresolved_tool_call",
+      }),
+    ]);
+    log.close();
+  });
+
   it("blocks claims atomically, deduplicates restart, and releases only on a terminal safe outcome", () => {
     const { db } = fixture(); const log = new EventLog(db);
     appendTurn(log, "one", "OPS-1");
@@ -186,8 +325,34 @@ describe("hard restart, sessions, and compute public views", () => {
     const declined = f.run(["restart", "--hard"], { DAEMONCTL_CONFIRM_RESPONSE: "no" }); expect(declined.status).toBe(0); expect(declined.stdout).toContain("unchanged");
     expect(treeSnapshot([f.envFile, f.state, f.serviceLog, f.restartCount])).toBe(before);
     const confirmed = f.run(["restart", "--hard", "--yes"]); expect(confirmed.status).toBe(0); expect(readNumber(f.restartCount)).toBe(1);
-    log = new EventLog(f.db); expect(log.interruptStaleRunning()).toHaveLength(1);
+    log = new EventLog(f.db); expect(log.restartIntent()).toMatchObject({ policy: "interrupt", reason: "operator restart" });
+    expect(log.recoverStaleRunning()).toEqual([expect.objectContaining({ turnId: 1, outcome: "human_required", reason: "hard_restart" })]);
+    expect(log.restartIntent()).toBeUndefined();
     expect(log.turnStates()).toEqual([expect.objectContaining({ status: "interrupted" })]); expect(log.claimNextTurn()).toBeUndefined(); log.close();
+  });
+
+  it("clears hard-restart intent only when a failed restart proves the original PID is still authoritative", () => {
+    const confirmed = opsFixture();
+    writeFileSync(join(confirmed.dir, "restart.failures"), "1\n");
+    const failed = confirmed.run(["restart", "--hard", "--yes"]);
+    expect(failed.status).not.toBe(0);
+    expect(failed.stderr).toContain("hard restart command failed");
+    let log = new EventLog(confirmed.db);
+    expect(log.restartIntent()).toBeUndefined();
+    log.close();
+
+    const ambiguous = opsFixture();
+    writeFileSync(join(ambiguous.dir, "restart.failures"), "1\n");
+    const retained = ambiguous.run(["restart", "--hard", "--yes"], {
+      FAKE_SERVICE_INACTIVE: "1",
+    });
+    expect(retained.status).not.toBe(0);
+    log = new EventLog(ambiguous.db);
+    expect(log.restartIntent()).toMatchObject({
+      policy: "interrupt",
+      reason: "operator restart",
+    });
+    log.close();
   });
 
   it("AC15 returns safe populated sessions, explicit empty success, and nonzero DB failure", () => {

@@ -7,12 +7,14 @@ import {
   ProviderReadinessPoller,
   SessionWorker,
   selectSessionProfile,
+  type ShutdownPolicy,
 } from "./sessions.js";
 import { CleanupWorker } from "./cleanup.js";
 import { ReconcileWorker } from "./reconcile.js";
 import { ArtifactStore } from "./artifacts.js";
 import { OtlpRelay } from "./otel-relay.js";
 import { resolveOtlpTraces } from "./otel.js";
+import { LinearMcpMonitor } from "./linear-mcp-monitor.js";
 
 const config = loadConfig();
 let log: EventLog;
@@ -28,6 +30,14 @@ const gateway = new LinearGateway(
 const worker = new AckWorker(log, gateway);
 let cleanupWorker: CleanupWorker | undefined;
 let sessionWorker: SessionWorker | undefined;
+const linearMcpMonitor = config.sessionsEnabled
+  ? new LinearMcpMonitor({
+      url: config.linearMcpUrl,
+      token: config.linearApiKey!,
+      intervalMs: config.linearMcpMonitorIntervalMs,
+      timeoutMs: config.linearMcpMonitorTimeoutMs,
+    })
+  : undefined;
 const upstream = resolveOtlpTraces(process.env);
 const relay = upstream
   ? new OtlpRelay({
@@ -122,6 +132,7 @@ if (providerPoller) {
 }
 
 worker.start();
+linearMcpMonitor?.start();
 sessionWorker?.start();
 cleanupWorker?.start();
 reconcileWorker?.start();
@@ -138,11 +149,22 @@ let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(JSON.stringify({ event: "shutdown", signal }));
+  const policy: ShutdownPolicy = log.restartIntent()
+    ? "hard_restart"
+    : "recover";
+  console.log(
+    JSON.stringify({
+      event: "shutdown",
+      signal,
+      policy,
+      runningTurns: log.runningTurns(),
+    }),
+  );
   await reconcileWorker?.stop();
+  await linearMcpMonitor?.stop();
   await server.close();
   await worker.stop();
-  await sessionWorker?.stop();
+  await sessionWorker?.stop(policy);
   await cleanupWorker?.stop();
   await relay?.close();
   providerPoller?.stop();
