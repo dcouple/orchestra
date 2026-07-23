@@ -1211,12 +1211,14 @@ export class SessionWorker {
   private async availableQuarantinePath(
     directory: string,
     name: string,
+    reserved: ReadonlySet<string>,
   ): Promise<string> {
     for (let suffix = 0; ; suffix++) {
       const candidate = resolve(
         directory,
         suffix === 0 ? name : `${name}.${suffix}`,
       );
+      if (reserved.has(candidate)) continue;
       try {
         await lstat(candidate);
       } catch (error) {
@@ -1242,7 +1244,7 @@ export class SessionWorker {
     linearSessionId: string,
     base: string,
     doneFile: string,
-  ): Promise<string> {
+  ): Promise<string | undefined> {
     const destinationDirectory = resolve(
       this.config.dispatchQuarantineDir,
       linearSessionId,
@@ -1255,16 +1257,20 @@ export class SessionWorker {
         if (b === doneFile) return -1;
         return a.localeCompare(b);
       });
+    const reserved = new Set<string>();
+    const moves: Array<{ source: string; destination: string }> = [];
     for (const name of names) {
       const destination = await this.availableQuarantinePath(
         destinationDirectory,
         name,
+        reserved,
       );
-      await this.moveDispatchFile(
-        resolve(directory, name),
-        destination,
-      );
+      reserved.add(destination);
+      moves.push({ source: resolve(directory, name), destination });
     }
+    if (this.log.hasOpenTurn(linearSessionId)) return undefined;
+    for (const move of moves)
+      await this.moveDispatchFile(move.source, move.destination);
     return destinationDirectory;
   }
   private async scanDispatchMarkers(): Promise<void> {
@@ -1401,6 +1407,8 @@ export class SessionWorker {
                   base,
                   file,
                 );
+                if (destination === undefined) continue;
+                this.degradedLogged.delete(degradedKey);
                 this.logger.log(
                   jsonLog({
                     event: "dispatch_marker_quarantined",

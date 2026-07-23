@@ -2168,6 +2168,50 @@ describe("SessionWorker", () => {
     await worker.stop();
     log.close();
   });
+  it("leaves a stale bundle when its owner opens a turn before quarantine moves", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const now = Date.now();
+    config.sessionConcurrency = 0;
+    config.dispatchQuarantineAgeMs = 1_000;
+    appendImplementer(log, "quarantine-race-created", ownerOne);
+    setTurnsStatus(config.dbPath, "done");
+    const worktree = join(dir, "dispatch-worktree");
+    log.updateSessionWorktree(ownerOne, worktree, "quarantine-race-branch");
+    const basename = "backend-verifier-1700000000-1234-24";
+    const fixture = dispatchFixture(worktree, ownerOne, basename);
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { now: () => now },
+    );
+    await worker.ingestDispatches();
+    setTurnsStatus(config.dbPath, "done");
+    utimesSync(
+      join(fixture.directory, `${basename}.done`),
+      new Date(now - 2_000),
+      new Date(now - 2_000),
+    );
+    const hasOpenTurn = vi
+      .spyOn(log, "hasOpenTurn")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+
+    await worker.ingestDispatches();
+    expect(hasOpenTurn).toHaveBeenCalledTimes(3);
+    expect(readdirSync(fixture.directory).sort()).toEqual(
+      fixture.files.sort(),
+    );
+    expect(
+      readdirSync(join(config.dispatchQuarantineDir, ownerOne)),
+    ).toEqual([]);
+    expect(log.invocations(ownerOne)).toHaveLength(1);
+    hasOpenTurn.mockRestore();
+    await worker.stop();
+    log.close();
+  });
   it("finishes a partial quarantine without overwriting archived siblings", async () => {
     const { dir, log, config } = setup();
     const poster = new Poster();
