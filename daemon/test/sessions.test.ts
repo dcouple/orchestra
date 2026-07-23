@@ -2104,6 +2104,38 @@ describe("SessionWorker", () => {
       log.close();
     }
   });
+  it("prunes a consumed marker from the degraded-log memo", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    config.sessionConcurrency = 0;
+    appendImplementer(log, "memo-prune-created", ownerOne);
+    setTurnsStatus(config.dbPath, "deleted");
+    const worktree = join(dir, "dispatch-worktree");
+    log.updateSessionWorktree(ownerOne, worktree, "memo-prune-branch");
+    const basename = "backend-verifier-1700000000-1234-25";
+    const fixture = dispatchFixture(worktree, ownerOne, basename);
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { logger },
+    );
+
+    await worker.ingestDispatches();
+    for (const file of fixture.files) rmSync(join(fixture.directory, file));
+    await worker.ingestDispatches();
+    dispatchFixture(worktree, ownerOne, basename);
+    await worker.ingestDispatches();
+
+    expect(
+      logger
+        .entries()
+        .filter((entry) => entry.event === "dispatch_marker_ingest_degraded"),
+    ).toHaveLength(2);
+    await worker.stop();
+    log.close();
+  });
   it("quarantines every stale ingested sibling while retaining its invocation", async () => {
     const { dir, log, config } = setup();
     const poster = new Poster();
@@ -2168,7 +2200,7 @@ describe("SessionWorker", () => {
     await worker.stop();
     log.close();
   });
-  it("leaves a stale bundle when its owner opens a turn before quarantine moves", async () => {
+  it("leaves a stale bundle when its owner opens a turn during quarantine moves", async () => {
     const { dir, log, config } = setup();
     const poster = new Poster();
     const now = Date.now();
@@ -2197,18 +2229,26 @@ describe("SessionWorker", () => {
       .spyOn(log, "hasOpenTurn")
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
       .mockReturnValueOnce(true);
 
     await worker.ingestDispatches();
-    expect(hasOpenTurn).toHaveBeenCalledTimes(3);
-    expect(readdirSync(fixture.directory).sort()).toEqual(
-      fixture.files.sort(),
-    );
+    expect(hasOpenTurn).toHaveBeenCalledTimes(4);
     expect(
-      readdirSync(join(config.dispatchQuarantineDir, ownerOne)),
-    ).toEqual([]);
+      readdirSync(fixture.directory).includes(`${basename}.done`),
+    ).toBe(true);
+    expect(readdirSync(fixture.directory)).toHaveLength(
+      fixture.files.length - 1,
+    );
+    const quarantine = join(config.dispatchQuarantineDir, ownerOne);
+    expect(readdirSync(quarantine)).toHaveLength(1);
     expect(log.invocations(ownerOne)).toHaveLength(1);
     hasOpenTurn.mockRestore();
+
+    await worker.ingestDispatches();
+    expect(readdirSync(fixture.directory)).toEqual([]);
+    expect(readdirSync(quarantine).sort()).toEqual(fixture.files.sort());
+    expect(log.invocations(ownerOne)).toHaveLength(1);
     await worker.stop();
     log.close();
   });

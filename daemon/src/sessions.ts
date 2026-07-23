@@ -336,7 +336,7 @@ export class SessionWorker {
   private readonly logger: Logger;
   private readonly worktrees: WorktreeManager;
   private readonly legacyProfileLogged = new Set<string>();
-  // A marker may produce at most one degraded log line per daemon process.
+  // A marker occurrence may produce at most one degraded log line per daemon process.
   private readonly degradedLogged = new Set<string>();
 
   constructor(
@@ -1268,9 +1268,10 @@ export class SessionWorker {
       reserved.add(destination);
       moves.push({ source: resolve(directory, name), destination });
     }
-    if (this.log.hasOpenTurn(linearSessionId)) return undefined;
-    for (const move of moves)
+    for (const move of moves) {
+      if (this.log.hasOpenTurn(linearSessionId)) return undefined;
       await this.moveDispatchFile(move.source, move.destination);
+    }
     return destinationDirectory;
   }
   private async scanDispatchMarkers(): Promise<void> {
@@ -1302,6 +1303,14 @@ export class SessionWorker {
           const files = (await readdir(directory))
             .filter((file) => file.endsWith(".done"))
             .sort();
+          const degradedPrefix = `${session.linearSessionId}:`;
+          const currentMarkers = new Set(files);
+          for (const key of this.degradedLogged)
+            if (
+              key.startsWith(degradedPrefix) &&
+              !currentMarkers.has(key.slice(degradedPrefix.length))
+            )
+              this.degradedLogged.delete(key);
           const markers: Array<{
             file: string;
             base: string;
