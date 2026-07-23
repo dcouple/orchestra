@@ -24,13 +24,17 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 ProtectKernelLogs=true
 RestrictSUIDSGID=true
-RestrictNamespaces=true
+# Browser engines (agent screen recordings) build sandboxes from user/pid/net
+# namespaces; allow only those kinds rather than none.
+RestrictNamespaces=user pid net ipc uts cgroup
 RestrictRealtime=true
 LockPersonality=true
 RemoveIPC=true
 CapabilityBoundingSet=
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-SystemCallFilter=@system-service
+# @sandbox (systemd >= 255) + unshare/setns let browser engines set up their
+# own seccomp/namespace sandboxes; without them they die with SIGSYS at start.
+SystemCallFilter=@system-service @sandbox unshare setns
 SystemCallArchitectures=native
 UMask=0077
 ReadWritePaths=/var/lib/linear-agent-daemon

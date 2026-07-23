@@ -771,7 +771,11 @@ sudo journalctl -u linear-agent-daemon -f
 
 Capture a redacted `prompted` payload and attachment node shape. Confirm Git and Claude can
 spawn under `SystemCallFilter=@system-service`; if the journal proves a specific syscall
-denial, widen only the named directive and record that deliberate change. Direct HTTP MCP
+denial, widen only the named directive and record that deliberate change. Recorded
+widenings: browser engines (agent screen recordings) SIGSYS'd building their process
+sandboxes, so the unit now allows `@sandbox unshare setns` (needs systemd >= 255; the
+host runs 255) and scopes `RestrictNamespaces` to the namespace kinds browsers use
+instead of banning all of them. Direct HTTP MCP
 configuration is primary; `mcp-remote` with a bearer header is the fallback for an older
 Claude build that cannot use direct HTTP MCP configuration.
 
