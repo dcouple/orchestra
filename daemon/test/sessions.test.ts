@@ -6,7 +6,9 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
@@ -108,6 +110,8 @@ function setup() {
     port: 0,
     bindAddr: "127.0.0.1",
     dbPath: join(dir, "events.db"),
+    dispatchQuarantineDir: join(dir, "dispatch-quarantine"),
+    dispatchQuarantineAgeMs: 86_400_000,
     replayWindowMs: 60_000,
     linearGraphqlUrl: "http://unused",
     linearTokenUrl: "http://unused",
@@ -266,6 +270,42 @@ function appendImplementer(
       }),
     ),
   });
+}
+function setTurnsStatus(
+  dbPath: string,
+  status: "done" | "deleted",
+): void {
+  const db = new Database(dbPath);
+  try {
+    if (status === "done")
+      db.prepare(
+        "UPDATE turns SET status='done' WHERE status IN ('pending','running','awaiting_activity')",
+      ).run();
+    else db.prepare("DELETE FROM turns").run();
+  } finally {
+    db.close();
+  }
+}
+function dispatchFixture(
+  worktree: string,
+  owner: string,
+  basename: string,
+): { directory: string; files: string[] } {
+  const directory = join(worktree, ".codex-dispatches", owner);
+  const files = [
+    `${basename}.done`,
+    `${basename}.prompt`,
+    `${basename}.md`,
+    `${basename}.log`,
+    `${basename}.sh`,
+  ];
+  mkdirSync(directory, { recursive: true });
+  for (const file of files)
+    writeFileSync(
+      join(directory, file),
+      file.endsWith(".done") ? "0\n" : `${file}\n`,
+    );
+  return { directory, files };
 }
 function turnUsage(dbPath: string, id = 1): Record<string, unknown> {
   const db = new Database(dbPath, { readonly: true });
@@ -2016,6 +2056,219 @@ describe("SessionWorker", () => {
         .entries()
         .filter((entry) => entry.event === "dispatch_marker_resume"),
     ).toHaveLength(1);
+    await worker.stop();
+    log.close();
+  });
+  it("logs each degraded dispatch marker once across rescans and reason transitions", async () => {
+    const poster = new Poster();
+    for (const scenario of ["invalid", "no-parent", "transition"] as const) {
+      const { dir, log, config } = setup();
+      config.sessionConcurrency = 0;
+      const owner =
+        scenario === "invalid"
+          ? ownerOne
+          : scenario === "no-parent"
+            ? ownerTwo
+            : "a0000000-0000-0000-0000-000000000003";
+      const worktree = join(dir, "dispatch-worktree");
+      appendImplementer(log, `${scenario}-created`, owner);
+      log.updateSessionWorktree(owner, worktree, `${scenario}-branch`);
+      setTurnsStatus(config.dbPath, scenario === "invalid" ? "done" : "deleted");
+      dispatchFixture(
+        worktree,
+        owner,
+        `backend-verifier-1700000000-1234-${scenario.length}`,
+      );
+      const logger = new CapturingLogger();
+      const worker = new SessionWorker(
+        log,
+        poster as unknown as LinearGateway,
+        config,
+        { logger },
+      );
+      await worker.ingestDispatches();
+      if (scenario === "invalid") setTurnsStatus(config.dbPath, "done");
+      if (scenario === "transition") {
+        append(log, `${scenario}-prompted`, owner, "prompted");
+        setTurnsStatus(config.dbPath, "done");
+      }
+      await worker.ingestDispatches();
+      const degraded = logger
+        .entries()
+        .filter((entry) => entry.event === "dispatch_marker_ingest_degraded");
+      expect(degraded, scenario).toHaveLength(1);
+      expect(degraded[0]?.reason).toBe(
+        scenario === "invalid" ? "invalid_sidecar" : "no_parent_turn",
+      );
+      await worker.stop();
+      log.close();
+    }
+  });
+  it("quarantines every stale ingested sibling while retaining its invocation", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const now = Date.now();
+    config.sessionConcurrency = 0;
+    config.dispatchQuarantineAgeMs = 1_000;
+    appendImplementer(log, "quarantine-created", ownerOne);
+    setTurnsStatus(config.dbPath, "done");
+    const worktree = join(dir, "dispatch-worktree");
+    log.updateSessionWorktree(ownerOne, worktree, "quarantine-branch");
+    const basename = "backend-verifier-1700000000-1234-20";
+    const fixture = dispatchFixture(worktree, ownerOne, basename);
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { now: () => now },
+    );
+    await worker.ingestDispatches();
+    setTurnsStatus(config.dbPath, "done");
+    utimesSync(
+      join(fixture.directory, `${basename}.done`),
+      new Date(now - 2_000),
+      new Date(now - 2_000),
+    );
+    await worker.ingestDispatches();
+    const quarantine = join(config.dispatchQuarantineDir, ownerOne);
+    expect(readdirSync(quarantine).sort()).toEqual(fixture.files.sort());
+    expect(readdirSync(fixture.directory)).toEqual([]);
+    expect(log.invocations(ownerOne)).toEqual([
+      expect.objectContaining({
+        sourceKey: `dispatch:${ownerOne}:${basename}.done`,
+      }),
+    ]);
+    await worker.stop();
+    log.close();
+  });
+  it("leaves a young ingested dispatch bundle in the live consume path", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    config.sessionConcurrency = 0;
+    config.dispatchQuarantineAgeMs = 10_000;
+    appendImplementer(log, "young-created", ownerOne);
+    setTurnsStatus(config.dbPath, "done");
+    const worktree = join(dir, "dispatch-worktree");
+    log.updateSessionWorktree(ownerOne, worktree, "young-branch");
+    const fixture = dispatchFixture(
+      worktree,
+      ownerOne,
+      "backend-verifier-1700000000-1234-21",
+    );
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+    );
+    await worker.ingestDispatches();
+    expect(readdirSync(fixture.directory).sort()).toEqual(
+      fixture.files.sort(),
+    );
+    expect(existsSync(config.dispatchQuarantineDir)).toBe(false);
+    await worker.stop();
+    log.close();
+  });
+  it("finishes a partial quarantine without overwriting archived siblings", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const now = Date.now();
+    config.sessionConcurrency = 0;
+    config.dispatchQuarantineAgeMs = 1_000;
+    appendImplementer(log, "partial-created", ownerOne);
+    setTurnsStatus(config.dbPath, "done");
+    const worktree = join(dir, "dispatch-worktree");
+    log.updateSessionWorktree(ownerOne, worktree, "partial-branch");
+    const basename = "backend-verifier-1700000000-1234-22";
+    const fixture = dispatchFixture(worktree, ownerOne, basename);
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { now: () => now },
+    );
+    await worker.ingestDispatches();
+    setTurnsStatus(config.dbPath, "done");
+    const quarantine = join(config.dispatchQuarantineDir, ownerOne);
+    mkdirSync(quarantine, { recursive: true });
+    renameSync(
+      join(fixture.directory, `${basename}.prompt`),
+      join(quarantine, `${basename}.prompt`),
+    );
+    writeFileSync(join(quarantine, `${basename}.md`), "archived report\n");
+    utimesSync(
+      join(fixture.directory, `${basename}.done`),
+      new Date(now - 2_000),
+      new Date(now - 2_000),
+    );
+    await worker.ingestDispatches();
+    expect(
+      readFileSync(join(quarantine, `${basename}.prompt`), "utf8"),
+    ).toBe(`${basename}.prompt\n`);
+    expect(readFileSync(join(quarantine, `${basename}.md`), "utf8")).toBe(
+      "archived report\n",
+    );
+    expect(readFileSync(join(quarantine, `${basename}.md.1`), "utf8")).toBe(
+      `${basename}.md\n`,
+    );
+    expect(readdirSync(quarantine).sort()).toEqual(
+      [...fixture.files, `${basename}.md.1`].sort(),
+    );
+    expect(readdirSync(fixture.directory)).toEqual([]);
+    await worker.stop();
+    log.close();
+  });
+  it("logs a quarantine failure and completes the bundle on the next scan", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    const now = Date.now();
+    config.sessionConcurrency = 0;
+    config.dispatchQuarantineAgeMs = 1_000;
+    appendImplementer(log, "quarantine-failure-created", ownerOne);
+    setTurnsStatus(config.dbPath, "done");
+    const worktree = join(dir, "dispatch-worktree");
+    log.updateSessionWorktree(ownerOne, worktree, "quarantine-failure-branch");
+    const basename = "backend-verifier-1700000000-1234-23";
+    const fixture = dispatchFixture(worktree, ownerOne, basename);
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { logger, now: () => now },
+    );
+    await worker.ingestDispatches();
+    setTurnsStatus(config.dbPath, "done");
+    utimesSync(
+      join(fixture.directory, `${basename}.done`),
+      new Date(now - 2_000),
+      new Date(now - 2_000),
+    );
+    mkdirSync(config.dispatchQuarantineDir, { recursive: true });
+    const obstruction = join(config.dispatchQuarantineDir, ownerOne);
+    writeFileSync(obstruction, "not a directory\n");
+
+    await worker.ingestDispatches();
+    expect(
+      logger
+        .entries()
+        .filter(
+          (entry) => entry.event === "dispatch_marker_quarantine_failed",
+        ),
+    ).toHaveLength(1);
+    expect(readdirSync(fixture.directory).sort()).toEqual(
+      fixture.files.sort(),
+    );
+
+    rmSync(obstruction);
+    await worker.ingestDispatches();
+    const quarantine = join(config.dispatchQuarantineDir, ownerOne);
+    expect(readdirSync(quarantine).sort()).toEqual(fixture.files.sort());
+    expect(readdirSync(fixture.directory)).toEqual([]);
+    expect(log.invocations(ownerOne)).toEqual([
+      expect.objectContaining({
+        sourceKey: `dispatch:${ownerOne}:${basename}.done`,
+      }),
+    ]);
     await worker.stop();
     log.close();
   });

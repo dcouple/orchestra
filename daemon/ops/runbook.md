@@ -334,21 +334,26 @@ reacquires on expiry or an API 401. Rotate a client secret in Linear, update the
 host value, restart, and verify an ack; rotation invalidates that app's existing tokens.
 Revoke the app installation in Linear to cut off access immediately.
 
-Deploy-gate confirmations before relying on startup reconciliation in production:
+### Post-provision checklist
 
-```bash
-# Confirm bulk agentSessions is scoped to the calling app actor and pages as expected.
-# If it is not, keep PLANNER_APP_ACTOR_ID / IMPLEMENTER_APP_ACTOR_ID populated so the
-# delegate issue -> issue.agentSessions fallback can resolve real session IDs.
-# If either APP_ACTOR_ID is missing, startup reconciliation still re-enables webhooks but
-# skips session-discovery synthesis for that app to avoid importing foreign sessions.
-
-# Confirm the added admin scope authorizes webhooks/updateWebhook under client_credentials
-# and does not force token-invalidating re-consent beyond the planned app reinstall.
-
-# Capture one prompted webhook and the same activity through GraphQL; verify
-# webhook agentActivity.id == GraphQL AgentActivity.id.
-```
+- [ ] Confirm `PLANNER_APP_ACTOR_ID` and `IMPLEMENTER_APP_ACTOR_ID` are both
+  populated in `/etc/linear-agent-daemon/env`. Confirm bulk `agentSessions` is scoped to
+  the calling app actor and pages as expected; otherwise retain both IDs so the delegated
+  issue → `issue.agentSessions` fallback can resolve real session IDs.
+- [ ] Attempt the `admin`-scope grant for both apps and run the
+  `webhooks/updateWebhook` client-credentials confirmation. Linear currently rejects this
+  scope (observed live 2026-07). If it still rejects the scope, stop this gate and file
+  **`webhook-reconcile-fallback` — "Decide and implement the webhook re-enable path when
+  Linear rejects the `admin` scope on client_credentials tokens"**; record AC6 as blocked,
+  not failed.
+- [ ] After restart, inspect one full reconcile interval and confirm zero
+  `reconcile_sessions_skipped_missing_app_actor_id` events:
+  `journalctl -u linear-agent-daemon --since -2min | grep -c reconcile_sessions_skipped_missing_app_actor_id`
+  must print `0`.
+- [ ] Only if the admin-scope gate succeeded, inspect one full reconcile interval and
+  confirm `reconcile_webhook` for both apps and zero `reconcile_webhook_failed` events.
+- [ ] Capture one prompted webhook and the same activity through GraphQL; verify
+  `webhook agentActivity.id == GraphQL AgentActivity.id`.
 
 ## Planner credentials and repository
 

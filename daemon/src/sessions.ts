@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import {
+  copyFile,
+  lstat,
   mkdir,
   open,
   readdir,
   readFile,
   realpath,
+  rename,
+  stat,
   unlink,
 } from "node:fs/promises";
 import { resolve, sep } from "node:path";
@@ -331,6 +336,8 @@ export class SessionWorker {
   private readonly logger: Logger;
   private readonly worktrees: WorktreeManager;
   private readonly legacyProfileLogged = new Set<string>();
+  // A marker may produce at most one degraded log line per daemon process.
+  private readonly degradedLogged = new Set<string>();
 
   constructor(
     private readonly log: EventLog,
@@ -1201,6 +1208,65 @@ export class SessionWorker {
   ingestDispatches(): Promise<void> {
     return this.triggerDispatchScan();
   }
+  private async availableQuarantinePath(
+    directory: string,
+    name: string,
+  ): Promise<string> {
+    for (let suffix = 0; ; suffix++) {
+      const candidate = resolve(
+        directory,
+        suffix === 0 ? name : `${name}.${suffix}`,
+      );
+      try {
+        await lstat(candidate);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return candidate;
+        throw error;
+      }
+    }
+  }
+  private async moveDispatchFile(
+    source: string,
+    destination: string,
+  ): Promise<void> {
+    try {
+      await rename(source, destination);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+      await copyFile(source, destination, constants.COPYFILE_EXCL);
+      await unlink(source);
+    }
+  }
+  private async quarantineDispatchBundle(
+    directory: string,
+    linearSessionId: string,
+    base: string,
+    doneFile: string,
+  ): Promise<string> {
+    const destinationDirectory = resolve(
+      this.config.dispatchQuarantineDir,
+      linearSessionId,
+    );
+    await mkdir(destinationDirectory, { recursive: true });
+    const names = (await readdir(directory))
+      .filter((name) => name.startsWith(`${base}.`))
+      .sort((a, b) => {
+        if (a === doneFile) return 1;
+        if (b === doneFile) return -1;
+        return a.localeCompare(b);
+      });
+    for (const name of names) {
+      const destination = await this.availableQuarantinePath(
+        destinationDirectory,
+        name,
+      );
+      await this.moveDispatchFile(
+        resolve(directory, name),
+        destination,
+      );
+    }
+    return destinationDirectory;
+  }
   private async scanDispatchMarkers(): Promise<void> {
     if (this.stopped) return;
     try {
@@ -1320,14 +1386,53 @@ export class SessionWorker {
             const valid = sidecarShapeValid && sidecarTurnId !== undefined;
             const turnId =
               sidecarTurnId ?? this.log.latestTurnId(session.linearSessionId);
-            if (!turnId) {
+            const degradedKey = `${session.linearSessionId}:${file}`;
+            const sourceKey = `dispatch:${session.linearSessionId}:${file}`;
+            try {
+              const age =
+                this.now() - (await stat(resolve(directory, file))).mtimeMs;
+              if (
+                age > this.config.dispatchQuarantineAgeMs &&
+                (this.log.hasCodexInvocation(sourceKey) || !turnId)
+              ) {
+                const destination = await this.quarantineDispatchBundle(
+                  directory,
+                  session.linearSessionId,
+                  base,
+                  file,
+                );
+                this.logger.log(
+                  jsonLog({
+                    event: "dispatch_marker_quarantined",
+                    linearSessionId: session.linearSessionId,
+                    marker,
+                    destination,
+                  }),
+                );
+                continue;
+              }
+            } catch (error) {
               this.logger.error(
                 jsonLog({
-                  event: "dispatch_marker_ingest_degraded",
+                  event: "dispatch_marker_quarantine_failed",
                   linearSessionId: session.linearSessionId,
-                  reason: "no_parent_turn",
+                  marker,
+                  error: String(error),
                 }),
               );
+              continue;
+            }
+            if (!turnId) {
+              if (!this.degradedLogged.has(degradedKey)) {
+                this.degradedLogged.add(degradedKey);
+                this.logger.error(
+                  jsonLog({
+                    event: "dispatch_marker_ingest_degraded",
+                    linearSessionId: session.linearSessionId,
+                    reason: "no_parent_turn",
+                  }),
+                );
+              }
               continue;
             }
             const exitCode =
@@ -1343,7 +1448,7 @@ export class SessionWorker {
             const invocation: CodexInvocationInput = {
               linearSessionId: session.linearSessionId,
               turnId,
-              sourceKey: `dispatch:${session.linearSessionId}:${file}`,
+              sourceKey,
               role:
                 valid && typeof sidecar.role === "string"
                   ? sidecar.role
@@ -1392,7 +1497,12 @@ export class SessionWorker {
                 ? { cacheReadTokens: Number(sidecar.cache_read_tokens) }
                 : {}),
             };
-            if (!valid)
+            if (
+              !valid &&
+              !this.degradedLogged.has(degradedKey) &&
+              !this.log.hasCodexInvocation(sourceKey)
+            ) {
+              this.degradedLogged.add(degradedKey);
               this.logger.error(
                 jsonLog({
                   event: "dispatch_marker_ingest_degraded",
@@ -1400,6 +1510,7 @@ export class SessionWorker {
                   reason: "invalid_sidecar",
                 }),
               );
+            }
             const result = this.log.ingestCodexMarker(
               invocation,
               {

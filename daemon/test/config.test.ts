@@ -16,6 +16,10 @@ describe("loadConfig", () => {
     expect(config.webhookBaseUrl).toBe("http://127.0.0.1:8787");
     expect(config.artifactToken).toBeUndefined();
     expect(config.artifactsDir).toBe("/var/lib/linear-agent-daemon/artifacts");
+    expect(config.dispatchQuarantineDir).toBe(
+      "/var/lib/linear-agent-daemon/dispatch-quarantine",
+    );
+    expect(config.dispatchQuarantineAgeMs).toBe(86_400_000);
     expect(config).toMatchObject({ browserEnabled: false, playwrightMcpBin: "/usr/local/bin/playwright-mcp",
       playwrightChromeBin: "/usr/bin/google-chrome", browserAttemptTimeoutMs: 14_400_000 });
     expect(config.artifactMaxBodyBytes).toBe(32 * 1024 * 1024);
@@ -146,6 +150,21 @@ describe("loadConfig", () => {
     const config = loadConfig({ ...base, DB_PATH: "/state/events.db", ARTIFACT_TOKEN: " secret ",
       ARTIFACTS_DIR: "/srv/artifacts", ARTIFACT_MAX_BODY_BYTES: "4096" });
     expect(config).toMatchObject({ artifactToken: "secret", artifactsDir: "/srv/artifacts", artifactMaxBodyBytes: 4096 });
+  });
+  it("loads dispatch quarantine overrides", () => {
+    const config = loadConfig({
+      ...base,
+      DB_PATH: "/state/events.db",
+      DISPATCH_QUARANTINE_DIR: " /srv/dispatch-quarantine ",
+      DISPATCH_QUARANTINE_AGE_MS: "172800000",
+    });
+    expect(config).toMatchObject({
+      dispatchQuarantineDir: "/srv/dispatch-quarantine",
+      dispatchQuarantineAgeMs: 172_800_000,
+    });
+    expect(() =>
+      loadConfig({ ...base, DISPATCH_QUARANTINE_AGE_MS: "0" }),
+    ).toThrow("DISPATCH_QUARANTINE_AGE_MS");
   });
   it("loads strict browser capability overrides", () => {
     expect(loadConfig({ ...base, BROWSER_ENABLED: "1", PLAYWRIGHT_MCP_BIN: "/mcp", PLAYWRIGHT_CHROME_BIN: "/chrome",

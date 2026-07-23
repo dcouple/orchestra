@@ -40,6 +40,8 @@ describe("operation drain through signed webhook ingress", () => {
       port: 0,
       bindAddr: "127.0.0.1",
       dbPath: f.db,
+      dispatchQuarantineDir: join(f.dir, "dispatch-quarantine"),
+      dispatchQuarantineAgeMs: 86_400_000,
       replayWindowMs: 60_000,
       linearGraphqlUrl: `http://127.0.0.1:${gatewayPort}/graphql`,
       linearTokenUrl: "http://unused",

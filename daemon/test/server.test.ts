@@ -24,6 +24,7 @@ function setup() {
   const log = new EventLog(join(dir, "events.db"));
   const config: Config = {
     port: 0, bindAddr: "127.0.0.1", dbPath: join(dir, "events.db"), replayWindowMs: 60_000,
+    dispatchQuarantineDir: join(dir, "dispatch-quarantine"), dispatchQuarantineAgeMs: 86_400_000,
     linearGraphqlUrl: "http://unused", linearTokenUrl: "http://unused", cliproxyEnvFile,
     apps: {
       planner: { name: "planner", webhookSecret: "planner-secret", staticToken: "p" },
