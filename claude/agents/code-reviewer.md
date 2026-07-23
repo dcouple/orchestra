@@ -8,4 +8,6 @@ color: orange
 
 Read `.references/agents/code-reviewer/instructions.md` completely and follow
 it. Return the result in the format defined by
-`.references/agents/code-reviewer/review-report.md`.
+`.references/agents/code-reviewer/review-report.md`. If either contract is
+unavailable, report the missing path and stop rather than improvising the
+role or format.

@@ -5,6 +5,30 @@ Generate `.excalidraw` JSON files that **argue visually**, not just display info
 **Setup:** If the user asks to set up the renderer or dependencies, use the
 shared assets described below.
 
+## Contents
+
+- [Local pull-request workflow](#local-pull-request-workflow)
+- [Customization](#customization)
+- [Core Philosophy](#core-philosophy)
+- [Depth Assessment (Do This First)](#depth-assessment-do-this-first)
+- [Research Mandate (For Technical Diagrams)](#research-mandate-for-technical-diagrams)
+- [Evidence Artifacts](#evidence-artifacts)
+- [Multi-Zoom Architecture](#multi-zoom-architecture)
+- [Container vs. Free-Floating Text](#container-vs-free-floating-text)
+- [Canvas, Text, and Fit Rules](#canvas-text-and-fit-rules)
+- [Design Process (Do This BEFORE Generating JSON)](#design-process-do-this-before-generating-json)
+- [Large / Comprehensive Diagram Strategy](#large--comprehensive-diagram-strategy)
+- [Visual Pattern Library](#visual-pattern-library)
+- [Shape Meaning](#shape-meaning)
+- [Color as Meaning](#color-as-meaning)
+- [Modern Aesthetics](#modern-aesthetics)
+- [Layout Principles](#layout-principles)
+- [Text Rules](#text-rules)
+- [JSON Structure](#json-structure)
+- [Element Templates](#element-templates)
+- [Render & Validate (MANDATORY)](#render--validate-mandatory)
+- [Quality Checklist](#quality-checklist)
+
 ## Local pull-request workflow
 
 When using this workflow for pull-request diagrams:

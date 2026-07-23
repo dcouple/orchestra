@@ -8,4 +8,6 @@ color: blue
 
 Read `.references/agents/code-researcher/instructions.md` completely and
 follow it. Return the result in the format defined by
-`.references/agents/code-researcher/codebase-findings.md`.
+`.references/agents/code-researcher/codebase-findings.md`. If either contract
+is unavailable, report the missing path and stop rather than improvising the
+role or format.

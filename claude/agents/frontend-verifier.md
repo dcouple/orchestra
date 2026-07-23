@@ -14,4 +14,6 @@ color: purple
 
 Read `.references/agents/frontend-verifier/instructions.md` completely and
 follow it. Return the result in the format defined by
-`.references/agents/frontend-verifier/verification-result.md`.
+`.references/agents/frontend-verifier/verification-result.md`. If either
+contract is unavailable, report the missing path and stop rather than
+improvising the role or format.

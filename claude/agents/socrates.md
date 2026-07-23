@@ -18,4 +18,6 @@ color: magenta
 
 Read `.references/agents/socrates/instructions.md` completely and follow it.
 Return the result in the format defined by
-`.references/agents/socrates/socratic-challenge.md`.
+`.references/agents/socrates/socratic-challenge.md`. If either contract is
+unavailable, report the missing path and stop rather than improvising the
+role or format.

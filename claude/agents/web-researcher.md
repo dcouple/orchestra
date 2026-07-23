@@ -8,4 +8,6 @@ color: green
 
 Read `.references/agents/web-researcher/instructions.md` completely and follow
 it. Return the result in the format defined by
-`.references/agents/web-researcher/research-dossier.md`.
+`.references/agents/web-researcher/research-dossier.md`. If either contract is
+unavailable, report the missing path and stop rather than improvising the
+role or format.

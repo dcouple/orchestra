@@ -5,6 +5,21 @@ pull-request publication, post-publication review and QA, wrap-up, and an
 operations-only postmortem. The harness adapter owns all dispatch syntax,
 child lifecycle details, and role-to-runtime routing.
 
+## Contents
+
+- [Inputs and completion](#inputs-and-completion)
+- [Roles](#roles)
+- [Autonomy and action tiers](#autonomy-and-action-tiers)
+- [Step 0 — Preflight and load](#step-0--preflight-and-load)
+- [Step 1 — Plan](#step-1--plan)
+- [Step 2 — Implement](#step-2--implement)
+- [Step 3 — Verify](#step-3--verify)
+- [Step 4 — Prepare and open the pull request](#step-4--prepare-and-open-the-pull-request)
+- [Step 5 — Post-publication review and QA](#step-5--post-publication-review-and-qa)
+- [Step 6 — Wrap up](#step-6--wrap-up)
+- [Epic protocol](#epic-protocol)
+- [Non-negotiable rules](#non-negotiable-rules)
+
 ## Inputs and completion
 
 Accept a tracker reference or `./tmp/<id>/item.md`. Resolve the item into

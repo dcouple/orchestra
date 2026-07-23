@@ -8,4 +8,6 @@ color: yellow
 
 Read `.references/agents/plan-reviewer/instructions.md` completely and follow
 it. Return the result in the format defined by
-`.references/agents/plan-reviewer/review-report.md`.
+`.references/agents/plan-reviewer/review-report.md`. If either contract is
+unavailable, report the missing path and stop rather than improvising the
+role or format.
