@@ -15,6 +15,7 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 function config(overrides: Partial<Config> = {}): Config {
   return {
     port: 0, bindAddr: "127.0.0.1", dbPath: ":memory:", replayWindowMs: 60_000,
+    dispatchQuarantineDir: "/tmp/dispatch-quarantine", dispatchQuarantineAgeMs: 86_400_000,
     linearGraphqlUrl: "http://unused", linearTokenUrl: "http://unused", webhookBaseUrl: "https://agent.example.com",
     reconcileIntervalMs: 60_000, reconcileRequestTimeoutMs: 1_000,
     apps: {

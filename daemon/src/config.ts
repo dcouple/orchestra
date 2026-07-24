@@ -34,6 +34,8 @@ export interface Config {
   webhookBaseUrl: string;
   artifactToken?: string;
   artifactsDir: string;
+  dispatchQuarantineDir: string;
+  dispatchQuarantineAgeMs: number;
   browserEnabled: boolean;
   playwrightMcpBin: string;
   playwrightChromeBin: string;
@@ -169,6 +171,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
     ...(artifactToken ? { artifactToken } : {}),
     artifactsDir: env.ARTIFACTS_DIR?.trim() || `${dirname(dbPath)}/artifacts`,
+    dispatchQuarantineDir:
+      env.DISPATCH_QUARANTINE_DIR?.trim() ||
+      `${dirname(dbPath)}/dispatch-quarantine`,
+    dispatchQuarantineAgeMs: positiveInteger(
+      env,
+      "DISPATCH_QUARANTINE_AGE_MS",
+      24 * 60 * 60 * 1000,
+    ),
     browserEnabled: enabled(env, "BROWSER_ENABLED", false),
     playwrightMcpBin: env.PLAYWRIGHT_MCP_BIN?.trim() || "/usr/local/bin/playwright-mcp",
     playwrightChromeBin: env.PLAYWRIGHT_CHROME_BIN?.trim() || "/usr/bin/google-chrome",

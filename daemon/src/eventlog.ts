@@ -2108,6 +2108,9 @@ export class EventLog {
       )
       .all(linearSessionId) as AgentInvocationRow[];
   }
+  hasCodexInvocation(sourceKey: string): boolean {
+    return this.invocationBySourceKey(sourceKey) !== undefined;
+  }
   private invocationBySourceKey(
     sourceKey: string,
   ): AgentInvocationRow | undefined {
