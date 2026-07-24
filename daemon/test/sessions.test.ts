@@ -2208,6 +2208,133 @@ describe("SessionWorker", () => {
     await worker.stop();
     log.close();
   });
+  it("skips a traversal-shaped dispatch owner during startup recovery", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    const unsafeOwner = "../../escaped-owner";
+    const worktree = join(dir, "worktree", "nested");
+    const escapedDirectory = resolve(
+      worktree,
+      ".codex-dispatches",
+      unsafeOwner,
+    );
+    const base = "backend-verifier-1700000000-1234-unsafe";
+    mkdirSync(worktree, { recursive: true });
+    mkdirSync(escapedDirectory, { recursive: true });
+    writeFileSync(join(escapedDirectory, `${base}.prompt`), "verify\n");
+    writeFileSync(join(escapedDirectory, `${base}.sh`), "#!/bin/sh\n");
+    writeFileSync(
+      join(escapedDirectory, `${base}.otel.json`),
+      JSON.stringify({ deadline_at: 10_000 }),
+    );
+    appendImplementer(log, "unsafe-startup", unsafeOwner);
+    log.updateSessionWorktree(unsafeOwner, worktree, "unsafe-branch");
+    log.updateClaudeSessionId(unsafeOwner, "claude-unsafe");
+    const parent = log.claimNextTurn(1_000)!;
+    config.sessionConcurrency = 0;
+
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { logger, now: () => 2_000 },
+    );
+    await worker.start();
+
+    expect(log.turnStates()).toEqual([
+      expect.objectContaining({ id: parent.id, status: "interrupted" }),
+      expect.objectContaining({
+        linearSessionId: unsafeOwner,
+        status: "pending",
+        sourceKey: `restart-resume:${parent.id}`,
+      }),
+    ]);
+    expect(log.dispatchWaits(unsafeOwner)).toEqual([]);
+    expect(
+      logger.entries().filter(
+        (entry) =>
+          entry.event === "dispatch_scan_failed" &&
+          entry.phase === "startup" &&
+          entry.linearSessionId === unsafeOwner &&
+          entry.reason === "invalid dispatch owner",
+      ),
+    ).toHaveLength(1);
+    expect(logger.entries()).toContainEqual(
+      expect.objectContaining({
+        event: "restart_turn_disposition",
+        turnId: parent.id,
+        outcome: "resumed",
+        reason: "safe_boundary",
+      }),
+    );
+    await worker.stop();
+    log.close();
+  });
+  it("contains startup dispatch filesystem failures per session", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    const failingOwner = "a0000000-0000-0000-0000-000000000004";
+    const healthyWorktree = join(dir, "healthy-worktree");
+    const invalidWorktree = join(dir, "not-a-directory");
+    mkdirSync(healthyWorktree);
+    writeFileSync(invalidWorktree, "stale worktree path\n");
+
+    appendImplementer(log, "healthy-startup", ownerOne);
+    log.updateSessionWorktree(ownerOne, healthyWorktree, "healthy-branch");
+    log.updateClaudeSessionId(ownerOne, "claude-healthy");
+    const parent = log.claimNextTurn(1_000)!;
+    appendImplementer(
+      log,
+      "failing-startup",
+      failingOwner,
+      "issue-failing",
+      "ENG-404",
+    );
+    log.updateSessionWorktree(
+      failingOwner,
+      invalidWorktree,
+      "failing-branch",
+    );
+    config.sessionConcurrency = 0;
+
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { logger, now: () => 2_000 },
+    );
+    await worker.start();
+
+    expect(log.turnStates()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: parent.id, status: "interrupted" }),
+        expect.objectContaining({
+          linearSessionId: ownerOne,
+          status: "pending",
+          sourceKey: `restart-resume:${parent.id}`,
+        }),
+      ]),
+    );
+    expect(logger.entries()).toContainEqual(
+      expect.objectContaining({
+        event: "dispatch_scan_failed",
+        phase: "startup",
+        linearSessionId: failingOwner,
+        error: expect.stringContaining("ENOTDIR"),
+      }),
+    );
+    expect(logger.entries()).toContainEqual(
+      expect.objectContaining({
+        event: "restart_turn_disposition",
+        turnId: parent.id,
+        outcome: "resumed",
+      }),
+    );
+    await worker.stop();
+    log.close();
+  });
   it("defers an interrupted parent for its in-flight dispatch, then resumes on its marker once", async () => {
     const { dir, log, config } = setup();
     const poster = new Poster();

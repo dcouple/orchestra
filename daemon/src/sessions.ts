@@ -16,6 +16,7 @@ import { resolve, sep } from "node:path";
 import type { AppName, Config } from "./config.js";
 import {
   completedDispatchesAwaitingIngest,
+  DISPATCH_OWNER_PATTERN,
   inFlightDispatches,
 } from "./dispatches.js";
 import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
@@ -236,8 +237,6 @@ export class ProviderReadinessPoller {
   }
 }
 
-const DISPATCH_OWNER_PATTERN = /^[0-9a-fA-F][0-9a-fA-F-]{7,63}$/;
-
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -361,23 +360,45 @@ export class SessionWorker {
     const inflight = new Map<string, Awaited<ReturnType<typeof inFlightDispatches>>>();
     await Promise.all(
       this.log.sessionsWithWorktrees().map(async (session) => {
-        const dispatches = [
-          ...(await inFlightDispatches(
-            session.worktreePath,
-            session.linearSessionId,
-          )),
-          ...(await completedDispatchesAwaitingIngest(
-            session.worktreePath,
-            session.linearSessionId,
-          )).filter(
-            (dispatch) =>
-              !this.log.hasCodexInvocation(
-                `dispatch:${session.linearSessionId}:${dispatch.base}.done`,
-              ),
-          ),
-        ];
-        if (dispatches.length)
-          inflight.set(session.linearSessionId, dispatches);
+        if (!DISPATCH_OWNER_PATTERN.test(session.linearSessionId)) {
+          this.logger.error(
+            jsonLog({
+              event: "dispatch_scan_failed",
+              phase: "startup",
+              linearSessionId: session.linearSessionId,
+              reason: "invalid dispatch owner",
+            }),
+          );
+          return;
+        }
+        try {
+          const dispatches = [
+            ...(await inFlightDispatches(
+              session.worktreePath,
+              session.linearSessionId,
+            )),
+            ...(await completedDispatchesAwaitingIngest(
+              session.worktreePath,
+              session.linearSessionId,
+            )).filter(
+              (dispatch) =>
+                !this.log.hasCodexInvocation(
+                  `dispatch:${session.linearSessionId}:${dispatch.base}.done`,
+                ),
+            ),
+          ];
+          if (dispatches.length)
+            inflight.set(session.linearSessionId, dispatches);
+        } catch (error) {
+          this.logger.error(
+            jsonLog({
+              event: "dispatch_scan_failed",
+              phase: "startup",
+              linearSessionId: session.linearSessionId,
+              error: String(error),
+            }),
+          );
+        }
       }),
     );
     for (const disposition of this.log.recoverStaleRunning(this.now(), inflight))

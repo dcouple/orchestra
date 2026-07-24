@@ -6,6 +6,7 @@ export interface InFlightDispatch {
   deadlineAt: number;
 }
 
+export const DISPATCH_OWNER_PATTERN = /^[0-9a-fA-F][0-9a-fA-F-]{7,63}$/;
 const FALLBACK_DISPATCH_DEADLINE_MS = 45 * 60_000;
 
 export async function inFlightDispatches(
