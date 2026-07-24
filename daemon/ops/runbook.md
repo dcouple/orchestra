@@ -121,10 +121,12 @@ In Linear, create `bloom-planner` and `bloom-implementer` separately. For each a
 
 1. Enable client-credentials tokens; use `actor=app`. A workspace admin must authorize
    the installation. The daemon requests scopes
-   `read,write,app:assignable,app:mentionable,admin` at token time; Linear currently
-   rejects the `admin` scope on client_credentials (observed live 2026-07) and the daemon
-   automatically retries without it. Without `admin`, startup webhook re-enable is
-   unavailable — re-enable a disabled webhook manually in the app's settings.
+   `read,write,app:assignable,app:mentionable` at token time. If Linear auto-disables a
+   webhook, it emails workspace admins; the notification channel remains unverified until
+   the first observed disablement. A workspace admin must re-enable the webhook manually in
+   the app's Linear settings. While disabled, synthesis recovers sessions and activities at
+   no more than 60 seconds of latency, but webhook-only signals such as stop may be delayed
+   or lost; this is an accepted degraded mode.
 2. Enable webhooks, select **Agent session events**, and use respectively
    `https://linear-agent.example.com/webhook/planner` or `/webhook/implementer`.
    On bloom-implementer also enable the **Issues** category. If Linear requires a separate
@@ -329,7 +331,7 @@ capability only in the scratch environment after expiry and over budget to confi
 and inject one selected-route failure to confirm the persisted route never changes.
 
 The daemon requests 30-day client-credentials app tokens with
-`read,write,app:assignable,app:mentionable,admin` and persists their expiry in SQLite. It
+`read,write,app:assignable,app:mentionable` and persists their expiry in SQLite. It
 reacquires on expiry or an API 401. Rotate a client secret in Linear, update the matching
 host value, restart, and verify an ack; rotation invalidates that app's existing tokens.
 Revoke the app installation in Linear to cut off access immediately.
@@ -340,18 +342,14 @@ Revoke the app installation in Linear to cut off access immediately.
   populated in `/etc/linear-agent-daemon/env`. Confirm bulk `agentSessions` is scoped to
   the calling app actor and pages as expected; otherwise retain both IDs so the delegated
   issue → `issue.agentSessions` fallback can resolve real session IDs.
-- [ ] Attempt the `admin`-scope grant for both apps and run the
-  `webhooks/updateWebhook` client-credentials confirmation. Linear currently rejects this
-  scope (observed live 2026-07). If it still rejects the scope, stop this gate and file
-  **`webhook-reconcile-fallback` — "Decide and implement the webhook re-enable path when
-  Linear rejects the `admin` scope on client_credentials tokens"**; record AC6 as blocked,
-  not failed.
+- [ ] Document the manual webhook recovery path for operators: Linear emails workspace
+  admins after auto-disablement, and an admin re-enables the webhook in the app's Linear
+  settings. Record that the notification channel is unverified until the first observed
+  disablement and that AC6 of issue #115 is superseded by `webhook-reconcile-fallback`.
 - [ ] After restart, inspect one full reconcile interval and confirm zero
   `reconcile_sessions_skipped_missing_app_actor_id` events:
   `journalctl -u linear-agent-daemon --since -2min | grep -c reconcile_sessions_skipped_missing_app_actor_id`
   must print `0`.
-- [ ] Only if the admin-scope gate succeeded, inspect one full reconcile interval and
-  confirm `reconcile_webhook` for both apps and zero `reconcile_webhook_failed` events.
 - [ ] Capture one prompted webhook and the same activity through GraphQL; verify
   `webhook agentActivity.id == GraphQL AgentActivity.id`.
 
@@ -684,8 +682,9 @@ curl -fsS https://linear-agent.example.com/healthz
 Capture one live AgentSessionEvent payload from a temporary redacted diagnostic (never log
 raw payloads permanently) and verify the tolerant parser's fields. Trigger a webhook retry
 and confirm Linear reuses `Linear-Delivery`; record the two delivery IDs. Linear retries at
-about 1 minute, 1 hour, and 6 hours and may disable repeated failures. On restart, confirm
-the daemon re-enables each app webhook; use the app settings only as the manual fallback.
+about 1 minute, 1 hour, and 6 hours and may disable repeated failures. If Linear emails
+workspace admins that it auto-disabled a webhook, have an admin re-enable it manually in
+the app's Linear settings; the daemon does not query or change webhook state on restart.
 
 ## Enable and verify Fable routing
 

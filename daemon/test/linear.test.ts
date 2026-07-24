@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventLog } from "../src/eventlog.js";
 import { LinearGateway } from "../src/linear.js";
 
@@ -169,35 +169,6 @@ describe("LinearGateway", () => {
     await api.close(); eventLog.close();
   });
 
-  it("re-enables a disabled matching webhook and skips an already-enabled one", async () => {
-    let enabled = false;
-    const api = await stub(request => {
-      const text = JSON.stringify(request.body);
-      if (text.includes("query webhooks")) return { body: { data: { webhooks: { __typename: "WebhookConnection",
-        nodes: [{ __typename: "Webhook", id: "webhook-1", label: "agent", secret: null,
-          url: "https://agent.example.com/webhook/planner", updatedAt: iso, resourceTypes: ["AgentSession"],
-          archivedAt: null, createdAt: iso, enabled, allPublicTeams: true, team: null, creator: null }],
-        pageInfo: pageInfo() } } } };
-      expect(text).toContain("updateWebhook");
-      enabled = true;
-      return { body: { data: { webhookUpdate: { __typename: "WebhookPayload", success: true, lastSyncId: 1,
-        webhook: { id: "webhook-1" } } } } };
-    });
-    const eventLog = log();
-    const gateway = new LinearGateway(eventLog, {
-      planner: { name: "planner", webhookSecret: "p", staticToken: "token-p" },
-      implementer: { name: "implementer", webhookSecret: "i", staticToken: "token-i" },
-    }, api.graphqlUrl, api.tokenUrl);
-    await expect(gateway.ensureWebhookEnabled("planner", "https://agent.example.com/webhook/planner", Date.now() + 1000))
-      .resolves.toEqual({ matched: true, updated: true });
-    await expect(gateway.ensureWebhookEnabled("planner", "https://agent.example.com/webhook/planner", Date.now() + 1000))
-      .resolves.toEqual({ matched: true, updated: false });
-    const mutations = api.requests.filter(request => JSON.stringify(request.body).includes("updateWebhook"));
-    expect(mutations).toHaveLength(1);
-    expect(mutations[0]?.body.variables).toMatchObject({ id: "webhook-1", input: { enabled: true } });
-    await api.close(); eventLog.close();
-  });
-
   it("updates session addedExternalUrls with the owning app bearer",async()=>{
     const api=await stub(()=>({body:{data:{agentSessionUpdate:{success:true,agentSession:{id:"session"}}}}}));const eventLog=log();
     const gateway=new LinearGateway(eventLog,{planner:{name:"planner",webhookSecret:"p",staticToken:"p"},implementer:{name:"implementer",webhookSecret:"i",staticToken:"token-i"}},api.graphqlUrl,api.tokenUrl);
@@ -250,9 +221,32 @@ describe("LinearGateway", () => {
     expect(await first.getAppToken("planner")).toBe("token-1");
     const second = new LinearGateway(db, apps, api.graphqlUrl, api.tokenUrl);
     expect(await second.getAppToken("planner")).toBe("token-1"); expect(grants).toBe(1);
-    const grant = api.requests[0]!;
-    expect(grant.body).toMatchObject({ grant_type: "client_credentials", scope: "read,write,app:assignable,app:mentionable,admin" });
+    const grantRequests = api.requests.filter(request => request.url === "/oauth/token");
+    expect(grantRequests).toHaveLength(1);
+    const grant = grantRequests[0]!;
+    expect(grant.body).toMatchObject({ grant_type: "client_credentials", scope: "read,write,app:assignable,app:mentionable" });
     expect(grant.authorization).toMatch(/^Basic /);
+    await api.close(); db.close();
+  });
+
+  it("rejects an invalid-scope 400 without retrying or logging an admin-scope fallback", async () => {
+    const api = await stub(request => request.url === "/oauth/token"
+      ? { status: 400, body: { error: "invalid_scope", error_description: "Invalid scope" } }
+      : { body: success });
+    const db = log();
+    const logger = { warn: vi.fn() };
+    const gateway = new LinearGateway(db, {
+      planner: { name: "planner", webhookSecret: "p", clientId: "id", clientSecret: "secret" },
+      implementer: { name: "implementer", webhookSecret: "i", staticToken: "i" },
+    }, api.graphqlUrl, api.tokenUrl, Date.now, logger);
+    await expect(gateway.getAppToken("planner")).rejects.toThrow("OAuth token request failed (400): Invalid scope");
+    const grantRequests = api.requests.filter(request => request.url === "/oauth/token");
+    expect(grantRequests).toHaveLength(1);
+    expect(grantRequests[0]?.body).toMatchObject({
+      grant_type: "client_credentials",
+      scope: "read,write,app:assignable,app:mentionable",
+    });
+    expect(logger.warn).not.toHaveBeenCalled();
     await api.close(); db.close();
   });
 
