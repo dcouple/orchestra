@@ -156,6 +156,7 @@ const DAEMON_OWNED_CHILD_ENV_KEYS: ReadonlySet<string> = new Set([
   "BASH_DEFAULT_TIMEOUT_MS",
   "BASH_MAX_TIMEOUT_MS",
   "LINEAR_API_KEY",
+  "ARTIFACT_HOST_TOKEN",
 ]);
 
 function isDeniedChildSecret(key: string): boolean {
@@ -204,6 +205,7 @@ function childEnv(
       (extraOnly &&
         (key === "TRACEPARENT" ||
           key === "ORCHESTRA_DISPATCH_OWNER" ||
+          key === "ARTIFACT_HOST_TOKEN" ||
           key === "ORCHESTRA_OTEL_RELAY_ENDPOINT"))
     ) {
       allowed[key] = value;

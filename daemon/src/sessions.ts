@@ -624,6 +624,9 @@ export class SessionWorker {
         LINEAR_API_KEY: this.config.linearApiKey!,
         GH_TOKEN: process.env.GH_TOKEN,
         GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+        ...(this.config.artifactToken
+          ? { ARTIFACT_HOST_TOKEN: this.config.artifactToken }
+          : {}),
         ...(DISPATCH_OWNER_PATTERN.test(turn.linearSessionId)
           ? { ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId }
           : {}),

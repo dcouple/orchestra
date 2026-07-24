@@ -858,6 +858,154 @@ describe("SessionWorker", () => {
     );
     log.close();
   });
+  it("passes the configured artifact token to planner and implementer sessions", async () => {
+    const seeded = setup();
+    seeded.log.close();
+    seeded.config.artifactToken = "artifact-host-token";
+    const log = new EventLog(seeded.config.dbPath, () => ({
+      profile: "fable",
+      runtime: "claude",
+      reason: "claude_ready",
+    }));
+    process.env.CLAUDE_FAKE_ENV_FILE = join(
+      seeded.dir,
+      "artifact-session-env.jsonl",
+    );
+    append(
+      log,
+      "artifact-planner",
+      "artifact-planner",
+      "created",
+      "issue-p",
+      "ENG-41",
+    );
+    appendImplementer(
+      log,
+      "artifact-implementer",
+      "artifact-implementer",
+      "issue-i",
+      "ENG-42",
+    );
+    const worker = new SessionWorker(
+      log,
+      new Poster() as unknown as LinearGateway,
+      seeded.config,
+      { pollMs: 10 },
+    );
+    worker.start();
+    await waitFor(() =>
+      log.turnStates().every((turn) => turn.status === "done"),
+    );
+    await worker.stop();
+    const envs = readFileSync(
+      process.env.CLAUDE_FAKE_ENV_FILE,
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          (JSON.parse(line) as { env: Record<string, string> }).env,
+      );
+    expect(envs).toHaveLength(2);
+    expect(
+      envs.every(
+        (env) => env.ARTIFACT_HOST_TOKEN === "artifact-host-token",
+      ),
+    ).toBe(true);
+    log.close();
+  });
+  it("does not let Claudex runtime env introduce an unconfigured artifact token", async () => {
+    const seeded = setup();
+    seeded.log.close();
+    seeded.config.apps.planner.harness = "claudex";
+    seeded.config.claudexArgv = [
+      ...seeded.config.claudeArgv,
+      "--claudex-runtime",
+    ];
+    seeded.config.claudexEnv = {
+      CLAUDE_FAKE_MODE: "happy",
+      ARTIFACT_HOST_TOKEN: "trusted-artifact-host",
+    };
+    const log = new EventLog(seeded.config.dbPath, () => ({
+      profile: "sol",
+      runtime: "claudex",
+      reason: "claudex_preferred",
+    }));
+    process.env.CLAUDE_FAKE_ENV_FILE = join(
+      seeded.dir,
+      "unconfigured-artifact-env.jsonl",
+    );
+    append(log, "unconfigured-artifact", "unconfigured-artifact", "created");
+    const worker = new SessionWorker(
+      log,
+      new Poster() as unknown as LinearGateway,
+      seeded.config,
+      { pollMs: 10 },
+    );
+    worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    await worker.stop();
+    const row = JSON.parse(
+      readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim(),
+    ) as { env: Record<string, string> };
+    expect(row.env.ARTIFACT_HOST_TOKEN).toBeUndefined();
+    log.close();
+  });
+  it("passes the daemon artifact token to a Claudex session selected after capacity failure", async () => {
+    const seeded = setup();
+    seeded.log.close();
+    seeded.config.artifactToken = "artifact-host-token";
+    seeded.config.fableArgv = [
+      ...seeded.config.claudeArgv,
+      "--fable-launcher",
+    ];
+    seeded.config.claudexArgv = [
+      ...seeded.config.claudeArgv,
+      "--claudex-runtime",
+    ];
+    seeded.config.claudexEnv = {
+      CLAUDE_FAKE_MODE: "happy",
+      ARTIFACT_HOST_TOKEN: "trusted-artifact-host",
+    };
+    let log: EventLog;
+    log = new EventLog(seeded.config.dbPath, (app) =>
+      selectSessionProfile(log, seeded.config, app),
+    );
+    log.setProviderState("claude", "ready", "ready", Date.now());
+    process.env.CLAUDE_FAKE_MODE = "rate-limit-rejected";
+    process.env.CLAUDE_FAKE_ENV_FILE = join(
+      seeded.dir,
+      "capacity-artifact-env.jsonl",
+    );
+    append(log, "capacity-source", "capacity-source", "created");
+    const worker = new SessionWorker(
+      log,
+      new Poster() as unknown as LinearGateway,
+      seeded.config,
+      { pollMs: 10 },
+    );
+    worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "failed");
+    append(log, "capacity-fallback", "capacity-fallback", "created");
+    worker.trigger();
+    await waitFor(() => log.turnStates()[1]?.status === "done");
+    await worker.stop();
+    expect(log.getSession("capacity-fallback")).toMatchObject({
+      profile: "sol",
+      runtime: "claudex",
+    });
+    const rows = readFileSync(
+      process.env.CLAUDE_FAKE_ENV_FILE,
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { env: Record<string, string> });
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!.env.ARTIFACT_HOST_TOKEN).toBe("artifact-host-token");
+    log.close();
+  });
   it.each(["planner", "implementer"] as const)(
     "starts a directly preferred Claudex %s session and keeps it sticky after config changes",
     async (app) => {

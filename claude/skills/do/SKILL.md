@@ -542,8 +542,11 @@ comment) before ending.
   leave the results only in a comment when the body has a checklist and a QA
   results line to update. After every body update, **YOU MUST** preserve and
   verify the persisted closing-line set per `.references/tracker-lifecycle.md`.
-- **Hosting evidence media**: when the repo is on GitHub, host screenshots,
-  GIFs, and videos as assets on a rolling `qa-assets` **prerelease**
+- **Hosting evidence media**: when the consumer config sets
+  `artifact_host:`, evidence media MAY be hosted as an artifact bundle per
+  `.references/artifact-host-upload.md`; its stable viewer URLs are
+  unauthenticated. For GitHub repos, the default remains screenshots, GIFs,
+  and videos as assets on a rolling `qa-assets` **prerelease**
   (once per repo: `gh release create qa-assets --prerelease
   --title "QA evidence assets" --notes "Rolling QA evidence host — not a
   software release."` — the explicit `--title`/`--notes` matter: without

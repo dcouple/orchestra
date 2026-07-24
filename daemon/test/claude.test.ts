@@ -315,16 +315,19 @@ describe("runTurn", () => {
   it("passes only the child allowlist and keeps bearer tokens out of argv", async () => {
     const dir = cwd();
     const envFile = join(dir, "env.jsonl");
+    const ambientEnvFile = join(dir, "ambient-env.jsonl");
     const oldHeaders = process.env.OTEL_EXPORTER_OTLP_HEADERS;
     const oldControl = process.env.OTEL_X;
     const oldToolContent = process.env.OTEL_LOG_TOOL_CONTENT;
     const oldManagementKey = process.env.CLIPROXY_MANAGEMENT_KEY;
     const oldArtifactToken = process.env.ARTIFACT_TOKEN;
+    const oldArtifactHostToken = process.env.ARTIFACT_HOST_TOKEN;
     process.env.OTEL_EXPORTER_OTLP_HEADERS = "process-header";
     process.env.OTEL_X = "process-control";
     process.env.OTEL_LOG_TOOL_CONTENT = "process-tool-content";
     process.env.CLIPROXY_MANAGEMENT_KEY = "ambient-management";
     process.env.ARTIFACT_TOKEN = "ambient-artifact";
+    process.env.ARTIFACT_HOST_TOKEN = "ambient-artifact-host";
     try {
       const result = await runTurn(
         options({
@@ -338,6 +341,7 @@ describe("runTurn", () => {
             BASH_MAX_TIMEOUT_MS: "1200000",
             LINEAR_API_KEY: "linear-key",
             GH_TOKEN: "github-key",
+            ARTIFACT_HOST_TOKEN: "daemon-artifact-host",
             OTEL_RESOURCE_ATTRIBUTES: "service.namespace=daemon",
             OTEL_LOG_TOOL_DETAILS: "1",
             OTEL_LOG_TOOL_CONTENT: "extra-tool-content",
@@ -358,6 +362,7 @@ describe("runTurn", () => {
       expect(row.env.BASH_DEFAULT_TIMEOUT_MS).toBe("900000");
       expect(row.env.BASH_MAX_TIMEOUT_MS).toBe("1200000");
       expect(row.env.GH_TOKEN).toBe("github-key");
+      expect(row.env.ARTIFACT_HOST_TOKEN).toBe("daemon-artifact-host");
       expect(row.env.OTEL_EXPORTER_OTLP_HEADERS).toBeUndefined();
       expect(row.env.OTEL_RESOURCE_ATTRIBUTES).toBe("service.namespace=daemon");
       expect(row.env.OTEL_LOG_TOOL_DETAILS).toBeUndefined();
@@ -374,6 +379,17 @@ describe("runTurn", () => {
       );
       expect(JSON.stringify(row.args)).not.toContain("secret-token");
       expect(JSON.stringify(row.args)).not.toContain("process-header");
+      const ambientResult = await runTurn(
+        options({
+          cwd: dir,
+          env: { CLAUDE_FAKE_ENV_FILE: ambientEnvFile },
+        }),
+      );
+      expect(ambientResult.ok).toBe(true);
+      const ambientRow = JSON.parse(
+        readFileSync(ambientEnvFile, "utf8").trim(),
+      ) as { env: Record<string, string> };
+      expect(ambientRow.env.ARTIFACT_HOST_TOKEN).toBeUndefined();
     } finally {
       if (oldHeaders === undefined)
         delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
@@ -388,6 +404,9 @@ describe("runTurn", () => {
       else process.env.CLIPROXY_MANAGEMENT_KEY = oldManagementKey;
       if (oldArtifactToken === undefined) delete process.env.ARTIFACT_TOKEN;
       else process.env.ARTIFACT_TOKEN = oldArtifactToken;
+      if (oldArtifactHostToken === undefined)
+        delete process.env.ARTIFACT_HOST_TOKEN;
+      else process.env.ARTIFACT_HOST_TOKEN = oldArtifactHostToken;
     }
   });
   it("passes only the named browser handshake and attempt context", async () => {
@@ -404,6 +423,7 @@ describe("runTurn", () => {
   it("merges trusted runtime environment after the allowlist", async () => {
     const dir = cwd();
     const envFile = join(dir, "env.jsonl");
+    const unconfiguredEnvFile = join(dir, "unconfigured-env.jsonl");
     const result = await runTurn(
       options({
         cwd: dir,
@@ -412,6 +432,7 @@ describe("runTurn", () => {
           CLIPROXY_API_KEY: "daemon-api",
           BASH_DEFAULT_TIMEOUT_MS: "900000",
           BASH_MAX_TIMEOUT_MS: "900000",
+          ARTIFACT_HOST_TOKEN: "daemon-artifact-host",
         },
         trustedEnv: {
           ENABLE_TOOL_SEARCH: "true",
@@ -421,6 +442,7 @@ describe("runTurn", () => {
           CLIPROXY_MANAGEMENT_KEY: "management-secret",
           PLANNER_WEBHOOK_SECRET: "webhook-secret",
           ARTIFACT_TOKEN: "artifact-secret",
+          ARTIFACT_HOST_TOKEN: "trusted-artifact-host",
           OAUTH_ACCESS_TOKEN: "oauth-secret",
         },
       }),
@@ -432,10 +454,26 @@ describe("runTurn", () => {
     expect(row.env.ENABLE_TOOL_SEARCH).toBe("true");
     expect(row.env.CLIPROXY_API_KEY).toBe("daemon-api");
     expect(row.env.BASH_DEFAULT_TIMEOUT_MS).toBe("900000");
+    expect(row.env.ARTIFACT_HOST_TOKEN).toBe("daemon-artifact-host");
     expect(row.env.CLIPROXY_MANAGEMENT_KEY).toBeUndefined();
     expect(row.env.PLANNER_WEBHOOK_SECRET).toBeUndefined();
     expect(row.env.ARTIFACT_TOKEN).toBeUndefined();
     expect(row.env.OAUTH_ACCESS_TOKEN).toBeUndefined();
+    const unconfiguredResult = await runTurn(
+      options({
+        cwd: dir,
+        env: { CLAUDE_FAKE_ENV_FILE: unconfiguredEnvFile },
+        trustedEnv: {
+          CLAUDE_FAKE_MODE: "happy",
+          ARTIFACT_HOST_TOKEN: "trusted-artifact-host",
+        },
+      }),
+    );
+    expect(unconfiguredResult.ok).toBe(true);
+    const unconfiguredRow = JSON.parse(
+      readFileSync(unconfiguredEnvFile, "utf8").trim(),
+    ) as { env: Record<string, string> };
+    expect(unconfiguredRow.env.ARTIFACT_HOST_TOKEN).toBeUndefined();
   });
   it("admits TRACEPARENT only from the per-call environment", async () => {
     const dir = cwd();

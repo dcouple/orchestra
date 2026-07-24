@@ -150,7 +150,8 @@ the cap was reached, or the user waived); `## Justification` written into
 
 ### 6. Mark ready and publish
 If the gate changed the item, regenerate the explainer first so the attached
-copy matches. Publish per `.references/publish-work-item.md` — title
+copy matches. Publish per `.references/publish-work-item.md`, using
+`.references/artifact-host-upload.md` for upload mechanics — title
 `feat: <title>` (feature) or `fix: <title>` (bug); body = the item's intent,
 end state or reproduction + root cause, verification criteria summary, and
 the Justification section. Bug exception: leave `status: draft` if the cause
