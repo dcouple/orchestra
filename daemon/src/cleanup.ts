@@ -12,8 +12,7 @@ import {
   type OtlpSpan,
 } from "./otel.js";
 import type { OtlpRelay } from "./otel-relay.js";
-import { readFile, readdir, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { inFlightDispatches } from "./dispatches.js";
 
 interface Logger {
   log(...args: unknown[]): void;
@@ -152,10 +151,16 @@ export class CleanupWorker {
     )
       return false;
     for (const session of sessions) {
-      const dispatchDeadline = await this.outstandingDispatchDeadline(
+      const dispatches = await inFlightDispatches(
         session.worktreePath,
         session.linearSessionId,
       );
+      const futureDeadlines = dispatches
+        .map((dispatch) => dispatch.deadlineAt)
+        .filter((deadline) => deadline > this.now());
+      const dispatchDeadline = futureDeadlines.length
+        ? Math.min(...futureDeadlines)
+        : undefined;
       if (dispatchDeadline !== undefined && dispatchDeadline > this.now())
         return false;
     }
@@ -226,51 +231,6 @@ export class CleanupWorker {
       }
     }
     return this.log.allSessionsFinalized(job.issueId);
-  }
-  private async outstandingDispatchDeadline(
-    worktree: string | null,
-    owner: string,
-  ): Promise<number | undefined> {
-    if (!worktree) return undefined;
-    const directory = resolve(worktree, ".codex-dispatches", owner);
-    let files: string[];
-    try {
-      files = await readdir(directory);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw error;
-    }
-    const now = this.now();
-    let earliestFuture: number | undefined;
-    for (const file of files.filter(
-      (name) => name.endsWith(".prompt") || name.endsWith(".sh"),
-    )) {
-      const base = file.replace(/\.(prompt|sh)$/, "");
-      if (files.includes(`${base}.done`)) continue;
-      let deadline: number | undefined;
-      try {
-        const sidecar = JSON.parse(
-          (await readFile(resolve(directory, `${base}.otel.json`)))
-            .subarray(0, 65536)
-            .toString("utf8"),
-        ) as { deadline_at?: unknown };
-        if (
-          typeof sidecar.deadline_at === "number" &&
-          Number.isFinite(sidecar.deadline_at)
-        )
-          deadline = sidecar.deadline_at;
-      } catch {}
-      if (deadline === undefined) {
-        const info = await stat(resolve(directory, file));
-        deadline = info.mtimeMs + 2_700_000;
-      }
-      if (deadline > now)
-        earliestFuture =
-          earliestFuture === undefined
-            ? deadline
-            : Math.min(earliestFuture, deadline);
-    }
-    return earliestFuture;
   }
   private async postNotification(note: CleanupNotificationRow): Promise<void> {
     const result = await this.gateway.postActivity(

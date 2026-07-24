@@ -112,6 +112,7 @@ function setup() {
     dbPath: join(dir, "events.db"),
     dispatchQuarantineDir: join(dir, "dispatch-quarantine"),
     dispatchQuarantineAgeMs: 86_400_000,
+    dispatchResumeGraceMs: 600_000,
     replayWindowMs: 60_000,
     linearGraphqlUrl: "http://unused",
     linearTokenUrl: "http://unused",
@@ -363,7 +364,7 @@ async function capturedTurnEnv(
     config,
     { pollMs: 10, reconcileMs: 20, ...(relay ? { relay } : {}) },
   );
-  worker.start();
+  await worker.start();
   await waitFor(() => log.turnStates()[0]?.status === "done");
   await worker.stop();
   await relay?.close();
@@ -420,7 +421,7 @@ describe("SessionWorker", () => {
     Object.assign(config, { browserEnabled: true, playwrightMcpBin: process.execPath, playwrightChromeBin: process.execPath,
       browserAttemptTimeoutMs: 5000, artifactsDir: join(dir, "artifacts") });
     appendImplementer(log, "browser", "browser-session");
-    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); worker.start();
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); await worker.start();
     await waitFor(() => ["done", "failed"].includes(log.turnStates()[0]?.status ?? ""));
     expect(log.turnStates()[0]?.status, JSON.stringify(logger.entries())).toBe("done");
     expect(log.getSession("browser-session")).toMatchObject({ browserRequired: 1, browserRunId: expect.any(String) });
@@ -441,7 +442,7 @@ describe("SessionWorker", () => {
     Object.assign(config, { browserEnabled: true, playwrightMcpBin: process.execPath, playwrightChromeBin: process.execPath,
       browserAttemptTimeoutMs: timeout, artifactsDir: join(dir, "artifacts") });
     appendImplementer(log, mode, `${mode}-session`); log.requireBrowser(`${mode}-session`, `${mode}-run`);
-    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     const row = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim()).env;
     expect(existsSync(row.ORCHESTRA_BROWSER_STATE_DIR)).toBe(false);
@@ -455,7 +456,7 @@ describe("SessionWorker", () => {
     Object.assign(config, { browserEnabled: true, playwrightMcpBin: process.execPath, playwrightChromeBin: process.execPath,
       browserAttemptTimeoutMs: 5000, artifactsDir: join(dir, "artifacts") });
     appendImplementer(log, "abort", "abort-session"); log.requireBrowser("abort-session", "abort-run");
-    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); worker.start();
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 }); await worker.start();
     await waitFor(() => existsSync(process.env.CLAUDE_FAKE_ENV_FILE!));
     const row = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim()).env;
     await worker.stop();
@@ -467,7 +468,7 @@ describe("SessionWorker", () => {
     const { dir, log, config } = setup(); const poster = new Poster();
     process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "drain-args.jsonl"); process.env.CLAUDE_FAKE_MODE = "hang";
     append(log, "running", "session-running", "created", "issue-running", "OPS-1");
-    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10 }); worker.start();
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10 }); await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "running");
     log.scheduleOperation({ id: "operation", requestDigest: "a".repeat(64), type: "restart", reason: "test drain" });
     append(log, "queued", "session-queued", "created", "issue-queued", "OPS-2"); worker.trigger();
@@ -476,7 +477,7 @@ describe("SessionWorker", () => {
     await worker.stop();
     log.cancelOperation("operation");
     process.env.CLAUDE_FAKE_MODE = "happy";
-    const resumed = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10 }); resumed.start();
+    const resumed = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10 }); await resumed.start();
     await waitFor(() => log.turnStates().find(turn => turn.issueId === "issue-queued")?.status === "done");
     await resumed.stop(); log.close();
   });
@@ -663,7 +664,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     await worker.stop();
     expect(log.getSession("fable-session")).toMatchObject({
@@ -710,7 +711,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[1]?.status === "done");
     await worker.stop();
     expect(log.getSession("established-fable")).toMatchObject({
@@ -732,7 +733,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[2]?.status === "failed");
     await worker.stop();
     expect(log.getSession("established-fable")?.profile).toBe("fable");
@@ -806,7 +807,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     await worker.stop();
     expect(log.getSession("session")).toMatchObject({
@@ -880,7 +881,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() =>
       log.turnStates().every((turn) => turn.status === "done"),
     );
@@ -932,7 +933,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() =>
       log.turnStates().every((turn) => turn.status === "done"),
     );
@@ -983,7 +984,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     await worker.stop();
     const row = JSON.parse(
@@ -1025,7 +1026,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     append(log, "capacity-fallback", "capacity-fallback", "created");
     worker.trigger();
@@ -1074,7 +1075,7 @@ describe("SessionWorker", () => {
         seeded.config,
         { pollMs: 10 },
       );
-      worker.start();
+      await worker.start();
       await waitFor(() => log.turnStates()[0]?.status === "done");
       expect(log.getSession("direct-session")).toMatchObject({
         profile: "sol",
@@ -1139,7 +1140,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     await worker.stop();
     expect(log.getSession("sol-session")?.profile).toBe("sol");
@@ -1183,7 +1184,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     await worker.stop();
     expect(log.getSession("not-ready-session")?.profile).toBe("sol");
@@ -1244,7 +1245,7 @@ describe("SessionWorker", () => {
         onInserted: () => worker.trigger(),
         logger: new CapturingLogger(),
       });
-      worker.start();
+      await worker.start();
       const address = await server.listen();
       const body = JSON.stringify({
         webhookTimestamp: Date.now(),
@@ -1310,7 +1311,7 @@ describe("SessionWorker", () => {
       seeded.config,
       { pollMs: 10, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     await worker.stop();
     expect(log.getSession("fable-session")).toMatchObject({
@@ -1397,7 +1398,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, relay },
     );
-    worker.start();
+    await worker.start();
     await waitFor(
       () => log.turnStates()[0]?.status === "done" && received.length === 1,
     );
@@ -1465,7 +1466,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, relay },
     );
-    worker.start();
+    await worker.start();
     await waitFor(
       () =>
         log.turnStates()[0]?.status === "running" &&
@@ -1527,7 +1528,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger, relay },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => terminalAttempted);
     try {
       expect(log.turnStates()[0]?.status).toBe("awaiting_activity");
@@ -1636,7 +1637,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     writeFileSync(
       config.cliproxyEnvFile,
@@ -1676,7 +1677,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     await worker.stop();
     expect(log.openTurnToolCalls(1)).toEqual([]);
@@ -1731,7 +1732,7 @@ describe("SessionWorker", () => {
         config,
         { pollMs: 10, reconcileMs: 20, logger },
       );
-      worker.start();
+      await worker.start();
       if (mode === "mcp-shutdown") {
         await waitFor(() =>
           logger.entries().some(
@@ -1777,7 +1778,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     await worker.stop();
     expect(
@@ -1813,7 +1814,7 @@ describe("SessionWorker", () => {
         config,
         { pollMs: 10, reconcileMs: 20, logger },
       );
-      worker.start();
+      await worker.start();
       await waitFor(
         () =>
           log.turnStates()[0]?.status === "failed" &&
@@ -1848,7 +1849,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     expect(turnUsage(config.dbPath)).toEqual({
       status: "done",
@@ -1886,7 +1887,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     expect(turnUsage(config.dbPath)).toEqual({
       status: "done",
@@ -1917,7 +1918,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     expect(turnUsage(config.dbPath)).toEqual({
       status: "failed",
@@ -1952,7 +1953,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     await worker.stop();
     process.env.CLAUDE_FAKE_MODE = "do-pr";
@@ -1963,7 +1964,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(
       () => log.turnStates()[1]?.status === "done" && poster.urls.length === 1,
     );
@@ -2015,7 +2016,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(
       () =>
         log.turnStates()[0]?.status === "failed" && poster.urls.length === 1,
@@ -2042,7 +2043,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     process.env.CLAUDE_FAKE_MODE = "happy";
     log.append({
@@ -2096,7 +2097,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     await worker.stop();
     const worktree = log.getSession(ownerOne)!.worktreePath!;
@@ -2151,7 +2152,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[1]?.status === "done");
     expect(log.turnStates()[1]).toMatchObject({
       linearSessionId: ownerOne,
@@ -2205,6 +2206,283 @@ describe("SessionWorker", () => {
         .filter((entry) => entry.event === "dispatch_marker_resume"),
     ).toHaveLength(1);
     await worker.stop();
+    log.close();
+  });
+  it("skips a traversal-shaped dispatch owner during startup recovery", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    const unsafeOwner = "../../escaped-owner";
+    const worktree = join(dir, "worktree", "nested");
+    const escapedDirectory = resolve(
+      worktree,
+      ".codex-dispatches",
+      unsafeOwner,
+    );
+    const base = "backend-verifier-1700000000-1234-unsafe";
+    mkdirSync(worktree, { recursive: true });
+    mkdirSync(escapedDirectory, { recursive: true });
+    writeFileSync(join(escapedDirectory, `${base}.prompt`), "verify\n");
+    writeFileSync(join(escapedDirectory, `${base}.sh`), "#!/bin/sh\n");
+    writeFileSync(
+      join(escapedDirectory, `${base}.otel.json`),
+      JSON.stringify({ deadline_at: 10_000 }),
+    );
+    appendImplementer(log, "unsafe-startup", unsafeOwner);
+    log.updateSessionWorktree(unsafeOwner, worktree, "unsafe-branch");
+    log.updateClaudeSessionId(unsafeOwner, "claude-unsafe");
+    const parent = log.claimNextTurn(1_000)!;
+    config.sessionConcurrency = 0;
+
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { logger, now: () => 2_000 },
+    );
+    await worker.start();
+
+    expect(log.turnStates()).toEqual([
+      expect.objectContaining({ id: parent.id, status: "interrupted" }),
+      expect.objectContaining({
+        linearSessionId: unsafeOwner,
+        status: "pending",
+        sourceKey: `restart-resume:${parent.id}`,
+      }),
+    ]);
+    expect(log.dispatchWaits(unsafeOwner)).toEqual([]);
+    expect(
+      logger.entries().filter(
+        (entry) =>
+          entry.event === "dispatch_scan_failed" &&
+          entry.phase === "startup" &&
+          entry.linearSessionId === unsafeOwner &&
+          entry.reason === "invalid dispatch owner",
+      ),
+    ).toHaveLength(1);
+    expect(logger.entries()).toContainEqual(
+      expect.objectContaining({
+        event: "restart_turn_disposition",
+        turnId: parent.id,
+        outcome: "resumed",
+        reason: "safe_boundary",
+      }),
+    );
+    await worker.stop();
+    log.close();
+  });
+  it("contains startup dispatch filesystem failures per session", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    const failingOwner = "a0000000-0000-0000-0000-000000000004";
+    const healthyWorktree = join(dir, "healthy-worktree");
+    const invalidWorktree = join(dir, "not-a-directory");
+    mkdirSync(healthyWorktree);
+    writeFileSync(invalidWorktree, "stale worktree path\n");
+
+    appendImplementer(log, "healthy-startup", ownerOne);
+    log.updateSessionWorktree(ownerOne, healthyWorktree, "healthy-branch");
+    log.updateClaudeSessionId(ownerOne, "claude-healthy");
+    const parent = log.claimNextTurn(1_000)!;
+    appendImplementer(
+      log,
+      "failing-startup",
+      failingOwner,
+      "issue-failing",
+      "ENG-404",
+    );
+    log.updateSessionWorktree(
+      failingOwner,
+      invalidWorktree,
+      "failing-branch",
+    );
+    config.sessionConcurrency = 0;
+
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { logger, now: () => 2_000 },
+    );
+    await worker.start();
+
+    expect(log.turnStates()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: parent.id, status: "interrupted" }),
+        expect.objectContaining({
+          linearSessionId: ownerOne,
+          status: "pending",
+          sourceKey: `restart-resume:${parent.id}`,
+        }),
+      ]),
+    );
+    expect(logger.entries()).toContainEqual(
+      expect.objectContaining({
+        event: "dispatch_scan_failed",
+        phase: "startup",
+        linearSessionId: failingOwner,
+        error: expect.stringContaining("ENOTDIR"),
+      }),
+    );
+    expect(logger.entries()).toContainEqual(
+      expect.objectContaining({
+        event: "restart_turn_disposition",
+        turnId: parent.id,
+        outcome: "resumed",
+      }),
+    );
+    await worker.stop();
+    log.close();
+  });
+  it("defers an interrupted parent for its in-flight dispatch, then resumes on its marker once", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    process.env.CLAUDE_FAKE_ARGS_FILE = join(dir, "args.jsonl");
+    process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "env.jsonl");
+    process.env.CLAUDE_FAKE_MODE = "do-pr";
+    appendImplementer(log, "seed", ownerOne);
+    const first = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20 },
+    );
+    await first.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    await first.stop();
+    const session = log.getSession(ownerOne)!;
+    log.append({
+      deliveryId: "interrupted-parent",
+      app: "implementer",
+      action: "prompted",
+      agentSessionId: ownerOne,
+      sourceActivityId: "interrupted-parent",
+      issueId: session.issueId ?? undefined,
+      issueIdentifier: session.issueIdentifier ?? undefined,
+      receivedAt: 900,
+      rawBody: Buffer.from(
+        JSON.stringify({ agentActivity: { body: "continue pipeline" } }),
+      ),
+    });
+    const parent = log.claimNextTurn(901)!;
+    log.setTurnTraceContext(parent.id, session.traceId, "e".repeat(16));
+    const base = "backend-verifier-1700000000-1234-30";
+    const directory = join(
+      session.worktreePath!,
+      ".codex-dispatches",
+      ownerOne,
+    );
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, `${base}.prompt`), "verify\n");
+    writeFileSync(join(directory, `${base}.sh`), "#!/bin/sh\n");
+    const sidecar = {
+      version: 1,
+      state: "running",
+      owner: ownerOne,
+      basename: base,
+      role: "backend-verifier",
+      started_at: 800,
+      deadline_at: 2_000,
+      trace_id: session.traceId,
+      turn_span_id: "e".repeat(16),
+      dispatch_span_id: "f".repeat(16),
+      mode: "fresh",
+    };
+    writeFileSync(
+      join(directory, `${base}.otel.json`),
+      JSON.stringify(sidecar),
+    );
+    process.env.CLAUDE_FAKE_MODE = "happy";
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20, now: () => 1_000 },
+    );
+    await worker.start();
+    expect(log.turnStates()).toHaveLength(2);
+    expect(log.turnStates()[1]).toMatchObject({
+      id: parent.id,
+      status: "interrupted",
+    });
+    expect(log.dispatchWaits(ownerOne)).toEqual([
+      expect.objectContaining({ turnId: parent.id, dispatchBase: base }),
+    ]);
+    writeFileSync(join(directory, `${base}.done`), "0\n");
+    writeFileSync(join(directory, `${base}.md`), "passed\n");
+    writeFileSync(
+      join(directory, `${base}.otel.json`),
+      JSON.stringify({
+        ...sidecar,
+        state: "terminal",
+        ended_at: 950,
+        exit_code: 0,
+      }),
+    );
+    await worker.ingestDispatches();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await worker.ingestDispatches();
+    await waitFor(() => log.turnStates().some((turn) => turn.id > parent.id));
+    expect(log.dispatchWaits(ownerOne)).toEqual([]);
+    await worker.ingestDispatches();
+    expect(
+      log.turnStates().filter((turn) =>
+        turn.sourceKey?.includes(`dispatch:${base}.done`),
+      ),
+    ).toHaveLength(1);
+    await waitFor(
+      () =>
+        log.turnStates().find((turn) => turn.id > parent.id)?.status ===
+        "done",
+    );
+    await worker.stop();
+    const fallbackEvent = log.append({
+      deliveryId: "deadline-parent",
+      app: "implementer",
+      action: "prompted",
+      agentSessionId: ownerOne,
+      sourceActivityId: "deadline-parent",
+      issueId: session.issueId ?? undefined,
+      issueIdentifier: session.issueIdentifier ?? undefined,
+      receivedAt: 1_200,
+      rawBody: Buffer.from(
+        JSON.stringify({ agentActivity: { body: "continue again" } }),
+      ),
+    });
+    expect(fallbackEvent.inserted).toBe(true);
+    const deadlineParent = log.claimNextTurn(1_201)!;
+    const fallbackBase = "backend-verifier-1700000000-1234-31";
+    writeFileSync(join(directory, `${fallbackBase}.prompt`), "verify\n");
+    writeFileSync(join(directory, `${fallbackBase}.sh`), "#!/bin/sh\n");
+    writeFileSync(
+      join(directory, `${fallbackBase}.otel.json`),
+      JSON.stringify({
+        ...sidecar,
+        basename: fallbackBase,
+        turn_span_id: log.turnSpanId(deadlineParent.id),
+      }),
+    );
+    const fallbackWorker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20, now: () => 700_000 },
+    );
+    await fallbackWorker.start();
+    await fallbackWorker.ingestDispatches();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fallbackWorker.ingestDispatches();
+    await waitFor(() =>
+      log
+        .turnStates()
+        .some(
+          (turn) =>
+            turn.sourceKey === `dispatch-deadline:${deadlineParent.id}`,
+        ),
+    );
+    expect(log.dispatchWaits(ownerOne)).toEqual([]);
+    await fallbackWorker.stop();
     log.close();
   });
   it("logs each degraded dispatch marker once across rescans and reason transitions", async () => {
@@ -2381,7 +2659,7 @@ describe("SessionWorker", () => {
       .mockReturnValueOnce(true);
 
     await worker.ingestDispatches();
-    expect(hasOpenTurn).toHaveBeenCalledTimes(4);
+    expect(hasOpenTurn).toHaveBeenCalledTimes(5);
     expect(
       readdirSync(fixture.directory).includes(`${basename}.done`),
     ).toBe(true);
@@ -2516,7 +2794,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, dispatchScanMs: 25 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(
       () =>
         log.turnStates()[0]?.status === "running" &&
@@ -2548,7 +2826,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(
       () =>
         log.turnStates().length === 2 &&
@@ -2585,7 +2863,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     log.updateSessionWorktree(
       ownerOne,
@@ -2615,7 +2893,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, dispatchScanMs: 25, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     const worktree = log.getSession(unsafeOwner)!.worktreePath!;
     mkdirSync(join(worktree, ".codex-dispatches", unsafeOwner), {
@@ -2680,7 +2958,7 @@ describe("SessionWorker", () => {
     );
     poster.isActive = () =>
       (worker as unknown as { active: Map<number, unknown> }).active.size > 0;
-    worker.start();
+    await worker.start();
     await waitFor(
       () =>
         log.turnStates()[0]?.status === "running" &&
@@ -2763,7 +3041,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     worker.stopSession(result.stop!.agentSessionId);
     await waitFor(() => log.stopAckStates()[0]?.status === "posted");
     expect(poster.posts.filter((post) => !post.ephemeral)).toHaveLength(1);
@@ -2792,7 +3070,7 @@ describe("SessionWorker", () => {
       first.config,
       { pollMs: 10, reconcileMs: 20, now: () => clock, logger: retryLogger },
     );
-    retryWorker.start();
+    await retryWorker.start();
     await waitFor(() => first.log.stopAckStates()[0]?.attempts === 1);
     expect(first.log.stopAckStates()[0]).toMatchObject({
       sourceActivityId: "retry-stop-activity",
@@ -2836,7 +3114,7 @@ describe("SessionWorker", () => {
       second.config,
       { pollMs: 10, reconcileMs: 20, now: () => expired, logger: failedLogger },
     );
-    failedWorker.start();
+    await failedWorker.start();
     await waitFor(() => second.log.stopAckStates()[0]?.status === "failed");
     expect(second.log.stopAckStates()[0]).toMatchObject({
       sourceActivityId: "failed-stop-activity",
@@ -2865,7 +3143,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "running");
     worker.stopSession("reject-session");
     await waitFor(() => log.turnStates()[0]?.status === "interrupted");
@@ -2915,7 +3193,7 @@ describe("SessionWorker", () => {
       { ...config, ntfyUrl },
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(
       () => log.turnStates()[0]?.status === "done" && received.length === 1,
     );
@@ -2939,7 +3217,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     append(log, "d2", "linear-session", "prompted");
     worker.trigger();
@@ -3002,7 +3280,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     const terminal = poster.posts.findIndex((post) => !post.ephemeral);
     const before = poster.posts.slice(0, terminal);
@@ -3026,7 +3304,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     expect(
       poster.posts.some(
@@ -3055,7 +3333,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() =>
       log.turnStates().every((turn) => turn.status === "done"),
     );
@@ -3116,7 +3394,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() =>
       log.turnStates().every((turn) => turn.status === "done"),
     );
@@ -3154,7 +3432,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, now: () => 1200 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     expect(poster.posts.find((post) => !post.ephemeral)).toMatchObject({
       content: { type: "response", body: "real persisted response" },
@@ -3200,7 +3478,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger, now: () => clock },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() =>
       logger
         .entries()
@@ -3249,7 +3527,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() =>
       logger
         .entries()
@@ -3317,7 +3595,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger, now: () => clock },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() =>
       logger
         .entries()
@@ -3358,7 +3636,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done", 6000);
     expect(
       logger
@@ -3401,7 +3679,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     expect(
       logger
@@ -3429,7 +3707,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     expect(
       logger
@@ -3458,7 +3736,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     expect(
       logger.entries().find((entry) => entry.event === "session_turn_failed"),
@@ -3487,7 +3765,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     const postsAfterFailure = poster.posts.length;
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -3563,7 +3841,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, attachmentTestAllowHttp: true },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     const worktree = log.getSession("session")!.worktreePath!;
     expect(readdirSync(join(worktree, ".linear-attachments"))).toHaveLength(1);
@@ -3629,7 +3907,7 @@ describe("SessionWorker", () => {
         attachmentTimeoutMs: 50,
       },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     expect(log.turnStates()[0]?.prompt).toContain(
       "stall.txt: failed (attachment timed out)",
@@ -3650,7 +3928,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    first.start();
+    await first.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     await first.stop();
     log.close();
@@ -3662,7 +3940,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    second.start();
+    await second.start();
     await waitFor(() => reopened.turnStates()[1]?.status === "done");
     const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8")
       .trim()
@@ -3691,7 +3969,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    first.start();
+    await first.start();
     await waitFor(
       () =>
         log.turnStates()[0]?.status === "running" &&
@@ -3709,7 +3987,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    second.start();
+    await second.start();
     await waitFor(
       () =>
         log.turnStates().length === 2 &&
@@ -3729,7 +4007,7 @@ describe("SessionWorker", () => {
     await second.stop();
     log.close();
   });
-  it("requires human review after shutdown with an unresolved tool call", async () => {
+  it("auto-resumes after shutdown with an unresolved tool call", async () => {
     const { log, config } = setup();
     const poster = new Poster();
     const logger = new CapturingLogger();
@@ -3741,7 +4019,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    first.start();
+    await first.start();
     await waitFor(
       () =>
         log.turnStates()[0]?.status === "running" &&
@@ -3759,17 +4037,10 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    second.start();
-    await waitFor(
-      () =>
-        log.turnStates()[0]?.status === "interrupted" &&
-        poster.posts.some(
-          (post) =>
-            !post.ephemeral &&
-            activityBody(post.content)?.includes("external tool call"),
-        ),
-    );
-    expect(log.turnStates()).toHaveLength(1);
+    await second.start();
+    await waitFor(() => log.turnStates()[0]?.status === "interrupted");
+    await waitFor(() => log.turnStates().some((turn) => turn.id === 2));
+    expect(log.turnStates()).toHaveLength(2);
     expect(
       logger.entries().filter(
         (entry) =>
@@ -3973,7 +4244,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "done");
     expect(log.getSession("session")?.claudeSessionId).toBe("claude-session-2");
     process.env.CLAUDE_FAKE_MODE = "happy";
@@ -4015,7 +4286,7 @@ describe("SessionWorker", () => {
         config,
         { pollMs: 10, reconcileMs: 20, logger },
       );
-      worker.start();
+      await worker.start();
       await waitFor(() => log.turnStates()[0]?.status === "failed");
       await worker.stop();
       const starts = readFileSync(process.env.CLAUDE_FAKE_ARGS_FILE, "utf8")
@@ -4067,7 +4338,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => {
       if (
         log.turnStates()[0]?.status !== "running" ||
@@ -4135,7 +4406,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20, logger },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     await worker.stop();
     expect(readdirSync(dir)).not.toContain("args.jsonl");
@@ -4178,7 +4449,7 @@ describe("SessionWorker", () => {
       config,
       { pollMs: 10, reconcileMs: 20 },
     );
-    worker.start();
+    await worker.start();
     await waitFor(() => log.turnStates()[0]?.status === "failed");
     expect(log.getSession("session")).toMatchObject({
       profile: "fable",

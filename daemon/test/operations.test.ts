@@ -1,4 +1,5 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
@@ -139,7 +140,7 @@ describe("durable maintenance operations", () => {
     log = new EventLog(db);
     expect(log.recoverStaleRunning(1100)).toEqual([
       expect.objectContaining({
-        outcome: "human_required",
+        outcome: "resumed",
         reason: "unresolved_tool_call",
       }),
     ]);
@@ -156,13 +157,13 @@ describe("durable maintenance operations", () => {
     expect(duplicate).toMatchObject({ deduplicated: true, operation: { id: "op-1" } });
     expect(() => log.scheduleOperation({ id: "op-3", requestDigest: "c".repeat(64), type: "config", reason: "conflict" })).toThrow(/active operation/);
     expect(log.claimOperation("op-1", "wrong")).toBeUndefined();
-    expect(log.claimOperation("op-1", "a".repeat(64))).toMatchObject({ state: "draining", attempts: 1 });
+    expect(log.claimOperation("op-1", "a".repeat(64))).toMatchObject({ state: "executing", stage: "apply", attempts: 1 });
     log.transitionOperation("op-1", "succeeded", "accepted", { mutated: true, outcome: "healthy" });
     expect(log.claimNextTurn()).toMatchObject({ issueId: "issue-one", status: "running" });
     log.close();
   });
 
-  it("keeps blocked and unverified mutated failures drained", () => {
+  it("keeps blocked and unverified mutated failures gated", () => {
     const { db } = fixture(); const log = new EventLog(db);
     appendTurn(log, "one", "OPS-1");
     log.scheduleOperation({ id: "op-1", requestDigest: "a".repeat(64), type: "config", reason: "change" });
@@ -171,7 +172,51 @@ describe("durable maintenance operations", () => {
     log.transitionOperation("op-1", "blocked", "health", { errorStage: "health" });
     expect(log.claimNextTurn()).toBeUndefined();
     expect(log.claimOperation("op-1", "a".repeat(64))).toBeUndefined();
-    expect(log.operationStatus().pending).toMatchObject({ drainState: "blocked", recoveryCommand: "daemonctl operation retry op-1" });
+    expect(log.operationStatus().pending).toMatchObject({ state: "blocked", recoveryCommand: "daemonctl operation retry op-1" });
+    log.close();
+  });
+
+  it("parks coherent failures terminally, retries them, and keeps incoherent failures gated", () => {
+    const { db } = fixture();
+    const log = new EventLog(db);
+    appendTurn(log, "queued", "OPS-QUEUED");
+    log.scheduleOperation({
+      id: "coherent",
+      requestDigest: "a".repeat(64),
+      type: "update",
+      reason: "release",
+    });
+    log.claimOperation("coherent", "a".repeat(64));
+    expect(
+      log.parkOperationFailure(
+        "coherent",
+        "worktree_prepare",
+        "disk full",
+        "worktree_prepare",
+      ),
+    ).toMatchObject({ state: "failed" });
+    expect(log.operationStatus().lastOutcome).toMatchObject({
+      state: "failed",
+      recoveryCommand: "daemonctl operation retry coherent",
+    });
+    expect(log.claimNextTurn()).toMatchObject({ issueId: "issue-queued" });
+    expect(log.retryOperation("coherent")).toMatchObject({
+      state: "pending",
+      stage: null,
+      errorStage: null,
+    });
+    log.transitionOperation("coherent", "executing", "provision", {
+      mutated: true,
+    });
+    expect(
+      log.parkOperationFailure(
+        "coherent",
+        "rollback_acceptance",
+        "rollback failed",
+        "rollback_acceptance",
+      ),
+    ).toMatchObject({ state: "blocked" });
+    expect(log.claimNextTurn()).toBeUndefined();
     log.close();
   });
 
@@ -289,12 +334,37 @@ describe("privileged request/executor boundary", () => {
     expect(readNumber(f.restartCount)).toBe(1); expect(readdirSync(f.requests).filter(name => name.endsWith(".done"))).toHaveLength(1);
   });
 
-  it("waits for the last running turn, keeps queued work gated, then releases only after acceptance", () => {
+  it("restores a failed request file before retrying the parked operation", () => {
+    const f = opsFixture();
+    const id = "retry-file";
+    const request = JSON.stringify({ id, type: "restart", version: 1 });
+    const failed = join(f.requests, `${id}.failed`);
+    writeFileSync(failed, request);
+    chmodSync(failed, 0o600);
+    const digest = createHash("sha256").update(request).digest("hex");
+    const log = new EventLog(f.db);
+    log.scheduleOperation({
+      id,
+      requestDigest: digest,
+      type: "restart",
+      reason: "retry",
+    });
+    log.transitionOperation(id, "failed", "preflight", {
+      errorStage: "preflight",
+    });
+    log.close();
+    const result = f.run(["operation", "retry", id]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(join(f.requests, `${id}.done`))).toBe(true);
+    expect(existsSync(failed)).toBe(false);
+    expect(readNumber(f.restartCount)).toBe(1);
+  });
+
+  it("executes immediately with a running turn and releases queued work after acceptance", () => {
     const f = opsFixture(); let log = new EventLog(f.db); appendTurn(log, "running", "OPS-1"); const running = log.claimNextTurn()!;
     appendTurn(log, "queued", "OPS-2"); log.close();
-    expect(f.run(["restart"]).status).toBe(0); expect(readNumber(f.restartCount)).toBe(0);
-    log = new EventLog(f.db); expect(log.claimNextTurn()).toBeUndefined(); log.finishTurn(running.id, "response", "done"); log.close();
-    expect(f.run(["internal-execute"]).status).toBe(0); expect(readNumber(f.restartCount)).toBe(1);
+    expect(f.run(["restart"]).status).toBe(0); expect(readNumber(f.restartCount)).toBe(1);
+    log = new EventLog(f.db); log.finishTurn(running.id, "response", "done"); log.close();
     log = new EventLog(f.db); expect(log.claimNextTurn()).toMatchObject({ issueId: "issue-queued" }); log.close();
   });
 
@@ -303,14 +373,14 @@ describe("privileged request/executor boundary", () => {
     expect(f.run(["restart"], { DAEMONCTL_NO_ACTIVATE: "1" }).status).toBe(0);
     expect(f.run(["internal-execute"]).status).not.toBe(0);
     let log = new EventLog(f.db); appendTurn(log, "held", "OPS-3"); expect(log.claimNextTurn()).toBeUndefined();
-    expect(log.operationStatus().pending).toMatchObject({ drainState: "blocked", stage: "health" }); log.close();
+    expect(log.operationStatus().pending).toMatchObject({ state: "blocked", stage: "health" }); log.close();
     // A restart has no rollback path, so failed health remains blocked and a path re-trigger cannot execute it.
     expect(f.run(["internal-execute"]).status).not.toBe(0); expect(readNumber(f.restartCount)).toBe(1);
 
     const g = opsFixture(); expect(g.run(["config", "--planner", "claudex", "--implementer", "claudex"],
       { DAEMONCTL_NO_ACTIVATE: "1" }).status).toBe(0);
     for (let i = 0; i < 4; i++) g.run(["internal-execute"], { DAEMONCTL_FAULT_AFTER: "replace_environment", DAEMONCTL_MAX_ATTEMPTS: "3" });
-    log = new EventLog(g.db); expect(log.operationStatus().pending).toMatchObject({ drainState: "blocked", stage: "retry_budget_exhausted" }); log.close();
+    log = new EventLog(g.db); expect(log.operationStatus().pending).toMatchObject({ state: "blocked", stage: "retry_budget_exhausted" }); log.close();
     expect(readNumber(g.restartCount)).toBe(0);
   }, 10_000);
 });

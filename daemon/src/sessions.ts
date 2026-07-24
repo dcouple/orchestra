@@ -14,6 +14,11 @@ import {
 } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { AppName, Config } from "./config.js";
+import {
+  completedDispatchesAwaitingIngest,
+  DISPATCH_OWNER_PATTERN,
+  inFlightDispatches,
+} from "./dispatches.js";
 import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
 import {
   BROWSER_RELAUNCH_SENTINEL,
@@ -232,8 +237,6 @@ export class ProviderReadinessPoller {
   }
 }
 
-const DISPATCH_OWNER_PATTERN = /^[0-9a-fA-F][0-9a-fA-F-]{7,63}$/;
-
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -352,9 +355,53 @@ export class SessionWorker {
       config.targetRepoPath!,
     );
   }
-  start(): void {
+  async start(): Promise<void> {
     this.stopped = false;
-    for (const disposition of this.log.recoverStaleRunning(this.now()))
+    const inflight = new Map<string, Awaited<ReturnType<typeof inFlightDispatches>>>();
+    await Promise.all(
+      this.log.sessionsWithWorktrees().map(async (session) => {
+        if (!DISPATCH_OWNER_PATTERN.test(session.linearSessionId)) {
+          this.logger.error(
+            jsonLog({
+              event: "dispatch_scan_failed",
+              phase: "startup",
+              linearSessionId: session.linearSessionId,
+              reason: "invalid dispatch owner",
+            }),
+          );
+          return;
+        }
+        try {
+          const dispatches = [
+            ...(await inFlightDispatches(
+              session.worktreePath,
+              session.linearSessionId,
+            )),
+            ...(await completedDispatchesAwaitingIngest(
+              session.worktreePath,
+              session.linearSessionId,
+            )).filter(
+              (dispatch) =>
+                !this.log.hasCodexInvocation(
+                  `dispatch:${session.linearSessionId}:${dispatch.base}.done`,
+                ),
+            ),
+          ];
+          if (dispatches.length)
+            inflight.set(session.linearSessionId, dispatches);
+        } catch (error) {
+          this.logger.error(
+            jsonLog({
+              event: "dispatch_scan_failed",
+              phase: "startup",
+              linearSessionId: session.linearSessionId,
+              error: String(error),
+            }),
+          );
+        }
+      }),
+    );
+    for (const disposition of this.log.recoverStaleRunning(this.now(), inflight))
       this.logger.log(
         jsonLog({
           event: "restart_turn_disposition",
@@ -1551,6 +1598,10 @@ export class SessionWorker {
                 ),
               },
               this.now(),
+              {
+                linearSessionId: session.linearSessionId,
+                dispatchBase: base,
+              },
             ).append;
             if (result.inserted) {
               this.logger.log(
@@ -1561,6 +1612,44 @@ export class SessionWorker {
                 }),
               );
               void this.drain();
+            }
+          }
+          if (this.log.hasOpenTurn(session.linearSessionId)) continue;
+          const waits = this.log.dispatchWaits(session.linearSessionId);
+          const waitsByTurn = new Map<number, typeof waits>();
+          for (const wait of waits) {
+            const rows = waitsByTurn.get(wait.turnId) ?? [];
+            rows.push(wait);
+            waitsByTurn.set(wait.turnId, rows);
+          }
+          for (const [turnId, rows] of waitsByTurn) {
+            if (
+              rows.some((wait) =>
+                currentMarkers.has(`${wait.dispatchBase}.done`),
+              )
+            )
+              continue;
+            if (
+              rows.every(
+                (wait) =>
+                  this.now() >
+                  wait.deadlineAt + this.config.dispatchResumeGraceMs,
+              )
+            ) {
+              const resumeTurnId = this.log.enqueueDispatchDeadlineResume(
+                turnId,
+                this.now(),
+              );
+              this.logger.log(
+                jsonLog({
+                  event: "dispatch_deadline_resume",
+                  linearSessionId: session.linearSessionId,
+                  turnId,
+                  resumeTurnId,
+                }),
+              );
+              void this.drain();
+              break;
             }
           }
         } catch (error) {

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { CleanupWorker } from "../src/cleanup.js";
+import { inFlightDispatches } from "../src/dispatches.js";
 import { EventLog } from "../src/eventlog.js";
 import type { LinearGateway, PostResult } from "../src/linear.js";
 import { WorktreeManager } from "../src/worktrees.js";
@@ -547,6 +548,11 @@ describe("CleanupWorker", () => {
     complete(s.log);
 
     let now = 16 * 60_000;
+    expect(await inFlightDispatches(s.tree.path, "session")).toEqual([
+      { base: "active", deadlineAt: 45 * 60_000 },
+      { base: "expired", deadlineAt: 15 * 60_000 },
+    ]);
+    expect(s.log.sessionsForIssue("issue")[0]?.worktreePath).toBe(s.tree.path);
     const worker = new CleanupWorker(
       s.log,
       new Poster() as unknown as LinearGateway,
