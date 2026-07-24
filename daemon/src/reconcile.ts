@@ -11,7 +11,7 @@ export interface ReconcileWorkerOptions {
 }
 
 type ReconcileGateway = Pick<LinearGateway,
-  "ensureWebhookEnabled" | "listAgentSessions" | "listDelegatedIssueAgentSessions" | "listSessionActivitiesSince">;
+  "listAgentSessions" | "listDelegatedIssueAgentSessions" | "listSessionActivitiesSince">;
 
 const APPS: AppName[] = ["planner", "implementer"];
 
@@ -46,21 +46,8 @@ export class ReconcileWorker {
   }
 
   private async sweep(): Promise<void> {
-    await this.ensureWebhooks();
     await this.reconcileCreatedSessions();
     await this.reconcilePlannerPrompts();
-  }
-
-  private async ensureWebhooks(): Promise<void> {
-    await Promise.all(APPS.map(async app => {
-      const url = `${this.config.webhookBaseUrl}/webhook/${app}`;
-      try {
-        const result = await this.gateway.ensureWebhookEnabled(app, url, this.now() + this.config.reconcileRequestTimeoutMs);
-        this.logger.log(JSON.stringify({ event: "reconcile_webhook", app, matched: result.matched, updated: result.updated }));
-      } catch (error) {
-        this.logger.error(JSON.stringify({ level: "error", event: "reconcile_webhook_failed", app, error: messageOf(error) }));
-      }
-    }));
   }
 
   private async reconcileCreatedSessions(): Promise<void> {

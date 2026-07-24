@@ -35,7 +35,6 @@ export interface AgentPromptActivity {
   createdAt: number;
   signal?: string;
 }
-export interface WebhookEnsureResult { matched: boolean; updated: boolean; }
 interface Logger { warn(...args: unknown[]): void; }
 
 interface TokenResponse { access_token?: unknown; expires_in?: unknown; error?: unknown; error_description?: unknown; }
@@ -183,17 +182,7 @@ export class LinearGateway {
   }
 
   private async fetchAppToken(app: AppName, config: AppConfig, deadlineAt: number): Promise<string> {
-    try {
-      return await this.fetchAppTokenWithScope(app, config, deadlineAt, "read,write,app:assignable,app:mentionable,admin");
-    } catch (error) {
-      // Linear rejects `admin` for some client-credentials apps; without it the
-      // startup webhook re-enable is unavailable but everything else works.
-      if (error instanceof OAuthTokenError && error.status === 400 && /invalid scope/i.test(error.message)) {
-        this.logger.warn(JSON.stringify({ level: "warn", event: "oauth_admin_scope_rejected", app }));
-        return await this.fetchAppTokenWithScope(app, config, deadlineAt, "read,write,app:assignable,app:mentionable");
-      }
-      throw error;
-    }
+    return this.fetchAppTokenWithScope(app, config, deadlineAt, "read,write,app:assignable,app:mentionable");
   }
 
   private async fetchAppTokenWithScope(app: AppName, config: AppConfig, deadlineAt: number, scope: string): Promise<string> {
@@ -396,25 +385,6 @@ export class LinearGateway {
       } while (after);
       activities.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
       return activities;
-    });
-  }
-
-  async ensureWebhookEnabled(app: AppName, webhookUrl: string, deadlineAt = this.now() + 10_000): Promise<WebhookEnsureResult> {
-    return this.withLinearClient(app, deadlineAt, "Linear webhooks request", async client => {
-      const target = webhookUrl.replace(/\/+$/, "");
-      let after: string | undefined;
-      do {
-        const connection = await client.webhooks({ first: 100, ...(after ? { after } : {}) });
-        for (const webhook of connection.nodes) {
-          if (webhook.url?.replace(/\/+$/, "") !== target) continue;
-          if (webhook.enabled) return { matched: true, updated: false };
-          const payload = await client.updateWebhook(webhook.id, { enabled: true });
-          if (!payload.success) throw new Error(`webhook update returned success:false for ${webhook.id}`);
-          return { matched: true, updated: true };
-        }
-        after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? undefined : undefined;
-      } while (after);
-      return { matched: false, updated: false };
     });
   }
 

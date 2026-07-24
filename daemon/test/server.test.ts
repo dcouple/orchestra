@@ -95,7 +95,7 @@ describe("webhook HTTP integration", () => {
     const log = new EventLog(dbPath, () => ({ profile: "fable", runtime: "claude", reason: "claude_ready" }));
     config.apps.planner.appActorId = "planner-actor"; config.apps.implementer.appActorId = "implementer-actor";
     config.reconcileRequestTimeoutMs = 1000; config.webhookBaseUrl = "http://daemon";
-    const gateway = { ensureWebhookEnabled: async () => ({ matched: true, updated: false }),
+    const gateway = {
       listAgentSessions: async (app: string) => app === "planner" ? [{ id: "reconciled", app: "planner", issueId: "issue", issueIdentifier: "ENG-1" }] : [],
       listDelegatedIssueAgentSessions: async () => [], listSessionActivitiesSince: async () => [] };
     const logger = { log: vi.fn(), error: vi.fn() };

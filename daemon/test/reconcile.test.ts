@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
-import type { AgentPromptActivity, AgentSessionSummary, LinearGateway, WebhookEnsureResult } from "../src/linear.js";
+import type { AgentPromptActivity, AgentSessionSummary, LinearGateway } from "../src/linear.js";
 import { ReconcileWorker } from "../src/reconcile.js";
 
 const dirs: string[] = [];
@@ -32,16 +32,10 @@ function config(overrides: Partial<Config> = {}): Config {
 class FakeGateway {
   sessions: Record<string, AgentSessionSummary[]> = { planner: [], implementer: [] };
   activities = new Map<string, AgentPromptActivity[]>();
-  ensureResults: WebhookEnsureResult[] = [];
-  ensureCalls: Array<{ app: string; url: string }> = [];
   activityCalls: Array<{ app: string; session: string; since: number | null }> = [];
   sessionCalls: Array<{ app: string; appActorId?: string }> = [];
   sessionGate: Promise<void> | undefined;
 
-  async ensureWebhookEnabled(app: string, url: string): Promise<WebhookEnsureResult> {
-    this.ensureCalls.push({ app, url });
-    return this.ensureResults.shift() ?? { matched: true, updated: false };
-  }
   async listAgentSessions(app: "planner" | "implementer", appActorId?: string): Promise<AgentSessionSummary[]> {
     this.sessionCalls.push({ app, ...(appActorId ? { appActorId } : {}) });
     if (this.sessionGate) await this.sessionGate;
@@ -213,22 +207,24 @@ describe("ReconcileWorker", () => {
     log.close();
   });
 
-  it("AC3: checks both app webhooks even when sessions are disabled", async () => {
+  it("AC1: emits no reconcile_webhook events across a full sweep", async () => {
     const log = new EventLog(path());
     const gateway = new FakeGateway();
-    gateway.ensureResults = [{ matched: true, updated: true }, { matched: true, updated: false }];
+    const logger = { log: vi.fn(), error: vi.fn() };
     const worker = new ReconcileWorker(log, gateway as unknown as LinearGateway, config({ sessionsEnabled: false }),
-      { logger: { log: vi.fn(), error: vi.fn() }, now: () => 1_000 });
+      { logger, now: () => 1_000 });
     await worker.trigger();
-    expect(gateway.ensureCalls).toEqual([
-      { app: "planner", url: "https://agent.example.com/webhook/planner" },
-      { app: "implementer", url: "https://agent.example.com/webhook/implementer" },
+    expect(gateway.sessionCalls).toEqual([
+      { app: "planner", appActorId: "planner-actor" },
+      { app: "implementer", appActorId: "implementer-actor" },
     ]);
+    expect([...logger.log.mock.calls, ...logger.error.mock.calls]
+      .map(call => String(call[0]))).not.toEqual(expect.arrayContaining([expect.stringContaining("reconcile_webhook")]));
     await worker.stop();
     log.close();
   });
 
-  it("skips session synthesis without app actor ids while still checking webhooks", async () => {
+  it("skips session synthesis without app actor ids", async () => {
     const log = new EventLog(path());
     const gateway = new FakeGateway();
     const logger = { log: vi.fn(), error: vi.fn() };
@@ -240,10 +236,6 @@ describe("ReconcileWorker", () => {
       },
     }), { logger, now: () => 1_000 });
     await worker.trigger();
-    expect(gateway.ensureCalls).toEqual([
-      { app: "planner", url: "https://agent.example.com/webhook/planner" },
-      { app: "implementer", url: "https://agent.example.com/webhook/implementer" },
-    ]);
     expect(gateway.sessionCalls).toEqual([]);
     expect(logger.error.mock.calls.map(call => String(call[0]))).toEqual([
       expect.stringContaining("reconcile_sessions_skipped_missing_app_actor_id"),
