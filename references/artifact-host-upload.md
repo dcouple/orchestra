@@ -62,7 +62,8 @@ curl --fail-with-body --retry 1 \
 ```
 
 The response supplies the server-generated id and stable viewer `url`. Keep
-that URL as the bundle identifier. To atomically replace the bundle, rebuild
+that URL as the bundle identifier — store it in `ARTIFACT_BUNDLE_URL` for the
+commands below. To atomically replace the bundle, rebuild
 the complete manifest and send the same request with `-X PUT` to the viewer
 URL with its trailing slash removed:
 
