@@ -78,7 +78,8 @@ the cap was reached, or the user waived); `## Justification` written into
 
 ### 6. Mark ready and publish
 If the gate changed the item, regenerate the explainer first so the attached
-copy matches. Publish per `.references/publish-work-item.md` — title
+copy matches. Publish per `.references/publish-work-item.md`, using
+`.references/artifact-host-upload.md` for upload mechanics — title
 `feat: <epic title>`, body = the epic's problem, end state, the
 phases table, and the Justification section.
 

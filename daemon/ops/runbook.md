@@ -936,6 +936,7 @@ artifact path. Do not run the emulator smoke from an automated implementation ag
 | CLIProxyAPI Claude OAuth pool | 2 / `linear-daemon` | provider-reported files under `~/.cli-proxy-api/`, `0600` | Both founders' Claude subscriptions, subject to viability probe | Revoke Anthropic authorization, rerun `proxy-accounts.sh add claude` |
 | CLIProxyAPI local API + management keys | 2 / root + `linear-daemon` group | `/etc/linear-agent-daemon/cliproxyapi.env` and generated `.yaml`, `0640` | Loopback proxy and loopback management API only | Stop services, replace both env values, rerun provisioner, restart |
 | `LINEAR_API_KEY` for spawned sessions | 2 / `linear-daemon` | env, `0600` | Scoped bot access | Revoke in Linear, replace env |
+| `ARTIFACT_TOKEN` | 2 / `linear-daemon` | env, `0600` | Artifact-host writes; exposed to spawned sessions as `ARTIFACT_HOST_TOKEN` | Replace env, restart |
 | Langfuse OTLP authorization header | 2 / `linear-daemon` | env, `0600` | One Langfuse Cloud project | Rotate project keys, replace env, restart |
 
 Install founder subscription OAuth only through the documented interactive proxy flow; never

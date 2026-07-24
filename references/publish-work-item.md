@@ -47,37 +47,10 @@ procedure, including GitHub marker comments, exactly as described under
 **Without `artifact_host`** below.
 
 Build the manifest from `item.md`, any present `plan.md` and `wrapup.md`, and
-every regular file under `refs/`. This dependency-free Node snippet writes the
-wire format to stdout (set `ITEM_DIR` to the work-item directory):
-
-```bash
-node --input-type=module - "$ITEM_DIR" <<'NODE'
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
-const root = process.argv[2];
-const files = [];
-const add = path => files.push({ path: relative(root, path).split("\\").join("/"), contentBase64: readFileSync(path).toString("base64") });
-for (const name of ["item.md", "plan.md", "wrapup.md"]) {
-  const path = join(root, name); try { if (statSync(path).isFile()) add(path); } catch {}
-}
-const walk = dir => { for (const entry of readdirSync(dir, { withFileTypes: true })) {
-  const path = join(dir, entry.name); if (entry.isDirectory()) walk(path); else if (entry.isFile()) add(path);
-}};
-try { walk(join(root, "refs")); } catch {}
-process.stdout.write(JSON.stringify({ files }));
-NODE
-```
-
-Redirect the snippet's stdout to a file from `mktemp`, then create the bundle
-with (remove the temporary file afterward):
-
-```bash
-curl --fail-with-body --retry 1 \
-  -H "Authorization: Bearer $ARTIFACT_HOST_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data-binary "@$MANIFEST_FILE" \
-  "$ARTIFACT_HOST/a"
-```
+every regular file under `refs/`. Follow
+`.references/artifact-host-upload.md` for host and token resolution, manifest
+construction, authenticated `POST`/`PUT` requests, read URLs, cleanup, and
+the retry-once rule.
 
 ### With `artifact_host`
 

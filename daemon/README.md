@@ -103,6 +103,9 @@ under `/var/lib/linear-agent-daemon`, outside the deployed application tree, so 
 survives provision and deploy reruns. It is not backed up yet; loss of the VM disk loses
 stored bundles.
 
+Configuring `ARTIFACT_TOKEN` also exposes the same value as `ARTIFACT_HOST_TOKEN` to every
+spawned session, activating the artifact-host publish branch.
+
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
 `PLANNER_HARNESS` and `IMPLEMENTER_HARNESS` (independent `claude | claudex`
