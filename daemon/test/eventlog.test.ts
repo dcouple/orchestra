@@ -531,7 +531,7 @@ describe("EventLog", () => {
     log.close();
   });
 
-  it("requires human review exactly once at an unresolved external-tool boundary", () => {
+  it("auto-resumes exactly once at an unresolved external-tool boundary", () => {
     const log = new EventLog(path());
     log.append(event());
     log.updateClaudeSessionId("session-1", "claude-1", 1001);
@@ -550,23 +550,93 @@ describe("EventLog", () => {
     expect(log.recoverStaleRunning(1200)).toEqual([
       {
         turnId: 1,
-        outcome: "human_required",
+        outcome: "resumed",
         reason: "unresolved_tool_call",
+        resumeTurnId: 2,
+      },
+    ]);
+    expect(log.pendingTurnActivities(1200)).toEqual([]);
+    expect(log.turnStates()).toEqual([
+      expect.objectContaining({
+        id: 1,
+        status: "interrupted",
+      }),
+      expect.objectContaining({
+        id: 2,
+        status: "pending",
+      }),
+    ]);
+    expect(log.recoverStaleRunning(1201)).toEqual([]);
+    expect(log.turnStates()).toHaveLength(2);
+    const resume = log.claimNextTurn(1202)!;
+    expect(resume.rawBody.toString("utf8")).toContain(
+      "verify its external effects before re-running",
+    );
+    log.close();
+  });
+
+  it("defers restart recovery for exact in-flight dispatches and resumes once at deadline", () => {
+    const log = new EventLog(path());
+    log.append(event());
+    log.updateClaudeSessionId("session-1", "claude-1", 1001);
+    log.claimNextTurn(1100);
+    expect(
+      log.recoverStaleRunning(
+        1200,
+        new Map([
+          [
+            "session-1",
+            [
+              { base: "implementer-1", deadlineAt: 2000 },
+              { base: "verifier-1", deadlineAt: 2100 },
+            ],
+          ],
+        ]),
+      ),
+    ).toEqual([
+      {
+        turnId: 1,
+        outcome: "awaiting_dispatch",
+        reason: "dispatch_in_flight",
         resumeTurnId: null,
       },
     ]);
-    expect(log.pendingTurnActivities(1200)).toEqual([
-      expect.objectContaining({
-        turnId: 1,
-        activityId: expect.stringMatching(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-        ),
-        kind: "error",
-      }),
-    ]);
+    expect(log.dispatchWaits("session-1")).toHaveLength(2);
     expect(log.turnStates()).toHaveLength(1);
-    expect(log.recoverStaleRunning(1201)).toEqual([]);
-    expect(log.pendingTurnActivities(1201)).toHaveLength(1);
+    expect(log.enqueueDispatchDeadlineResume(1, 3000)).toBe(2);
+    expect(log.dispatchWaits("session-1")).toEqual([]);
+    expect(log.turnStates()).toContainEqual(
+      expect.objectContaining({
+        id: 2,
+        sourceKey: "dispatch-deadline:1",
+        status: "pending",
+      }),
+    );
+    log.close();
+  });
+
+  it("keeps missing-session recovery manual even with a tool call and dispatch", () => {
+    const log = new EventLog(path());
+    log.append(event());
+    log.claimNextTurn(1100);
+    log.recordTurnToolCallStarted(1, "tool", "Bash", 1101);
+    expect(
+      log.recoverStaleRunning(
+        1200,
+        new Map([
+          ["session-1", [{ base: "implementer-1", deadlineAt: 2000 }]],
+        ]),
+      ),
+    ).toEqual([
+      {
+        turnId: 1,
+        outcome: "human_required",
+        reason: "missing_claude_session",
+        resumeTurnId: null,
+      },
+    ]);
+    expect(log.dispatchWaits("session-1")).toEqual([]);
+    expect(log.turnStates()).toHaveLength(1);
     log.close();
   });
 
@@ -627,14 +697,52 @@ describe("EventLog", () => {
     reopened.close();
   });
 
-  it("survives close/reopen with an active maintenance drain", () => {
+  it("survives close/reopen with an active maintenance operation", () => {
     const dbPath = path(); const first = new EventLog(dbPath);
     first.scheduleOperation({ id: "durable-op", requestDigest: "a".repeat(64), type: "update", reason: "release",
       targetRef: "refs/heads/main", targetCommit: "b".repeat(40), previousCommit: "c".repeat(40) });
     first.close();
     const reopened = new EventLog(dbPath);
-    expect(reopened.operationStatus().pending).toMatchObject({ id: "durable-op", drainState: "pending", targetRef: "refs/heads/main" });
+    expect(reopened.operationStatus().pending).toMatchObject({ id: "durable-op", state: "pending", targetRef: "refs/heads/main" });
     reopened.close();
+  });
+
+  it("rebuilds the legacy operation table and normalizes its waiting state", () => {
+    const dbPath = path();
+    const old = new Database(dbPath);
+    const legacyState = ["drain", "ing"].join("");
+    old.exec(`
+      CREATE TABLE operations (
+        id TEXT PRIMARY KEY, request_digest TEXT NOT NULL,
+        type TEXT NOT NULL, reason TEXT NOT NULL, requested_at INTEGER NOT NULL,
+        target_ref TEXT, target_commit TEXT, previous_commit TEXT,
+        state TEXT NOT NULL CHECK(state IN ('pending','${legacyState}','executing','accepting','rolling_back','blocked','succeeded','failed','cancelled')),
+        stage TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+        mutated INTEGER NOT NULL DEFAULT 0,
+        rollback_verified INTEGER NOT NULL DEFAULT 0,
+        outcome TEXT, error_stage TEXT, updated_at INTEGER NOT NULL
+      );
+      INSERT INTO operations
+        (id,request_digest,type,reason,requested_at,state,stage,updated_at)
+      VALUES ('legacy-op','${"a".repeat(64)}','restart','legacy',1,'${legacyState}','wait_idle',2);
+    `);
+    old.close();
+    const log = new EventLog(dbPath);
+    expect(log.operationById("legacy-op")).toMatchObject({
+      state: "pending",
+      stage: null,
+    });
+    const schema = new Database(dbPath, { readonly: true });
+    const sql = (
+      schema
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name='operations'",
+        )
+        .get() as { sql: string }
+    ).sql;
+    expect(sql).not.toContain(legacyState);
+    schema.close();
+    log.close();
   });
 
   it("migrates a populated pre-usage turns table with null usage", () => {

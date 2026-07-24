@@ -13,7 +13,7 @@ usage: daemonctl config --planner claude|claudex --implementer claude|claudex [-
        daemonctl operation retry|cancel OPERATION_ID [--dry-run]
        daemonctl --help
 
-Normal config, restart, and reload requests drain executing turns and block new claims.
+Normal config, restart, and reload requests execute immediately and interrupted turns auto-resume.
 The operator updates the persistent checkout before reload; daemonctl never pulls implicitly.
 Hard restart interrupts executing turns and never requeues them automatically.
 EOF
@@ -300,8 +300,7 @@ write_request_and_schedule() {
   fi
   running="$(json_count_running)"
   if [[ "${DAEMONCTL_NO_ACTIVATE:-0}" != 1 ]]; then
-    if [[ "${running}" -eq 0 ]]; then "${SYSTEMCTL}" start "${OPERATION_SERVICE}"
-    else "${SYSTEMCTL}" start --no-block "${OPERATION_SERVICE}"; fi
+    "${SYSTEMCTL}" start --no-block "${OPERATION_SERVICE}"
   fi
   printf 'operation %s accepted (%s); running turns: %s\n' "${id}" "${type}" "${running}"
   ops_cli status
@@ -324,7 +323,7 @@ command_config() {
   validate_harness "${planner}"; validate_harness "${implementer}"; validate_reason "${reason}"
   [[ -f "${ENV_FILE}" ]] || die "environment file not found: ${ENV_FILE}"
   if (( dry )); then
-    printf 'would validate and preserve %s; set PLANNER_HARNESS=%s and IMPLEMENTER_HARNESS=%s; create a timestamped backup; drain turns; restart %s; verify systemd and %s; rollback on failure\n' \
+    printf 'would validate and preserve %s; set PLANNER_HARNESS=%s and IMPLEMENTER_HARNESS=%s; create a timestamped backup; interrupt active turns; restart %s; verify systemd and %s; rollback on failure\n' \
       "${ENV_FILE}" "${planner}" "${implementer}" "${SERVICE}" "${HEALTH_URL}"
     return
   fi
@@ -365,7 +364,7 @@ command_restart() {
     echo "hard restart accepted; interrupted turns remain unqueued"
     return
   fi
-  if (( dry )); then printf 'would create one root-authenticated restart request; drain turns; restart %s once; verify systemd and %s\n' "${SERVICE}" "${HEALTH_URL}"; return; fi
+  if (( dry )); then printf 'would create one root-authenticated restart request; interrupt active turns; restart %s once; verify systemd and %s\n' "${SERVICE}" "${HEALTH_URL}"; return; fi
   local payload; payload="$(mktemp)"; trap 'rm -f "${payload:-}"' RETURN
   make_payload "${payload}" restart
   write_request_and_schedule restart "${reason}" "${payload}"
@@ -396,7 +395,7 @@ command_reload() {
     || die "reload validation failed: checkout HEAD is not a fast-forward descendant of accepted commit"
   if [[ "${target}" == "${accepted}" && "${deployed}" == "${accepted}" ]]; then printf 'already deployed and accepted: %s\n' "${accepted}"; return; fi
   if (( dry )); then
-    printf 'would deploy exact clean checkout commit %s over accepted commit %s without fetching; drain turns; provision a detached worktree; restart; record deployed commit; health-check; mark accepted; rollback on failure\n' "${target}" "${accepted}"
+    printf 'would deploy exact clean checkout commit %s over accepted commit %s without fetching; provision a detached worktree; interrupt active turns at restart; record deployed commit; health-check; mark accepted; rollback on failure\n' "${target}" "${accepted}"
     return
   fi
   local payload; payload="$(mktemp)"; trap 'rm -f "${payload:-}"' RETURN
@@ -493,7 +492,7 @@ PY
 }
 
 execute_request() {
-  local file="$1" id digest type row running attempts row_state row_stage pre_pid_file pre_pid current_pid
+  local file="$1" id digest type row attempts row_stage pre_pid_file pre_pid current_pid
   id="$(json_field "${file}" id)"; type="$(json_field "${file}" type)"
   [[ "$(basename "${file}")" == "${id}.ready" ]] || return 1
   [[ "$("${STAT_BIN}" -c %a "${file}")" == 600 ]] || return 1
@@ -501,15 +500,12 @@ execute_request() {
   digest="$("${SHA256SUM_BIN}" "${file}" | cut -d' ' -f1)"
   row="$(ops_cli claim "${id}" "${digest}")"; [[ "${row}" != null ]] || return 1
   attempts="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["attempts"])' <<<"${row}")"
-  row_state="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])' <<<"${row}")"
   row_stage="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("stage") or "")' <<<"${row}")"
-  if (( attempts > MAX_ATTEMPTS )); then ops_cli transition "${id}" blocked retry_budget_exhausted - retry_budget - - >/dev/null; return 1; fi
-  while :; do running="$(json_count_running)"; [[ "${running}" -eq 0 ]] && break; "${SLEEP_BIN}" "${DAEMONCTL_POLL_SECONDS:-2}"; done
+  if (( attempts > MAX_ATTEMPTS )); then ops_cli park "${id}" retry_budget_exhausted - retry_budget >/dev/null; return 1; fi
   install -d -m 0700 "${STATE_DIR}/prestate"
   pre_pid_file="${STATE_DIR}/prestate/${id}.pid"
   if [[ ! -f "${pre_pid_file}" ]]; then service_pid > "${pre_pid_file}"; chmod 0600 "${pre_pid_file}"; fi
   pre_pid="$(<"${pre_pid_file}")"
-  if [[ "${row_state}" == draining ]]; then ops_cli transition "${id}" executing apply - - - - >/dev/null; fi
   case "${type}" in
     restart)
       current_pid="$(service_pid)"
@@ -579,12 +575,12 @@ execute_request() {
         ops_cli transition "${id}" succeeded accepted "service active and recovered deployment accepted" - 1 - >/dev/null
         mv "${file}" "${file%.ready}.done"; return 0
       fi
-      [[ "${accepted_now}" == "${previous}" && -z "$("${GIT_BIN}" -C "${checkout}" status --porcelain)" && "$("${GIT_BIN}" -C "${checkout}" rev-parse HEAD)" == "${target}" ]] || { operation_error "${id}" revalidate "checkout or accepted marker diverged from the scheduled commits"; ops_cli transition "${id}" blocked revalidate - revalidate 1 - >/dev/null; return 1; }
+      [[ "${accepted_now}" == "${previous}" && -z "$("${GIT_BIN}" -C "${checkout}" status --porcelain)" && "$("${GIT_BIN}" -C "${checkout}" rev-parse HEAD)" == "${target}" ]] || { operation_error "${id}" revalidate "checkout or accepted marker diverged from the scheduled commits"; ops_cli park "${id}" revalidate - revalidate >/dev/null; return 1; }
       "${GIT_BIN}" -C "${checkout}" merge-base --is-ancestor "${previous}" "${target}" || { operation_error "${id}" fast_forward "target is not a descendant"; ops_cli transition "${id}" failed fast_forward - fast_forward 0 - >/dev/null; return 1; }
       update_tree="${STATE_DIR}/worktrees/${id}"; install -d -m 0700 "${STATE_DIR}/worktrees"
       if ! prepare_operation_worktree "${id}" deploy "${checkout}" "${update_tree}" "${target}"; then
         operation_error "${id}" worktree_prepare "cannot safely prepare the operation worktree"
-        ops_cli transition "${id}" blocked worktree_prepare 'exact operation ownership is missing, invalid, or could not be repaired; inspect owner metadata and Git registration' worktree_prepare 1 - >/dev/null; return 1
+        ops_cli park "${id}" worktree_prepare 'exact operation ownership is missing, invalid, or could not be repaired; inspect owner metadata and Git registration' worktree_prepare >/dev/null; return 1
       fi
       ops_cli transition "${id}" executing provision - - 1 - >/dev/null
       if ! SOURCE_COMMIT="${target}" ACCEPTED_COMMIT_FILE="${ACCEPTED_COMMIT_FILE}" DEPLOYED_COMMIT_FILE="${DEPLOYED_COMMIT_FILE}" "${PROVISION}" "${update_tree}/daemon"; then
@@ -695,7 +691,25 @@ case "${1:-}" in
   operation)
     shift; require_root; action="${1:-}"; id="${2:-}"; [[ "${action}" == retry || "${action}" == cancel ]] || usage_error "operation action must be retry or cancel"; [[ -n "${id}" ]] || usage_error "missing operation id"; dry="${3:-}"; [[ $# -le 3 && ( -z "${dry}" || "${dry}" == --dry-run ) ]] || usage_error "invalid operation arguments"
     if [[ "${dry}" == --dry-run ]]; then echo "would ${action} operation ${id} without changing state"; exit 0; fi
-    case "${action}" in retry) ops_cli retry "${id}"; "${SYSTEMCTL}" start --no-block "${OPERATION_SERVICE}" ;; cancel) ops_cli cancel "${id}" ;; esac ;;
+    case "${action}" in
+      retry)
+        restored=0
+        if [[ -f "${REQUEST_DIR}/${id}.failed" ]]; then
+          [[ ! -e "${REQUEST_DIR}/${id}.ready" ]] \
+            || die "cannot retry operation ${id}: both failed and ready request files exist"
+          mv "${REQUEST_DIR}/${id}.failed" "${REQUEST_DIR}/${id}.ready"
+          restored=1
+        fi
+        if ! ops_cli retry "${id}"; then
+          if (( restored )); then
+            mv "${REQUEST_DIR}/${id}.ready" "${REQUEST_DIR}/${id}.failed"
+          fi
+          exit 1
+        fi
+        "${SYSTEMCTL}" start --no-block "${OPERATION_SERVICE}"
+        ;;
+      cancel) ops_cli cancel "${id}" ;;
+    esac ;;
   internal-execute) shift; [[ $# -eq 0 ]] || usage_error "internal-execute takes no arguments"; command_internal_execute ;;
   *) usage_error "unknown command: ${1:-}" ;;
 esac

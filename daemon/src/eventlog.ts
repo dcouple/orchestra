@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 import type { TurnUsage } from "./claude.js";
 import type { AppName } from "./config.js";
+import type { InFlightDispatch } from "./dispatches.js";
 import { ACTIVE_OPERATION_STATES, type OperationRow, type OperationState,
   type SafeOperationStatus, type SafeRunningTurn, type ScheduleOperationInput, validateScheduleOperation } from "./operations.js";
 
@@ -98,13 +99,21 @@ export interface TurnToolCallRow {
 }
 export interface RestartDisposition {
   turnId: number;
-  outcome: "resumed" | "human_required";
+  outcome: "resumed" | "human_required" | "awaiting_dispatch";
   reason:
     | "safe_boundary"
     | "hard_restart"
     | "missing_claude_session"
-    | "unresolved_tool_call";
+    | "unresolved_tool_call"
+    | "dispatch_in_flight";
   resumeTurnId: number | null;
+}
+export interface DispatchWaitRow {
+  turnId: number;
+  linearSessionId: string;
+  dispatchBase: string;
+  deadlineAt: number;
+  createdAt: number;
 }
 export type EnrichmentState =
   | "pending"
@@ -500,7 +509,7 @@ export class EventLog {
         target_ref TEXT,
         target_commit TEXT,
         previous_commit TEXT,
-        state TEXT NOT NULL CHECK(state IN ('pending','draining','executing','accepting','rolling_back','blocked','succeeded','failed','cancelled')),
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','accepting','rolling_back','blocked','succeeded','failed','cancelled')),
         stage TEXT,
         attempts INTEGER NOT NULL DEFAULT 0,
         mutated INTEGER NOT NULL DEFAULT 0,
@@ -510,7 +519,7 @@ export class EventLog {
         updated_at INTEGER NOT NULL
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_one_active
-        ON operations((1)) WHERE state IN ('pending','draining','executing','accepting','rolling_back','blocked');
+        ON operations((1)) WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
       CREATE TABLE IF NOT EXISTS restart_intents (
         singleton INTEGER PRIMARY KEY CHECK(singleton=1),
         policy TEXT NOT NULL CHECK(policy='interrupt'),
@@ -528,13 +537,67 @@ export class EventLog {
       );
       CREATE INDEX IF NOT EXISTS idx_turn_tool_calls_open
         ON turn_tool_calls(turn_id) WHERE state='open';
+      CREATE TABLE IF NOT EXISTS dispatch_waits (
+        turn_id INTEGER NOT NULL REFERENCES turns(id),
+        linear_session_id TEXT NOT NULL,
+        dispatch_base TEXT NOT NULL,
+        deadline_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(turn_id,dispatch_base)
+      );
+      CREATE INDEX IF NOT EXISTS idx_dispatch_waits_session
+        ON dispatch_waits(linear_session_id,turn_id);
     `);
+    this.migrateOperationsTable();
     this.migrateEventColumns();
     this.migrateSessionColumns();
     this.migrateTurnColumns();
     this.migrateAckColumns();
     this.migrateTurnActivityColumns();
     this.recoverAmbiguousOutbox();
+  }
+
+  private migrateOperationsTable(): void {
+    const legacyState = ["drain", "ing"].join("");
+    const schema = this.db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='operations'")
+      .get() as { sql: string } | undefined;
+    if (!schema?.sql.includes(`'${legacyState}'`)) return;
+    this.db.transaction(() => {
+      this.db.exec(`
+        DROP INDEX IF EXISTS idx_operations_one_active;
+        CREATE TABLE operations_new (
+          id TEXT PRIMARY KEY,
+          request_digest TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('restart','config','update')),
+          reason TEXT NOT NULL,
+          requested_at INTEGER NOT NULL,
+          target_ref TEXT,
+          target_commit TEXT,
+          previous_commit TEXT,
+          state TEXT NOT NULL CHECK(state IN ('pending','executing','accepting','rolling_back','blocked','succeeded','failed','cancelled')),
+          stage TEXT,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          mutated INTEGER NOT NULL DEFAULT 0,
+          rollback_verified INTEGER NOT NULL DEFAULT 0,
+          outcome TEXT,
+          error_stage TEXT,
+          updated_at INTEGER NOT NULL
+        );
+        INSERT INTO operations_new
+          (id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,
+           state,stage,attempts,mutated,rollback_verified,outcome,error_stage,updated_at)
+        SELECT id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,
+          CASE state WHEN '${legacyState}' THEN 'pending' ELSE state END,
+          CASE state WHEN '${legacyState}' THEN NULL ELSE stage END,
+          attempts,mutated,rollback_verified,outcome,error_stage,updated_at
+        FROM operations;
+        DROP TABLE operations;
+        ALTER TABLE operations_new RENAME TO operations;
+        CREATE UNIQUE INDEX idx_operations_one_active
+          ON operations((1)) WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
+      `);
+    })();
   }
 
   private migrateEventColumns(): void {
@@ -971,7 +1034,7 @@ export class EventLog {
           `SELECT t.id FROM turns t
         WHERE t.status='pending'
           AND NOT EXISTS (SELECT 1 FROM operations o
-            WHERE o.state IN ('pending','draining','executing','accepting','rolling_back','blocked'))
+            WHERE o.state IN ('pending','executing','accepting','rolling_back','blocked'))
           AND NOT EXISTS (SELECT 1 FROM turns earlier WHERE earlier.issue_id=t.issue_id
             AND earlier.id<t.id AND (
               earlier.status IN ('pending','running','awaiting_activity')
@@ -1029,7 +1092,7 @@ export class EventLog {
     return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
       target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
       mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt
-      FROM operations WHERE state IN ('pending','draining','executing','accepting','rolling_back','blocked')
+      FROM operations WHERE state IN ('pending','executing','accepting','rolling_back','blocked')
       ORDER BY requested_at LIMIT 1`).get() as OperationRow | undefined;
   }
 
@@ -1039,7 +1102,7 @@ export class EventLog {
       if (!row || row.requestDigest !== digest || row.state === "blocked"
           || !ACTIVE_OPERATION_STATES.includes(row.state as never)) return undefined;
       if (row.state === "pending") {
-        this.db.prepare("UPDATE operations SET state='draining',stage='wait_idle',attempts=attempts+1,updated_at=? WHERE id=? AND state='pending'")
+        this.db.prepare("UPDATE operations SET state='executing',stage='apply',attempts=attempts+1,updated_at=? WHERE id=? AND state='pending'")
           .run(now, id);
       } else {
         this.db.prepare("UPDATE operations SET attempts=attempts+1,updated_at=? WHERE id=?").run(now, id);
@@ -1055,7 +1118,7 @@ export class EventLog {
     if (!current) throw new Error(`unknown operation: ${id}`);
     if ((state === "failed" || state === "cancelled") && current.mutated === 1
         && !(options.rollbackVerified ?? current.rollbackVerified === 1)) {
-      throw new Error("cannot release drain after mutation without verified rollback");
+      throw new Error("cannot release operation gate after mutation without verified rollback");
     }
     this.db.prepare(`UPDATE operations SET state=?,stage=?,outcome=?,error_stage=?,
       mutated=?,rollback_verified=?,updated_at=? WHERE id=?`).run(state, stage,
@@ -1067,10 +1130,31 @@ export class EventLog {
 
   retryOperation(id: string, now = Date.now()): OperationRow {
     const row = this.operationById(id);
-    if (!row || row.state !== "blocked") throw new Error("only a blocked operation can be retried");
-    this.db.prepare("UPDATE operations SET state='draining',stage='wait_idle',error_stage=NULL,updated_at=? WHERE id=?")
+    if (!row || (row.state !== "blocked" && row.state !== "failed"))
+      throw new Error("only a blocked or failed operation can be retried");
+    this.db.prepare("UPDATE operations SET state='pending',stage=NULL,error_stage=NULL,updated_at=? WHERE id=?")
       .run(now, id);
     return this.operationById(id)!;
+  }
+
+  parkOperationFailure(
+    id: string,
+    stage: string,
+    outcome: string | null,
+    errorStage: string | null,
+    now = Date.now(),
+  ): OperationRow {
+    const row = this.operationById(id);
+    if (!row || !ACTIVE_OPERATION_STATES.includes(row.state as never))
+      throw new Error("operation is not active");
+    const coherent = row.mutated === 0 || row.rollbackVerified === 1;
+    return this.transitionOperation(
+      id,
+      coherent ? "failed" : "blocked",
+      stage,
+      { outcome, errorStage },
+      now,
+    );
   }
 
   cancelOperation(id: string, now = Date.now()): OperationRow {
@@ -1097,10 +1181,18 @@ export class EventLog {
     return {
       pending: pending ? { id: pending.id, type: pending.type, reason: pending.reason,
         requestedAt: pending.requestedAt, targetRef: pending.targetRef, targetCommit: pending.targetCommit,
-        drainState: pending.state, stage: pending.stage, attempts: pending.attempts,
+        state: pending.state, stage: pending.stage, attempts: pending.attempts,
         recoveryCommand: pending.state === "blocked" ? `daemonctl operation retry ${pending.id}` : null } : null,
       runningTurns: this.runningTurns(now).length,
-      lastOutcome: last ?? null,
+      lastOutcome: last
+        ? {
+            ...last,
+            recoveryCommand:
+              last.state === "failed"
+                ? `daemonctl operation retry ${last.id}`
+                : null,
+          }
+        : null,
     };
   }
 
@@ -1466,7 +1558,101 @@ export class EventLog {
       )
       .all(turnId) as TurnToolCallRow[];
   }
-  recoverStaleRunning(now = Date.now()): RestartDisposition[] {
+  dispatchWaits(linearSessionId: string): DispatchWaitRow[] {
+    return this.db
+      .prepare(
+        `SELECT turn_id turnId,linear_session_id linearSessionId,
+        dispatch_base dispatchBase,deadline_at deadlineAt,created_at createdAt
+        FROM dispatch_waits WHERE linear_session_id=?
+        ORDER BY turn_id,dispatch_base`,
+      )
+      .all(linearSessionId) as DispatchWaitRow[];
+  }
+  deleteDispatchWait(linearSessionId: string, dispatchBase: string): number {
+    return this.db
+      .prepare(
+        "DELETE FROM dispatch_waits WHERE linear_session_id=? AND dispatch_base=?",
+      )
+      .run(linearSessionId, dispatchBase).changes;
+  }
+  enqueueDispatchDeadlineResume(turnId: number, now = Date.now()): number {
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare(
+          `SELECT t.id,t.linear_session_id linearSessionId,t.issue_id issueId,
+          e.app,s.issue_identifier issueIdentifier
+          FROM turns t JOIN events e ON e.id=t.event_id
+          LEFT JOIN sessions s ON s.linear_session_id=t.linear_session_id
+          WHERE t.id=? AND t.status='interrupted'`,
+        )
+        .get(turnId) as
+        | {
+            id: number;
+            linearSessionId: string;
+            issueId: string;
+            app: AppName;
+            issueIdentifier: string | null;
+          }
+        | undefined;
+      if (!row) throw new Error("dispatch wait parent is not interrupted");
+      const resumeTurnId = this.insertRecoveryResume(
+        row,
+        `dispatch-deadline:${turnId}`,
+        "Continue from the interrupted daemon turn. A detached Codex dispatch was still in flight when the daemon restarted and its completion marker has not appeared by its deadline. Inspect the dispatch owner directory, verify any external effects, and continue the pipeline.",
+        now,
+      );
+      this.db.prepare("DELETE FROM dispatch_waits WHERE turn_id=?").run(turnId);
+      return resumeTurnId;
+    })();
+  }
+  private insertRecoveryResume(
+    row: {
+      id: number;
+      linearSessionId: string;
+      issueId: string;
+      app: AppName;
+      issueIdentifier: string | null;
+    },
+    sourceKey: string,
+    prompt: string,
+    now: number,
+  ): number {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO events
+        (delivery_id,app,action,agent_session_id,source_activity_id,issue_id,issue_identifier,received_at,raw_body)
+        VALUES (?,?,'prompted',?,?,?,?,?,?)`,
+      )
+      .run(
+        sourceKey,
+        row.app,
+        row.linearSessionId,
+        sourceKey,
+        row.issueId,
+        row.issueIdentifier,
+        now,
+        Buffer.from(JSON.stringify({ agentActivity: { body: prompt } })),
+      );
+    const event = this.db
+      .prepare("SELECT id FROM events WHERE delivery_id=?")
+      .get(sourceKey) as { id: number };
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO turns
+        (event_id,linear_session_id,issue_id,source_key,kind,status)
+        VALUES (?,?,?,?, 'prompted','pending')`,
+      )
+      .run(event.id, row.linearSessionId, row.issueId, sourceKey);
+    return (
+      this.db.prepare("SELECT id FROM turns WHERE source_key=?").get(sourceKey) as {
+        id: number;
+      }
+    ).id;
+  }
+  recoverStaleRunning(
+    now = Date.now(),
+    inflight: ReadonlyMap<string, readonly InFlightDispatch[]> = new Map(),
+  ): RestartDisposition[] {
     return this.db.transaction(() => {
       this.db
         .prepare(
@@ -1501,69 +1687,62 @@ export class EventLog {
             "UPDATE turns SET status='interrupted', error='daemon restarted during turn', finished_at=? WHERE id=?",
           )
           .run(now, row.id);
+        const dispatches = inflight.get(row.linearSessionId) ?? [];
         const reason: RestartDisposition["reason"] = hardRestart
           ? "hard_restart"
-          : row.hasOpenTool
-            ? "unresolved_tool_call"
-            : !row.claudeSessionId
-              ? "missing_claude_session"
-              : "safe_boundary";
-        if (reason === "safe_boundary") {
-          const sourceKey = `restart-resume:${row.id}`;
-          this.db
-            .prepare(
-              `INSERT OR IGNORE INTO events
-            (delivery_id,app,action,agent_session_id,source_activity_id,issue_id,issue_identifier,received_at,raw_body)
-            VALUES (?,?,'prompted',?,?,?,?,?,?)`,
-            )
-            .run(
-              sourceKey,
-              row.app,
+          : !row.claudeSessionId
+            ? "missing_claude_session"
+            : dispatches.length
+              ? "dispatch_in_flight"
+              : row.hasOpenTool
+                ? "unresolved_tool_call"
+                : "safe_boundary";
+        if (reason === "dispatch_in_flight") {
+          const insert = this.db.prepare(
+            `INSERT OR IGNORE INTO dispatch_waits
+            (turn_id,linear_session_id,dispatch_base,deadline_at,created_at)
+            VALUES (?,?,?,?,?)`,
+          );
+          for (const dispatch of dispatches)
+            insert.run(
+              row.id,
               row.linearSessionId,
-              sourceKey,
-              row.issueId,
-              row.issueIdentifier,
+              dispatch.base,
+              dispatch.deadlineAt,
               now,
-              Buffer.from(
-                JSON.stringify({
-                  agentActivity: {
-                    body: "Continue from the interrupted daemon turn. Review the current worktree state before proceeding.",
-                  },
-                }),
-              ),
             );
-          const event = this.db
-            .prepare("SELECT id FROM events WHERE delivery_id=?")
-            .get(sourceKey) as { id: number };
-          this.db
-            .prepare(
-              `INSERT OR IGNORE INTO turns
-            (event_id,linear_session_id,issue_id,source_key,kind,status)
-            VALUES (?,?,?,?, 'prompted','pending')`,
-            )
-            .run(
-              event.id,
-              row.linearSessionId,
-              row.issueId,
-              sourceKey,
-            );
-          const resume = this.db
-            .prepare("SELECT id FROM turns WHERE source_key=?")
-            .get(sourceKey) as { id: number };
+          dispositions.push({
+            turnId: row.id,
+            outcome: "awaiting_dispatch",
+            reason,
+            resumeTurnId: null,
+          });
+          continue;
+        }
+        if (reason === "safe_boundary" || reason === "unresolved_tool_call") {
+          const sourceKey = `restart-resume:${row.id}`;
+          const prompt =
+            reason === "unresolved_tool_call"
+              ? "Continue from the interrupted daemon turn. An external tool call may have been in flight when the daemon restarted: verify its external effects before re-running it — the push, PR, comment, or write may already have landed. Review the current worktree state before proceeding."
+              : "Continue from the interrupted daemon turn. Review the current worktree state before proceeding.";
+          const resumeTurnId = this.insertRecoveryResume(
+            row,
+            sourceKey,
+            prompt,
+            now,
+          );
           dispositions.push({
             turnId: row.id,
             outcome: "resumed",
             reason,
-            resumeTurnId: resume.id,
+            resumeTurnId,
           });
           continue;
         }
         const body =
           reason === "hard_restart"
             ? "The run was interrupted by an explicit hard restart and was not resumed. Please review the current state before continuing."
-            : reason === "unresolved_tool_call"
-              ? "The run was interrupted while an external tool call may have been in flight. Please review its effects before continuing."
-              : row.app === "implementer"
+            : row.app === "implementer"
                 ? "The implementation run was interrupted before a resumable Claude session was saved. Assign bloom-implementer again to retry."
                 : "The planner session was interrupted before a resumable Claude session was saved. Please prompt again to continue.";
         this.db
@@ -2245,11 +2424,20 @@ export class EventLog {
     invocation: CodexInvocationInput,
     event: AppendEvent,
     now = Date.now(),
+    dispatchWait?: { linearSessionId: string; dispatchBase: string },
   ): { invocation: AgentInvocationRow; append: AppendResult } {
-    return this.db.transaction(() => ({
-      invocation: this.ingestCodexInvocation(invocation, now),
-      append: this.append(event),
-    }))();
+    return this.db.transaction(() => {
+      const result = {
+        invocation: this.ingestCodexInvocation(invocation, now),
+        append: this.append(event),
+      };
+      if (dispatchWait)
+        this.deleteDispatchWait(
+          dispatchWait.linearSessionId,
+          dispatchWait.dispatchBase,
+        );
+      return result;
+    })();
   }
 
   aggregateSession(linearSessionId: string): {

@@ -2,7 +2,7 @@ export const OPERATION_TYPES = ["restart", "config", "update"] as const;
 export type OperationType = typeof OPERATION_TYPES[number];
 
 export const ACTIVE_OPERATION_STATES = [
-  "pending", "draining", "executing", "accepting", "rolling_back", "blocked",
+  "pending", "executing", "accepting", "rolling_back", "blocked",
 ] as const;
 export const TERMINAL_OPERATION_STATES = ["succeeded", "failed", "cancelled"] as const;
 export type ActiveOperationState = typeof ACTIVE_OPERATION_STATES[number];
@@ -56,7 +56,7 @@ export interface SafeOperationStatus {
     requestedAt: number;
     targetRef: string | null;
     targetCommit: string | null;
-    drainState: OperationState;
+    state: OperationState;
     stage: string | null;
     attempts: number;
     recoveryCommand: string | null;
@@ -70,6 +70,7 @@ export interface SafeOperationStatus {
     outcome: string | null;
     errorStage: string | null;
     updatedAt: number;
+    recoveryCommand: string | null;
   };
 }
 

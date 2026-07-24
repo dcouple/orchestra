@@ -39,12 +39,13 @@ redaction. Real account, Linear, Claude, and systemd acceptance remains a deploy
 ## Host operations
 
 `sudo daemonctl --help` is the production control surface. It provides narrow harness
-configuration, idle-aware restart and checkout reload, safe status/running-turn and
+configuration, immediate restart and checkout reload, safe status/running-turn and
 compute views, and interactive subscription maintenance. Normal mutations persist one
 operation and stop new turn claims while signed webhooks continue to be stored and
-acknowledged. A root-owned request file authorizes the privileged executor; SQLite alone
-never authorizes root work. `daemonctl restart --hard` is the only path that may interrupt
-turns, requires explicit confirmation, and never requeues them.
+acknowledged. Accepted operations execute immediately; a service restart interrupts active
+turns and startup resumes them automatically. A root-owned request file authorizes the
+privileged executor; SQLite alone never authorizes root work. `daemonctl restart --hard`
+requires explicit confirmation and remains the deliberate no-resume path.
 
 The root repository `Makefile` forwards the same commands over GCE SSH; it contains no
 deployment logic. Its local transport builds an argv vector and uses Python `shlex` parsing
@@ -53,7 +54,7 @@ syntax. The operator alone fetches, reviews, and fast-forwards the persistent HT
 `daemonctl reload` never fetches or runs candidate validation. It deploys that exact clean
 checkout commit through the existing provisioner, records deployed and accepted markers
 around health acceptance, and rolls back to the prior accepted commit on failure.
-`daemonctl update` remains a compatibility alias. See `ops/runbook.md` for pending/blocked
+`daemonctl update` remains a compatibility alias. See `ops/runbook.md` for failed/blocked
 recovery, revision reconciliation, and the human-only production smoke procedure.
 
 ## Run locally
@@ -144,12 +145,15 @@ fails nonzero without printing a credential. Both Bash timeout values must be po
 the maximum must be at least the default. The independent Codex dispatch watchdogs remain
 900 seconds for ephemeral roles and 2700 seconds for implementers.
 
-On startup, a stale running turn is automatically resumed exactly once only when it has a
-persisted Claude session and no unresolved tool call. The old turn remains interrupted and a
-deterministically keyed continuation resumes the same session. An unresolved tool boundary,
-missing Claude session, explicit user stop, or recorded hard restart requires human review;
-the daemon never guesses whether an external action completed. Routine `daemonctl` config,
-restart, and reload operations still drain running turns before mutation. Daemon-owned
+On startup, every stale running turn with a persisted Claude session is automatically resumed
+exactly once, including turns interrupted at an unresolved tool boundary. That continuation
+explicitly directs the agent to verify external effects before re-running the tool. If a
+detached Codex dispatch is still in flight, the parent waits for its completion marker; a
+deadline-plus-grace fallback resumes it if the marker never appears. Missing Claude sessions,
+explicit user stops, and recorded hard restarts still require human review. Routine
+`daemonctl` config, restart, and reload operations execute immediately. Coherent pre-mutation
+or rolled-back failures park terminally as `failed` with a `recoveryCommand`; only an
+incoherent deployment remains `blocked` and holds claims. Daemon-owned
 `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` hooks enforce those boundaries:
 `PreToolUse` must durably record the turn, tool-use ID, and bounded tool name before execution,
 and exits nonzero to block the tool if that record fails. The post hooks mark the boundary

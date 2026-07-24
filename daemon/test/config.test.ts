@@ -20,6 +20,7 @@ describe("loadConfig", () => {
       "/var/lib/linear-agent-daemon/dispatch-quarantine",
     );
     expect(config.dispatchQuarantineAgeMs).toBe(86_400_000);
+    expect(config.dispatchResumeGraceMs).toBe(600_000);
     expect(config).toMatchObject({ browserEnabled: false, playwrightMcpBin: "/usr/local/bin/playwright-mcp",
       playwrightChromeBin: "/usr/bin/google-chrome", browserAttemptTimeoutMs: 14_400_000 });
     expect(config.artifactMaxBodyBytes).toBe(32 * 1024 * 1024);
@@ -157,14 +158,19 @@ describe("loadConfig", () => {
       DB_PATH: "/state/events.db",
       DISPATCH_QUARANTINE_DIR: " /srv/dispatch-quarantine ",
       DISPATCH_QUARANTINE_AGE_MS: "172800000",
+      DISPATCH_RESUME_GRACE_MS: "120000",
     });
     expect(config).toMatchObject({
       dispatchQuarantineDir: "/srv/dispatch-quarantine",
       dispatchQuarantineAgeMs: 172_800_000,
+      dispatchResumeGraceMs: 120_000,
     });
     expect(() =>
       loadConfig({ ...base, DISPATCH_QUARANTINE_AGE_MS: "0" }),
     ).toThrow("DISPATCH_QUARANTINE_AGE_MS");
+    expect(() =>
+      loadConfig({ ...base, DISPATCH_RESUME_GRACE_MS: "0" }),
+    ).toThrow("DISPATCH_RESUME_GRACE_MS");
   });
   it("loads strict browser capability overrides", () => {
     expect(loadConfig({ ...base, BROWSER_ENABLED: "1", PLAYWRIGHT_MCP_BIN: "/mcp", PLAYWRIGHT_CHROME_BIN: "/chrome",

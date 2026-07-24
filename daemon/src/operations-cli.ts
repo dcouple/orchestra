@@ -5,7 +5,7 @@ import { isOperationState, isOperationType, type OperationState, type OperationT
 import { ToolBoundaryStore } from "./tool-boundary-store.js";
 
 function usage(): never {
-  process.stderr.write("usage: operations-cli <schedule|claim|transition|get|status|running|retry|cancel|restart-intent-set|restart-intent-get|restart-intent-clear> ...\n");
+  process.stderr.write("usage: operations-cli <schedule|claim|transition|park|get|status|running|retry|cancel|restart-intent-set|restart-intent-get|restart-intent-clear> ...\n");
   process.exit(2);
 }
 
@@ -78,6 +78,14 @@ try {
       break;
     }
     case "retry": result = log!.retryOperation(required(args[0], "id")); break;
+    case "park":
+      result = log!.parkOperationFailure(
+        required(args[0], "id"),
+        required(args[1], "stage"),
+        optional(args[2]),
+        optional(args[3]),
+      );
+      break;
     case "cancel": result = log!.cancelOperation(required(args[0], "id")); break;
     case "transition": {
       const [id, state, stage, outcome, errorStage, mutated, rollbackVerified] = args;

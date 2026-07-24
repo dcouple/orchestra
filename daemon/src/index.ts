@@ -133,7 +133,7 @@ if (providerPoller) {
 
 worker.start();
 linearMcpMonitor?.start();
-sessionWorker?.start();
+await sessionWorker?.start();
 cleanupWorker?.start();
 reconcileWorker?.start();
 const address = await server.listen();

@@ -143,7 +143,7 @@ describe("operator-managed checkout reload boundary", () => {
     }
   }, 30_000);
 
-  it("revalidates the staged SHA after drain without moving the operator checkout", () => {
+  it("parks revalidation failure without moving the operator checkout", () => {
     const f = opsFixture(), repo = updateRepo(f); stageMain(repo);
     expect(f.run(["reload"], { ...repo.env, DAEMONCTL_NO_ACTIVATE: "1" }).status).toBe(0);
     writeFileSync(join(repo.checkout, "changed-after-schedule"), "dirty\n");
@@ -151,7 +151,11 @@ describe("operator-managed checkout reload boundary", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("scheduled commits");
     const log = new EventLog(f.db);
-    expect(log.operationStatus().pending).toMatchObject({ drainState: "blocked", stage: "revalidate" });
+    expect(log.operationStatus().lastOutcome).toMatchObject({
+      state: "failed",
+      stage: "revalidate",
+      recoveryCommand: expect.stringContaining("operation retry"),
+    });
     log.close();
     expect(readFileSync(f.accepted, "utf8").trim()).toBe(repo.accepted);
   });
@@ -257,7 +261,7 @@ describe("operator-managed checkout reload boundary", () => {
     expect(git(["rev-parse", "HEAD"], operation.path)).toBe(repo.main);
     expect(existsSync(operation.owner)).toBe(false);
     const log = new EventLog(f.db);
-    expect(log.operationStatus().pending).toMatchObject({ drainState: "blocked", stage: "worktree_prepare" });
+    expect(log.operationStatus().lastOutcome).toMatchObject({ state: "failed", stage: "worktree_prepare" });
     expect(log.operationById(operation.id)?.outcome).toContain("exact operation ownership");
     log.close();
   });
@@ -279,7 +283,7 @@ describe("operator-managed checkout reload boundary", () => {
       expect(result.status).not.toBe(0);
       expect(git(["rev-parse", "HEAD"], operation.path)).toBe(repo.main);
       const log = new EventLog(f.db);
-      expect(log.operationStatus().pending).toMatchObject({ drainState: "blocked", stage: "worktree_prepare" });
+      expect(log.operationStatus().lastOutcome).toMatchObject({ state: "failed", stage: "worktree_prepare" });
       log.close();
     }
   }, 20_000);
@@ -295,7 +299,7 @@ describe("operator-managed checkout reload boundary", () => {
     expect(result.status).not.toBe(0);
     expect(readFileSync(join(updateTree, "unrelated"), "utf8")).toBe("do not remove\n");
     const log = new EventLog(f.db);
-    expect(log.operationStatus().pending).toMatchObject({ drainState: "blocked", stage: "worktree_prepare" });
+    expect(log.operationStatus().lastOutcome).toMatchObject({ state: "failed", stage: "worktree_prepare" });
     log.close();
   });
 
@@ -314,7 +318,7 @@ describe("operator-managed checkout reload boundary", () => {
     writeFileSync(join(g.dir, "provision.failures"), "2\n");
     expect(g.run(["reload"], blockedRepo.env).status).not.toBe(0);
     log = new EventLog(g.db);
-    expect(log.operationStatus().pending).toMatchObject({ drainState: "blocked", stage: "rollback_acceptance" });
+    expect(log.operationStatus().pending).toMatchObject({ state: "blocked", stage: "rollback_acceptance" });
     log.close();
 
     const h = opsFixture(), crashRepo = updateRepo(h); stageMain(crashRepo);

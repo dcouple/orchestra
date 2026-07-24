@@ -19,26 +19,29 @@ sudo daemonctl reload --dry-run
 sudo daemonctl subscriptions list
 ```
 
-Normal config, restart, and reload requests drain durable `running` turns, block all new
-claims, and leave webhook ingestion active. Status reports the pending type, safe reason,
-request time, target ref/commit, drain stage, and last outcome. Equivalent restarts converge.
-An operation that cannot prove acceptance or a safe rollback becomes `blocked`; queued work
-stays held. Correct the named stage, then use `sudo daemonctl operation retry <id>`. Cancel is
-allowed only before mutation or after verified rollback.
+Normal config, restart, and reload requests execute immediately, interrupt active turns when
+the service restarts, block claims only during the active operation, and leave webhook
+ingestion active. Status reports the pending type, safe reason, request time, target
+ref/commit, state, stage, and last outcome. Equivalent restarts converge. A pre-mutation
+failure or completed rollback parks terminally as `failed`, releases claims, and exposes
+`recoveryCommand`. A failed rollback or other incoherent deployment remains `blocked` and
+keeps claims held. Correct the named stage, then use
+`sudo daemonctl operation retry <id>`. Retry restores the archived request before execution;
+cancel is allowed only before mutation or after verified rollback.
 
 `sudo daemonctl restart --hard` prints the affected app, issue identifier, runtime, state,
 and elapsed time, then requires `HARD-RESTART`. It terminates those turns through normal
 startup interruption reconciliation and does not enqueue continuations.
 
-For an unplanned daemon restart, startup resumes a stale turn exactly once only when the
-database contains its Claude session ID and no open tool call. The interrupted row remains
+For an unplanned daemon restart, startup resumes a stale turn exactly once when the database
+contains its Claude session ID, including when an external tool call was open. The
+continuation instructs the agent to verify external effects before re-running the call. The interrupted row remains
 auditable and a deterministic `restart-resume:<turn-id>` source key identifies the same-session
-continuation. If an external tool call is still open, the session ID is missing, the user
-explicitly stopped the turn, or a hard-restart intent exists, the turn is never automatically
-resumed. Startup posts one human-required activity for stale unresolved, missing-session, and
-hard-restart cases; explicit user stops retain their normal stop acknowledgement. Review the
-worktree and any external side effects before prompting or assigning again; never treat an
-unresolved tool call as safe to replay. Daemon-owned `PreToolUse`, `PostToolUse`, and
+continuation. If a detached dispatch is in flight, recovery records an exact-basename wait
+instead; its marker resumes the parent, or `deadline_at + DISPATCH_RESUME_GRACE_MS` (10 minutes
+by default) supplies one deterministic fallback. Missing-session and hard-restart cases get
+one human-required activity; explicit user stops retain their normal stop acknowledgement.
+Daemon-owned `PreToolUse`, `PostToolUse`, and
 `PostToolUseFailure` hooks make this fail closed: the pre hook durably records the turn,
 tool-use ID, and bounded tool name before execution, and blocks the tool if that write fails;
 the post hooks mark it completed without retaining inputs or results. The structured
@@ -50,7 +53,7 @@ reviews, and fast-forwards this persistent checkout before running `sudo daemonc
 the command itself never fetches, pulls, or runs candidate code as a validator. Its clean
 `HEAD` must be a fast-forward descendant of
 `/var/lib/linear-agent-operations/accepted-commit`. The executor revalidates the exact staged
-SHA after draining and provisions it from a detached worktree. Each operation worktree is
+SHA before provisioning it from a detached worktree. Each operation worktree is
 authorized by atomic root-owned metadata outside the checkout; retries repair only an exact
 owned registration, while foreign or mismatched paths block without being removed. The executor
 records `deployed-commit` after
@@ -61,7 +64,7 @@ tracking revisions without network access; use `status --refresh` for an explici
 fetch. `daemonctl update` remains a compatibility alias for `reload` and accepts no ref.
 
 For a human production smoke, run the three read-only commands first, dry-run every mutator,
-then use disposable turns/accounts to prove idle restart, busy drain and ingestion, config
+then use disposable turns/accounts to prove idle restart, immediate busy restart and ingestion, config
 rollback, reload old/new commit reporting, hard-restart consequences, and subscription
 remove/reauth. Capture only redacted output. Direct `systemctl`, `sqlite3`, provisioner, and
 proxy helper commands below remain recovery tools, not the routine path.

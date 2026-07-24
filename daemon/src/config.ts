@@ -36,6 +36,7 @@ export interface Config {
   artifactsDir: string;
   dispatchQuarantineDir: string;
   dispatchQuarantineAgeMs: number;
+  dispatchResumeGraceMs: number;
   browserEnabled: boolean;
   playwrightMcpBin: string;
   playwrightChromeBin: string;
@@ -178,6 +179,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       env,
       "DISPATCH_QUARANTINE_AGE_MS",
       24 * 60 * 60 * 1000,
+    ),
+    dispatchResumeGraceMs: positiveInteger(
+      env,
+      "DISPATCH_RESUME_GRACE_MS",
+      10 * 60_000,
     ),
     browserEnabled: enabled(env, "BROWSER_ENABLED", false),
     playwrightMcpBin: env.PLAYWRIGHT_MCP_BIN?.trim() || "/usr/local/bin/playwright-mcp",

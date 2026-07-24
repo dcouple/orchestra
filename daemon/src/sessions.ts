@@ -14,6 +14,10 @@ import {
 } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { AppName, Config } from "./config.js";
+import {
+  completedDispatchesAwaitingIngest,
+  inFlightDispatches,
+} from "./dispatches.js";
 import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
 import {
   BROWSER_RELAUNCH_SENTINEL,
@@ -352,9 +356,31 @@ export class SessionWorker {
       config.targetRepoPath!,
     );
   }
-  start(): void {
+  async start(): Promise<void> {
     this.stopped = false;
-    for (const disposition of this.log.recoverStaleRunning(this.now()))
+    const inflight = new Map<string, Awaited<ReturnType<typeof inFlightDispatches>>>();
+    await Promise.all(
+      this.log.sessionsWithWorktrees().map(async (session) => {
+        const dispatches = [
+          ...(await inFlightDispatches(
+            session.worktreePath,
+            session.linearSessionId,
+          )),
+          ...(await completedDispatchesAwaitingIngest(
+            session.worktreePath,
+            session.linearSessionId,
+          )).filter(
+            (dispatch) =>
+              !this.log.hasCodexInvocation(
+                `dispatch:${session.linearSessionId}:${dispatch.base}.done`,
+              ),
+          ),
+        ];
+        if (dispatches.length)
+          inflight.set(session.linearSessionId, dispatches);
+      }),
+    );
+    for (const disposition of this.log.recoverStaleRunning(this.now(), inflight))
       this.logger.log(
         jsonLog({
           event: "restart_turn_disposition",
@@ -1551,6 +1577,10 @@ export class SessionWorker {
                 ),
               },
               this.now(),
+              {
+                linearSessionId: session.linearSessionId,
+                dispatchBase: base,
+              },
             ).append;
             if (result.inserted) {
               this.logger.log(
@@ -1561,6 +1591,44 @@ export class SessionWorker {
                 }),
               );
               void this.drain();
+            }
+          }
+          if (this.log.hasOpenTurn(session.linearSessionId)) continue;
+          const waits = this.log.dispatchWaits(session.linearSessionId);
+          const waitsByTurn = new Map<number, typeof waits>();
+          for (const wait of waits) {
+            const rows = waitsByTurn.get(wait.turnId) ?? [];
+            rows.push(wait);
+            waitsByTurn.set(wait.turnId, rows);
+          }
+          for (const [turnId, rows] of waitsByTurn) {
+            if (
+              rows.some((wait) =>
+                currentMarkers.has(`${wait.dispatchBase}.done`),
+              )
+            )
+              continue;
+            if (
+              rows.every(
+                (wait) =>
+                  this.now() >
+                  wait.deadlineAt + this.config.dispatchResumeGraceMs,
+              )
+            ) {
+              const resumeTurnId = this.log.enqueueDispatchDeadlineResume(
+                turnId,
+                this.now(),
+              );
+              this.logger.log(
+                jsonLog({
+                  event: "dispatch_deadline_resume",
+                  linearSessionId: session.linearSessionId,
+                  turnId,
+                  resumeTurnId,
+                }),
+              );
+              void this.drain();
+              break;
             }
           }
         } catch (error) {
