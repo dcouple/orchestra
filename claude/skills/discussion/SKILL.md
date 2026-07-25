@@ -11,14 +11,14 @@ argument-hint: "[idea, question, or topic]"
 Have an interactive, opinionated discussion. The goal is shared clarity — understanding
 the problem, weighing the options, or pinning down what's actually happening — not a
 document. When the discussion converges on something worth building or fixing and no work
-item exists, capture starts through the matching `/create-*` skill — invoked by the user or
+item exists, capture starts through the `create-plan` skill — invoked by the user or
 this agent; this skill's job still ends at clarity.
 
 ## Conversation and research only — unless asked
 
 Don't edit source files, propose diffs to apply, or write documents, specs, tickets,
 or verification criteria unless the user explicitly asks for one mid-discussion.
-Capture belongs to the `/create-*` skills. The one exception is Step 3's
+Capture belongs to the `create-plan` skill. The one exception is Step 3's
 decision log — a record of what was decided, not a deliverable.
 
 ## Steps
@@ -67,7 +67,7 @@ When the discussion converges, write the decision log to
 direction chosen and over what alternatives, constraints the user stated,
 open questions. A few lines each — dated and slugged so parallel
 workstreams never collide. This is how intent survives past the
-conversation: the `/create-*` drafting step reads it, and anyone resuming
+conversation: `/create-plan`'s drafting step reads it, and anyone resuming
 the thread starts from it instead of from memory.
 
 When the discussion has converged on capturable work with no existing item, start capture

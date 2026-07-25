@@ -41,22 +41,23 @@ discussion so far:
 - **Desired end state** — user-visible "done"
 - **Locked directions** — only decisions the model shouldn't re-make (number them D1, D2…)
 - **Out of scope**
-- **Dependencies & mechanics** — the inventory that forces discovery now, not
-  during implementation. **Major components only — the systems this work
-  will be based on**: third-party services, APIs, and packages the plan
-  newly leans on; things that must be added for the work to stand; internal
-  surfaces and subsystems the work will utilize whose mechanics shape the
-  design; human dependencies — anything major that needs mapping out or
-  discussing, never routine libraries or trivial internals; the schema
-  delta (explicitly "none" when none); and sequencing (work that should
-  land first, follow-ups this creates). For each major dependency,
-  either its mechanics are **verified** — a `codex` dispatch (role
-  `code-researcher`) for codebase facts or the `web-researcher` sub-agent
-  for external ones, its finding saved as a `refs/<topic>.html` sub-report
-  covering what the plan will bake in (for a third-party integration: what
-  it costs, the specific calls this item will use, the library/SDK to use,
-  auth and limits) — or it is marked **assumed** and the user consciously
-  accepts that.
+- **Dependencies & mechanics** — research the load-bearing dependencies and
+  systems this plan will rely on and how they work, through the lens of
+  what's relevant to this plan (`.references/html-plan.md` · Dependencies &
+  mechanics owns the full contract). State the schema delta (explicitly
+  "none" when none) and the sequencing (work that should land first,
+  follow-ups this creates). Each dependency ends **verified** — a `codex`
+  dispatch (role `code-researcher`) for codebase facts or the
+  `web-researcher` sub-agent for external ones, the finding saved as a
+  `refs/<topic>.html` sub-report — or **assumed** with the user consciously
+  accepting that.
+
+Ask the user the clarifying questions **before** drafting the plan — never
+substitute an assumption for an answer the user could give. And expect that
+more research may be needed before the plan is ready to present: dispatching
+further sub-agents (code-researcher, web-researcher, the investigator)
+mid-capture is normal and encouraged — a plan built on guesses is worse than
+a plan that took one more dispatch.
 
 When the work **replaces existing behavior**, decide the compatibility
 stance now, with the user, and lock it as a direction: clean replacement

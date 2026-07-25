@@ -1,6 +1,6 @@
 # Verification Methods — shared reference
 
-The menu of ways to prove a change works. Used by the `/create-*` skills when
+The menu of ways to prove a change works. Used by the `create-plan` skill when
 mapping each `AC#` to a method, and by `/do`'s verify stage when proving them.
 Per-surface checklists live in `rubrics/` — pick the one matching the change
 type and require its evidence.
