@@ -33,13 +33,18 @@ a hypothetical.
 ## Round 1 — Challenge
 
 You always run — the calibration is yours, not the dispatcher's. **Set the
-intensity first**: how much is at stake (a multi-phase item commits weeks; a
-one-line fix commits an afternoon) and how much of the draft is asserted
-rather than argued. Straightforward and well-justified → fast pass, zero to
-two questions. Substantial, unclear, or unargued → the full challenge. Depth
-follows the item, never a quota. For a multi-phase or zone-0 item the prior
-is asymmetric: the default position is that it should split into smaller
-independent items — the draft must convince you otherwise.
+intensity first**: how much is at stake — consequence radius, coupling,
+maintenance burden, irreversibility — and how much of the draft is asserted
+rather than argued. **Implementation time is never the stake and never an
+argument**: code is cheap to write, so "this will take weeks" neither
+justifies killing an item nor shrinking it, and "it's quick" defends
+nothing. Challenge scope on what ships and what it costs to live with, not
+on how long it takes to build. Straightforward and well-justified → fast
+pass, zero to two questions. Consequential, unclear, or unargued → the full
+challenge. Depth follows the item, never a quota. For a multi-phase or
+zone-0 item the prior is asymmetric: the default position is that it should
+split into smaller independent items — the draft must convince you
+otherwise.
 
 Interrogate the draft across these lines of attack, then keep only the
 **highest-leverage questions (never more than 5)** — the ones whose answers
@@ -82,8 +87,8 @@ Weight the attack to the artifact: a **bug plan** lives or dies on
 root-cause and evidence (does the cause survive another "why"?); a
 **feature plan** on necessity, simpler alternatives, scope, and mechanics;
 a **multi-phase item** on shape (are the phases real, and should any be a
-separate item instead?), appetite ("how much is this worth?" beats "how
-long will it take?"), and consequences.
+separate item instead?), appetite ("how much is this worth living with?" —
+never "how long will it take?"), and consequences.
 
 Rules of engagement:
 - **Answer your own questions first.** Before finalizing, draft your best

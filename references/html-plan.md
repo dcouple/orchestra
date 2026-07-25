@@ -70,9 +70,9 @@ fixed; omit sections that don't apply and leave the gap.
 | — | Opening diagram | always — see below | always; the failure path |
 | 01 | Why | intent (the why behind the request — what `/do` optimizes for) + desired end state as before/after panels | summary + **Environment** line + expected-vs-actual panels; defect screenshot when visible |
 | 02 | User journeys | flow strips per journey + coverage (multi-journey items only) | failing path vs fixed path |
-| 03 | Direction | locked decisions as `D1…` `.decision` cards (each with its rejected alternative) + advisory approach + work strip or phase timeline (see Work sequence) | root cause with confidence stated (`confirmed | likely | hypothesis`) + suggested resolution path |
+| 03 | Direction | locked decisions as `D1…` `.decision` cards (each with its rejected alternative) | root cause with confidence stated (`confirmed | likely | hypothesis`) |
 | 04 | Dependencies & mechanics | see below — always present | same; often collapses to the schema-changes line |
-| 05 | Phases | multi-phase items only — binding timeline + per-phase blocks (see below) | — |
+| 05 | Approach | always present — how we'll tackle this (see below); multi-phase items add the binding timeline + per-phase blocks | the suggested resolution path; a strip only when it genuinely has stages |
 | 06 | Scope | in / out-of-scope panels | business impact + severity; out-of-scope if any |
 | 07 | Verification | categorized checklist + flow→AC map (see below) | AC1 = the reproduction steps flipping to pass (steps listed here, deterministic enough to re-run) + prevention criteria (regression test / lint rule / invariant) |
 | 08 | Mockups | user-facing items — collapsed `details`, open at zone 0 | — |
@@ -99,13 +99,18 @@ Form is at the agent's discretion — inline SVG on the tokens (safest),
 
 The section that forces discovery **before** implementation. Always present.
 
-- **One `.dep` card per dependency**: external services and APIs, systems and
-  subsystems touched, human work required (credentials, approvals,
-  purchases), notable new packages. Each card states *what it does for this
-  item* and *how the mechanism works* in a sentence or two, and carries a
-  badge: `verified` (a researcher or investigator confirmed the mechanics —
-  link the sub-report) or `assumed` (nobody checked). An `assumed` badge on
-  an external integration is a visible red flag, and that is the point.
+- **Major components only.** A dependency earns a card by being
+  load-bearing: a third-party service or API the plan newly leans on, a
+  subsystem whose mechanics shape the design, human work required
+  (credentials, approvals, purchases). Routine small libraries, standard
+  tooling, and trivial internals don't get listed — an overlisted inventory
+  buries the dependency that matters.
+- **One `.dep` card per major dependency.** Each card states *what it does
+  for this item* and *how the mechanism works* in a sentence or two, and
+  carries a badge: `verified` (a researcher or investigator confirmed the
+  mechanics — link the sub-report) or `assumed` (nobody checked). An
+  `assumed` badge on an external integration is a visible red flag, and
+  that is the point.
 - **Schema changes — mandatory `.callout`, "none" allowed but never
   omitted.** A plan that can't state its schema delta doesn't understand its
   own data flow; a large delta is the strongest signal the item should split.
@@ -121,39 +126,45 @@ The section that forces discovery **before** implementation. Always present.
 When a dependency or question warrants real research, the dispatch's finding
 lands as its own simple page — `./tmp/<id>/refs/<topic>.html` — and the
 `.dep` card links it, with a one-paragraph digest in a collapsed `details`
-block. Sub-report pages are markdown-simple: the template's tokens, a title,
-prose, at most a diagram — no section map. The plan page summarizes; the
-sub-report carries the depth. This is how research survives the conversation
-and how the user zooms in on exactly what they don't yet understand.
+block. For a third-party integration, the sub-report answers the questions
+the plan will bake in: what it does and how the mechanism works, what it
+costs (pricing/plan tier), the specific calls or endpoints this item will
+use, the library or SDK to use, and auth/limits — concrete enough that the
+approach can be written from it, and honest enough to reveal when the
+integration isn't needed at all. Sub-report pages are markdown-simple: the
+template's tokens, a title, prose, at most a diagram — no section map. The
+plan page summarizes; the sub-report carries the depth. This is how research
+survives the conversation and how the user zooms in on exactly what they
+don't yet understand.
 
-## Phases (multi-phase items)
+## Approach
 
-When `phases` has two or more entries:
+**Always present** — the major section on *how we are going to tackle this*.
+It is about the shape of the attack, never specific steps: the areas to
+touch and the broad approach for each, existing functionality to reuse,
+repurpose/refactor opportunities, with orienting file/module pointers
+inline. Every item has at least one phase; the section scales with the
+`phases` metadata:
 
-- The timeline (`.pipeline`, one `.stage` per phase, sequential) is
-  **binding** — titles match `phases[].title` exactly; `.stage.done` mirrors
-  `phases[].done` (state itself lives in the metadata).
-- Each phase gets a self-contained block — scope, out of scope, advisory
-  approach, and its own numbered verification criteria — so `/do` can pick
-  the phase up alone. Criteria live in the block, never the timeline.
-- A cross-cutting concerns passage (security, observability, migration —
-  anything true across phases) sits above the phase blocks; cross-cutting
-  locked decisions stay in section 03.
-- One page for the whole item — never a page per phase.
+- **Single-phase**: the approach as prose or 3–6 bullets, optionally with an
+  indicative work strip — stages named by outcome, never by file —
+  captioned "indicative sequence — /do's plan stage owns the real plan."
+- **Multi-phase**: the approach broken into phases. The timeline
+  (`.pipeline`, one `.stage` per phase, sequential) is **binding** — titles
+  match `phases[].title` exactly; `.stage.done` mirrors `phases[].done`
+  (state itself lives in the metadata). Each phase gets a self-contained
+  block — scope, out of scope, its approach, and its own numbered
+  verification criteria — so `/do` can pick the phase up alone. Criteria
+  live in the block, never the timeline. A cross-cutting concerns passage
+  (security, observability, migration — anything true across phases) sits
+  above the phase blocks. One page for the whole item — never a page per
+  phase.
+- **Bug**: the suggested resolution path is this section; it becomes a
+  strip only when it genuinely has stages — a one-step fix stays prose.
 
-## Work sequence
-
-- **Multi-phase**: the phase timeline is the plan — binding, as above.
-- **Feature (single-phase)**: section 03 carries an indicative work strip —
-  3–6 stages named by outcome, never by file — captioned "indicative
-  sequence — /do's plan stage owns the real plan."
-- **Bug**: the resolution path becomes a strip only when it genuinely has
-  stages; a one-step fix stays prose.
-
-The advisory-approach rules (from the old templates) still govern anything
-indicative: write only from what the conversation established, name areas to
-touch and functionality to reuse with orienting file pointers inline, 3–5
-bullets — never file-by-file lists or step sequences; `/do` may deviate where
+The advisory rules (from the old templates) still govern: write only from
+what the conversation established — never dispatch research to fill this
+section; never file-by-file lists or step sequences; `/do` may deviate where
 the code disagrees, recording why, and reviewers never treat deviation as
 Must Fix. Locked calls stay in the `D#` cards. If genuinely unknown, one
 honest sentence deferring to `/do`'s plan stage is valid.

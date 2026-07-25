@@ -42,14 +42,18 @@ discussion so far:
 - **Locked directions** — only decisions the model shouldn't re-make (number them D1, D2…)
 - **Out of scope**
 - **Dependencies & mechanics** — the inventory that forces discovery now, not
-  during implementation: every external service, touched subsystem, human
-  dependency, and notable new package; the schema delta (explicitly "none"
-  when none); and sequencing (work that should land first, follow-ups this
-  creates). For each dependency, either its mechanics are **verified** — a
-  `codex` dispatch (role `code-researcher`) for codebase facts or the
-  `web-researcher` sub-agent for external ones, its finding saved as a
-  `refs/<topic>.html` sub-report — or it is marked **assumed** and the user
-  consciously accepts that.
+  during implementation. **Major components only**: the external services and
+  APIs the plan newly leans on, the subsystems whose mechanics shape the
+  design, human dependencies — never routine libraries or trivial internals;
+  the schema delta (explicitly "none" when none); and sequencing (work that
+  should land first, follow-ups this creates). For each major dependency,
+  either its mechanics are **verified** — a `codex` dispatch (role
+  `code-researcher`) for codebase facts or the `web-researcher` sub-agent
+  for external ones, its finding saved as a `refs/<topic>.html` sub-report
+  covering what the plan will bake in (for a third-party integration: what
+  it costs, the specific calls this item will use, the library/SDK to use,
+  auth and limits) — or it is marked **assumed** and the user consciously
+  accepts that.
 
 When the work **replaces existing behavior**, decide the compatibility
 stance now, with the user, and lock it as a direction: clean replacement
@@ -106,8 +110,11 @@ the attempts listed — plus severity (`critical | high | medium | low`) and
 business impact agreed with the user.
 
 ### 3. Cut the phases (only when the work is multi-phase)
-If the work is one coherent outcome, record a single `phases` entry and move
-on. Otherwise split it into sequential phases, each a self-contained slice:
+Every item's plan carries an **Approach** section — how the work will be
+tackled, at approach altitude (`.references/html-plan.md` · Approach) — and
+at least one `phases` entry. If the work is one coherent outcome, record a
+single entry and move on. Otherwise split it into sequential phases, each a
+self-contained slice:
 one coherent outcome, independently verifiable, buildable on the phases
 before it. Don't split because many files are touched — split where
 verification surfaces genuinely differ. Multi-phase items run sequentially
@@ -121,10 +128,11 @@ a goal, scope, and its own verification surface; order confirmed.
 Author `./tmp/<id>/plan.html` per `.references/draft-work-item.md` (mechanics)
 and `.references/html-plan.md` (page contract and section map), and open it in
 the user's browser. This page is the work item: for a feature, the change,
-the before/after, dependencies & mechanics, and the direction; for a bug,
-expected vs actual, the root cause (confidence stated honestly), and the
-resolution path; for multi-phase work, the binding phase timeline and
-per-phase blocks. Fold corrections in as in-place edits.
+the before/after, dependencies & mechanics, the direction, and the
+approach; for a bug, expected vs actual, the root cause (confidence stated
+honestly), and the resolution path; for multi-phase work, the Approach
+section carries the binding phase timeline and per-phase blocks. Fold
+corrections in as in-place edits.
 
 Feature specifics — suitable AC methods: a lint rule, test, script (backend),
 or natural navigation of the running app (frontend/mobile).

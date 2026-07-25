@@ -279,16 +279,21 @@
     </div>
   </section> -->
 
-  <!-- MULTI-PHASE TIMELINE (phases in metadata has 2+ entries) — binding,
-       one .stage per phase, titles matching phases[].title exactly;
-       .done mirrors phases[].done.
-  <div class="pipeline">
-    <div class="stage done"><div class="name">1 · Phase title</div><div class="desc">desired end state</div></div>
-    <div class="arrow">&#8594;</div>
-    <div class="stage"><div class="name">2 · Phase title</div><div class="desc">…</div></div>
-  </div> -->
-
-  <!-- FEATURE WORK STRIP (single-phase) — indicative, 3–6 outcome-named stages.
+  <!-- APPROACH (section 05 — always present, see html-plan.md · Approach) —
+       how we'll tackle this, at approach altitude, never specific steps.
+       Multi-phase (phases metadata has 2+ entries): binding timeline, one
+       .stage per phase, titles matching phases[].title exactly, .done
+       mirroring phases[].done, then a self-contained block per phase.
+  <section>
+    <p class="eyebrow">05 · Approach</p>
+    <h2>How we'll tackle this</h2>
+    <div class="pipeline">
+      <div class="stage done"><div class="name">1 · Phase title</div><div class="desc">desired end state</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="stage"><div class="name">2 · Phase title</div><div class="desc">…</div></div>
+    </div>
+  </section>
+       Single-phase: prose or 3–6 bullets, optionally an indicative strip:
   <div class="pipeline">
     <div class="stage"><div class="name">stage</div><div class="desc">outcome</div></div>
     <div class="arrow">&#8594;</div>
@@ -313,7 +318,7 @@
 
   <!-- VERIFICATION — categorized checklist + flow→AC map.
   <section>
-    <p class="eyebrow">08 · Verification</p>
+    <p class="eyebrow">07 · Verification</p>
     <h2>What we'll check, by surface</h2>
     <div class="vgroup">
       <p class="vgroup-head">UX / in-app flows</p>
@@ -333,7 +338,7 @@
        are the settable dials; pills reflect the metadata. The user changes
        them by telling the agent during alignment — the page can't write back.
   <section>
-    <p class="eyebrow">10 · Run config</p>
+    <p class="eyebrow">09 · Run config</p>
     <h2>How /do will run this</h2>
     <div class="dials">
       <div class="dial">
