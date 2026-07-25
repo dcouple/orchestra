@@ -81,10 +81,11 @@ Aggregated later as zone × model × path → rework and spend, this is the
 evidence that tunes this table; capture it even when a number is only
 reachable as `unknown`.
 
-## Epics
+## Multi-phase items
 
-An epic is always **full machinery**: dossier and cap 3. Its review lanes follow
+A multi-phase item (two or more entries in the item metadata's `phases`
+list) is always **full machinery**: dossier and cap 3. Its review lanes follow
 the zone rule: dual at zone 0, single Codex at zones 1–3. The zone still gates
 the frontend-verifier and QA dials per phase, and still rides in every record.
-Skills reference this override here. An explicit `review_lanes:` on the epic
+Skills reference this override here. An explicit `review_lanes:` on the item
 itself outranks the zone default in either direction.

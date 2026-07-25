@@ -25,7 +25,7 @@ this conversation — the prompt must carry everything the role needs.
 | `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 
 Efforts are defaults: `medium` for the implementer, `low` for every other role. The dispatcher may raise a reviewer to `medium` or
-`high` — rarely, when the zone warrants it (zone 0, or an epic), with the
+`high` — rarely, when the zone warrants it (zone 0, or a multi-phase item), with the
 reason stated in the dispatch; never above `high`, never by default. The investigator and
 backend-verifier act on the environment (tests, scripts, app boots), but
 their charters forbid editing project files.

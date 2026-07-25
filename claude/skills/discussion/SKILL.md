@@ -1,6 +1,6 @@
 ---
 name: discussion
-description: Interactive back-and-forth to clarify, understand, or figure something out — an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything — e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-plan or /create-epic.
+description: Interactive back-and-forth to clarify, understand, or figure something out — an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything — e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-plan.
 argument-hint: "[idea, question, or topic]"
 ---
 
@@ -71,15 +71,14 @@ conversation: the `/create-*` drafting step reads it, and anyone resuming
 the thread starts from it instead of from memory.
 
 When the discussion has converged on capturable work with no existing item, start capture
-yourself: `/create-plan` for a single-outcome change or `/create-epic` for a multi-phase
-workstream. Publish remains gated by the capture skill's alignment pause. Otherwise, suggest
+yourself with `/create-plan` — single-outcome or multi-phase, the phase cut is the capture
+skill's step. Publish remains gated by the capture skill's alignment pause. Otherwise, suggest
 the relevant next steps:
 
 ```
 Decision log: ./tmp/discussions/YYYY-MM-DD-<slug>.md
 
 Suggested next steps:
-- `/create-plan [title]` — capture a single-outcome change as a Feature Ticket, or a defect (investigated here) as a Bug Report
-- `/create-epic [title]` — capture a multi-phase workstream as an Epic Spec
+- `/create-plan [title]` — capture the work (feature or bug, single-outcome or multi-phase) as a plan
 - `/discussion [follow-up]` — keep exploring a different aspect
 ```

@@ -88,8 +88,8 @@ existing bundle. Both accept a JSON manifest whose file contents are base64 enco
 ```json
 {
   "files": [
-    { "path": "item.md", "contentBase64": "IyBJdGVtCg==" },
-    { "path": "refs/explainer.html", "contentBase64": "PGgxPkV4cGxhaW5lcjwvaDE+" }
+    { "path": "plan.html", "contentBase64": "PCFkb2N0eXBlIGh0bWw+" },
+    { "path": "refs/hellosign.html", "contentBase64": "PGgxPlN1Yi1yZXBvcnQ8L2gxPg==" }
   ]
 }
 ```

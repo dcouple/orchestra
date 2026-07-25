@@ -63,10 +63,10 @@ edits the canonical copy — that is intended.
 
 ## Work-item tracking
 
-The workflow skills (`/create-plan`, `/create-epic`,
-`/do`) create work-item artifacts (item.md, refs/ including explainer.html,
-plan.md, wrapup.md) locally under `./tmp/<id>/`. `./tmp/` is scratch —
-never commit it.
+The workflow skills (`/create-plan`, `/do`) create work-item artifacts
+(plan.html — the canonical HTML work item, refs/ including research
+sub-reports, impl-plan.md, wrapup.md) locally under `./tmp/<id>/`.
+`./tmp/` is scratch — never commit it.
 
 ```yaml
 tracker: github

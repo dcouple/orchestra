@@ -48,9 +48,9 @@ applicable.
 
 ### 1. Load the record
 Resolve `<id>` from $ARGUMENTS (a work-item id directly, or match a PR to the `pr:` field
-across `./tmp/*/item.md`). Then read:
-- `./tmp/<id>/item.md` — what we asked for
-- `./tmp/<id>/plan.md` — what `/do` planned
+across `./tmp/*/plan.html` metadata, legacy `./tmp/*/item.md`). Then read:
+- `./tmp/<id>/plan.html` — what we asked for (state in its `#orchestra-meta` block)
+- `./tmp/<id>/impl-plan.md` — what `/do` planned
 - `./tmp/<id>/wrapup.md` — what `/do` claims it delivered and verified
 - PR feedback — `gh pr view <pr> --comments` and the review threads, or ask the user to
   paste it if it lives outside GitHub
@@ -159,6 +159,6 @@ nothing outside `./tmp/<id>/` was modified; the run never paused for approval.
 
 ```
 Suggested next steps:
-- `/create-plan [defect]` then `/do ./tmp/<id>/item.md` — fix the code gap itself
+- `/create-plan [defect]` then `/do ./tmp/<id>/plan.html` — fix the code gap itself
 - `/postmortem-loop` — sweep published postmortems and land the approved system changes
 ```

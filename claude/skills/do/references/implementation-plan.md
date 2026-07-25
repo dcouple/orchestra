@@ -1,7 +1,8 @@
 # Implementation Plan — format
 
-> Produced by `/do` (plan stage) from the work item. Saved as `./tmp/<id>/plan.md`
-> (per issue; one per phase for epics). Reviewed by Plan Reviewer, then updated with
+> Produced by `/do` (plan stage) from the work item. Saved as `./tmp/<id>/impl-plan.md`
+> (per item; one per phase — `impl-plan-<n>.md` — for multi-phase items).
+> Reviewed by Plan Reviewer, then updated with
 > progress and plan-deltas during implement.
 > **Calibrated for a frontier implementer: what to build & why, at file/module**
 > **granularity — not line-level code**, except a short pseudocode sketch inside
@@ -23,7 +24,7 @@ item: <id>
 zone: <0-3 — the item's, or Overseer-classified>
 effective_zone: <after any one-notch escalation — same as zone when none>
 zone_reasoning: <why classified/escalated — omit when the item carried the zone unchanged>
-lane: <light | full — derived from effective_zone; epics are always full (zones.md Epics)>
+lane: <light | full — derived from effective_zone; multi-phase items are always full (zones.md)>
 review_lanes: <dual | single — the item's explicit override when present, else the zone default>
 requested_lanes: <dual | single — only when the daemon signals runtime fallback>
 effective_lanes: <single — only when the daemon signals runtime fallback>
