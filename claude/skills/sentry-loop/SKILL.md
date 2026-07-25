@@ -1,6 +1,6 @@
 ---
 name: sentry-loop
-description: On-demand Sentry triage loop — sweep every project's errors over a time window, classify each issue (new / recurring / regressed, user-impacting / zero-user, real / noise), root-cause only the clusters that matter, file findings into the work tracker under the loop's label, and annotate Sentry so the state sticks. Use when the user asks to run the sentry loop, triage Sentry, "what's new in Sentry", or wants a period's errors root-caused. Report-only — fixes go through /create-plan then /do.
+description: On-demand Sentry triage loop — sweep every project's errors over a time window, classify each issue (new / recurring / regressed, user-impacting / zero-user, real / noise), root-cause only the clusters that matter, file findings into the work tracker under the loop's label, and annotate Sentry so the state sticks. Use when the user asks to run the sentry loop, triage Sentry, "what's new in Sentry", or wants a period's errors root-caused. Report-only — fixes go through /create-brief then /do.
 argument-hint: "[time window, default 7d]"
 ---
 
@@ -106,7 +106,7 @@ creates must be closable by a single PR; its title is the change, imperative
      hypothesis-first).
    - **Root cause + confidence** — one sentence, and why that confidence.
    - **Fix shape** — acceptance criteria and the suggested entry point
-     (`/create-plan <id>` or straight `/do` for trivial ones).
+     (`/create-brief <id>` or straight `/do` for trivial ones).
 2. **Hygiene findings follow the same rule** — each fixable noise source
    (a dev cron writing to prod Sentry, a dead task type still queued) is its
    own small PR-sized issue. Noise that isn't ours to fix (third-party,
@@ -136,7 +136,7 @@ regression and poison the age axis.
 ## Boundaries
 
 - Report-only: no code changes, no fixes, no config edits. Fixes go through
-  `/create-plan` → `/do`.
+  `/create-brief` → `/do`.
 - Don't investigate recurring known issues past confirming their tracker item
   still reflects reality.
 - If the window's volume is an order of magnitude above the norm, stop

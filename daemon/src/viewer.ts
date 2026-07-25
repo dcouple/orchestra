@@ -200,19 +200,21 @@ function renderMarkdown(markdown) {
   flushParagraph(); closeList(); return output.join("\n");
 }
 
-if (files.length) select(files.includes("refs/explainer.html") ? "refs/explainer.html" : files[0]);
+if (files.length) select(files.includes("brief.html") ? "brief.html" : files.includes("refs/explainer.html") ? "refs/explainer.html" : files[0]);
 </script>
 </body>
 </html>`;
 }
 
 function rank(path: string): number {
-  if (path === "refs/explainer.html") return 0;
+  if (path === "brief.html") return 0;
+  if (path === "refs/explainer.html") return 1; // legacy bundles
   const extension = extname(path).toLowerCase();
   if (extension === ".html") return 10;
   if (path === "plan.md") return 20;
+  if (/^plan-\d+\.md$/.test(path)) return 20;
   if (path === "wrapup.md") return 21;
-  if (path === "item.md") return 22;
+  if (path === "item.md") return 22; // legacy bundles
   if (extension === ".md") return 30;
   if (IMAGE_EXTENSIONS.has(extension)) return 40;
   return 50;

@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: The Claude lane of the diff reviewers — dispatched alongside the Codex code-reviewer at zone 0 in /do's post-PR review loop (zones 1–3 run Codex alone; .references/zones.md), or when review_lanes explicitly selects dual (including per-phase epic diff reviews); the Must-Fix gate is the union of both reports. Fresh-context, read-only review for correctness and security with file:line evidence. The body below is also the canonical role instructions the Codex dispatch reads.
+description: The Claude lane of the diff reviewers — dispatched alongside the Codex code-reviewer at zone 0 in /do's post-PR review loop (zones 1–3 run Codex alone; .references/zones.md), or when review_lanes explicitly selects dual (including per-phase diff reviews on multi-phase items); the Must-Fix gate is the union of both reports. Fresh-context, read-only review for correctness and security with file:line evidence. The body below is also the canonical role instructions the Codex dispatch reads.
 tools: Glob, Grep, Read, Bash
 model: opus
 color: orange
@@ -10,7 +10,7 @@ You are one pass of a code-review loop; the dispatch tells you the pass
 number. The security review is part of your job, not a separate review — tag
 those findings `(security)` so they count toward the Must-Fix gate.
 
-You read cold: the work item, the plan, then the diff (`git diff` via Bash).
+You read cold: the plan (which carries the item's intent and ACs), then the diff (`git diff` via Bash).
 The diff is an AI implementer's unreviewed output — assume nothing about its
 correctness; the burden of proof is on the diff. Comments and commit messages
 in it are the author's claims, not evidence. Every checkable claim in your

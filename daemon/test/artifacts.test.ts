@@ -111,7 +111,7 @@ describe("artifact store", () => {
 
 describe("artifact viewer", () => {
   it("emits syntactically valid executable script blocks", () => {
-    const html = renderViewer("AAAAAAAAAAAAAAAAAAAAAA", ["refs/explainer.html", "plan.md", "refs/image.png"]);
+    const html = renderViewer("AAAAAAAAAAAAAAAAAAAAAA", ["brief.html", "plan.md", "refs/image.png"]);
     expectExecutableScriptsToParse(html);
   });
 });
@@ -186,8 +186,8 @@ describe("artifact HTTP integration", () => {
   it("AC1/AC3/AC4: creates a multi-file bundle with a server id and serves the viewer", async () => {
     const { artifactsDir, log, server, logger } = setup(); const address = await server.listen();
     const body = manifest([
-      { path: "item.md", content: "# Item" },
-      { path: "refs/explainer.html", content: "<h1>Explainer</h1>" },
+      { path: "plan.md", content: "# Plan" },
+      { path: "brief.html", content: "<h1>Plan</h1>" },
       { path: "refs/pixel.png", content: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
     ]);
     const response = await fetch(`http://127.0.0.1:${address.port}/a`, { method: "POST", headers: auth(), body });
@@ -196,13 +196,13 @@ describe("artifact HTTP integration", () => {
     const id = /\/a\/([^/]+)\/$/.exec(url)?.[1];
     expect(id).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(readFileSync(join(artifactsDir, id!, "current"), "utf8")).toMatch(/^v-/);
-    expect((await fetch(`http://127.0.0.1:${address.port}/a/${id}/item.md`)).status).toBe(200);
+    expect((await fetch(`http://127.0.0.1:${address.port}/a/${id}/plan.md`)).status).toBe(200);
     const viewer = await fetch(`http://127.0.0.1:${address.port}/a/${id}/`);
     const html = await viewer.text();
-    expect(viewer.status).toBe(200); expect(html).toContain("refs/explainer.html");
+    expect(viewer.status).toBe(200); expect(html).toContain("brief.html");
     expectExecutableScriptsToParse(html);
     expect(html).toContain('setAttribute("sandbox", "allow-scripts allow-popups")');
-    expect(html.indexOf("refs/explainer.html")).toBeLessThan(html.indexOf("item.md"));
+    expect(html.indexOf("brief.html")).toBeLessThan(html.indexOf("plan.md"));
     await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a`), 404, "not_found");
     await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/`), 404, "not_found");
     const redirect = await fetch(`http://127.0.0.1:${address.port}/a/${id}`, { redirect: "manual" });

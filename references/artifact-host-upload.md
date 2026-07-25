@@ -15,8 +15,8 @@ The wire format is a JSON manifest:
 ```json
 {
   "files": [
-    { "path": "item.md", "contentBase64": "IyBJdGVtCg==" },
-    { "path": "refs/explainer.html", "contentBase64": "PGgxPkV4cGxhaW5lcjwvaDE+" }
+    { "path": "brief.html", "contentBase64": "PCFkb2N0eXBlIGh0bWw+" },
+    { "path": "refs/hellosign.html", "contentBase64": "PGgxPlN1Yi1yZXBvcnQ8L2gxPg==" }
   ]
 }
 ```
@@ -24,7 +24,7 @@ The wire format is a JSON manifest:
 Paths use `/` separators and are relative to the bundle root. File contents
 are base64 encoded. The root name `index.json` is reserved.
 
-For a work-item bundle, include `item.md`, any present `plan.md` and
+For a work-item bundle, include `brief.html`, any present `plan.md` and
 `wrapup.md`, and every regular file under `refs/`. This dependency-free Node
 snippet writes that manifest to a temporary file. Set `ARTIFACT_HOST` to the
 exact configured host value and `ITEM_DIR` to the work-item directory:
@@ -37,7 +37,8 @@ import { join, relative } from "node:path";
 const root = process.argv[2];
 const files = [];
 const add = path => files.push({ path: relative(root, path).split("\\").join("/"), contentBase64: readFileSync(path).toString("base64") });
-for (const name of ["item.md", "plan.md", "wrapup.md"]) {
+// trailing names are legacy — kept so milestone re-uploads of older items stay complete
+for (const name of ["brief.html", "plan.md", "wrapup.md", "item.md"]) {
   const path = join(root, name); try { if (statSync(path).isFile()) add(path); } catch {}
 }
 const walk = dir => { for (const entry of readdirSync(dir, { withFileTypes: true })) {

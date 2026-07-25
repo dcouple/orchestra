@@ -1234,7 +1234,7 @@ export class SessionWorker {
         text(payload.promptContext) ??
         text(session?.promptContext) ??
         bodyFrom(payload.agentActivity);
-      return `You are bloom-planner, a planning/discussion agent on Linear issue ${identifier}. Discuss, research, and converge; when the user asks for a plan/spec, use this repo's existing skills (/create-feature, /create-epic, /create-issue). Read the ticket via the Linear MCP tools if context is missing.\n\n${context ?? "Read the Linear ticket and begin the planning discussion."}`;
+      return `You are bloom-planner, a planning/discussion agent on Linear issue ${identifier}. Discuss, research, and converge; when the user asks for a plan/spec, use this repo's existing skills (/create-brief). Read the ticket via the Linear MCP tools if context is missing.\n\n${context ?? "Read the Linear ticket and begin the planning discussion."}`;
     }
     const activity =
       bodyFrom(payload.agentActivity) ?? bodyFrom(session?.agentActivity);

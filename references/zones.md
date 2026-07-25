@@ -30,7 +30,13 @@ be zone 2. `/do` derives its dials from the zone.
 Wherever the table drops to one lane, **Codex is the lane that stays**.
 The verifier and QA dials govern *discretionary* verification — an AC whose
 only possible proof needs the running app always gets the frontend
-verifier, at any zone: acceptance evidence is never trimmed by a dial.
+verifier, at any zone: acceptance evidence is never trimmed by a **zone**
+dial. The one thing that can skip it is the item's explicit
+`frontend_verifier: false` — the user's call, honored in both directions
+(`true` forces the verifier even where the zone wouldn't run it). When
+`false` leaves app-only ACs unproven, they are recorded as
+`unverified — frontend verifier disabled by the item` in the wrap-up,
+never claimed passed.
 
 ## Rules
 
@@ -55,8 +61,9 @@ verifier, at any zone: acceptance evidence is never trimmed by a dial.
   pass returns zero Must Fix (Codex tiers: P0/P1) from every lane and the
   lanes roughly agree — remaining cap budget is never spent re-reviewing
   Should Fixes.
-- **`review_lanes:` is the one human-settable dial override.** An item may
-  carry `review_lanes: dual | single` in its frontmatter — set at capture or
+- **`review_lanes:` and `frontend_verifier:` are the two human-settable
+  dial overrides.** An item may
+  carry `review_lanes: dual | single` in its metadata — set at capture or
   edited later as item metadata on the tracker. `/do` honors it over the
   table's lane dial in both directions (it's the human's explicit call, so
   unlike the zone it may also de-escalate); `single` keeps the Codex lane,
@@ -81,10 +88,11 @@ Aggregated later as zone × model × path → rework and spend, this is the
 evidence that tunes this table; capture it even when a number is only
 reachable as `unknown`.
 
-## Epics
+## Multi-phase items
 
-An epic is always **full machinery**: dossier and cap 3. Its review lanes follow
+A multi-phase item (two or more entries in the item metadata's `phases`
+list) is always **full machinery**: dossier and cap 3. Its review lanes follow
 the zone rule: dual at zone 0, single Codex at zones 1–3. The zone still gates
 the frontend-verifier and QA dials per phase, and still rides in every record.
-Skills reference this override here. An explicit `review_lanes:` on the epic
+Skills reference this override here. An explicit `review_lanes:` on the item
 itself outranks the zone default in either direction.

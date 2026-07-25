@@ -113,21 +113,23 @@ The repository the agents work on must have:
    ```markdown
    ## Work-item tracking
 
-   The workflow skills (`/create-plan`, `/create-epic`, `/do`) create
-   work-item artifacts locally under `./tmp/<id>/`. `./tmp/` is scratch —
-   never commit it.
+   The workflow skills (`/create-brief`, `/do`) create work-item artifacts
+   locally under `./tmp/<id>/`. `./tmp/` is scratch — never commit it.
 
    ```yaml
    tracker: linear
+   artifact_host: https://<daemon-host>
    ```
 
    > Work items live in Linear; identifiers look like `ENG-123`. Pull the
    > work item (description + comments) and update it via the `linear`
    > MCP tools configured in the session; if MCP is unavailable, use the
    > Linear GraphQL API authenticated with the `LINEAR_API_KEY`
-   > environment variable. At publish, item.md is the issue description;
-   > refs/ files ride as marker-delimited comments. At wrap-up, post the
-   > wrapup as a comment and link the PR.
+   > environment variable. At publish, the issue gets a lean body (the
+   > brief's metadata YAML + Intent summary) and the bundle carries
+   > `brief.html` plus `refs/` as the artifact transport
+   > (`.references/publish-work-item.md`). At wrap-up, post the wrapup as
+   > a comment and link the PR.
    ```
 
 3. **A test/verify flow the host can run.** Whatever the repo's

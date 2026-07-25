@@ -63,10 +63,10 @@ edits the canonical copy — that is intended.
 
 ## Work-item tracking
 
-The workflow skills (`/create-plan`, `/create-epic`,
-`/do`) create work-item artifacts (item.md, refs/ including explainer.html,
-plan.md, wrapup.md) locally under `./tmp/<id>/`. `./tmp/` is scratch —
-never commit it.
+The workflow skills (`/create-brief`, `/do`) create work-item artifacts
+(brief.html — the canonical HTML work item, refs/ including research
+sub-reports, plan.md, wrapup.md) locally under `./tmp/<id>/`.
+`./tmp/` is scratch — never commit it.
 
 ```yaml
 tracker: github
@@ -74,7 +74,7 @@ github_repo: dcouple/orchestra
 artifact_host: https://linear-agent.bloomapi.com
 ```
 
-> Publish a lean GitHub issue body containing the full frontmatter, an Intent
+> Publish a lean GitHub issue body containing the brief's full metadata YAML, an Intent
 > summary, and an `Artifact bundle: <url>` link. The bundle is the complete
 > artifact transport. Post no marker comments; marker comments remain only for
 > legacy items published before this configured contract.

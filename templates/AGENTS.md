@@ -44,10 +44,10 @@ Only rules an agent would otherwise get wrong — not a style guide:
 
 ## Work-item tracking
 
-The workflow skills (`/create-plan`, `/create-epic`,
-`/do`) create work-item artifacts (item.md, refs/ including explainer.html,
-plan.md, wrapup.md) locally under `./tmp/<id>/`. `./tmp/` is scratch —
-never commit it.
+The workflow skills (`/create-brief`, `/do`) create work-item artifacts
+(brief.html — the canonical HTML work item, refs/ including research
+sub-reports, plan.md, wrapup.md) locally under `./tmp/<id>/`.
+`./tmp/` is scratch — never commit it.
 
 This section decides where work items get published. Describe the
 destination and the exact steps — the skills follow these instructions at
@@ -63,13 +63,12 @@ github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the c
 ```
 
 When `artifact_host` is set, export `ARTIFACT_HOST_TOKEN` with its upload
-bearer token; the shared publish procedure uploads and attaches the viewer URL.
+bearer token; the shared publish procedure uploads the bundle and attaches
+the viewer URL.
 
-> Without `artifact_host`, publish every work item as a self-contained GitHub
-> issue: `item.md` is the full issue body and `refs/` files ride as
-> marker-delimited issue comments. With `artifact_host`, publish the lean issue
-> body (full frontmatter, Intent summary, and `Artifact bundle: <url>`), use the
-> bundle as the artifact transport, and post no marker comments.
+> Publish per `.references/publish-work-item.md` (it owns both branches:
+> lean bundle-backed body with `artifact_host`, markdown rendition + marker
+> comments without one).
 
 Example — publish to Linear (replace or delete):
 
@@ -79,14 +78,12 @@ linear_team: <team key or team ID>
 # artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
 ```
 
-> Publish each work item to that team. Record `linear_issues` in `item.md` as an
-> always-list pairing canonical `url`, URL-derived `identifier`, and
-> `relationship: completes | relates`; see `.references/tracker-lifecycle.md`.
-> `/do` discovers team workflow statuses at runtime. Without `artifact_host`,
-> publish the full body and document any required artifact attachment steps.
-> With `artifact_host`, publish a lean body with full frontmatter and an Intent
-> summary, create an attachment card for the bundle transport, and post no
-> marker comments. Export `ARTIFACT_HOST_TOKEN` with the upload bearer token.
+> Publish each work item to that team per
+> `.references/publish-work-item.md`; `linear_issues` metadata follows
+> `.references/tracker-lifecycle.md`. `/do` discovers team workflow
+> statuses at runtime. Linear specifics: with `artifact_host`, the bundle
+> rides as an attachment card (export `ARTIFACT_HOST_TOKEN`); without one,
+> document any required artifact attachment steps here.
 
 Configure one tracker example, not both.
 

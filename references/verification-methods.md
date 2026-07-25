@@ -1,6 +1,6 @@
 # Verification Methods — shared reference
 
-The menu of ways to prove a change works. Used by the `/create-*` skills when
+The menu of ways to prove a change works. Used by the `create-brief` skill when
 mapping each `AC#` to a method, and by `/do`'s verify stage when proving them.
 Per-surface checklists live in `rubrics/` — pick the one matching the change
 type and require its evidence.
@@ -44,7 +44,7 @@ type and require its evidence.
 - **Prefer the durable guard.** When verification (or a bug) exposes a class
   of violation, encode it as a custom lint/static rule — it re-verifies every
   future change for free. This is the strongest "prevention criteria" for
-  Bug Reports.
+  bug briefs.
 - **Test behavior, not implementation.** Assertions target public API and
   rendered output; a test that exercises only mocks of code we own verifies
   the mock. Exercise at least one real boundary.

@@ -50,7 +50,7 @@ fallback_cause: <daemon-classified cause — omit unless runtime fallback occurr
 passes: {plan: <used>/<cap>, post_pr: <used>/<cap>}
 findings: {plan: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}},
            post_pr: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}}}
-verifiers: {frontend: <ran|skipped>, qa_pass: <ran|trimmed|skipped>}
+verifiers: {frontend: <ran|skipped|disabled_by_item>, qa_pass: <ran|trimmed|skipped>}  # disabled_by_item: list each app-only AC as "unverified — frontend verifier disabled by the item" under Verification evidence
 qa_findings: <n>
 wall_clock: <h:mm, run start to wrap-up — script the session transcript JSONL (first event → now), scanning every session of a resumed/compacted run; dispatch output mtimes / commit times / PR createdAt are the fallback only when no transcript is readable; never estimated from memory — the postmortem re-derives this and a mismatch is a finding>
 deviations: <none | "escalated <z>→<z-1>: reason">

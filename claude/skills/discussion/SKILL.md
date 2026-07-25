@@ -1,6 +1,6 @@
 ---
 name: discussion
-description: Interactive back-and-forth to clarify, understand, or figure something out — an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything — e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-plan or /create-epic.
+description: Interactive back-and-forth to clarify, understand, or figure something out — an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything — e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-brief.
 argument-hint: "[idea, question, or topic]"
 ---
 
@@ -11,14 +11,14 @@ argument-hint: "[idea, question, or topic]"
 Have an interactive, opinionated discussion. The goal is shared clarity — understanding
 the problem, weighing the options, or pinning down what's actually happening — not a
 document. When the discussion converges on something worth building or fixing and no work
-item exists, capture starts through the matching `/create-*` skill — invoked by the user or
+item exists, capture starts through the `create-brief` skill — invoked by the user or
 this agent; this skill's job still ends at clarity.
 
 ## Conversation and research only — unless asked
 
 Don't edit source files, propose diffs to apply, or write documents, specs, tickets,
 or verification criteria unless the user explicitly asks for one mid-discussion.
-Capture belongs to the `/create-*` skills. The one exception is Step 3's
+Capture belongs to the `create-brief` skill. The one exception is Step 3's
 decision log — a record of what was decided, not a deliverable.
 
 ## Steps
@@ -67,19 +67,18 @@ When the discussion converges, write the decision log to
 direction chosen and over what alternatives, constraints the user stated,
 open questions. A few lines each — dated and slugged so parallel
 workstreams never collide. This is how intent survives past the
-conversation: the `/create-*` drafting step reads it, and anyone resuming
+conversation: `/create-brief`'s drafting step reads it, and anyone resuming
 the thread starts from it instead of from memory.
 
 When the discussion has converged on capturable work with no existing item, start capture
-yourself: `/create-plan` for a single-outcome change or `/create-epic` for a multi-phase
-workstream. Publish remains gated by the capture skill's alignment pause. Otherwise, suggest
+yourself with `/create-brief` — single-outcome or multi-phase, the phase cut is the capture
+skill's step. Publish remains gated by the capture skill's alignment pause. Otherwise, suggest
 the relevant next steps:
 
 ```
 Decision log: ./tmp/discussions/YYYY-MM-DD-<slug>.md
 
 Suggested next steps:
-- `/create-plan [title]` — capture a single-outcome change as a Feature Ticket, or a defect (investigated here) as a Bug Report
-- `/create-epic [title]` — capture a multi-phase workstream as an Epic Spec
+- `/create-brief [title]` — capture the work (feature or bug, single-outcome or multi-phase) as a brief
 - `/discussion [follow-up]` — keep exploring a different aspect
 ```

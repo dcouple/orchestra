@@ -68,7 +68,7 @@ Three moves, tight:
 - **Why** — the problem or goal it attacks. Quantify when you can (the metric
   it moves, the failure it removes) — this is what the PM reads.
 - **How** — the approach at a structural altitude (subsystems touched, the
-  key invariant, phase list for an epic). Not a file tour.
+  key invariant, phase list for a multi-phase item). Not a file tour.
 
 End with a **`Done means:`** line — the concrete, checkable definition of done
 for *this* PR, tied to the item's intent. It's the contract the rest of the

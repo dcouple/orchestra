@@ -3,7 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><!-- <item title> — Explainer --></title>
+<title><!-- <item title> — Brief --></title>
+<script type="application/yaml" id="orchestra-meta">
+# Machine metadata — the work item's state. Consumers (/do, publish, postmortem)
+# read this block as YAML and, when tracker state governs, replace this element's
+# text WHOLESALE — never edit the body to change state. Emit real values only;
+# omit optional keys that don't apply. See .references/html-brief.md · Metadata.
+#
+# type: feature | bug
+# id: <id>
+# status: draft | ready
+# zone: <0-3 — stakes + consequence radius; .references/zones.md>
+# review_lanes: dual | single        # optional human override of the zone's lane dial
+# frontend_verifier: true | false    # optional human override — run the app-driving QA agent or not
+# severity: critical | high | medium | low   # bugs only
+# phases:                            # one entry = single outcome; 2+ = multi-phase
+#   - { n: 1, title: <phase title> }
+# artifact_bundle: <url — filled at publish>
+# linear_issues: []                  # per .references/tracker-lifecycle.md
+# github: <issue url — filled at publish>
+# artifact_upload: failed            # set only when a milestone bundle upload failed
+</script>
 <style>
   :root {
     --paper: #FAF8F5;
@@ -51,6 +71,17 @@
   h2 { font-size: 1.25rem; margin-bottom: .75rem; letter-spacing: -.01em; }
   p { margin-bottom: .9rem; max-width: 65ch; }
   code { font-family: var(--mono); font-size: .85em; background: var(--panel); border: 1px solid var(--line); padding: .08em .35em; border-radius: 3px; }
+  a { color: var(--accent); }
+
+  /* Progressive disclosure — native details/summary, no JS. Research summaries,
+     mockups, and sub-report digests collapse; core sections stay open (plain
+     <section>). Never nest details. */
+  details { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); margin: 1rem 0; }
+  details > summary { cursor: pointer; padding: .7rem 1rem; font-weight: 600; font-size: .92rem; list-style: none; display: flex; align-items: center; gap: .6rem; }
+  details > summary::before { content: "▸"; color: var(--accent); font-size: .8em; transition: none; }
+  details[open] > summary::before { content: "▾"; }
+  details > summary .hint { font-weight: 400; color: var(--ink-soft); font-size: .82rem; }
+  details > .body { padding: 0 1rem 1rem; border-top: 1px solid var(--line); padding-top: .9rem; }
 
   /* Before/after (or expected/actual) panel pair */
   .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.25rem 0; }
@@ -67,10 +98,15 @@
   .diagram svg, .diagram img { display: block; max-width: 100%; height: auto; }
   .diagram figcaption { margin-top: .5rem; font-size: .8rem; color: var(--ink-soft); }
 
-  /* Horizontal flow of stages/components — reuse for epic phase timelines */
+  /* Horizontal flow of stages/components — also the multi-phase timeline.
+     .done = phase completed — /do's progress renders only in its own
+     implementation plan; briefs never carry run state. Kept for pipeline
+     strips that depict an already-shipped predecessor. */
   .pipeline { display: flex; align-items: stretch; margin: 1.5rem 0; overflow-x: auto; padding-bottom: .5rem; }
   .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: .75rem .9rem; min-width: 130px; flex: 1; }
   .stage.hot { border-color: var(--accent); background: var(--accent-soft); }
+  .stage.done { border-color: var(--accent); }
+  .stage.done .name::after { content: " ✓"; color: var(--accent); }
   .stage .name { font-family: var(--mono); font-size: .78rem; font-weight: 600; margin-bottom: .25rem; }
   .stage .desc { font-size: .78rem; color: var(--ink-soft); line-height: 1.45; }
   .arrow { align-self: center; padding: 0 .5rem; color: var(--ink-soft); flex: none; }
@@ -83,7 +119,20 @@
   .decision .rejected { color: var(--ink-soft); font-size: .85rem; }
   .decision .rejected::before { content: "rejected — "; font-style: italic; }
 
-  /* In / out of scope */
+  /* Dependencies & mechanics — one card per dependency. The vbadge states
+     whether the mechanics were verified (research/sub-report) or assumed. */
+  .dep { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: .9rem 1.1rem; margin-bottom: .9rem; }
+  .dep-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .35rem; }
+  .dep-name { font-weight: 600; font-size: .95rem; }
+  .vbadge { font-family: var(--mono); font-size: .66rem; letter-spacing: .06em; text-transform: uppercase; padding: .14rem .5rem; border-radius: 999px; }
+  .vbadge.verified { background: var(--accent-soft); color: var(--accent); }
+  .vbadge.assumed { background: var(--warn-soft); color: var(--warn); }
+  .dep p { font-size: .9rem; margin-bottom: .3rem; }
+  .dep .report { font-size: .82rem; }
+  .callout { border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 0 6px 6px 0; padding: .8rem 1.1rem; margin: 1.25rem 0; font-size: .95rem; }
+  .callout.none { border-left-color: var(--line); background: var(--panel); color: var(--ink-soft); }
+
+  /* In / out of scope — also reused for sequencing (work before / work after) */
   .scope { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   @media (max-width: 560px) { .scope { grid-template-columns: 1fr; } }
   .scope .panel.in { border-top: 3px solid var(--accent); }
@@ -102,9 +151,8 @@
   /* UI before/after mockups — a vertical stack of before|after PAIRS.
      Each .pair is its own 2-col grid, so rows can never bleed into each
      other, and captions sit in normal flow. align-items:start lets each
-     card size to its content — short cards don't stretch, so there's no
-     dead whitespace and no caption overflow. Never put fixed heights on a
-     mock. See html-explainer.md · UI before/after mockups. */
+     card size to its content. Never put fixed heights on a mock.
+     See html-brief.md · Mockups. */
   .shots { margin: 1.75rem 0; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; margin-bottom: 2rem; }
   .pair:last-child { margin-bottom: 0; }
@@ -116,8 +164,8 @@
   .shot.after figcaption { color: var(--accent); }
 
   /* Schematic screen replica — build mockups from these parts when a real
-     screenshot can't be driven. Content-sized (no heights), generous
-     padding so it breathes. Compose, don't hand-roll. */
+     screenshot can't be driven. Content-sized (no heights). Compose, don't
+     hand-roll. */
   .mock { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 1.1rem 1.15rem 1.25rem; font-size: .85rem; }
   .shot.after .mock { border-color: var(--accent); }
   .mock-eyebrow { font-family: var(--mono); font-size: .64rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: .7rem; }
@@ -151,8 +199,6 @@
      terminal endpoint (e.g. an off-ramp). */
   .journey { margin: 0 0 1.5rem; }
   .journey:last-child { margin-bottom: 0; }
-  /* Journey rows fit the page instead of scrolling: stages shrink (overrides
-     the base .stage min-width / .pipeline overflow for .journey children). */
   .journey .pipeline { overflow-x: visible; }
   .journey .stage { min-width: 0; flex: 1 1 0; }
   .journey-label { font-weight: 600; font-size: .92rem; margin-bottom: .5rem; }
@@ -170,8 +216,9 @@
   .flowmap th { font-family: var(--mono); font-size: .66rem; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); }
   .flowmap td:first-child { font-weight: 600; white-space: nowrap; }
 
-  /* Run config — the zone panel. Shows the estimated zone (per zones.md) and
-     the dials it derives; framed as an estimate the user finalizes at capture. */
+  /* Run config — the zone panel. Shows the zone (per zones.md) and the dials
+     it derives; the settable dials reflect the metadata and are changed by
+     telling the agent during alignment (a static file can't write back). */
   .dials { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 1.15rem 1.3rem; }
   .dial { display: grid; grid-template-columns: 118px 1fr; gap: 1rem; align-items: start; padding: .8rem 0; border-bottom: 1px solid var(--line); }
   .dial:last-child { border-bottom: none; }
@@ -189,93 +236,96 @@
 <div class="page">
   <header class="masthead">
     <div class="meta-row">
-      <span class="badge type"><!-- feature | epic | bug --></span>
+      <span class="badge type"><!-- feature | bug --></span>
       <span class="badge status"><!-- draft — for alignment | ready --></span>
       <span class="badge zone"><!-- zone <n> — <label from zones.md>; required, mirrors the footer --></span>
     </div>
     <h1><!-- item title --></h1>
     <p class="standfirst"><!-- one-sentence intent, in the user's language --></p>
-    <div class="links"><!-- GitHub issue link once it exists; omit before publish --></div>
+    <div class="links"><!-- tracker issue link once it exists; omit before publish --></div>
   </header>
 
   <figure class="diagram">
-    <!-- Opening diagram — required, see html-explainer.md. Architecture /
+    <!-- Opening diagram — required, see html-brief.md. Architecture /
          flow of what's happening: inline SVG on the tokens, the .pipeline
          strip, or an inlined data: URI image. Never skipped. -->
     <figcaption><!-- one line: what the diagram shows --></figcaption>
   </figure>
 
-  <!-- Sections per item type — see html-explainer.md for the section map.
-       Each section follows this shape: -->
-  <section>
-    <p class="eyebrow">01 · <!-- Why / Direction / Scope / Done means / Unresolved --></p>
-    <h2><!-- section heading --></h2>
-    <!-- prose, .before-after, .pipeline, .decision cards, .scope, ol.acs, .question — pick what fits -->
-    <!-- Work sequence (see html-explainer.md · Work sequence): epic = binding
-         phase timeline; feature = indicative outcome-level work strip whose
-         caption says /do re-plans; bug = strip only when the fix has stages.
-    <div class="pipeline">
-      <div class="stage"><div class="name">stage</div><div class="desc">outcome</div></div>
-      <div class="arrow">&#8594;</div>
-      <div class="stage"><div class="name">stage</div><div class="desc">outcome</div></div>
-    </div>
-    <p class="strip-note">Indicative sequence — /do's plan stage owns the real plan.</p> -->
-    <!-- UI-touching items: a .shots stack, one .pair per touched surface
-         (required — see html-explainer.md). Prefer real screenshots (<img>
-         data: URIs) driven from the app; otherwise compose a schematic from
-         the .mock parts. Captions say which side is real vs mocked. Never set
-         a fixed height on a .mock — cards size to content so nothing overlaps.
-    <div class="shots">
-      <div class="pair">
-        <figure class="shot">
-          <div class="mock">
-            <div class="mock-eyebrow">features</div>
-            <div class="mock-q">What are you here for?</div>
-            <div class="mock-opt sel"><span class="mark radio"></span>Team Chat</div>
-            <div class="mock-opt"><span class="mark radio"></span>SMS</div>
-          </div>
-          <figcaption>Before — single-choice (indicative mockup, not a screenshot)</figcaption>
-        </figure>
-        <figure class="shot after">
-          <div class="mock">
-            <div class="mock-eyebrow">features</div>
-            <div class="mock-q">What are you here for? (pick any)</div>
-            <div class="mock-opt sel"><span class="mark check"></span>Patient texting</div>
-            <div class="mock-opt sel"><span class="mark check"></span>Team chat</div>
-            <div class="mock-opt"><span class="mark check"></span>External organizations</div>
-          </div>
-          <figcaption>After — multi-select (indicative mockup)</figcaption>
-        </figure>
-      </div>
-    </div> -->
-  </section>
+  <!-- Sections per the html-brief.md section map. Each section:
+       <p class="eyebrow">NN · name</p> + <h2> + content. Pick components
+       that fit: prose, .before-after, .pipeline, .decision, .dep, .scope,
+       ol.acs, .question, details. -->
 
-  <!-- USER JOURNEYS (multi-journey items — see html-explainer.md · User journeys):
-       one .pipeline per distinct journey, each with a .journey-label. .skip = a
-       step this journey bypasses (muted/dashed); .term = a terminal off-ramp.
+  <!-- DEPENDENCIES & MECHANICS — one .dep card per dependency; badge states
+       whether its mechanics were verified or assumed. Sub-report digests go
+       in a collapsed details block. Schema changes get a .callout — always
+       present, "none" allowed. Sequencing reuses the .scope grid.
   <section>
-    <p class="eyebrow">02 · User journeys</p>
-    <h2>The divergent paths, not just the happy one</h2>
-    <div class="journey">
-      <div class="journey-label">Journey A — the divergent path</div>
-      <div class="pipeline">
-        <div class="stage"><div class="name">Entry step</div><div class="desc">where this journey starts</div></div>
-        <div class="arrow">&#8594;</div>
-        <div class="stage skip"><div class="name">Optional step</div><div class="desc">skipped on this path</div></div>
-        <div class="arrow">&#8594;</div>
-        <div class="stage term"><div class="name">Off-ramp</div><div class="desc">terminal — journey ends here</div></div>
+    <p class="eyebrow">04 · Dependencies &amp; mechanics</p>
+    <h2>What this rests on, and how it actually works</h2>
+    <div class="dep">
+      <div class="dep-head">
+        <span class="dep-name">HelloSign embedded signing</span>
+        <span class="vbadge verified">verified</span>
       </div>
+      <p>What it does for this item and how the mechanism works, in two sentences.</p>
+      <details>
+        <summary>Research digest <span class="hint">— refs/hellosign.html</span></summary>
+        <div class="body"><p>Key findings summary; full report at <a href="refs/hellosign.html">refs/hellosign.html</a>.</p></div>
+      </details>
+    </div>
+    <div class="callout"><strong>Schema changes:</strong> `signatures` table gains `expires_at`; migration required. ("none" is a valid — and mandatory-to-state — value.)</div>
+    <div class="scope">
+      <div class="panel in"><h3>Work before this</h3><ul><li>candidate prerequisite item</li></ul></div>
+      <div class="panel"><h3>Work after this</h3><ul><li>named follow-up, deferred</li></ul></div>
     </div>
   </section> -->
 
-  <!-- VERIFICATION as a categorized checklist (see html-explainer.md · Verification):
-       group by surface, then map each flow to the checks it exercises.
+  <!-- APPROACH (section 05 — always present, see html-brief.md · Approach) —
+       how we'll tackle this, at approach altitude, never specific steps.
+       Multi-phase (phases metadata has 2+ entries): binding timeline, one
+       .stage per phase, titles matching phases[].title exactly, then a
+       self-contained block per phase.
   <section>
-    <p class="eyebrow">05 · Verification</p>
+    <p class="eyebrow">05 · Approach</p>
+    <h2>How we'll tackle this</h2>
+    <div class="pipeline">
+      <div class="stage"><div class="name">1 · Phase title</div><div class="desc">desired end state</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="stage"><div class="name">2 · Phase title</div><div class="desc">…</div></div>
+    </div>
+  </section>
+       Single-phase: prose or 3–6 bullets, optionally an indicative strip:
+  <div class="pipeline">
+    <div class="stage"><div class="name">stage</div><div class="desc">outcome</div></div>
+    <div class="arrow">&#8594;</div>
+    <div class="stage"><div class="name">stage</div><div class="desc">outcome</div></div>
+  </div>
+  <p class="strip-note">Indicative sequence — /do's plan stage owns the real plan.</p> -->
+
+  <!-- MOCKUPS (user-facing items; collapsed by default unless zone 0) —
+       a .shots stack of .pair rows inside a details block. Prefer real
+       screenshots (data: URIs); otherwise compose from .mock parts and say so.
+  <details>
+    <summary>Mockups <span class="hint">— indicative, not pixel-final</span></summary>
+    <div class="body">
+      <div class="shots">
+        <div class="pair">
+          <figure class="shot"><div class="mock">…</div><figcaption>Before — schematic</figcaption></figure>
+          <figure class="shot after"><div class="mock">…</div><figcaption>After — schematic</figcaption></figure>
+        </div>
+      </div>
+    </div>
+  </details> -->
+
+  <!-- VERIFICATION — categorized checklist + flow→AC map.
+  <section>
+    <p class="eyebrow">07 · Verification</p>
     <h2>What we'll check, by surface</h2>
     <div class="vgroup">
       <p class="vgroup-head">UX / in-app flows</p>
-      <ul class="vlist"><li>AC1 — a human-runnable check</li><li>AC2 — …</li></ul>
+      <ul class="vlist"><li>AC1 — a human-runnable check</li></ul>
     </div>
     <div class="vgroup">
       <p class="vgroup-head">Backend / data</p>
@@ -283,36 +333,44 @@
     </div>
     <table class="flowmap">
       <tr><th>User flow</th><th>Exercises</th></tr>
-      <tr><td>SMS user</td><td>AC1, AC2, AC4 · AC10, AC11</td></tr>
+      <tr><td>SMS user</td><td>AC1, AC2 · AC10</td></tr>
     </table>
   </section> -->
 
-  <!-- RUN CONFIG — the zone panel (see html-explainer.md · Run config). The primary
-       dial is the item's zone (per references/zones.md); the rest are the dials it
-       derives. Framed as an estimate the human finalizes at capture.
+  <!-- RUN CONFIG — zone primary; review_lanes and frontend_verifier are the
+       zone-default overrides; pills reflect the metadata. The user changes
+       them by telling the agent during alignment — the page can't write back.
   <section>
-    <p class="eyebrow">06 · Run config</p>
+    <p class="eyebrow">09 · Run config</p>
     <h2>How /do will run this</h2>
     <div class="dials">
       <div class="dial">
         <div class="dial-label">Zone</div>
         <div class="dial-opts">
           <span class="pill">0</span><span class="pill on">1</span><span class="pill">2</span><span class="pill">3</span>
-          <p class="dial-why">Substantial change, escalated by a money / schema touch (zones.md floors).</p>
+          <p class="dial-why">Substantial change, escalated by a schema touch (zones.md floors).</p>
         </div>
       </div>
       <div class="dial">
+        <div class="dial-label">Review lanes</div>
+        <div class="dial-opts"><span class="pill on">single — Codex (zone default)</span><span class="pill">dual</span></div>
+      </div>
+      <div class="dial">
+        <div class="dial-label">Frontend verifier</div>
+        <div class="dial-opts"><span class="pill on">run (zone default)</span><span class="pill">skip</span></div>
+      </div>
+      <div class="dial">
         <div class="dial-label">Derived</div>
-        <div class="dial-opts"><span class="pill on">single — Codex</span><span class="pill on">cap 3/3</span><span class="pill on">frontend verifier</span><span class="pill on">QA always</span><span class="pill on">full dossier</span></div>
+        <div class="dial-opts"><span class="pill on">cap 3/3</span><span class="pill on">QA always</span></div>
       </div>
     </div>
-    <p class="dials-note">Estimated by /create-plan from stakes + consequence radius; dials derive from references/zones.md. You set the final zone at capture.</p>
+    <p class="dials-note">Zone per references/zones.md; say the word during alignment to flip a settable dial — the agent updates the metadata and this panel.</p>
   </section> -->
 
   <footer>
     <strong><!-- zone <n> — <label> (always; mirrors the masthead badge) --></strong> ·
-    Generated by <code><!-- /create-plan | /create-epic --></code> ·
-    This page is the alignment surface; <code>item.md</code> remains the contract <code>/do</code> executes against.
+    Generated by <code>/create-brief</code> ·
+    This page is the work item — the brief <code>/do</code> executes against.
   </footer>
 </div>
 </body>
