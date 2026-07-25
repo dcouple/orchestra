@@ -1,10 +1,5 @@
 # Socratic gate — shared procedure
 
-One dimension socrates always checks: the item's `zone:` against its blast
-radius per `.references/zones.md` — a zone too *lenient* (too high a number)
-for work touching that file's escalator surfaces or carrying a wide
-consequence radius is a finding.
-
 Run by `/create-brief` after `brief.html` is drafted (`status: draft` in its
 metadata) and before publish. The calling skill supplies the per-type
 emphasis — what socrates should bear down on for this item type.

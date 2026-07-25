@@ -21,10 +21,10 @@ The flow separates *clarity*, *capture*, and *execution*:
 2. **`/create-brief`** — the capture skill, invoked by the user or by the
    model when a conversation converges. It turns what the conversation
    established into a work item at `./tmp/<id>/brief.html` (a feature or bug
-   plan — single-outcome or multi-phase, phases being a property of the
+   brief — single-outcome or multi-phase, phases being a property of the
    item; raw sources and research sub-reports in `./tmp/<id>/refs/`) with a
    Dependencies & mechanics inventory (verified vs assumed, explicit schema
-   delta, sequencing) and verification criteria. The plan page is both the
+   delta, sequencing) and verification criteria. The brief page is both the
    alignment surface the user reads in the browser and the contract `/do`
    executes against — machine state lives in its `#orchestra-meta` head
    block (`references/html-brief.md`). It then **publishes** wherever the
@@ -81,8 +81,8 @@ consumer repos, so the skills' restatement is what actually executes.
 | Reproduce & root-cause | **Codex** GPT-5.6 `low` | |
 | Write the diff — all surfaces, one dispatch per vertical slice | **Codex** GPT-5.6 `medium` | fix rounds resume the same session; repo statically green after every dispatch |
 | Challenge the draft work item (Socratic gate) | Claude `socrates` — Fable | always invoked by `/create-brief`; self-calibrates — fast-passes straightforward drafts, full challenge for multi-phase/unargued items |
-| Review the plan | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `low` + Claude `plan-reviewer` (Opus) | Must-Fix gate = union of both |
-| Review the diff + security | **two parallel reviewers** (zone 3: Codex alone): Codex GPT-5.6 `low` + Claude `code-reviewer` (Opus) | Must-Fix gate = union of both |
+| Review the plan | dual at zone 0 (Codex GPT-5.6 `low` + Claude `plan-reviewer` (Opus)); zones 1–3 Codex alone | Must-Fix gate = union of the lanes run |
+| Review the diff + security | dual at zone 0 (Codex GPT-5.6 `low` + Claude `code-reviewer` (Opus)); zones 1–3 Codex alone | Must-Fix gate = union of the lanes run |
 
 Every Codex role is dispatched by the **`codex` skill**
 (`claude/skills/codex/`), the one place that knows the `codex exec`

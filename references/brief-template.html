@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><!-- <item title> — Plan --></title>
+<title><!-- <item title> — Brief --></title>
 <script type="application/yaml" id="orchestra-meta">
 # Machine metadata — the work item's state. Consumers (/do, publish, postmortem)
 # read this block as YAML and, when tracker state governs, replace this element's
@@ -15,12 +15,14 @@
 # status: draft | ready
 # zone: <0-3 — stakes + consequence radius; .references/zones.md>
 # review_lanes: dual | single        # optional human override of the zone's lane dial
+# frontend_verifier: true | false    # optional human override — run the app-driving QA agent or not
 # severity: critical | high | medium | low   # bugs only
 # phases:                            # one entry = single outcome; 2+ = multi-phase
 #   - { n: 1, title: <phase title> }
 # artifact_bundle: <url — filled at publish>
 # linear_issues: []                  # per .references/tracker-lifecycle.md
 # github: <issue url — filled at publish>
+# artifact_upload: failed            # set only when a milestone bundle upload failed
 </script>
 <style>
   :root {
@@ -283,13 +285,13 @@
   <!-- APPROACH (section 05 — always present, see html-brief.md · Approach) —
        how we'll tackle this, at approach altitude, never specific steps.
        Multi-phase (phases metadata has 2+ entries): binding timeline, one
-       .stage per phase, titles matching phases[].title exactly, .done
-       then a self-contained block per phase.
+       .stage per phase, titles matching phases[].title exactly, then a
+       self-contained block per phase.
   <section>
     <p class="eyebrow">05 · Approach</p>
     <h2>How we'll tackle this</h2>
     <div class="pipeline">
-      <div class="stage done"><div class="name">1 · Phase title</div><div class="desc">desired end state</div></div>
+      <div class="stage"><div class="name">1 · Phase title</div><div class="desc">desired end state</div></div>
       <div class="arrow">&#8594;</div>
       <div class="stage"><div class="name">2 · Phase title</div><div class="desc">…</div></div>
     </div>
@@ -335,8 +337,8 @@
     </table>
   </section> -->
 
-  <!-- RUN CONFIG — zone primary; review_lanes / frontend verifier / mockups
-       are the settable dials; pills reflect the metadata. The user changes
+  <!-- RUN CONFIG — zone primary; review_lanes and frontend_verifier are the
+       zone-default overrides; pills reflect the metadata. The user changes
        them by telling the agent during alignment — the page can't write back.
   <section>
     <p class="eyebrow">09 · Run config</p>
@@ -354,8 +356,12 @@
         <div class="dial-opts"><span class="pill on">single — Codex (zone default)</span><span class="pill">dual</span></div>
       </div>
       <div class="dial">
+        <div class="dial-label">Frontend verifier</div>
+        <div class="dial-opts"><span class="pill on">run (zone default)</span><span class="pill">skip</span></div>
+      </div>
+      <div class="dial">
         <div class="dial-label">Derived</div>
-        <div class="dial-opts"><span class="pill on">cap 3/3</span><span class="pill on">frontend verifier</span><span class="pill on">QA always</span></div>
+        <div class="dial-opts"><span class="pill on">cap 3/3</span><span class="pill on">QA always</span></div>
       </div>
     </div>
     <p class="dials-note">Zone per references/zones.md; say the word during alignment to flip a settable dial — the agent updates the metadata and this panel.</p>

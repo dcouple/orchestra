@@ -82,6 +82,10 @@ box-ticking ones.
    work that way? If the honest answer is "we think", the item isn't ready —
    an unverified external integration is exactly how unnecessary work ships.
    A missing or hand-waved schema-changes statement is a finding in itself.
+9. **Zone fit** — the item's `zone:` against its blast radius per
+   `.references/zones.md`: a zone too *lenient* (too high a number) for work
+   touching escalator surfaces or carrying a wide consequence radius is a
+   finding.
 
 Weight the attack to the artifact: a **bug brief** lives or dies on
 root-cause and evidence (does the cause survive another "why"?); a

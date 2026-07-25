@@ -235,9 +235,11 @@ Read the item's `zone:` and derive this run's dials from the table in
 frontmatter. Zones 0–1 run the full lane (dossier, cap 3); zones 2–3 run
 light (no dossier, cap 1). Zone 0 defaults to dual review; zones 1–3 default
 to the single Codex lane. An explicit `review_lanes: dual | single` in the item metadata
-outranks the zone's lane dial — it's the human's setting, made at capture
-or edited later as item metadata on the tracker (Step 0's pull picks up
-tracker edits). You may escalate the effective zone one notch toward 0 with the
+outranks the zone's lane dial, and an explicit
+`frontend_verifier: true | false` outranks the zone's verifier dial — both
+are the human's settings, made at capture or edited later as item metadata
+on the tracker (Step 0's pull picks up tracker edits); record
+`frontend_verifier` in `plan.md`'s frontmatter alongside the lanes. You may escalate the effective zone one notch toward 0 with the
 reason recorded in `plan.md`'s frontmatter; never de-escalate — that's the
 human's call at capture, or the table's via postmortem evidence. Item
 missing a zone → classify it yourself from stakes and downstream
@@ -326,8 +328,10 @@ vertical slice, so lint/typecheck/build run against the complete change;
 splitting by surface manufactures intermediate states where neither half
 passes static checks. Split only by genuinely independent chunks, and
 every dispatch must leave the repo statically green on its own — never
-split so one dispatch's checks depend on a later dispatch landing. Give each the plan and the item (intent =
-source of truth for *why*). Resolve blockers yourself from the item/refs;
+split so one dispatch's checks depend on a later dispatch landing. Give
+each the plan alone — it is self-sufficient, carrying the item's intent,
+so the implementer never opens the brief. Resolve blockers yourself from
+the plan and `refs/`;
 apply the Autonomy & safety tiers — a red-tier action gets captured, noted,
 and notified, and the run continues; only a red gate that blocks everything
 stops it.

@@ -126,7 +126,7 @@ The repository the agents work on must have:
    > MCP tools configured in the session; if MCP is unavailable, use the
    > Linear GraphQL API authenticated with the `LINEAR_API_KEY`
    > environment variable. At publish, the issue gets a lean body (the
-   > plan's metadata YAML + Intent summary) and the bundle carries
+   > brief's metadata YAML + Intent summary) and the bundle carries
    > `brief.html` plus `refs/` as the artifact transport
    > (`.references/publish-work-item.md`). At wrap-up, post the wrapup as
    > a comment and link the PR.

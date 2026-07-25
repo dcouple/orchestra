@@ -79,6 +79,6 @@ the relevant next steps:
 Decision log: ./tmp/discussions/YYYY-MM-DD-<slug>.md
 
 Suggested next steps:
-- `/create-brief [title]` — capture the work (feature or bug, single-outcome or multi-phase) as a plan
+- `/create-brief [title]` — capture the work (feature or bug, single-outcome or multi-phase) as a brief
 - `/discussion [follow-up]` — keep exploring a different aspect
 ```

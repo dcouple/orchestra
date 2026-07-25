@@ -98,10 +98,8 @@ fixed; omit sections that don't apply and leave the gap.
 Verification criteria everywhere follow
 `.references/verification-criteria.md`: EARS-style, numbered `AC1…`, each
 mapped to a method from `.references/verification-methods.md` and the change
-type's rubric in `.references/rubrics/`. No "works correctly". On multi-phase
-items ACs number **within each phase**, restarting at `AC1`; cite them
-phase-qualified (`P2·AC1`) anywhere ambiguity is possible — reviews, verify
-reports, the flow→AC map. Single-phase items cite bare `AC#`.
+type's rubric in `.references/rubrics/` — including the per-phase
+numbering rule for multi-phase items. No "works correctly".
 
 ## Opening diagram
 
@@ -214,8 +212,8 @@ a strip that won't fit has too many stages.
 Render the ACs as a checklist grouped by surface — a `.vgroup` for **UX /
 in-app flows** (proven by driving the running app) and one for **Backend /
 data** (proven by tests) — plus a `.flowmap` table mapping each user flow to
-the ACs it exercises. Multi-phase items group by phase first, ACs numbered within each phase
-(cited phase-qualified, `P2·AC1`). The section
+the ACs it exercises. Multi-phase items group by phase first (numbering
+per `.references/verification-criteria.md`). The section
 *is* the criteria (there is no other document), so every AC must be
 observable and mapped to its method.
 
@@ -227,9 +225,9 @@ The zone panel (`.dials`), last content section:
   reasoning and any escalator floor that raised it. Derived dials (loop caps,
   QA, research) reference `.references/zones.md` — never restate its table.
 - **Settable dials** render the current metadata values — exactly three:
-  `zone`, `review_lanes`, and `frontend_verifier`. All are proposed by the
-  agent and overridable by the user; `/do` honors the overrides in both
-  directions. A static page can't write back — the caption says: tell the
+  `zone` (the primary), plus the two zone-default overrides `review_lanes`
+  and `frontend_verifier`. All are proposed by the agent and overridable by
+  the user; `/do` honors the overrides in both directions. A static page can't write back — the caption says: tell the
   agent, and it updates the metadata and re-renders the pills. `review_lanes` stays
   editable as tracker metadata until `/do` runs.
 - Collapse to a single line for a trivial item.

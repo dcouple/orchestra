@@ -27,9 +27,11 @@ critique, you never fix. Do not spawn sub-agents — including via CLI
 2. **Completeness** — gaps, missing error handling, edge cases, integration
    points; tasks ordered correctly with real dependencies.
 3. **Correctness of approach** — will this actually work?
-4. **Fidelity** — the plan preserves the item's intent, locked decisions
-   (`D#`), verification criteria (`AC#`), and out-of-scope; nothing weakened
-   into an optional detail.
+4. **Fidelity** — read the brief (`./tmp/<id>/brief.html` — you are the
+   one run sub-agent that gets it, precisely for this check) and verify the
+   plan preserves its intent, locked decisions (`D#`), verification
+   criteria (`AC#`), and out-of-scope; nothing weakened into an optional
+   detail.
 5. **Simplification** — anything removable, combinable, or already existing in
    the repo (flag duplicate utilities).
 6. **Altitude** — file/module granularity, no line-level code; the one

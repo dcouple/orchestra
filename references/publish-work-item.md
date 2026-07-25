@@ -53,7 +53,11 @@ On first publish, perform these steps in order:
    `.references/tracker-lifecycle.md`. Only `completes` entries generate
    standalone `Fixes TEAM-123` lines.
 
-   Then rebuild the manifest one final time and send an authenticated `PUT`
+   Then update the tracker body's fenced metadata YAML to match the final
+   local metadata — the body was created before these link fields existed,
+   and `/do`'s load replaces local metadata with the tracker's wholesale,
+   so a stale tracker copy would erase them. Finally rebuild the manifest
+   one more time and send an authenticated `PUT`
    to the `artifact_bundle` URL with its trailing slash removed. This final
    PUT is mandatory: it makes the bundle's authoritative `brief.html` link
    back to the tracker while the tracker body or attachment links to the

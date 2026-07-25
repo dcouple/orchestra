@@ -26,6 +26,7 @@ effective_zone: <after any one-notch escalation — same as zone when none>
 zone_reasoning: <why classified/escalated — omit when the item carried the zone unchanged>
 lane: <light | full — derived from effective_zone; multi-phase items are always full (zones.md)>
 review_lanes: <dual | single — the item's explicit override when present, else the zone default>
+frontend_verifier: <run | skip — the item's explicit override when present, else the zone default>
 requested_lanes: <dual | single — only when the daemon signals runtime fallback>
 effective_lanes: <single — only when the daemon signals runtime fallback>
 runtime_fallback: <claude -> claudex — only when the daemon signals runtime fallback>

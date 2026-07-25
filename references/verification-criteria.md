@@ -31,14 +31,15 @@ Gut check: could someone unfamiliar with the project build exactly this and
 prove they did?
 
 ## Verification map (how `/do` proves it)
-Every criterion maps to at least one method. The ✓ column is **state**, ticked by
-the verify stage — not a menu of options.
+Every criterion maps to at least one method. The map carries **no state** —
+the brief is a starting point; verification results are recorded by `/do`
+in its implementation plan, never here.
 
-| Criterion | Method | Command / flow | ✓ |
-|---|---|---|---|
-| AC1 | automated | `npm run test <path>` | [ ] |
-| AC2 | computer-use | `<flow to drive in the running app>` | [ ] |
-| AC3 | automated | `<script>` | [ ] |
+| Criterion | Method | Command / flow |
+|---|---|---|
+| AC1 | automated | `npm run test <path>` |
+| AC2 | computer-use | `<flow to drive in the running app>` |
+| AC3 | automated | `<script>` |
 
 Methods: pick from `.references/verification-methods.md` — lint/static
 rules, type checks, unit/integration tests, scripts (backend), natural

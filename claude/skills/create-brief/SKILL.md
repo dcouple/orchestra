@@ -93,8 +93,9 @@ editable there as metadata until `/do` runs.
 
 **Success criteria**: the user has explicitly agreed to intent, end state, each
 locked direction (including the compatibility stance when behavior is
-replaced), the zone, the out-of-scope list, and every dependency's
-verified/assumed standing including the schema delta.
+replaced), the three dials (zone, and any `review_lanes` /
+`frontend_verifier` override), the out-of-scope list, and every
+dependency's verified/assumed standing including the schema delta.
 
 **Bug track** — take stock of the investigation. Check what the conversation
 already established: reproduction, root cause + evidence, confidence level. A
@@ -189,9 +190,8 @@ own intensity. Supply the per-type emphasis in the dispatch:
   fix implies. If the dialogue surfaces a deeper cause to chase,
   re-dispatch the investigator before proceeding.
 
-**Success criteria**: gate procedure complete — socrates returned `pass` (or
-the cap was reached, or the user waived); the Justification section written
-into `brief.html`.
+**Success criteria**: the gate's "Done when" holds
+(`.references/socratic-gate.md`).
 
 ### 6. Mark ready and publish
 Publish per `.references/publish-work-item.md`, using
