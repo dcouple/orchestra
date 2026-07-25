@@ -1,11 +1,17 @@
-# The HTML plan — the work item artifact
+# The HTML brief — the work item artifact
 
-The work item **is** one HTML page: `./tmp/<id>/plan.html`, authored by
-`/create-plan` from `.references/plan-template.html`. It is simultaneously the
+The work item **is** one HTML page: `./tmp/<id>/brief.html`, authored by
+`/create-brief` from `.references/brief-template.html`. It is simultaneously the
 alignment surface the user reads and the contract `/do` executes against —
 there is no separate machine-facing document, so what the user approved and
 what the agents read can never drift. Supporting depth lives in
 `./tmp/<id>/refs/` and is linked, never inlined.
+
+The brief exists so the user can see, as concretely as possible, what is
+going to happen — and refine the idea *before* handing it to an agent,
+minimizing intervention once implementation runs. It stays at the altitude
+the user decides at; the implementation plan (`plan.md`) that `/do`'s plan
+stage derives from it owns the task-level detail.
 
 ## Metadata
 
@@ -15,22 +21,31 @@ The page's `<head>` carries the machine state in one element:
 <script type="application/yaml" id="orchestra-meta"> …YAML… </script>
 ```
 
-- Fields: `type` (`feature | bug`), `id`, `status` (`draft | ready | done`),
-  `zone`, optional `review_lanes`, `severity` (bugs), `phases` (list of
-  `{n, title, done}` — one entry means a single-outcome item; two or more
-  make the item multi-phase), and the publish/run fields `pr`,
-  `artifact_bundle`, `linear_issues`, `github`.
-- **State lives here, never in the body.** `status`, phase completion
-  (`phases[].done`), and every publish/run field are read from and written to
-  this block. Consumers that apply tracker state replace the element's text
-  **wholesale** — body content is document content and is edited only by
-  authoring steps.
+- Required fields: `type` (`feature | bug`), `id`, `status`
+  (`draft | ready`), `zone`, and `phases` (list of `{n, title}` — one entry
+  means a single-outcome item; two or more make the item multi-phase).
+  Optional: `review_lanes`, `frontend_verifier` (both honored by `/do` as
+  the user's explicit overrides), `severity` (bugs), and the publish fields
+  `artifact_bundle`, `artifact_upload`, `linear_issues`, `github`.
+- **Authoring and publish state only.** `status` and the publish fields are
+  read from and written to this block; consumers that apply tracker state
+  replace the element's text **wholesale** — body content is document
+  content and is edited only by authoring steps. **Run state never lives
+  here**: the brief is the starting point `/do` reads, not a run log —
+  phase completion and the PR are tracked in `/do`'s implementation plan
+  and on the tracker.
 - Read it by extracting the element's text and parsing as YAML; no HTML-aware
   tooling is needed beyond locating `id="orchestra-meta"`.
 
+**Who reads this page**: the human, `/create-brief`, and `/do`'s overseer
+(at run start and preflight). Sub-agents inside a run work from the
+implementation plan the overseer derives — dispatches pass `plan.md`, not
+this page. Machine readers skip the `<style>` block; content starts at
+`<body>`.
+
 ## Procedure
 
-1. Author `./tmp/<id>/plan.html` from `.references/plan-template.html` (copy
+1. Author `./tmp/<id>/brief.html` from `.references/brief-template.html` (copy
    it; keep the token system, component classes, and the metadata block; fill
    the sections per the map below).
 2. Open it in the user's browser: `open` (macOS) / `xdg-open` (Linux) /
@@ -83,11 +98,14 @@ fixed; omit sections that don't apply and leave the gap.
 Verification criteria everywhere follow
 `.references/verification-criteria.md`: EARS-style, numbered `AC1…`, each
 mapped to a method from `.references/verification-methods.md` and the change
-type's rubric in `.references/rubrics/`. No "works correctly".
+type's rubric in `.references/rubrics/`. No "works correctly". On multi-phase
+items ACs number **within each phase**, restarting at `AC1`; cite them
+phase-qualified (`P2·AC1`) anywhere ambiguity is possible — reviews, verify
+reports, the flow→AC map. Single-phase items cite bare `AC#`.
 
 ## Opening diagram
 
-Every plan opens with a diagram directly after the masthead — the whiteboard
+Every brief opens with a diagram directly after the masthead — the whiteboard
 sketch the page elaborates. **Always present**: a simple item gets a simple
 diagram (three boxes and an arrow is fine), never a skipped one. Content is
 whatever best orients: touched components and their connections, before/after
@@ -101,7 +119,7 @@ The section that forces discovery **before** implementation. Always present.
 
 - **Major components only — the systems this work will be based on.** A
   dependency earns a card by needing to be mapped out or discussed:
-  third-party services, APIs, and packages the plan newly leans on; things
+  third-party services, APIs, and packages the work newly leans on; things
   that must be added for the work to stand (a service, an account, a new
   capability); internal surfaces and subsystems the work will utilize whose
   mechanics shape the design; human work required (credentials, approvals,
@@ -115,7 +133,7 @@ The section that forces discovery **before** implementation. Always present.
   `assumed` badge on an external integration is a visible red flag, and
   that is the point.
 - **Schema changes — mandatory `.callout`, "none" allowed but never
-  omitted.** A plan that can't state its schema delta doesn't understand its
+  omitted.** A brief that can't state its schema delta doesn't understand its
   own data flow; a large delta is the strongest signal the item should split.
   Schema/migration touches are a zone escalator (`.references/zones.md`).
 - **Sequencing — the `.scope` grid**: work that should land *before* this
@@ -130,13 +148,13 @@ When a dependency or question warrants real research, the dispatch's finding
 lands as its own simple page — `./tmp/<id>/refs/<topic>.html` — and the
 `.dep` card links it, with a one-paragraph digest in a collapsed `details`
 block. For a third-party integration, the sub-report answers the questions
-the plan will bake in: what it does and how the mechanism works, what it
+the brief will bake in: what it does and how the mechanism works, what it
 costs (pricing/plan tier), the specific calls or endpoints this item will
 use, the library or SDK to use, and auth/limits — concrete enough that the
 approach can be written from it, and honest enough to reveal when the
 integration isn't needed at all. Sub-report pages are markdown-simple: the
 template's tokens, a title, prose, at most a diagram — no section map. The
-plan page summarizes; the sub-report carries the depth. This is how research
+brief page summarizes; the sub-report carries the depth. This is how research
 survives the conversation and how the user zooms in on exactly what they
 don't yet understand.
 
@@ -154,8 +172,7 @@ inline. Every item has at least one phase; the section scales with the
   captioned "indicative sequence — /do's plan stage owns the real plan."
 - **Multi-phase**: the approach broken into phases. The timeline
   (`.pipeline`, one `.stage` per phase, sequential) is **binding** — titles
-  match `phases[].title` exactly; `.stage.done` mirrors `phases[].done`
-  (state itself lives in the metadata). Each phase gets a self-contained
+  match `phases[].title` exactly. Each phase gets a self-contained
   block — scope, out of scope, its approach, and its own numbered
   verification criteria — so `/do` can pick the phase up alone. Criteria
   live in the block, never the timeline. A cross-cutting concerns passage
@@ -197,7 +214,8 @@ a strip that won't fit has too many stages.
 Render the ACs as a checklist grouped by surface — a `.vgroup` for **UX /
 in-app flows** (proven by driving the running app) and one for **Backend /
 data** (proven by tests) — plus a `.flowmap` table mapping each user flow to
-the ACs it exercises. Multi-phase items group by phase first. The section
+the ACs it exercises. Multi-phase items group by phase first, ACs numbered within each phase
+(cited phase-qualified, `P2·AC1`). The section
 *is* the criteria (there is no other document), so every AC must be
 observable and mapped to its method.
 
@@ -208,11 +226,11 @@ The zone panel (`.dials`), last content section:
 - **Zone** is the primary dial: the value with its stakes/consequence-radius
   reasoning and any escalator floor that raised it. Derived dials (loop caps,
   QA, research) reference `.references/zones.md` — never restate its table.
-- **Settable dials** render the current metadata value: `review_lanes` (the
-  one override honored in both directions) and, where the item warrants
-  them, frontend-verifier and mockups inclusion. A static page can't write
-  back — the caption says: state the choice during alignment and the agent
-  updates the metadata and re-renders the pills. `review_lanes` stays
+- **Settable dials** render the current metadata values — exactly three:
+  `zone`, `review_lanes`, and `frontend_verifier`. All are proposed by the
+  agent and overridable by the user; `/do` honors the overrides in both
+  directions. A static page can't write back — the caption says: tell the
+  agent, and it updates the metadata and re-renders the pills. `review_lanes` stays
   editable as tracker metadata until `/do` runs.
 - Collapse to a single line for a trivial item.
 
@@ -227,10 +245,10 @@ something the reader must see to judge the change.
 ## Rules
 
 - **Markers drive to zero.** A `[NEEDS CLARIFICATION]` marker anywhere in
-  the plan is a follow-up owed to the user: the drafting skill keeps asking
+  the brief is a follow-up owed to the user: the drafting skill keeps asking
   until every marker is either resolved or the **user explicitly defers
   it** (recorded in Open questions as a deferral, with the reason). The
-  agent never defers a marker on its own, and the plan never goes
+  agent never defers a marker on its own, and the brief never goes
   `status: ready` while an unaddressed marker remains.
 - **Altitude**: direction, not design — no file lists, pseudo-code, or
   task-level sequences. `/do` starts fresh and is capable: omit anything it

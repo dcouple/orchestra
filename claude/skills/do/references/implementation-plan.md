@@ -1,7 +1,7 @@
 # Implementation Plan — format
 
-> Produced by `/do` (plan stage) from the work item. Saved as `./tmp/<id>/impl-plan.md`
-> (per item; one per phase — `impl-plan-<n>.md` — for multi-phase items).
+> Produced by `/do` (plan stage) from the work item. Saved as `./tmp/<id>/plan.md`
+> (per item; one per phase — `plan-<n>.md` — for multi-phase items).
 > Reviewed by Plan Reviewer, then updated with
 > progress and plan-deltas during implement.
 > **Calibrated for a frontier implementer: what to build & why, at file/module**
@@ -31,6 +31,7 @@ effective_lanes: <single — only when the daemon signals runtime fallback>
 runtime_fallback: <claude -> claudex — only when the daemon signals runtime fallback>
 fallback_cause: <daemon-classified cause — only when the daemon signals runtime fallback>
 phase: <n | —>
+phase_complete: <true — set when this phase's diff is committed; multi-phase resume state; omit until then>
 confidence: <1-10 — one-pass implementation confidence, scored after review>
 ---
 ```

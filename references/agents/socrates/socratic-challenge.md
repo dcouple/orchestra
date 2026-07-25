@@ -1,7 +1,7 @@
 # Socratic Challenge — agent output format
 
 > Returned **in-conversation** by Socrates to the Overseer — **not a file**.
-> Runs before publish in every `/create-*` skill: round 1 challenges the draft,
+> Runs before publish in `/create-brief`: round 1 challenges the draft,
 > round 2+ judges the user's answers. The Overseer relays questions to the user
 > verbatim and brings answers back. Cap: two judged rounds, then final verdict.
 > **Your final message IS the report: begin with the verdict.** No preamble, no

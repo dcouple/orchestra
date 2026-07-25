@@ -44,9 +44,9 @@ Only rules an agent would otherwise get wrong — not a style guide:
 
 ## Work-item tracking
 
-The workflow skills (`/create-plan`, `/do`) create work-item artifacts
-(plan.html — the canonical HTML work item, refs/ including research
-sub-reports, impl-plan.md, wrapup.md) locally under `./tmp/<id>/`.
+The workflow skills (`/create-brief`, `/do`) create work-item artifacts
+(brief.html — the canonical HTML work item, refs/ including research
+sub-reports, plan.md, wrapup.md) locally under `./tmp/<id>/`.
 `./tmp/` is scratch — never commit it.
 
 This section decides where work items get published. Describe the
@@ -66,13 +66,9 @@ When `artifact_host` is set, export `ARTIFACT_HOST_TOKEN` with its upload
 bearer token; the shared publish procedure uploads the bundle and attaches
 the viewer URL.
 
-> With `artifact_host`, publish the lean issue body (the plan's full metadata
-> YAML, Intent summary, and `Artifact bundle: <url>`), use the bundle as the
-> artifact transport, and post no marker comments. Without it, fall back to
-> markdown: the issue body is a markdown rendition of the plan, and
-> `plan.html` plus `refs/` files ride as marker-delimited issue comments —
-> the HTML documents are still authored and stay canonical locally under
-> `./tmp/<id>/`.
+> Publish per `.references/publish-work-item.md` (it owns both branches:
+> lean bundle-backed body with `artifact_host`, markdown rendition + marker
+> comments without one).
 
 Example — publish to Linear (replace or delete):
 
@@ -82,17 +78,12 @@ linear_team: <team key or team ID>
 # artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
 ```
 
-> Publish each work item to that team. Record `linear_issues` in the plan's
-> metadata as an always-list pairing canonical `url`, URL-derived
-> `identifier`, and `relationship: completes | relates`; see
-> `.references/tracker-lifecycle.md`. `/do` discovers team workflow statuses
-> at runtime. With `artifact_host`, publish a lean body with the plan's full
-> metadata YAML and an Intent summary, create an attachment card for the
-> bundle transport, and post no marker comments; export
-> `ARTIFACT_HOST_TOKEN` with the upload bearer token. Without it, publish
-> the markdown rendition of the plan as the issue body and document any
-> required artifact attachment steps — the HTML documents are still
-> authored and stay canonical locally under `./tmp/<id>/`.
+> Publish each work item to that team per
+> `.references/publish-work-item.md`; `linear_issues` metadata follows
+> `.references/tracker-lifecycle.md`. `/do` discovers team workflow
+> statuses at runtime. Linear specifics: with `artifact_host`, the bundle
+> rides as an attachment card (export `ARTIFACT_HOST_TOKEN`); without one,
+> document any required artifact attachment steps here.
 
 Configure one tracker example, not both.
 

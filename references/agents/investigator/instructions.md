@@ -19,7 +19,7 @@ production evidence beats local speculation:
 - **Production/staging logs** (a cloud CLI like gcloud): correlate the
   failure window with what the services logged.
 - **Product analytics** (PostHog-style): confirm who hits the path, how
-  often, and since when — feeds the Bug Report's impact section.
+  often, and since when — feeds the bug brief's impact section.
 None connected? Proceed with local reproduction and note which sources were
 unavailable.
 

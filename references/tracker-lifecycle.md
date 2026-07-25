@@ -7,7 +7,7 @@ QA, PR creation, handoff, and completion.
 ## Links and identity
 
 Current-item lifecycle comes from explicit links in the invocation, the
-loaded item's metadata (`plan.html`'s `#orchestra-meta` block; legacy
+loaded item's metadata (`brief.html`'s `#orchestra-meta` block; legacy
 `item.md` frontmatter), or published item. Linear links use an always-list:
 
 ```yaml

@@ -113,7 +113,7 @@ The repository the agents work on must have:
    ```markdown
    ## Work-item tracking
 
-   The workflow skills (`/create-plan`, `/do`) create work-item artifacts
+   The workflow skills (`/create-brief`, `/do`) create work-item artifacts
    locally under `./tmp/<id>/`. `./tmp/` is scratch — never commit it.
 
    ```yaml
@@ -127,7 +127,7 @@ The repository the agents work on must have:
    > Linear GraphQL API authenticated with the `LINEAR_API_KEY`
    > environment variable. At publish, the issue gets a lean body (the
    > plan's metadata YAML + Intent summary) and the bundle carries
-   > `plan.html` plus `refs/` as the artifact transport
+   > `brief.html` plus `refs/` as the artifact transport
    > (`.references/publish-work-item.md`). At wrap-up, post the wrapup as
    > a comment and link the PR.
    ```

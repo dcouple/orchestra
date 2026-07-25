@@ -1,7 +1,7 @@
 ---
 name: do
-description: Run the full autonomous pipeline against a work item — plan, implement, verify, PR, post-PR review + QA, wrap-up. Takes a work-item reference (issue #/URL in whatever tracker the repo's AGENTS.md configures) or a local ./tmp/<id>/plan.html produced by /create-plan.
-argument-hint: "[work-item # / URL, or path to ./tmp/<id>/plan.html]"
+description: Run the full autonomous pipeline against a work item — plan, implement, verify, PR, post-PR review + QA, wrap-up. Takes a work-item reference (issue #/URL in whatever tracker the repo's AGENTS.md configures) or a local ./tmp/<id>/brief.html produced by /create-brief.
+argument-hint: "[work-item # / URL, or path to ./tmp/<id>/brief.html]"
 disable-model-invocation: true
 ---
 
@@ -127,13 +127,13 @@ Get everything about the work item into `./tmp/<id>/` before starting.
 This mirrors the publish rule: the project's `AGENTS.md` `Work-item
 tracking` section says where work items and their artifacts live — fetch
 them per its instructions; with no instructions, the item exists only
-locally, so expect it in `./tmp/<id>/`. The item is `plan.html`; its machine
+locally, so expect it in `./tmp/<id>/`. The item is `brief.html`; its machine
 state is the YAML in its `<script type="application/yaml"
 id="orchestra-meta">` head element (read it by extracting that element's
-text and parsing it as YAML — `.references/html-plan.md` · Metadata).
+text and parsing it as YAML — `.references/html-brief.md` · Metadata).
 Treat the tracker body's published metadata as the item's state and
-preserve it separately before writing or loading any `./tmp/<id>/plan.html`
-copy. Also record whether `plan.html` contained genuinely pre-existing local
+preserve it separately before writing or loading any `./tmp/<id>/brief.html`
+copy. Also record whether `brief.html` contained genuinely pre-existing local
 document content before the tracker fetch; the lean tracker stub fetched
 during this load does not count as pre-existing local content.
 If that metadata, or a local-only item's metadata, carries
@@ -141,16 +141,16 @@ If that metadata, or a local-only item's metadata, carries
 listed raw file from the bundle into `./tmp/<id>/`.
 Existing local files win for document content and bundle files normally fill
 content gaps only. The exception is a tracker-loaded lean stub: when no
-genuinely pre-existing local `plan.html` document content was present before
+genuinely pre-existing local `brief.html` document content was present before
 the tracker fetch, always replace the stub with the bundle's authoritative
-`plan.html`. Retry the index fetch or any file GET once.
+`brief.html`. Retry the index fetch or any file GET once.
 If the configured bundle is still
 unreachable, this is a **red gate blocking everything**: notify per
 `.references/notify.md`, state exactly which bundle request must become
 reachable, and wait. Never proceed from the lean tracker stub.
 
 For a tracker-loaded item, after the bundle pull replace the loaded
-`plan.html`'s `#orchestra-meta` element's text **wholesale** with the tracker
+`brief.html`'s `#orchestra-meta` element's text **wholesale** with the tracker
 body's full metadata values — touch nothing else in the file. Tracker
 metadata governs the run and overrides both pulled and pre-existing local
 metadata: state beats documents, while disk wins applies only to document
@@ -158,12 +158,12 @@ content (the page body). For a GitHub issue with no `artifact_bundle:`, use
 the marker transport: harvest every `<!-- ORCHESTRA-ARTIFACT path="..." -->`
 comment block back to its path under `./tmp/<id>/` (joining `part=n` splits)
 before planning — a hostless-published item carries its authoritative
-`plan.html` this way (the issue body is only its markdown rendition);
+`brief.html` this way (the issue body is only its markdown rendition);
 legacy items carry an `item.md` instead — run from that as-is. Only a
 GitHub item with neither an artifact bundle nor artifact comments gives you
 the body alone; say so in the plan's Known mismatches. A local path is read directly. Invoked with no
 argument: list the local items whose metadata says `status: ready`
-(`./tmp/*/plan.html`, legacy `./tmp/*/item.md`) and ask the user which to
+(`./tmp/*/brief.html`, legacy `./tmp/*/item.md`) and ask the user which to
 run — never pick one silently. Skim `refs/`; read individual refs as the work
 calls for them.
 
@@ -185,7 +185,7 @@ These preflight items are only checkable now that the item is loaded:
   failures. None may fall back to scripts/logs as browser evidence.
 
 - Read the item's **Dependencies & mechanics** section when present and
-  check each listed dependency; a dependency the plan marks `assumed` gets
+  check each listed dependency; a dependency the brief marks `assumed` gets
   verified here or named in the preflight message. When the item was already local, this runs before the
   preflight message goes out, so the gaps fold into that single message;
   for a fetched item, surface them in an immediate preflight follow-up, as
@@ -231,14 +231,14 @@ whose open PR this run must not amend, stop and ask the user to set one up.
 ## Step 1: Plan
 
 Read the item's `zone:` and derive this run's dials from the table in
-`.references/zones.md` — record zone and effective dials in `impl-plan.md`'s
+`.references/zones.md` — record zone and effective dials in `plan.md`'s
 frontmatter. Zones 0–1 run the full lane (dossier, cap 3); zones 2–3 run
 light (no dossier, cap 1). Zone 0 defaults to dual review; zones 1–3 default
 to the single Codex lane. An explicit `review_lanes: dual | single` in the item metadata
 outranks the zone's lane dial — it's the human's setting, made at capture
 or edited later as item metadata on the tracker (Step 0's pull picks up
 tracker edits). You may escalate the effective zone one notch toward 0 with the
-reason recorded in `impl-plan.md`'s frontmatter; never de-escalate — that's the
+reason recorded in `plan.md`'s frontmatter; never de-escalate — that's the
 human's call at capture, or the table's via postmortem evidence. Item
 missing a zone → classify it yourself from stakes and downstream
 consequences, record the reasoning in the frontmatter, and proceed.
@@ -247,7 +247,7 @@ full machinery and cap 3 while their lanes follow the same zone rule.
 
 If the daemon's prompt contains a runtime-fallback context line, record
 `requested_lanes`, `effective_lanes`, `runtime_fallback`, and `fallback_cause`
-in `impl-plan.md` frontmatter. Regardless of a dual request, the effective review
+in `plan.md` frontmatter. Regardless of a dual request, the effective review
 topology for the rest of that run is single/Codex-only.
 
 Full lane: dispatch the `codex` skill, role `code-researcher`, to map the
@@ -270,7 +270,7 @@ Windows-runner CI) reads the matching page at plan time and carries it
 into the implementer dispatch. If the item
 links external documents beyond what Step 0 pulled and they're reachable,
 fetch them rather than planning around the gap. Then write
-`./tmp/<id>/impl-plan.md` following this skill's `references/implementation-plan.md` —
+`./tmp/<id>/plan.md` following this skill's `references/implementation-plan.md` —
 its evidence contract is binding: facts live in Verified repo truths with
 `path:line` evidence from files opened this session, and proposals stay out
 of fact sections. Write Goal & invariants from the item's intent; reconcile
@@ -314,7 +314,7 @@ approval request in a notify at plan-exit — never as a blocking gate the
 implement wave discovers.
 
 At this plan-complete milestone, when an artifact host is configured,
-re-upload the bundle (now including `impl-plan.md`) using the artifact-host
+re-upload the bundle (now including `plan.md`) using the artifact-host
 step in `.references/publish-work-item.md`.
 
 ## Step 2: Implement
@@ -496,7 +496,12 @@ comment) before ending.
   ACs (record `qa_pass: trimmed`); zone 3 skips both the command-shaped
   items and the Manual-tests execution (record `skipped`) — but **an AC
   whose only possible proof needs the running app is driven at any zone,
-  zone 3 included; acceptance evidence is never trimmed by a dial.** When the
+  zone 3 included; acceptance evidence is never trimmed by a zone dial.**
+  The item's explicit `frontend_verifier:` metadata is the user's override,
+  honored in both directions: `true` runs the verifier even where the zone
+  wouldn't; `false` skips it entirely — app-only ACs left unproven are
+  recorded as `unverified — frontend verifier disabled by the item` in the
+  wrap-up, never claimed passed. When the
   app is needed, apply Step 0's launch rule; the frontend-verifier dispatch
   carries the `AGENTS.md`-sourced launch command, flags, port/URL, and env.
   The dispatch also carries the QA-drive contract: map every touched surface
@@ -607,7 +612,7 @@ comment) before ending.
   record; effective lanes remain single/Codex-only regardless of the request.
 - Write `./tmp/<id>/wrapup.md` following this skill's
   `references/wrap-up-report.md`; post
-  it as a PR comment. `impl-plan.md` and `wrapup.md` stay in `./tmp/<id>/` —
+  it as a PR comment. `plan.md` and `wrapup.md` stay in `./tmp/<id>/` —
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
   instructions.
@@ -642,9 +647,10 @@ comment) before ending.
 
 ## Multi-phase items (`phases` has 2+ entries)
 
-Run Steps 1–3 per phase, sequentially — per-phase `impl-plan-<n>.md`; on
-phase completion set that phase's `done: true` in the item's
-`#orchestra-meta` metadata (state lives there, never in the page body).
+Run Steps 1–3 per phase, sequentially — per-phase `plan-<n>.md`; on
+phase completion set `phase_complete: true` in that phase's `plan-<n>.md`
+frontmatter (run state lives in the implementation plan, never in the
+brief).
 After each phase verifies, review the phase diff — the multi-phase profile:
 cap 3, with lanes derived from zone unless the item has an explicit
 `review_lanes:` override — fix and
@@ -667,6 +673,6 @@ never yield to wait for a "continue" between phases (see Autonomy & safety).
 - Finish unattended: chain steps and phases without stopping for a nudge;
   defer-note-and-notify red-tier actions rather than blocking; stop only for
   a red gate that blocks everything (see Autonomy & safety).
-- The run is resumable: impl-plan.md plus the item metadata's `phases[].done`
-  state say where you were — and if a turn ends with work remaining, a
+- The run is resumable: plan.md — per phase, `plan-<n>.md` with its
+  `phase_complete` flag — says where you were — and if a turn ends with work remaining, a
   self-wakeup resumes it rather than waiting for a human.

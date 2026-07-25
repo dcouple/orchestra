@@ -26,7 +26,7 @@ not a work item; local-only when neither anchor exists), plus the proposed (neve
 applied) system changes its findings support.
 
 This skill changes nothing: no code fixes, no skill edits. If the code itself needs
-fixing, that goes through `/create-plan` then `/do`; the proposed system change is
+fixing, that goes through `/create-brief` then `/do`; the proposed system change is
 presented for the human to approve, not applied.
 
 > Every postmortem carries the run's dial record (zone, lanes, passes,
@@ -47,10 +47,12 @@ applicable.
 ## Steps
 
 ### 1. Load the record
-Resolve `<id>` from $ARGUMENTS (a work-item id directly, or match a PR to the `pr:` field
-across `./tmp/*/plan.html` metadata, legacy `./tmp/*/item.md`). Then read:
-- `./tmp/<id>/plan.html` — what we asked for (state in its `#orchestra-meta` block)
-- `./tmp/<id>/impl-plan.md` — what `/do` planned
+Resolve `<id>` from $ARGUMENTS (a work-item id directly, or match a PR to
+its item via the tracker cross-links — the PR body links the item and the
+wrapup comment links the PR — or via `./tmp/*/wrapup.md`; legacy
+`./tmp/*/item.md` items may carry a `pr:` field). Then read:
+- `./tmp/<id>/brief.html` — what we asked for (state in its `#orchestra-meta` block)
+- `./tmp/<id>/plan.md` — what `/do` planned
 - `./tmp/<id>/wrapup.md` — what `/do` claims it delivered and verified
 - PR feedback — `gh pr view <pr> --comments` and the review threads, or ask the user to
   paste it if it lives outside GitHub
@@ -93,7 +95,7 @@ Trace the gap upstream through the pipeline and name where it entered:
 - **Skill/agent gap** — a pipeline stage lacks an instruction this failure needed
 
 The code defect (if any) is a symptom here. Note it, and route the fix through
-`/create-plan` then `/do` — not this skill.
+`/create-brief` then `/do` — not this skill.
 
 **Success criteria**: one primary system-level cause identified, with evidence from the
 step-1 documents (quote the thin section, the weak AC, the review miss).
@@ -120,7 +122,7 @@ backlog with non-actionable items. The anchors:
   local work item (no tracker configured) whose run still opened a PR gets
   the postmortem on that PR; a tracked item whose run died before a PR gets
   it on the work item alone. Only when **neither anchor exists** (e.g. a
-  failure inside a `/create-*` run before anything was published) does the
+  failure inside a `/create-brief` run before anything was published) does the
   postmortem stay local in `./tmp/<id>/postmortem.md` — and you tell the
   user so.
 
@@ -159,6 +161,6 @@ nothing outside `./tmp/<id>/` was modified; the run never paused for approval.
 
 ```
 Suggested next steps:
-- `/create-plan [defect]` then `/do ./tmp/<id>/plan.html` — fix the code gap itself
+- `/create-brief [defect]` then `/do ./tmp/<id>/brief.html` — fix the code gap itself
 - `/postmortem-loop` — sweep published postmortems and land the approved system changes
 ```

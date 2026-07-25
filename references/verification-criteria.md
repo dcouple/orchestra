@@ -1,6 +1,7 @@
 # Verification Criteria — shared block
 
-Embedded inside Bug Reports, Feature Tickets, and each Epic phase. This is the
+Embedded inside every brief — per phase on multi-phase items, ACs numbered
+within each phase and cited phase-qualified (`P2·AC1`). This is the
 contract `/do`'s **verify** stage proves against, so it must be testable — no
 vague "works correctly."
 
