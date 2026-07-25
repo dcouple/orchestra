@@ -78,7 +78,7 @@ fixed; omit sections that don't apply and leave the gap.
 | 08 | Mockups | user-facing items — collapsed `details`, open at zone 0 | — |
 | 09 | Run config | zone panel — see below | same |
 | 10 | Justification | written by the Socratic gate: one line per surviving question (claim challenged — reason that held); on waiver, "Socratic gate waived by user." | same |
-| 11 | Open questions | `[NEEDS CLARIFICATION]` `.question` blocks — named, never papered over; omit if none | same |
+| 11 | Open questions | `[NEEDS CLARIFICATION]` `.question` blocks — named, never papered over; each must end resolved or explicitly deferred by the user (see Rules); omit if none | same |
 
 Verification criteria everywhere follow
 `.references/verification-criteria.md`: EARS-style, numbered `AC1…`, each
@@ -99,12 +99,15 @@ Form is at the agent's discretion — inline SVG on the tokens (safest),
 
 The section that forces discovery **before** implementation. Always present.
 
-- **Major components only.** A dependency earns a card by being
-  load-bearing: a third-party service or API the plan newly leans on, a
-  subsystem whose mechanics shape the design, human work required
-  (credentials, approvals, purchases). Routine small libraries, standard
-  tooling, and trivial internals don't get listed — an overlisted inventory
-  buries the dependency that matters.
+- **Major components only — the systems this work will be based on.** A
+  dependency earns a card by needing to be mapped out or discussed:
+  third-party services, APIs, and packages the plan newly leans on; things
+  that must be added for the work to stand (a service, an account, a new
+  capability); internal surfaces and subsystems the work will utilize whose
+  mechanics shape the design; human work required (credentials, approvals,
+  purchases). Routine small libraries, standard tooling, and trivial
+  internals don't get listed — an overlisted inventory buries the
+  dependency that matters.
 - **One `.dep` card per major dependency.** Each card states *what it does
   for this item* and *how the mechanism works* in a sentence or two, and
   carries a badge: `verified` (a researcher or investigator confirmed the
@@ -223,6 +226,12 @@ something the reader must see to judge the change.
 
 ## Rules
 
+- **Markers drive to zero.** A `[NEEDS CLARIFICATION]` marker anywhere in
+  the plan is a follow-up owed to the user: the drafting skill keeps asking
+  until every marker is either resolved or the **user explicitly defers
+  it** (recorded in Open questions as a deferral, with the reason). The
+  agent never defers a marker on its own, and the plan never goes
+  `status: ready` while an unaddressed marker remains.
 - **Altitude**: direction, not design — no file lists, pseudo-code, or
   task-level sequences. `/do` starts fresh and is capable: omit anything it
   can reasonably decide itself.

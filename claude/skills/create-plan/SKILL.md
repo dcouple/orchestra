@@ -42,11 +42,14 @@ discussion so far:
 - **Locked directions** — only decisions the model shouldn't re-make (number them D1, D2…)
 - **Out of scope**
 - **Dependencies & mechanics** — the inventory that forces discovery now, not
-  during implementation. **Major components only**: the external services and
-  APIs the plan newly leans on, the subsystems whose mechanics shape the
-  design, human dependencies — never routine libraries or trivial internals;
-  the schema delta (explicitly "none" when none); and sequencing (work that
-  should land first, follow-ups this creates). For each major dependency,
+  during implementation. **Major components only — the systems this work
+  will be based on**: third-party services, APIs, and packages the plan
+  newly leans on; things that must be added for the work to stand; internal
+  surfaces and subsystems the work will utilize whose mechanics shape the
+  design; human dependencies — anything major that needs mapping out or
+  discussing, never routine libraries or trivial internals; the schema
+  delta (explicitly "none" when none); and sequencing (work that should
+  land first, follow-ups this creates). For each major dependency,
   either its mechanics are **verified** — a `codex` dispatch (role
   `code-researcher`) for codebase facts or the `web-researcher` sub-agent
   for external ones, its finding saved as a `refs/<topic>.html` sub-report
@@ -65,8 +68,11 @@ means to break something must say so.
 Clarification scales with the stakes (`.references/draft-work-item.md`):
 zone 0–1 or multi-phase gets an interview loop that keeps digging until the
 dependency inventory holds no unexamined `assumed` entries; zone 2–3
-single-phase gets one focused round. A decision the user consciously defers
-is recorded in Open questions as a deferral — named, never papered over.
+single-phase gets one focused round. Either way, **markers drive to zero**:
+every `[NEEDS CLARIFICATION]` marker in the draft gets followed up with the
+user until it is resolved or the user explicitly defers it — a deferral is
+the user's call, recorded in Open questions with its reason, never the
+agent's; the plan never goes `ready` with an unaddressed marker.
 
 Set the **zone** (0–3) with the user per `.references/zones.md` — stakes and
 downstream consequence radius, never diff size; escalator surfaces force

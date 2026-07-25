@@ -17,9 +17,11 @@ section map).
   cases, tradeoffs; don't ask obvious questions, dig into what the user
   hasn't considered — and keep going until the Dependencies & mechanics
   section has no `assumed` entry the user isn't consciously accepting. Zone
-  2–3 single-phase: one focused round. A decision the user consciously
-  defers is recorded in Open questions as a deferral — named, never papered
-  over.
+  2–3 single-phase: one focused round. At every stake level, follow up on
+  each `[NEEDS CLARIFICATION]` marker until it is resolved or the user
+  explicitly defers it — deferral is the user's call, recorded in Open
+  questions with its reason, never the agent's; `status: ready` requires
+  zero unaddressed markers.
 - Embed verification criteria per `.references/verification-criteria.md`:
   EARS-style, numbered `AC1…`, each mapped to a method from
   `.references/verification-methods.md` and matched to the change type's
