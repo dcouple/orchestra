@@ -102,16 +102,13 @@ already established: reproduction, root cause + evidence, confidence level. A
 root-cause finding from an `investigator` dispatch during `/discussion` is the
 ideal input — reuse it, don't redo it.
 
-If the root cause is **not** yet established, run the investigation now:
-- Dispatch the investigator via the `codex` skill (role `investigator`) with the full
-  report (expected vs actual, environment, known repro steps, traces); it returns its
-  standard root-cause finding.
-- If reproduction requires driving the running app, dispatch `frontend-verifier`
-  first to exercise the flow and capture evidence, then pass its transcript along
-  with the defect report.
-- If the investigator cannot reproduce: say so plainly. Do not invent a cause. Either
-  gather more from the user (logs, exact environment) and re-dispatch, or proceed with
-  root cause marked `Hypothesis:` and what-was-tried captured in `refs/`.
+If the root cause is **not** yet established, dispatch the investigator now
+via the `codex` skill (role `investigator`) with the full defect report
+(expected vs actual, environment, repro steps, traces); when reproduction
+needs the running app, dispatch `frontend-verifier` first and pass its
+transcript along. If it cannot reproduce, say so plainly — never invent a
+cause: gather more from the user and re-dispatch, or proceed with the root
+cause marked `Hypothesis:` and what-was-tried captured in `refs/`.
 
 Then confirm impact and severity with the user where judgment is needed: who
 is affected, how widespread, why it matters now, and whether the suggested
@@ -155,22 +152,12 @@ honestly), and the resolution path; for multi-phase work, the Approach
 section carries the binding phase timeline and per-phase blocks. Fold
 corrections in as in-place edits.
 
-Feature specifics — suitable AC methods: a lint rule, test, script (backend),
-or natural navigation of the running app (frontend/mobile).
-
-Bug specifics:
-- Reproduction steps go **in the brief's Verification section** — deterministic
-  enough for the verify stage to re-run them. Raw traces, logs, and long
-  transcripts go to `./tmp/<id>/refs/` (e.g. `refs/error-trace.txt`), linked
-  not inlined. If the investigation produced a current-state deep-dive worth
-  keeping, save it per `.references/system-analysis.md` as
-  `refs/system-analysis.md`.
-- Verification criteria must include:
-  - **AC1**: the reproduction flipping from fail to pass — the repro steps double as
-    the failing case the fix must flip.
-  - **Prevention criteria**: what stops this class of bug recurring — a regression
-    test, a custom lint/static rule (the most durable guard), or an invariant —
-    verifiable, not aspirational.
+Bug specifics: the Verification section's bug form — repro steps as AC1
+(flipping from fail to pass) plus prevention criteria — is specified in
+`.references/html-brief.md` (section map, row 07). Raw traces, logs, and
+long transcripts go to `./tmp/<id>/refs/` (e.g. `refs/error-trace.txt`),
+linked not inlined; a current-state deep-dive worth keeping is saved per
+`.references/system-analysis.md` as `refs/system-analysis.md`.
 
 **Success criteria**: `brief.html` exists and the user has confirmed the item
 against it in the browser; every AC is numbered, observable, and mapped; bug
