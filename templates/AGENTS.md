@@ -59,34 +59,40 @@ Example — publish to GitHub issues (replace or delete):
 ```yaml
 tracker: github
 github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the current repo
-artifact_host: https://<daemon-host>   # required for publishing — the stable viewer for work-item bundles
+# artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
 ```
 
-Export `ARTIFACT_HOST_TOKEN` with the host's upload bearer token; the shared
-publish procedure uploads the bundle and attaches the viewer URL.
+When `artifact_host` is set, export `ARTIFACT_HOST_TOKEN` with its upload
+bearer token; the shared publish procedure uploads the bundle and attaches
+the viewer URL.
 
-> Publish the lean issue body (the plan's full metadata YAML, Intent summary,
-> and `Artifact bundle: <url>`), use the bundle as the artifact transport, and
-> post no marker comments. Without `artifact_host`, nothing is published —
-> work items stay local under `./tmp/<id>/`.
+> With `artifact_host`, publish the lean issue body (the plan's full metadata
+> YAML, Intent summary, and `Artifact bundle: <url>`), use the bundle as the
+> artifact transport, and post no marker comments. Without it, fall back to
+> markdown: the issue body is a markdown rendition of the plan, and
+> `plan.html` plus `refs/` files ride as marker-delimited issue comments —
+> the HTML documents are still authored and stay canonical locally under
+> `./tmp/<id>/`.
 
 Example — publish to Linear (replace or delete):
 
 ```yaml
 tracker: linear
 linear_team: <team key or team ID>
-artifact_host: https://<daemon-host>   # required for publishing — the stable viewer for work-item bundles
+# artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
 ```
 
 > Publish each work item to that team. Record `linear_issues` in the plan's
 > metadata as an always-list pairing canonical `url`, URL-derived
 > `identifier`, and `relationship: completes | relates`; see
 > `.references/tracker-lifecycle.md`. `/do` discovers team workflow statuses
-> at runtime. Publish a lean body with the plan's full metadata YAML and an
-> Intent summary, create an attachment card for the bundle transport, and
-> post no marker comments. Export `ARTIFACT_HOST_TOKEN` with the upload
-> bearer token. Without `artifact_host`, nothing is published — work items
-> stay local under `./tmp/<id>/`.
+> at runtime. With `artifact_host`, publish a lean body with the plan's full
+> metadata YAML and an Intent summary, create an attachment card for the
+> bundle transport, and post no marker comments; export
+> `ARTIFACT_HOST_TOKEN` with the upload bearer token. Without it, publish
+> the markdown rendition of the plan as the issue body and document any
+> required artifact attachment steps — the HTML documents are still
+> authored and stay canonical locally under `./tmp/<id>/`.
 
 Configure one tracker example, not both.
 

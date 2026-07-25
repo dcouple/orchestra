@@ -28,9 +28,11 @@ The flow separates *clarity*, *capture*, and *execution*:
    alignment surface the user reads in the browser and the contract `/do`
    executes against — machine state lives in its `#orchestra-meta` head
    block (`references/html-plan.md`). It then **publishes** wherever the
-   project's `AGENTS.md` `Work-item tracking` section says — publishing
-   requires an `artifact_host`; a repo without one stays local-only, with
-   the item in `./tmp/<id>/` and the skill saying so. `/create-plan` runs
+   project's `AGENTS.md` `Work-item tracking` section says — with an
+   `artifact_host`, a lean tracker body pointing at the bundle; without
+   one, a markdown rendition of the plan as the issue body with the HTML
+   riding as marker comments; with no destination at all, the item stays
+   local in `./tmp/<id>/` and the skill says so. `/create-plan` runs
    the investigator itself if the root cause isn't already established.
    Before publish, every draft passes the **Socratic gate**: the `socrates`
    sub-agent takes an adversarial position on the item's premise (needed at

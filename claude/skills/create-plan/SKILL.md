@@ -194,9 +194,10 @@ the Justification section, with the phase list when multi-phase. Bug
 exception: leave `status: draft` if the cause is still a hypothesis and the
 user wants more evidence first — publish happens either way.
 
-**Success criteria**: published and cross-linked per the shared procedure —
-or, when the repo configures no artifact host, the item is complete in
-`./tmp/<id>/` and the user was told publishing needs an `artifact_host`.
+**Success criteria**: published and cross-linked per the shared procedure
+(bundle transport with an `artifact_host`, markdown-rendition fallback
+without one) — or, when the repo configures no destination at all, the item
+is complete in `./tmp/<id>/` and the user was told nothing was published.
 
 ```
 Suggested next steps:

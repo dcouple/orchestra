@@ -154,13 +154,14 @@ For a tracker-loaded item, after the bundle pull replace the loaded
 body's full metadata values — touch nothing else in the file. Tracker
 metadata governs the run and overrides both pulled and pre-existing local
 metadata: state beats documents, while disk wins applies only to document
-content (the page body). For a GitHub issue with no `artifact_bundle:`, keep
-the legacy transport: harvest every `<!-- ORCHESTRA-ARTIFACT path="..." -->`
+content (the page body). For a GitHub issue with no `artifact_bundle:`, use
+the marker transport: harvest every `<!-- ORCHESTRA-ARTIFACT path="..." -->`
 comment block back to its path under `./tmp/<id>/` (joining `part=n` splits)
-before planning — legacy items published this way carry an `item.md` instead
-of `plan.html`; run from it as-is. Only a GitHub item with neither an
-artifact bundle nor artifact comments gives you the body alone; say so in
-the plan's Known mismatches. A local path is read directly. Invoked with no
+before planning — a hostless-published item carries its authoritative
+`plan.html` this way (the issue body is only its markdown rendition);
+legacy items carry an `item.md` instead — run from that as-is. Only a
+GitHub item with neither an artifact bundle nor artifact comments gives you
+the body alone; say so in the plan's Known mismatches. A local path is read directly. Invoked with no
 argument: list the local items whose metadata says `status: ready`
 (`./tmp/*/plan.html`, legacy `./tmp/*/item.md`) and ask the user which to
 run — never pick one silently. Skim `refs/`; read individual refs as the work
