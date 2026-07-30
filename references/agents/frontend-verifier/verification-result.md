@@ -38,7 +38,7 @@ validation, and video, not only screenshots.
 
 Every screenshot taken during the run is a row here — the caller hosts and
 embeds from this table, so a capture not listed does not exist. Journey
-videos are rows too (`<journey>.mp4` — one line: journey + duration); mark
+videos are rows too (`<journey>.webm` — one line: journey + duration); mark
 video rows so the caller knows they host as links/attachments, not inline
 embeds. A browser-required criterion with no completed current-attempt
 manifest fails; headless operation is not a reason to omit browser captures.

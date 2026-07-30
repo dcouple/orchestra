@@ -522,7 +522,7 @@ comment) before ending.
   **The capture contract rides in every frontend-verifier/QA dispatch you
   write** — the sub-agent only knows what its prompt says, so state it:
   screenshot every UI state verified, record a video of every journey
-  driven through a scriptable driver (one review-encoded mp4 per journey —
+  driven through a scriptable driver (one native WebM per journey —
   `.references/qa-verification.md` § Journey videos), save all to the
   scratchpad, enumerate each in the report's Captures table (path · what it
   shows · AC#/J#). A report claiming a UI pass with an empty Captures table

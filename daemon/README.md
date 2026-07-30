@@ -125,7 +125,7 @@ extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
 `LINEAR_MCP_MONITOR_TIMEOUT_MS` (10000),
 `DO_PERMISSION_MODE` (`bypassPermissions`; production rejects every other value),
 `DO_MAX_TURNS` (300), `DO_MAX_BUDGET_USD` (optional positive number),
-`SESSION_CONCURRENCY` (2), `KEEPALIVE_MS` (900000), `ATTACHMENTS_ENABLED` (1), and
+`SESSION_CONCURRENCY` (5), `KEEPALIVE_MS` (900000), `ATTACHMENTS_ENABLED` (1), and
 `ATTACHMENT_HOSTS` (`uploads.linear.app`). Set `SESSIONS_ENABLED=0` for ingress-only runs.
 For a new role session, `claude` prefers the Fable launcher and retains readiness routing
 plus the one-shot structured capacity fallback to Claudex/GPT-Sol; `claudex` starts
@@ -172,8 +172,8 @@ accumulate. Active turns separately emit bounded `linear_mcp_turn_init`,
 `linear_mcp_tool_result`, and `linear_mcp_turn_close` records; close classification is exactly
 `turn_completed`, `runner_failed`, or `daemon_shutdown`.
 
-Browser verification is opt-in with `BROWSER_ENABLED=1` and remains off by
-default. `PLAYWRIGHT_MCP_BIN` defaults to `/usr/local/bin/playwright-mcp`,
+Browser verification is enabled by default; set `BROWSER_ENABLED=0` to opt
+out. `PLAYWRIGHT_MCP_BIN` defaults to `/usr/local/bin/playwright-mcp`,
 `PLAYWRIGHT_CHROME_BIN` to `/usr/bin/google-chrome`, and
 `BROWSER_ATTEMPT_TIMEOUT_MS` to four hours. A fresh `/do` turn starts with
 Linear MCP only and a private request file. After `/do` loads the authoritative
@@ -181,7 +181,8 @@ item, browser-required work writes the marker and returns the internal relaunch
 sentinel; the daemon persists the browser run id and resumes the same session
 with official Playwright MCP. Each execution gets isolated `state/` and
 retained `evidence/` roots. MCP/Chrome/target failures are classified and fail
-browser proof; non-browser, planner, reviewer, and backend paths never attach
+browser proof; missing Playwright MCP or Chrome prerequisites fail closed with
+typed errors. Non-browser, planner, reviewer, and backend paths never attach
 Playwright.
 Set `NTFY_URL` to an ntfy topic URL (e.g. `https://ntfy.sh/<topic>`) to push a one-way
 notification whenever an agent posts a terminal response or error — errors post at high

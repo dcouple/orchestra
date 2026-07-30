@@ -185,7 +185,7 @@ BASH_MAX_TIMEOUT_MS=900000
 DO_PERMISSION_MODE=bypassPermissions
 DO_MAX_TURNS=300
 # DO_MAX_BUDGET_USD=50
-SESSION_CONCURRENCY=6
+SESSION_CONCURRENCY=5
 KEEPALIVE_MS=900000
 ATTACHMENTS_ENABLED=1
 ATTACHMENT_HOSTS=uploads.linear.app
@@ -955,9 +955,10 @@ when telemetry is enabled, and keep it in the mode-`0600` daemon env file.
 
 Provisioning reads the exact `@playwright/mcp` version from `package.json`,
 installs that global package, and maintains `/usr/local/bin/playwright-mcp`.
-After deploying the additive SQLite migration, set `BROWSER_ENABLED=1`, restart
-the service, and run this mandatory human-owned hardened-host smoke (the
-implementation pipeline must not execute production actions):
+Browser capability is enabled by default without an environment flag. After
+deploying the additive SQLite migration, restart the service and run this
+mandatory human-owned hardened-host smoke (the implementation pipeline must
+not execute production actions):
 
 ```bash
 sudo systemctl restart linear-agent-daemon
@@ -975,9 +976,10 @@ sudo systemd-run --wait --collect --pipe \
 
 The fixture binds only to `127.0.0.1:0`; MCP uses stdio and exposes no network
 listener. Record the zero exit status, completed manifest, removed `state/`,
-and absence of MCP/Chrome descendants. To roll back, set `BROWSER_ENABLED=0`
-and restart. The additive columns and retained evidence may remain; existing
-Linear routing and non-browser sessions continue unchanged.
+and absence of MCP/Chrome descendants. To opt out or roll back, set
+`BROWSER_ENABLED=0` and restart. The additive columns and retained evidence
+may remain; existing Linear routing and non-browser sessions continue
+unchanged.
 
 ## Logs and recovery
 
