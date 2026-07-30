@@ -54,7 +54,7 @@ async function setup() {
   const turn = log.claimNextTurn(2)!;
   log.finishTurn(turn.id, "response", "done", 2);
   log.markTurnActivityPosted(turn.id, 2);
-  return { dir, repo, root, log, tree };
+  return { dir, repo, root, log, manager, tree };
 }
 class Poster {
   posts: string[] = [];
@@ -146,6 +146,56 @@ describe("CleanupWorker", () => {
       git(["show-ref", "--verify", "refs/heads/agents/ENG-42"], s.repo),
     ).toThrow();
     expect(onIssueFinalized).toHaveBeenCalledOnce();
+    s.log.close();
+  });
+  it("AC5 retries instead of removing a session worktree reused after cleanup is claimed", async () => {
+    const s = await setup();
+    s.log.stageExternalUrl(
+      "session",
+      "implementer",
+      "Pull Request",
+      "https://github.com/dcouple/example/pull/42",
+      3,
+    );
+    complete(s.log);
+    const enteredCleanCheck = deferred();
+    const releaseCleanCheck = deferred();
+    const originalIsClean = s.manager.isClean.bind(s.manager);
+    vi.spyOn(s.manager, "isClean").mockImplementation(async (path) => {
+      enteredCleanCheck.resolve();
+      await releaseCleanCheck.promise;
+      return originalIsClean(path);
+    });
+    const logger = { log: vi.fn(), error: vi.fn() };
+    const worker = new CleanupWorker(
+      s.log,
+      new Poster() as unknown as LinearGateway,
+      s.root,
+      s.repo,
+      {
+        now: () => 10,
+        logger,
+        worktrees: s.manager,
+      },
+    );
+
+    const drain = worker.trigger();
+    await enteredCleanCheck.promise;
+    expect(s.log.cleanupStates()[0]?.status).toBe("running");
+    await s.manager.ensureWorktree("ENG-42");
+    releaseCleanCheck.resolve();
+    await drain;
+
+    expect(existsSync(s.tree.path)).toBe(true);
+    expect(() =>
+      git(["show-ref", "--verify", "refs/heads/agents/ENG-42"], s.repo),
+    ).not.toThrow();
+    expect(s.log.getSession("session")?.worktreePath).toBe(s.tree.path);
+    expect(s.log.cleanupStates()[0]?.status).toBe("pending");
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.log).toHaveBeenCalledWith(
+      expect.stringContaining('"event":"cleanup_revalidation_retry"'),
+    );
     s.log.close();
   });
   it("preserves and removes a clean present worktree when no pull request URL was recorded", async () => {

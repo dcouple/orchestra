@@ -4,7 +4,7 @@ import type {
   CleanupNotificationRow,
 } from "./eventlog.js";
 import type { LinearGateway } from "./linear.js";
-import { WorktreeManager } from "./worktrees.js";
+import { WorktreeChangedError, WorktreeManager } from "./worktrees.js";
 import {
   buildInvocationSpan,
   buildSessionRoot,
@@ -97,6 +97,14 @@ export class CleanupWorker {
         );
         return;
       }
+      const expectedSnapshot = await this.worktrees.snapshot(
+        job.issueIdentifier,
+        { includeAbsent: true },
+      );
+      if (!expectedSnapshot)
+        throw new Error(
+          `Refusing cleanup without an owned worktree snapshot: ${job.issueIdentifier}`,
+        );
       const session = this.log.sessionByIssueIdentifier(job.issueIdentifier);
       if (
         !session?.worktreePath ||
@@ -106,7 +114,7 @@ export class CleanupWorker {
         const result = await this.worktrees.preserveAndRemove(
           job.issueIdentifier,
           this.options.bundlesDir ?? `${this.worktreesRoot}/../worktree-bundles`,
-          { alwaysPreserve: true },
+          { alwaysPreserve: true, expectedSnapshot },
         );
         preservationAttempt = false;
         this.log.clearSessionWorktrees(job.issueIdentifier);
@@ -126,7 +134,7 @@ export class CleanupWorker {
             job.issueIdentifier,
             this.options.bundlesDir ??
               `${this.worktreesRoot}/../worktree-bundles`,
-            { alwaysPreserve: true },
+            { alwaysPreserve: true, expectedSnapshot },
           );
           preservationAttempt = false;
           this.log.clearSessionWorktrees(job.issueIdentifier);
@@ -139,7 +147,7 @@ export class CleanupWorker {
           this.options.onIssueFinalized?.();
           return;
         }
-        await this.worktrees.remove(job.issueIdentifier);
+        await this.worktrees.remove(job.issueIdentifier, { expectedSnapshot });
         this.log.clearSessionWorktrees(job.issueIdentifier);
         this.log.markCleanupDone(job.id);
         this.options.onIssueFinalized?.();
@@ -148,7 +156,7 @@ export class CleanupWorker {
         const result = await this.worktrees.preserveAndRemove(
           job.issueIdentifier,
           this.options.bundlesDir ?? `${this.worktreesRoot}/../worktree-bundles`,
-          { alwaysPreserve: true },
+          { alwaysPreserve: true, expectedSnapshot },
         );
         preservationAttempt = false;
         this.log.clearSessionWorktrees(job.issueIdentifier);
@@ -162,6 +170,18 @@ export class CleanupWorker {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof WorktreeChangedError) {
+        this.log.retryCleanup(job.id, message, this.now() + 1000);
+        this.logger.log(
+          JSON.stringify({
+            event: "cleanup_revalidation_retry",
+            jobId: job.id,
+            issueIdentifier: job.issueIdentifier,
+            reason: "worktree_changed",
+          }),
+        );
+        return;
+      }
       if (
         this.now() <
         job.createdAt + (this.options.retryWindowMs ?? 30 * 60_000)

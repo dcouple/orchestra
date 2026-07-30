@@ -14,6 +14,7 @@ export interface PreservationResult {
 export interface WorktreeSnapshot {
   identity: string;
   generation: number;
+  present: boolean;
 }
 export class WorktreeChangedError extends Error {
   constructor(identifier: string) {
@@ -58,7 +59,10 @@ export class WorktreeManager {
     }
   }
 
-  async snapshot(rawIdentifier: string): Promise<WorktreeSnapshot | undefined> {
+  async snapshot(
+    rawIdentifier: string,
+    opts: { includeAbsent?: boolean } = {},
+  ): Promise<WorktreeSnapshot | undefined> {
     const previous = this.mutation;
     let release!: () => void;
     this.mutation = new Promise<void>((resolve) => {
@@ -68,11 +72,19 @@ export class WorktreeManager {
     try {
       const identifier = this.identifier(rawIdentifier);
       const path = resolve(this.root, identifier);
-      if (!(await this.exists(path))) return undefined;
+      if (!(await this.exists(path)))
+        return opts.includeAbsent
+          ? {
+              identity: "",
+              generation: this.generations.get(identifier) ?? 0,
+              present: false,
+            }
+          : undefined;
       try {
         return {
           identity: await this.identityLocked(path),
           generation: this.generations.get(identifier) ?? 0,
+          present: true,
         };
       } catch {
         return undefined;
@@ -82,14 +94,22 @@ export class WorktreeManager {
     }
   }
 
-  async remove(rawIdentifier: string): Promise<void> {
+  async remove(
+    rawIdentifier: string,
+    opts: { expectedSnapshot?: WorktreeSnapshot } = {},
+  ): Promise<void> {
     const previous = this.mutation;
     let release!: () => void;
     this.mutation = new Promise<void>(resolve => { release = resolve; });
     await previous;
     try {
-      const identifier = rawIdentifier.replace(/[^A-Za-z0-9-]/g, "-") || "issue";
+      const identifier = this.identifier(rawIdentifier);
       const path = resolve(this.root, identifier);
+      await this.assertExpectedSnapshotLocked(
+        identifier,
+        path,
+        opts.expectedSnapshot,
+      );
       if (await this.exists(path)) {
         await this.validate(path);
         if (!(await this.isClean(path))) throw new Error(`Refusing to remove dirty worktree: ${path}`);
@@ -124,15 +144,11 @@ export class WorktreeManager {
         preserved: "none",
         detail: "no preservation required",
       };
-      if (opts.expectedSnapshot) {
-        const generation = this.generations.get(identifier) ?? 0;
-        if (
-          generation !== opts.expectedSnapshot.generation ||
-          !(await this.exists(path)) ||
-          (await this.identityLocked(path)) !== opts.expectedSnapshot.identity
-        )
-          throw new WorktreeChangedError(identifier);
-      }
+      await this.assertExpectedSnapshotLocked(
+        identifier,
+        path,
+        opts.expectedSnapshot,
+      );
       if (await this.exists(path)) {
         await this.validate(path);
         const wasDirty =
@@ -290,6 +306,22 @@ export class WorktreeManager {
     const branch = (await this.git(["branch", "--show-current"], path)).trim();
     const head = (await this.git(["rev-parse", "HEAD"], path)).trim();
     return `${marker}:${branch}:${head}`;
+  }
+
+  private async assertExpectedSnapshotLocked(
+    identifier: string,
+    path: string,
+    expected?: WorktreeSnapshot,
+  ): Promise<void> {
+    if (!expected) return;
+    const generation = this.generations.get(identifier) ?? 0;
+    const present = await this.exists(path);
+    if (
+      generation !== expected.generation ||
+      present !== expected.present ||
+      (present && (await this.identityLocked(path)) !== expected.identity)
+    )
+      throw new WorktreeChangedError(identifier);
   }
 
   private async excludeTransientDirectories(path: string): Promise<void> {
