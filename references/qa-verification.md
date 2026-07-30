@@ -96,19 +96,19 @@ driver level (e.g. Playwright's `recordVideo` on the context) so the video
 is a free byproduct of the drive, never a second pass for the camera; one
 video per journey, named for it.
 
-Encode for human review before publishing: H.264 mp4 with `yuv420p` (the
-pixel format every browser and OS player accepts), sped to ~1.25× — raw
-automation pacing reads slow, and 2× is too fast to follow. Videos
-complement stills, never replace them: the per-step captures stay the
-frame-addressable evidence each report row cites; the video is the
-continuity check and the artifact a reviewer actually watches.
+Keep the driver's native WebM as the recorded and published artifact. Where
+ffmpeg is available, an H.264 mp4 with `yuv420p` may also be published as an
+optional compatibility transcode, but it never replaces the required WebM.
+Videos complement stills, never replace them: the per-step captures stay the
+frame-addressable evidence each report row cites; the video is the continuity
+check and the artifact a reviewer actually watches.
 
 Publish videos like any other evidence (see Evidence hosting) — the rolling
 `qa-assets` prerelease gives a durable link
-(`gh release upload qa-assets <journey>.mp4`).
+(`gh release upload qa-assets <journey>.webm`).
 One platform caveat goes in the report: GitHub renders an inline video
 player only for files a human uploads through the web UI, so link the
-hosted mp4 next to the journey's stills *and* enumerate the local file
+hosted WebM next to the journey's stills *and* enumerate the local file
 paths — the human can drag-drop those files wherever inline playback
 matters. When a connected work tracker accepts file attachments by API,
 attach the videos there too.

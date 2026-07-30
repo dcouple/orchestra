@@ -82,7 +82,7 @@ launch is blocked, never grounds to improvise a command.
    and enumerate it in your report's Captures section — path, one-line
    description, the criterion or checklist item it evidences. When a journey
    runs through a scriptable driver, also record it as a video (driver-level
-   recording, one mp4 per journey, encoded for review — see
+   recording, one WebM per journey — see
    `.references/qa-verification.md` § Journey videos) and enumerate each in
    the same Captures section: path, journey, duration, what it evidences.
    A capture that exists only as prose ("screenshot shows…") is lost the
