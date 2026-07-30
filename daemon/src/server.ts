@@ -16,6 +16,7 @@ export interface WebhookServerOptions {
   log: EventLog;
   artifactStore?: ArtifactStore;
   onInserted?: () => void;
+  onIssueCompleted?: () => void;
   onStop?: (agentSessionId: string) => void;
   logger?: Pick<Console, "log" | "error">;
 }
@@ -114,6 +115,12 @@ export class WebhookServer {
         inserted: result.inserted }));
       this.json(response, 200, { ok: true });
       if (result.inserted) this.options.onInserted?.();
+      if (
+        result.inserted &&
+        event.type === "Issue" &&
+        event.stateType === "completed"
+      )
+        this.options.onIssueCompleted?.();
       if (result.stop) this.options.onStop?.(result.stop.agentSessionId);
     } catch (error) {
       this.logger.error(JSON.stringify({ level: "error", event: "request_failed", error: error instanceof Error ? error.message : String(error) }));

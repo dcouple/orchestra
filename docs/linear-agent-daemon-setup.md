@@ -84,6 +84,9 @@ For **both** apps:
 For **bloom-implementer only**, additionally check **Issues** under
 **Data change events** — that webhook is how the daemon learns an issue
 was completed so it can clean up the worktree and branch.
+An event-driven reconciliation sweep also runs at startup and after completed
+turns to backstop missed delivery; the Issues subscription remains required
+for immediate cleanup.
 
 After saving each app, record three values: the **client ID**, the
 **client secret**, and the **webhook signing secret** (`lin_wh_…`).
@@ -189,6 +192,8 @@ LINEAR_API_KEY=...
 SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/<repo>
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
+WORKTREE_UNLINKED_GRACE_DAYS=14
+WORKTREE_BUNDLES_DIR=/var/lib/linear-agent-daemon/worktree-bundles
 PLANNER_HARNESS=claude
 IMPLEMENTER_HARNESS=claude
 CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
@@ -250,7 +255,8 @@ have the exact SQL/GraphQL evidence queries.
    unattended on branch `agents/<identifier>`, opens a PR, and the PR
    appears on the session. Reply to an implementer question — the session
    resumes. Move the issue to a `completed` state; the worktree and
-   branch are cleaned up (dirty worktrees are retained and reported).
+   branch are cleaned up. Dirty or PR-less state is first pushed to the
+   issue's agent branch or saved as a restorable git bundle and reported.
 4. If `NTFY_URL` is set, each terminal response/error arrives as a phone
    notification.
 

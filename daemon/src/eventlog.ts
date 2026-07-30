@@ -250,6 +250,13 @@ export interface CleanupNotificationRow {
   nextAttemptAt: number;
   createdAt: number;
 }
+export interface WorktreeUnlinkedObservation {
+  identifier: string;
+  path: string;
+  identity: string | null;
+  firstObservedAt: number;
+  lastSeenAt: number;
+}
 export interface StopAckRow {
   sourceActivityId: string;
   eventId: number;
@@ -430,6 +437,13 @@ export class EventLog {
         activity_id TEXT NOT NULL UNIQUE, body TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','posted','failed')),
         attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, error TEXT
       );
+      CREATE TABLE IF NOT EXISTS worktree_unlinked_observations (
+        identifier TEXT PRIMARY KEY,
+        path TEXT NOT NULL,
+        identity TEXT NOT NULL,
+        first_observed_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS stop_acks (
         source_activity_id TEXT PRIMARY KEY, event_id INTEGER NOT NULL REFERENCES events(id),
         app TEXT NOT NULL CHECK(app IN ('planner','implementer')), linear_session_id TEXT NOT NULL,
@@ -554,6 +568,7 @@ export class EventLog {
     this.migrateTurnColumns();
     this.migrateAckColumns();
     this.migrateTurnActivityColumns();
+    this.migrateWorktreeObservationColumns();
     this.recoverAmbiguousOutbox();
   }
 
@@ -598,6 +613,22 @@ export class EventLog {
           ON operations((1)) WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
       `);
     })();
+  }
+
+  private migrateWorktreeObservationColumns(): void {
+    const columns = new Set(
+      (
+        this.db
+          .prepare("PRAGMA table_info(worktree_unlinked_observations)")
+          .all() as Array<{ name: string }>
+      ).map((column) => column.name),
+    );
+    if (!columns.has("identity"))
+      this.db
+        .prepare(
+          "ALTER TABLE worktree_unlinked_observations ADD COLUMN identity TEXT",
+        )
+        .run();
   }
 
   private migrateEventColumns(): void {
@@ -1992,6 +2023,101 @@ export class EventLog {
         randomUUID(),
       );
   }
+  enqueueCleanupFromReconcile(
+    issueId: string,
+    identifier: string,
+    now = Date.now(),
+  ): boolean {
+    const session = this.sessionByIssueIdentifier(identifier);
+    if (!session) return false;
+    return (
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO cleanup_jobs
+      (issue_id,issue_identifier,linear_session_id,app,status,next_attempt_at,created_at,notify_activity_id)
+      VALUES (?,?,?,?, 'pending',?,?,?)`,
+        )
+        .run(
+          issueId,
+          identifier,
+          session.linearSessionId,
+          session.app,
+          now,
+          now,
+          randomUUID(),
+        ).changes > 0
+    );
+  }
+  cleanupJobByIssueIdentifier(
+    identifier: string,
+  ): CleanupJobRow | undefined {
+    return this.db
+      .prepare(
+        `SELECT id,issue_id issueId,issue_identifier issueIdentifier,linear_session_id linearSessionId,
+      app,status,attempts,created_at createdAt,claimed_at claimedAt,notify_activity_id notifyActivityId
+      FROM cleanup_jobs WHERE issue_identifier=? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(identifier) as CleanupJobRow | undefined;
+  }
+  retainedCleanups(): CleanupJobRow[] {
+    return this.db
+      .prepare(
+        `SELECT id,issue_id issueId,issue_identifier issueIdentifier,linear_session_id linearSessionId,
+      app,status,attempts,created_at createdAt,claimed_at claimedAt,notify_activity_id notifyActivityId
+      FROM cleanup_jobs WHERE status='retained' ORDER BY id`,
+      )
+      .all() as CleanupJobRow[];
+  }
+  repromoteRetainedCleanup(id: number, now = Date.now()): boolean {
+    return (
+      this.db
+        .prepare(
+          `UPDATE cleanup_jobs SET status='pending',claimed_at=NULL,
+          next_attempt_at=?,error=NULL WHERE id=? AND status='retained'`,
+        )
+        .run(now, id).changes > 0
+    );
+  }
+  observeUnlinkedWorktree(
+    identifier: string,
+    path: string,
+    identity: string,
+    now = Date.now(),
+  ): WorktreeUnlinkedObservation {
+    this.db
+      .prepare(
+        `INSERT INTO worktree_unlinked_observations
+        (identifier,path,identity,first_observed_at,last_seen_at) VALUES (?,?,?,?,?)
+        ON CONFLICT(identifier) DO UPDATE SET
+        path=excluded.path,
+        identity=excluded.identity,
+        first_observed_at=CASE
+          WHEN worktree_unlinked_observations.identity IS excluded.identity
+          THEN worktree_unlinked_observations.first_observed_at
+          ELSE excluded.first_observed_at
+        END,
+        last_seen_at=excluded.last_seen_at`,
+      )
+      .run(identifier, path, identity, now, now);
+    return this.unlinkedObservation(identifier)!;
+  }
+  clearUnlinkedObservation(identifier: string): void {
+    this.db
+      .prepare(
+        "DELETE FROM worktree_unlinked_observations WHERE identifier=?",
+      )
+      .run(identifier);
+  }
+  unlinkedObservation(
+    identifier: string,
+  ): WorktreeUnlinkedObservation | undefined {
+    return this.db
+      .prepare(
+        `SELECT identifier,path,identity,first_observed_at firstObservedAt,
+        last_seen_at lastSeenAt FROM worktree_unlinked_observations WHERE identifier=?`,
+      )
+      .get(identifier) as WorktreeUnlinkedObservation | undefined;
+  }
   claimNextCleanup(now = Date.now()): CleanupJobRow | undefined {
     return this.db.transaction(() => {
       const candidate = this.db
@@ -2076,6 +2202,29 @@ export class EventLog {
           "UPDATE cleanup_jobs SET status='retained',claimed_at=NULL WHERE id=?",
         )
         .run(id);
+    })();
+  }
+  noteCleanupOutcome(id: number, body: string, now = Date.now()): void {
+    this.db.transaction(() => {
+      const job = this.cleanupById(id);
+      if (!job) throw new Error(`Missing cleanup ${id}`);
+      this.db
+        .prepare(
+          `INSERT INTO cleanup_notifications
+        (job_id,app,linear_session_id,activity_id,body,status,next_attempt_at,created_at)
+        VALUES (?,?,?,?,?,'pending',?,?)
+        ON CONFLICT(job_id) DO UPDATE SET body=excluded.body,status='pending',
+        attempts=0,next_attempt_at=excluded.next_attempt_at,created_at=excluded.created_at,error=NULL`,
+        )
+        .run(
+          id,
+          job.app,
+          job.linearSessionId,
+          job.notifyActivityId,
+          body,
+          now,
+          now,
+        );
     })();
   }
   pendingCleanupNotifications(now = Date.now()): CleanupNotificationRow[] {
