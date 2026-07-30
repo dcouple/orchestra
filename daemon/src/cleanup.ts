@@ -27,6 +27,9 @@ export interface CleanupWorkerOptions {
   logger?: Logger;
   relay?: OtlpRelay;
   ingestDispatches?: () => Promise<void>;
+  worktrees?: WorktreeManager;
+  bundlesDir?: string;
+  onIssueFinalized?: () => void;
 }
 
 export class CleanupWorker {
@@ -39,13 +42,14 @@ export class CleanupWorker {
   constructor(
     private readonly log: EventLog,
     private readonly gateway: LinearGateway,
-    worktreesRoot: string,
+    private readonly worktreesRoot: string,
     targetRepoPath: string,
     private readonly options: CleanupWorkerOptions = {},
   ) {
     this.now = options.now ?? Date.now;
     this.logger = options.logger ?? console;
-    this.worktrees = new WorktreeManager(worktreesRoot, targetRepoPath);
+    this.worktrees =
+      options.worktrees ?? new WorktreeManager(worktreesRoot, targetRepoPath);
   }
   private readonly worktrees: WorktreeManager;
   start(): void {
@@ -82,6 +86,7 @@ export class CleanupWorker {
       await this.postNotification(note);
   }
   private async process(job: CleanupJobRow): Promise<void> {
+    let preservationAttempt = false;
     try {
       await this.options.ingestDispatches?.();
       if (!(await this.finalizeIssue(job))) {
@@ -97,29 +102,64 @@ export class CleanupWorker {
         !session?.worktreePath ||
         !(await this.worktrees.isPresent(session.worktreePath))
       ) {
-        await this.worktrees.remove(job.issueIdentifier);
+        preservationAttempt = true;
+        const result = await this.worktrees.preserveAndRemove(
+          job.issueIdentifier,
+          this.options.bundlesDir ?? `${this.worktreesRoot}/../worktree-bundles`,
+          { alwaysPreserve: true },
+        );
+        preservationAttempt = false;
         this.log.clearSessionWorktrees(job.issueIdentifier);
+        this.log.noteCleanupOutcome(
+          job.id,
+          `Worktree cleanup completed; state ${result.detail}.`,
+          this.now(),
+        );
         this.log.markCleanupDone(job.id);
+        this.options.onIssueFinalized?.();
         return;
       }
       if (await this.worktrees.isClean(session.worktreePath)) {
         if (!this.log.hasExternalUrl(job.linearSessionId)) {
-          this.log.retainCleanup(
+          preservationAttempt = true;
+          const result = await this.worktrees.preserveAndRemove(
+            job.issueIdentifier,
+            this.options.bundlesDir ??
+              `${this.worktreesRoot}/../worktree-bundles`,
+            { alwaysPreserve: true },
+          );
+          preservationAttempt = false;
+          this.log.clearSessionWorktrees(job.issueIdentifier);
+          this.log.noteCleanupOutcome(
             job.id,
-            `Worktree retained because no pull request was recorded; possible unpushed work is preserved: ${session.worktreePath}`,
+            `Worktree cleanup completed; state ${result.detail}.`,
             this.now(),
           );
+          this.log.markCleanupDone(job.id);
+          this.options.onIssueFinalized?.();
           return;
         }
         await this.worktrees.remove(job.issueIdentifier);
         this.log.clearSessionWorktrees(job.issueIdentifier);
         this.log.markCleanupDone(job.id);
-      } else
-        this.log.retainCleanup(
+        this.options.onIssueFinalized?.();
+      } else {
+        preservationAttempt = true;
+        const result = await this.worktrees.preserveAndRemove(
+          job.issueIdentifier,
+          this.options.bundlesDir ?? `${this.worktreesRoot}/../worktree-bundles`,
+          { alwaysPreserve: true },
+        );
+        preservationAttempt = false;
+        this.log.clearSessionWorktrees(job.issueIdentifier);
+        this.log.noteCleanupOutcome(
           job.id,
-          `Worktree retained because it is dirty: ${session.worktreePath}`,
+          `Worktree cleanup completed; state ${result.detail}.`,
           this.now(),
         );
+        this.log.markCleanupDone(job.id);
+        this.options.onIssueFinalized?.();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (
@@ -132,10 +172,18 @@ export class CleanupWorker {
           this.now() + Math.min(60_000, 1000 * 2 ** Math.min(job.attempts, 6)),
         );
       else {
-        this.log.failCleanup(job.id, message);
+        if (preservationAttempt)
+          this.log.retainCleanup(
+            job.id,
+            `Worktree retained because preservation failed: ${message}`,
+            this.now(),
+          );
+        else this.log.failCleanup(job.id, message);
         this.logger.error(
           JSON.stringify({
-            event: "cleanup_failed",
+            event: preservationAttempt
+              ? "cleanup_preservation_failed"
+              : "cleanup_failed",
             jobId: job.id,
             error: message,
           }),

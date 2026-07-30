@@ -15,6 +15,8 @@ import { ArtifactStore } from "./artifacts.js";
 import { OtlpRelay } from "./otel-relay.js";
 import { resolveOtlpTraces } from "./otel.js";
 import { LinearMcpMonitor } from "./linear-mcp-monitor.js";
+import { WorktreeManager } from "./worktrees.js";
+import { WorktreeReconciler } from "./worktree-reconciler.js";
 
 const config = loadConfig();
 let log: EventLog;
@@ -30,6 +32,10 @@ const gateway = new LinearGateway(
 const worker = new AckWorker(log, gateway);
 let cleanupWorker: CleanupWorker | undefined;
 let sessionWorker: SessionWorker | undefined;
+let worktreeReconciler: WorktreeReconciler | undefined;
+const worktrees = config.sessionsEnabled
+  ? new WorktreeManager(config.worktreesRoot, config.targetRepoPath!)
+  : undefined;
 const linearMcpMonitor = config.sessionsEnabled
   ? new LinearMcpMonitor({
       url: config.linearMcpUrl,
@@ -74,7 +80,11 @@ await relay?.start();
 sessionWorker = config.sessionsEnabled
   ? new SessionWorker(log, gateway, config, {
       ...(relay ? { relay } : {}),
-      onTurnComplete: () => void cleanupWorker?.trigger(),
+      worktrees: worktrees!,
+      onTurnComplete: () => {
+        void cleanupWorker?.trigger();
+        void worktreeReconciler?.trigger();
+      },
     })
   : undefined;
 cleanupWorker = config.sessionsEnabled
@@ -85,9 +95,26 @@ cleanupWorker = config.sessionsEnabled
       config.targetRepoPath!,
       {
         ...(relay ? { relay } : {}),
+        worktrees: worktrees!,
+        bundlesDir: config.worktreeBundlesDir,
+        onIssueFinalized: () => void worktreeReconciler?.trigger(),
         ingestDispatches: () =>
           sessionWorker?.ingestDispatches() ?? Promise.resolve(),
       },
+    )
+  : undefined;
+worktreeReconciler = config.sessionsEnabled
+  ? new WorktreeReconciler(
+      log,
+      gateway,
+      worktrees!,
+      {
+        worktreesRoot: config.worktreesRoot,
+        worktreeUnlinkedGraceMs: config.worktreeUnlinkedGraceMs,
+        worktreeBundlesDir: config.worktreeBundlesDir,
+        ...(config.ntfyUrl ? { ntfyUrl: config.ntfyUrl } : {}),
+      },
+      { onEnqueued: () => void cleanupWorker?.trigger() },
     )
   : undefined;
 const triggerWorkers = () => {
@@ -109,6 +136,7 @@ const server = new WebhookServer({
   config,
   log,
   onInserted: triggerWorkers,
+  onIssueCompleted: () => void worktreeReconciler?.trigger(),
   onStop,
   ...(artifactStore ? { artifactStore } : {}),
 });
@@ -135,6 +163,7 @@ worker.start();
 linearMcpMonitor?.start();
 await sessionWorker?.start();
 cleanupWorker?.start();
+worktreeReconciler?.start();
 reconcileWorker?.start();
 const address = await server.listen();
 console.log(
@@ -161,6 +190,7 @@ async function shutdown(signal: string): Promise<void> {
     }),
   );
   await reconcileWorker?.stop();
+  await worktreeReconciler?.stop();
   await linearMcpMonitor?.stop();
   await server.close();
   await worker.stop();

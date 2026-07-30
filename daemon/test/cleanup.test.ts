@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CleanupWorker } from "../src/cleanup.js";
 import { inFlightDispatches } from "../src/dispatches.js";
 import { EventLog } from "../src/eventlog.js";
@@ -128,12 +128,13 @@ describe("CleanupWorker", () => {
     const plannerTurn = s.log.claimNextTurn(3)!;
     s.log.finishTurn(plannerTurn.id, "response", "done", 3);
     s.log.markTurnActivityPosted(plannerTurn.id, 3);
+    const onIssueFinalized = vi.fn();
     const worker = new CleanupWorker(
       s.log,
       new Poster() as unknown as LinearGateway,
       s.root,
       s.repo,
-      { pollMs: 10, reconcileMs: 20 },
+      { pollMs: 10, reconcileMs: 20, onIssueFinalized },
     );
     worker.start();
     await waitFor(() => s.log.cleanupStates()[0]?.status === "done");
@@ -144,9 +145,10 @@ describe("CleanupWorker", () => {
     expect(() =>
       git(["show-ref", "--verify", "refs/heads/agents/ENG-42"], s.repo),
     ).toThrow();
+    expect(onIssueFinalized).toHaveBeenCalledOnce();
     s.log.close();
   });
-  it("retains a clean present worktree when no pull request URL was recorded", async () => {
+  it("preserves and removes a clean present worktree when no pull request URL was recorded", async () => {
     const s = await setup();
     complete(s.log);
     const poster = new Poster();
@@ -162,13 +164,12 @@ describe("CleanupWorker", () => {
       () => s.log.cleanupNotificationStates()[0]?.status === "posted",
     );
     await worker.stop();
-    expect(s.log.cleanupStates()[0]?.status).toBe("retained");
-    expect(poster.posts[0]).toContain("no pull request was recorded");
-    expect(poster.posts[0]).toContain(s.tree.path);
-    expect(existsSync(s.tree.path)).toBe(true);
+    expect(s.log.cleanupStates()[0]?.status).toBe("done");
+    expect(poster.posts[0]).toContain("pushed to agents/ENG-42");
+    expect(existsSync(s.tree.path)).toBe(false);
     s.log.close();
   });
-  it("AC6 retains a dirty worktree and durably posts its path", async () => {
+  it("preserves and removes a dirty worktree and durably posts its destination", async () => {
     const s = await setup();
     writeFileSync(join(s.tree.path, "dirty.txt"), "x");
     complete(s.log);
@@ -185,8 +186,33 @@ describe("CleanupWorker", () => {
       () => s.log.cleanupNotificationStates()[0]?.status === "posted",
     );
     await worker.stop();
+    expect(s.log.cleanupStates()[0]?.status).toBe("done");
+    expect(poster.posts[0]).toContain("pushed to agents/ENG-42");
+    expect(existsSync(s.tree.path)).toBe(false);
+    s.log.close();
+  });
+  it("retains only when preservation exhausts its retry window", async () => {
+    const s = await setup();
+    writeFileSync(join(s.tree.path, "dirty.txt"), "x");
+    git(["remote", "set-url", "origin", join(s.dir, "missing.git")], s.repo);
+    const blockedBundles = join(s.dir, "not-a-directory");
+    writeFileSync(blockedBundles, "x");
+    complete(s.log);
+    const poster = new Poster();
+    const worker = new CleanupWorker(
+      s.log,
+      poster as unknown as LinearGateway,
+      s.root,
+      s.repo,
+      {
+        now: () => 10,
+        retryWindowMs: 1,
+        bundlesDir: blockedBundles,
+      },
+    );
+    await worker.trigger();
     expect(s.log.cleanupStates()[0]?.status).toBe("retained");
-    expect(poster.posts[0]).toContain(s.tree.path);
+    expect(poster.posts[0]).toContain("preservation failed");
     expect(existsSync(s.tree.path)).toBe(true);
     s.log.close();
   });

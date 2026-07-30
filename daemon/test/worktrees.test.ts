@@ -50,4 +50,38 @@ describe("WorktreeManager", () => {
     rmSync(join(tree.path,"dirty.txt")); git(["worktree","remove",tree.path],setup.repo); await manager.remove("ENG-45");
     expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-45"],setup.repo)).toThrow();
   });
+  it("commits and pushes dirty state before force removal", async () => {
+    const setup = repository();
+    const manager = new WorktreeManager(setup.root, setup.repo);
+    const tree = await manager.ensureWorktree("ENG-46");
+    writeFileSync(join(tree.path, "dirty.txt"), "preserved");
+    const result = await manager.preserveAndRemove(
+      "ENG-46",
+      join(setup.dir, "bundles"),
+      { alwaysPreserve: false },
+    );
+    expect(result).toEqual({
+      preserved: "pushed",
+      detail: "pushed to agents/ENG-46",
+    });
+    expect(existsSync(tree.path)).toBe(false);
+    expect(
+      git(["show", "refs/heads/agents/ENG-46:dirty.txt"], setup.origin),
+    ).toBe("preserved");
+  });
+  it("falls back to a newly created bundle directory when push fails", async () => {
+    const setup = repository();
+    const manager = new WorktreeManager(setup.root, setup.repo);
+    const tree = await manager.ensureWorktree("ENG-47");
+    writeFileSync(join(tree.path, "dirty.txt"), "preserved");
+    git(["remote", "set-url", "origin", join(setup.dir, "missing.git")], setup.repo);
+    const result = await manager.preserveAndRemove(
+      "ENG-47",
+      join(setup.dir, "new", "bundles"),
+      { alwaysPreserve: true },
+    );
+    expect(result.preserved).toBe("bundled");
+    expect(existsSync(result.detail.replace("bundled at ", ""))).toBe(true);
+    expect(existsSync(tree.path)).toBe(false);
+  });
 });

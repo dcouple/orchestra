@@ -6,6 +6,10 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 
 export interface Worktree { path: string; branch: string; }
+export interface PreservationResult {
+  preserved: "pushed" | "bundled" | "none";
+  detail: string;
+}
 
 export class WorktreeManager {
   private mutation: Promise<void> = Promise.resolve();
@@ -27,6 +31,15 @@ export class WorktreeManager {
 
   async isPresent(path: string): Promise<boolean> { return this.exists(path); }
 
+  async isOwned(path: string): Promise<boolean> {
+    try {
+      await this.validate(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async remove(rawIdentifier: string): Promise<void> {
     const previous = this.mutation;
     let release!: () => void;
@@ -45,6 +58,120 @@ export class WorktreeManager {
       try { await this.git(["branch", "-D", `agents/${identifier}`], this.repo); }
       catch (error) { if (await this.gitOk(["show-ref", "--verify", `refs/heads/agents/${identifier}`], this.repo)) throw error; }
     } finally { release(); }
+  }
+
+  async preserveAndRemove(
+    rawIdentifier: string,
+    bundlesDir: string,
+    opts: { alwaysPreserve: boolean },
+  ): Promise<PreservationResult> {
+    const previous = this.mutation;
+    let release!: () => void;
+    this.mutation = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      const identifier =
+        rawIdentifier.replace(/[^A-Za-z0-9-]/g, "-") || "issue";
+      const path = resolve(this.root, identifier);
+      const branch = `agents/${identifier}`;
+      let result: PreservationResult = {
+        preserved: "none",
+        detail: "no preservation required",
+      };
+      if (await this.exists(path)) {
+        await this.validate(path);
+        const wasDirty =
+          (await this.git(["status", "--porcelain"], path)).trim() !== "";
+        if (wasDirty) {
+          await this.git(["add", "-A"], path);
+          await this.git(
+            [
+              "-c",
+              "user.email=daemon",
+              "-c",
+              "user.name=daemon",
+              "commit",
+              "-m",
+              "preserve: agent worktree state before cleanup",
+            ],
+            path,
+          );
+        }
+        if (wasDirty || opts.alwaysPreserve) {
+          try {
+            await this.git(
+              ["push", "origin", `${branch}:${branch}`],
+              path,
+            );
+            result = {
+              preserved: "pushed",
+              detail: `pushed to ${branch}`,
+            };
+          } catch {
+            await mkdir(bundlesDir, { recursive: true });
+            const bundlePath = resolve(
+              bundlesDir,
+              `${identifier}-${Date.now()}.bundle`,
+            );
+            await this.git(["bundle", "create", bundlePath, "--all"], path);
+            result = {
+              preserved: "bundled",
+              detail: `bundled at ${bundlePath}`,
+            };
+          }
+        }
+        await rm(resolve(path, ".linear-attachments"), {
+          recursive: true,
+          force: true,
+        });
+        await rm(resolve(path, ".codex-dispatches"), {
+          recursive: true,
+          force: true,
+        });
+        await this.git(["worktree", "remove", "--force", path], this.repo);
+      } else if (
+        opts.alwaysPreserve &&
+        (await this.gitOk(
+          ["show-ref", "--verify", `refs/heads/${branch}`],
+          this.repo,
+        ))
+      ) {
+        try {
+          await this.git(["push", "origin", `${branch}:${branch}`], this.repo);
+          result = {
+            preserved: "pushed",
+            detail: `pushed to ${branch}`,
+          };
+        } catch {
+          await mkdir(bundlesDir, { recursive: true });
+          const bundlePath = resolve(
+            bundlesDir,
+            `${identifier}-${Date.now()}.bundle`,
+          );
+          await this.git(["bundle", "create", bundlePath, "--all"], this.repo);
+          result = {
+            preserved: "bundled",
+            detail: `bundled at ${bundlePath}`,
+          };
+        }
+      }
+      try {
+        await this.git(["branch", "-D", branch], this.repo);
+      } catch (error) {
+        if (
+          await this.gitOk(
+            ["show-ref", "--verify", `refs/heads/${branch}`],
+            this.repo,
+          )
+        )
+          throw error;
+      }
+      return result;
+    } finally {
+      release();
+    }
   }
 
   private async ensureWorktreeLocked(rawIdentifier: string): Promise<Worktree> {

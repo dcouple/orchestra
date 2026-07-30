@@ -47,6 +47,8 @@ export interface Config {
   apps: Record<AppName, AppConfig>;
   sessionsEnabled: boolean;
   worktreesRoot: string;
+  worktreeUnlinkedGraceMs: number;
+  worktreeBundlesDir: string;
   targetRepoPath?: string;
   claudeArgv: string[];
   claudexArgv?: string[];
@@ -195,6 +197,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     apps: { planner: appConfig(env, "planner", testMode), implementer: appConfig(env, "implementer", testMode) },
     sessionsEnabled,
     worktreesRoot: env.WORKTREES_ROOT?.trim() || `${dirname(dbPath)}/worktrees`,
+    worktreeUnlinkedGraceMs:
+      positiveInteger(env, "WORKTREE_UNLINKED_GRACE_DAYS", 14) *
+      24 *
+      60 *
+      60 *
+      1000,
+    worktreeBundlesDir:
+      env.WORKTREE_BUNDLES_DIR?.trim() ||
+      `${dirname(dbPath)}/worktree-bundles`,
     ...(targetRepoPath ? { targetRepoPath } : {}),
     claudeArgv,
     ...(claudexArgv ? { claudexArgv } : {}),
