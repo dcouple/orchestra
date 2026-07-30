@@ -96,9 +96,11 @@ driver level (e.g. Playwright's `recordVideo` on the context) so the video
 is a free byproduct of the drive, never a second pass for the camera; one
 video per journey, named for it.
 
-Keep the driver's native WebM as the recorded and published artifact. Where
-ffmpeg is available, an H.264 mp4 with `yuv420p` may also be published as an
-optional compatibility transcode, but it never replaces the required WebM.
+Keep the driver's native recording as the published artifact — WebM from the
+browser driver; a simulator driver's own native format stands in the same
+way. Where ffmpeg is available, an H.264 mp4 with `yuv420p` may also be
+published as an optional compatibility transcode, but it never replaces the
+required native recording.
 Videos complement stills, never replace them: the per-step captures stay the
 frame-addressable evidence each report row cites; the video is the continuity
 check and the artifact a reviewer actually watches.
