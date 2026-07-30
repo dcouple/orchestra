@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -10,9 +11,19 @@ export interface PreservationResult {
   preserved: "pushed" | "bundled" | "none";
   detail: string;
 }
+export interface WorktreeSnapshot {
+  identity: string;
+  generation: number;
+}
+export class WorktreeChangedError extends Error {
+  constructor(identifier: string) {
+    super(`Worktree changed after reconciliation lookup: ${identifier}`);
+  }
+}
 
 export class WorktreeManager {
   private mutation: Promise<void> = Promise.resolve();
+  private readonly generations = new Map<string, number>();
   constructor(private readonly root: string, private readonly repo: string) {}
 
   async ensureWorktree(rawIdentifier: string): Promise<Worktree> {
@@ -20,7 +31,14 @@ export class WorktreeManager {
     let release!: () => void;
     this.mutation = new Promise<void>(resolve => { release = resolve; });
     await previous;
-    try { return await this.ensureWorktreeLocked(rawIdentifier); }
+    try {
+      const identifier = this.identifier(rawIdentifier);
+      this.generations.set(
+        identifier,
+        (this.generations.get(identifier) ?? 0) + 1,
+      );
+      return await this.ensureWorktreeLocked(rawIdentifier);
+    }
     finally { release(); }
   }
 
@@ -37,6 +55,30 @@ export class WorktreeManager {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async snapshot(rawIdentifier: string): Promise<WorktreeSnapshot | undefined> {
+    const previous = this.mutation;
+    let release!: () => void;
+    this.mutation = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      const identifier = this.identifier(rawIdentifier);
+      const path = resolve(this.root, identifier);
+      if (!(await this.exists(path))) return undefined;
+      try {
+        return {
+          identity: await this.identityLocked(path),
+          generation: this.generations.get(identifier) ?? 0,
+        };
+      } catch {
+        return undefined;
+      }
+    } finally {
+      release();
     }
   }
 
@@ -63,7 +105,10 @@ export class WorktreeManager {
   async preserveAndRemove(
     rawIdentifier: string,
     bundlesDir: string,
-    opts: { alwaysPreserve: boolean },
+    opts: {
+      alwaysPreserve: boolean;
+      expectedSnapshot?: WorktreeSnapshot;
+    },
   ): Promise<PreservationResult> {
     const previous = this.mutation;
     let release!: () => void;
@@ -72,14 +117,22 @@ export class WorktreeManager {
     });
     await previous;
     try {
-      const identifier =
-        rawIdentifier.replace(/[^A-Za-z0-9-]/g, "-") || "issue";
+      const identifier = this.identifier(rawIdentifier);
       const path = resolve(this.root, identifier);
       const branch = `agents/${identifier}`;
       let result: PreservationResult = {
         preserved: "none",
         detail: "no preservation required",
       };
+      if (opts.expectedSnapshot) {
+        const generation = this.generations.get(identifier) ?? 0;
+        if (
+          generation !== opts.expectedSnapshot.generation ||
+          !(await this.exists(path)) ||
+          (await this.identityLocked(path)) !== opts.expectedSnapshot.identity
+        )
+          throw new WorktreeChangedError(identifier);
+      }
       if (await this.exists(path)) {
         await this.validate(path);
         const wasDirty =
@@ -175,7 +228,7 @@ export class WorktreeManager {
   }
 
   private async ensureWorktreeLocked(rawIdentifier: string): Promise<Worktree> {
-    const identifier = rawIdentifier.replace(/[^A-Za-z0-9-]/g, "-") || "issue";
+    const identifier = this.identifier(rawIdentifier);
     const path = resolve(this.root, identifier);
     const branch = `agents/${identifier}`;
     await mkdir(this.root, { recursive: true });
@@ -215,6 +268,30 @@ export class WorktreeManager {
     if (common !== expected) throw new Error(`Existing worktree belongs to a foreign repository: ${path}`);
   }
 
+  private async identityLocked(path: string): Promise<string> {
+    await this.validate(path);
+    const gitDirRaw = (await this.git(["rev-parse", "--git-dir"], path)).trim();
+    const gitDir = isAbsolute(gitDirRaw)
+      ? gitDirRaw
+      : resolve(path, gitDirRaw);
+    const markerPath = resolve(gitDir, "orchestra-worktree-id");
+    let marker: string;
+    try {
+      marker = (await readFile(markerPath, "utf8")).trim();
+    } catch {
+      marker = randomUUID();
+      await writeFile(markerPath, `${marker}\n`, { flag: "wx" }).catch(
+        async (error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST") throw error;
+          marker = (await readFile(markerPath, "utf8")).trim();
+        },
+      );
+    }
+    const branch = (await this.git(["branch", "--show-current"], path)).trim();
+    const head = (await this.git(["rev-parse", "HEAD"], path)).trim();
+    return `${marker}:${branch}:${head}`;
+  }
+
   private async excludeTransientDirectories(path: string): Promise<void> {
     const raw = (await this.git(["rev-parse", "--git-path", "info/exclude"], path)).trim();
     const exclude = isAbsolute(raw) ? raw : resolve(path, raw);
@@ -228,6 +305,9 @@ export class WorktreeManager {
   }
 
   private async exists(path: string): Promise<boolean> { try { await stat(path); return true; } catch { return false; } }
+  private identifier(rawIdentifier: string): string {
+    return rawIdentifier.replace(/[^A-Za-z0-9-]/g, "-") || "issue";
+  }
   private async git(args: string[], cwd: string): Promise<string> {
     const { stdout } = await exec("git", args, { cwd }); return stdout;
   }

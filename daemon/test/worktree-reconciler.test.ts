@@ -201,6 +201,23 @@ describe("WorktreeReconciler", () => {
     h.log.close();
   });
 
+  it("gives a recreated unlinked worktree a fresh grace clock", async () => {
+    const h = harness();
+    const original = await h.worktrees.ensureWorktree("ENG-12");
+    await h.reconciler.trigger();
+    expect(h.log.unlinkedObservation("ENG-12")?.firstObservedAt).toBe(1_000);
+
+    await h.worktrees.remove("ENG-12");
+    expect(existsSync(original.path)).toBe(false);
+    const recreated = await h.worktrees.ensureWorktree("ENG-12");
+    h.clock.value = 10_000;
+    await h.reconciler.trigger();
+
+    expect(existsSync(recreated.path)).toBe(true);
+    expect(h.log.unlinkedObservation("ENG-12")?.firstObservedAt).toBe(10_000);
+    h.log.close();
+  });
+
   it("skips lookup errors without writing the grace clock", async () => {
     const h = harness();
     const tree = await h.worktrees.ensureWorktree("ENG-5");
@@ -214,7 +231,8 @@ describe("WorktreeReconciler", () => {
   it("leaves unresolved worktrees and clears stale unlinked observations", async () => {
     const h = harness();
     const tree = await h.worktrees.ensureWorktree("ENG-6");
-    h.log.observeUnlinkedWorktree("ENG-6", tree.path, 1);
+    const snapshot = await h.worktrees.snapshot("ENG-6");
+    h.log.observeUnlinkedWorktree("ENG-6", tree.path, snapshot!.identity, 1);
     h.states.set("ENG-6", {
       kind: "found",
       issueId: "issue-6",
@@ -269,7 +287,7 @@ describe("WorktreeReconciler", () => {
     h.log.close();
   });
 
-  it("stop awaits an in-flight lookup and shared mutations stay coherent", async () => {
+  it("keeps a worktree when ensureWorktree reuses it during the lookup", async () => {
     const h = harness();
     const tree = await h.worktrees.ensureWorktree("ENG-10");
     let release!: (result: IssueStateResult) => void;
@@ -286,27 +304,24 @@ describe("WorktreeReconciler", () => {
     });
     await Promise.resolve();
     expect(stopped).toBe(false);
+    await h.worktrees.ensureWorktree("ENG-10");
     release({
       kind: "found",
       issueId: "issue-10",
       stateType: "completed",
     });
-    await Promise.all([
-      stop,
-      h.worktrees.ensureWorktree("ENG-10").catch(() => undefined),
-    ]);
-    if (existsSync(tree.path)) {
-      expect(
-        git(["branch", "--show-current"], tree.path).trim(),
-      ).toBe("agents/ENG-10");
-    } else {
-      expect(() =>
-        git(
-          ["show-ref", "--verify", "refs/heads/agents/ENG-10"],
-          h.repo,
-        ),
-      ).toThrow();
-    }
+    await stop;
+    expect(existsSync(tree.path)).toBe(true);
+    expect(git(["branch", "--show-current"], tree.path).trim()).toBe(
+      "agents/ENG-10",
+    );
+    expect(
+      git(["show-ref", "--verify", "refs/heads/agents/ENG-10"], h.repo).trim(),
+    ).toContain("refs/heads/agents/ENG-10");
+    expect(h.logger.log).toHaveBeenCalledWith(
+      expect.stringContaining('"reason":"candidate_changed"'),
+    );
+    expect(h.logger.error).not.toHaveBeenCalled();
     h.log.close();
   });
 

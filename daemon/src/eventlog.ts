@@ -253,6 +253,7 @@ export interface CleanupNotificationRow {
 export interface WorktreeUnlinkedObservation {
   identifier: string;
   path: string;
+  identity: string | null;
   firstObservedAt: number;
   lastSeenAt: number;
 }
@@ -439,6 +440,7 @@ export class EventLog {
       CREATE TABLE IF NOT EXISTS worktree_unlinked_observations (
         identifier TEXT PRIMARY KEY,
         path TEXT NOT NULL,
+        identity TEXT NOT NULL,
         first_observed_at INTEGER NOT NULL,
         last_seen_at INTEGER NOT NULL
       );
@@ -566,6 +568,7 @@ export class EventLog {
     this.migrateTurnColumns();
     this.migrateAckColumns();
     this.migrateTurnActivityColumns();
+    this.migrateWorktreeObservationColumns();
     this.recoverAmbiguousOutbox();
   }
 
@@ -610,6 +613,22 @@ export class EventLog {
           ON operations((1)) WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
       `);
     })();
+  }
+
+  private migrateWorktreeObservationColumns(): void {
+    const columns = new Set(
+      (
+        this.db
+          .prepare("PRAGMA table_info(worktree_unlinked_observations)")
+          .all() as Array<{ name: string }>
+      ).map((column) => column.name),
+    );
+    if (!columns.has("identity"))
+      this.db
+        .prepare(
+          "ALTER TABLE worktree_unlinked_observations ADD COLUMN identity TEXT",
+        )
+        .run();
   }
 
   private migrateEventColumns(): void {
@@ -2062,15 +2081,24 @@ export class EventLog {
   observeUnlinkedWorktree(
     identifier: string,
     path: string,
+    identity: string,
     now = Date.now(),
   ): WorktreeUnlinkedObservation {
     this.db
       .prepare(
         `INSERT INTO worktree_unlinked_observations
-        (identifier,path,first_observed_at,last_seen_at) VALUES (?,?,?,?)
-        ON CONFLICT(identifier) DO UPDATE SET path=excluded.path,last_seen_at=excluded.last_seen_at`,
+        (identifier,path,identity,first_observed_at,last_seen_at) VALUES (?,?,?,?,?)
+        ON CONFLICT(identifier) DO UPDATE SET
+        path=excluded.path,
+        identity=excluded.identity,
+        first_observed_at=CASE
+          WHEN worktree_unlinked_observations.identity IS excluded.identity
+          THEN worktree_unlinked_observations.first_observed_at
+          ELSE excluded.first_observed_at
+        END,
+        last_seen_at=excluded.last_seen_at`,
       )
-      .run(identifier, path, now, now);
+      .run(identifier, path, identity, now, now);
     return this.unlinkedObservation(identifier)!;
   }
   clearUnlinkedObservation(identifier: string): void {
@@ -2085,7 +2113,7 @@ export class EventLog {
   ): WorktreeUnlinkedObservation | undefined {
     return this.db
       .prepare(
-        `SELECT identifier,path,first_observed_at firstObservedAt,
+        `SELECT identifier,path,identity,first_observed_at firstObservedAt,
         last_seen_at lastSeenAt FROM worktree_unlinked_observations WHERE identifier=?`,
       )
       .get(identifier) as WorktreeUnlinkedObservation | undefined;

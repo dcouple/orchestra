@@ -2,7 +2,10 @@ import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { EventLog } from "./eventlog.js";
 import type { LinearGateway } from "./linear.js";
-import type { WorktreeManager } from "./worktrees.js";
+import {
+  WorktreeChangedError,
+  type WorktreeManager,
+} from "./worktrees.js";
 
 interface Logger {
   log(...args: unknown[]): void;
@@ -77,7 +80,8 @@ export class WorktreeReconciler {
 
   private async reconcileCandidate(identifier: string): Promise<void> {
     const path = resolve(this.config.worktreesRoot, identifier);
-    if (!(await this.worktrees.isOwned(path))) {
+    const snapshot = await this.worktrees.snapshot(identifier);
+    if (!snapshot) {
       this.logger.log(
         JSON.stringify({
           event: "worktree_reconcile_skipped",
@@ -109,6 +113,7 @@ export class WorktreeReconciler {
       const observation = this.log.observeUnlinkedWorktree(
         identifier,
         path,
+        snapshot.identity,
         this.now(),
       );
       if (
@@ -120,11 +125,12 @@ export class WorktreeReconciler {
         const result = await this.worktrees.preserveAndRemove(
           identifier,
           this.config.worktreeBundlesDir,
-          { alwaysPreserve: true },
+          { alwaysPreserve: true, expectedSnapshot: snapshot },
         );
         this.log.clearUnlinkedObservation(identifier);
         this.notify(identifier, result.detail, "unlinked_grace_expired");
       } catch (error) {
+        if (this.logChangedCandidate(identifier, error)) return;
         this.logger.error(
           JSON.stringify({
             event: "worktree_reconcile_preservation_failed",
@@ -160,10 +166,11 @@ export class WorktreeReconciler {
       const result = await this.worktrees.preserveAndRemove(
         identifier,
         this.config.worktreeBundlesDir,
-        { alwaysPreserve: true },
+        { alwaysPreserve: true, expectedSnapshot: snapshot },
       );
       this.notify(identifier, result.detail, "resolved_without_session");
     } catch (error) {
+      if (this.logChangedCandidate(identifier, error)) return;
       this.logger.error(
         JSON.stringify({
           event: "worktree_reconcile_preservation_failed",
@@ -172,6 +179,18 @@ export class WorktreeReconciler {
         }),
       );
     }
+  }
+
+  private logChangedCandidate(identifier: string, error: unknown): boolean {
+    if (!(error instanceof WorktreeChangedError)) return false;
+    this.logger.log(
+      JSON.stringify({
+        event: "worktree_reconcile_skipped",
+        identifier,
+        reason: "candidate_changed",
+      }),
+    );
+    return true;
   }
 
   private notify(identifier: string, detail: string, reason: string): void {
