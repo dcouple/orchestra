@@ -104,10 +104,14 @@ Parse the transcripts and derive:
       collapse `.` / `..`, and resolve existing symlinks to one absolute path;
       report every path read more than once with total reads and excess reads
       (`count - 1`).
+      Count only the file-reading tool's single file-path input;
+      exclude search/glob, write/edit, and shell-command paths.
     - **Top-spend turns:** for each deduplicated main-loop assistant message,
       sum input, output, cache-read, and cache-creation tokens times their
       class-specific rates; rank the five highest estimated costs (or all when
       fewer than five), and report each class's tokens and the total per turn.
+      For cache creation, use its recorded TTL class; when only an aggregate is
+      present, assume the 5-minute cache-write rate.
     - **Cache-read volume:** report total cache-read tokens, their estimated
       cost, and their share of main-loop input-side tokens (input + cache read
       + cache creation).
