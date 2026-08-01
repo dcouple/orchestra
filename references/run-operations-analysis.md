@@ -84,6 +84,27 @@ Parse the transcripts and derive:
   you computed; report both when they disagree. Pair tokens with the
   review-pass findings: **tokens spent per pass vs Must Fixes that pass
   caught** is the single best signal for right-sizing the loop.
+- **Spend audit — judge every timing-table row.** Give every pipeline step and
+  dispatch a `useful | marginal | waste` verdict with its evidence. Judge
+  production work (research meant to feed the plan, implementation,
+  exploration, retries) by downstream consumption: name what consumed the
+  output, or name that nothing did. Judge assurance work (verifiers, review
+  passes, research that correctly concluded "nothing here") by whether its
+  question needed answering at this zone, **never by citation** — a correct
+  negative result is not waste when the question needed answering. Use
+  `marginal` when output was only partly consumed, or when an assurance
+  question was worth asking but could have been answered far more cheaply.
+  - For the main loop, script three mechanical stats from the already-parsed
+    JSONL without loading transcript content: duplicate reads (the same
+    absolute file path read more than once across tool-use inputs), top-spend
+    turns, and cache-read volume. Any spend totals reuse the Tokens bullet's
+    `message.id` dedup rule.
+  - **follow-the-evidence rule:** make a semantic judgment of main-loop
+    behavior only for the transcript window a mechanical stat flagged, never
+    by sweeping the full transcript. The postmortem must not itself become the
+    wasteful run.
+  Any de-escalation proposal this audit feeds still requires yield evidence per
+  `.references/zones.md`, one change at a time.
 
 Reference script (adapt paths; classify conservatively):
 
@@ -138,6 +159,10 @@ removed the biggest stall (pre-authorize a green-tier gate, add a
 self-wakeup so a turn-end resumes, make a fallback non-blocking). That change
 is a candidate for the postmortem's single proposed system change when the
 operational leak outweighs any outcome gap.
+The section also carries every timing-row spend verdict and its evidence,
+plus the proposed token-efficiency change that the wasteful or marginal spend
+supports alongside the operational change that would have removed the biggest
+stall.
 
 **Timeline visualization (render it, attach it).** Turn the per-step table
 into a Gantt: one row per dispatch (plus an Overseer row for the main loop's

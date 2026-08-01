@@ -71,10 +71,13 @@ compute wall-clock span, agent-active vs human-idle time and its %, post-complet
 that needed a human nudge), per-phase pacing from the commits, and the blocker inventory
 (`AskUserQuestion` gates, rate-limit hits, legitimate background-agent waits). Name the
 single change that would have removed the biggest stall.
+Also run the reference's spend audit over every dispatch, pipeline step, and the main loop.
 
 **Success criteria**: the wall-clock/active/idle split is quantified, each in-run stall is
 attributed to what it waited on, and the highest-leverage operational fix is named — even
 for a run that delivered the right outcome.
+Every dispatch and pipeline step carries a `useful | marginal | waste` verdict with its
+evidence, and the main-loop mechanical stats are computed.
 
 ### 3. Establish the outcome gap [human] — only if the run fell short
 If the run delivered what was asked, say so and skip to step 5 (an operational-only
@@ -150,6 +153,7 @@ mirrors — the edit lands in orchestra and re-syncs. Quote the file path and sh
 proposed edit. Proposals target **operational** findings from step 2 (pre-authorize a
 green-tier gate, add a self-wakeup, make a fallback non-blocking) as readily as
 outcome gaps.
+Token-efficiency findings from the spend audit are equally valid proposal targets.
 
 Do **not** apply any of them. Record each in postmortem.md's "What to change so it
 doesn't recur" section for the human to weigh later — this step is a report, never a

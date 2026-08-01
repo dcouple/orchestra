@@ -37,6 +37,9 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `tracker (Linear etc.) — upload the image natively to the tracker there. Close with the single`
 `change that would have removed the biggest stall. Per`
 `.references/run-operations-analysis.md.>`
+`<Also name wasteful and marginal spend across all components — dispatches, pipeline steps,`
+`and the main loop, not only review passes — with the evidence for each verdict and the`
+`proposed token-efficiency change(s) that spend supports.>`
 
 ## What we asked for
 `<the intent + desired end state, briefly>`
@@ -64,6 +67,9 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `judgment in spend: tokens per review pass vs the Must Fixes that pass`
 `caught — a pass that found nothing was pure spend. This tunes zones.md's`
 `table.>`
+`<Treat that review-pass signal as one instance of the whole-run criterion: judge`
+`wasteful and marginal spend across dispatches, pipeline steps, and the main loop from its`
+`verdict evidence, and name the proposed token-efficiency change(s) it supports.>`
 
 ## Acceptance
 `<the human's verdict on the PR, when known: merged as-is | merged after`
