@@ -65,7 +65,8 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `resolve), then ONE judgment line: review effort was overdone | right-sized`
 `| underdone — naming the single dial that would have changed it. Ground the`
 `judgment in spend: tokens per review pass vs the Must Fixes that pass`
-`caught — a pass that found nothing was pure spend. This tunes zones.md's`
+`caught — a no-finding pass is waste only when its assurance question did not`
+`need answering at that zone. This tunes zones.md's`
 `table.>`
 `<Treat that review-pass signal as one instance of the whole-run criterion: judge`
 `wasteful and marginal spend across dispatches, pipeline steps, and the main loop from its`
