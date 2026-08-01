@@ -85,45 +85,21 @@ Parse the transcripts and derive:
   review-pass findings: **tokens spent per pass vs Must Fixes that pass
   caught** is the single best signal for right-sizing the loop.
 - **Spend audit — judge every timing-table row.** Give every pipeline step and
-  dispatch exactly one `useful | marginal | waste` verdict with its evidence:
-  `useful` means the row had full value (production output was fully consumed,
-  or its assurance question needed answering at this zone) and proportionate
-  spend; `marginal` means it had some value but production output was only
-  partly consumed or the spend was disproportionate — including fully
-  consumed production work that cost far more than needed; and `waste` means
-  production output had no downstream consumer or an assurance question did
-  not need answering at this zone. For production work (research
-  meant to feed the plan, implementation, exploration, retries), name what
-  consumed the output or name that nothing did. Judge assurance work
-  (verifiers, review passes, research that correctly concluded "nothing here")
-  **never by citation** — a correct negative result is not waste when its
-  question needed answering.
-  - For the main loop, script three mechanical stats from the already-parsed
-    JSONL without loading transcript content:
-    - **Duplicate reads:** resolve each tool-use file path against the run cwd,
-      collapse `.` / `..`, and resolve existing symlinks to one absolute path;
-      report every path read more than once with total reads and excess reads
-      (`count - 1`).
-      Count only the file-reading tool's single file-path input;
-      exclude search/glob, write/edit, and shell-command paths.
-    - **Top-spend turns:** for each deduplicated main-loop assistant message,
-      sum input, output, cache-read, and cache-creation tokens times their
-      class-specific rates; rank the five highest estimated costs (or all when
-      fewer than five), and report each class's tokens and the total per turn.
-      For cache creation, use its recorded TTL class; when only an aggregate is
-      present, assume the 5-minute cache-write rate.
-      When that fallback is used, label the total a lower-bound estimate that
-      assumes the 5-minute rate.
-    - **Cache-read volume:** report total cache-read tokens, their estimated
-      cost, and their share of main-loop input-side tokens (input + cache read
-      + cache creation).
-    Every token total reuses the Tokens bullet's `message.id` dedup rule.
-  - **follow-the-evidence rule:** make a semantic judgment of main-loop
-    behavior only for the transcript window a mechanical stat flagged, never
-    by sweeping the full transcript. The postmortem must not itself become the
-    wasteful run.
-  Any de-escalation proposal this audit feeds still requires yield evidence per
+  dispatch one `useful | marginal | waste` verdict with its evidence
+  (`marginal` = partly consumed, or value that came far too expensively).
+  Judge **production** work (research, implementation, exploration, retries) by
+  downstream consumption — name what consumed the output, or that nothing did.
+  Judge **assurance** work (verifiers, review passes, research that correctly
+  found nothing) by whether its question needed answering at this zone,
+  **never by citation**: a correct negative result leaves no reference by
+  design. A de-escalation proposal this feeds still needs yield evidence per
   `.references/zones.md`, one change at a time.
+  - **Main loop:** script three stats from the already-parsed JSONL without
+    loading transcript content — duplicate file reads, top-spend turns, and
+    cache-read volume (same `message.id` dedup as above). Then follow the
+    evidence: judge main-loop behavior only inside a window a stat flagged,
+    never by sweeping the transcript — the postmortem must not itself become
+    the wasteful run.
 
 Reference script (adapt paths; classify conservatively):
 
