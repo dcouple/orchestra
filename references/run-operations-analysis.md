@@ -112,6 +112,8 @@ Parse the transcripts and derive:
       fewer than five), and report each class's tokens and the total per turn.
       For cache creation, use its recorded TTL class; when only an aggregate is
       present, assume the 5-minute cache-write rate.
+      When that fallback is used, label the total a lower-bound estimate that
+      assumes the 5-minute rate.
     - **Cache-read volume:** report total cache-read tokens, their estimated
       cost, and their share of main-loop input-side tokens (input + cache read
       + cache creation).
