@@ -34,7 +34,8 @@ presented for the human to approve, not applied.
 > — from `wrapup.md`, cross-checked against the transcripts) plus one
 > judgment line: review effort was overdone / right-sized / underdone,
 > naming the single dial that would have changed it. Review passes are the
-> first place to look — a pass that found nothing was pure spend. This is
+> first place to look — a no-finding pass is waste only when its
+> assurance question did not need answering at that zone. This is
 > the data that tunes `.references/zones.md`'s table.
 
 `/do` invokes this skill automatically at wrap-up in **ops-only mode**:
