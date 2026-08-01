@@ -84,47 +84,70 @@ Parse the transcripts and derive:
   you computed; report both when they disagree. Pair tokens with the
   review-pass findings: **tokens spent per pass vs Must Fixes that pass
   caught** is the single best signal for right-sizing the loop.
+- **Spend audit — judge every timing-table row.** Give every pipeline step and
+  dispatch one `useful | marginal | waste` verdict with its evidence
+  (`marginal` = partly consumed, or value that came far too expensively).
+  Judge **production** work (research, implementation, exploration, retries) by
+  downstream consumption — name what consumed the output, or that nothing did.
+  Judge **assurance** work (verifiers, review passes, research that correctly
+  found nothing) by whether its question needed answering at this zone,
+  **never by citation**: a correct negative result leaves no reference by
+  design. A de-escalation proposal this feeds still needs yield evidence per
+  `.references/zones.md`, one change at a time.
+  - **Main loop:** script three stats from the already-parsed JSONL without
+    loading transcript content — duplicate file reads, top-spend turns, and
+    cache-read volume (same `message.id` dedup as above). **Report them only
+    when one trips a threshold** (the script below flags a file read 3+ times,
+    a turn over ~15% of run output, cache reads over ~95% of input): a clean
+    run gets one line saying nothing flagged, never a stat dump. Then follow
+    the evidence — judge main-loop behavior only inside a window a stat
+    flagged, never by sweeping the transcript. The postmortem must not itself
+    become the wasteful run.
 
 Reference script (adapt paths; classify conservatively):
 
 ```python
-import json, glob, datetime as dt
-files = glob.glob('/Users/<you>/.claude/projects/<munged-cwd>/*.jsonl')
-ev=[]
-for fn in files:
+import json, glob, datetime as dt, collections
+ev, usage, reads = [], {}, collections.Counter()
+for fn in glob.glob('/Users/<you>/.claude/projects/<munged-cwd>/*.jsonl'):
     for line in open(fn):
-        try: d=json.loads(line)
+        try: d = json.loads(line)
         except: continue
-        ts=d.get('timestamp')
-        if not ts: continue
-        t=dt.datetime.fromisoformat(ts.replace('Z','+00:00'))
-        typ=d.get('type'); msg=d.get('message',{})
-        c=msg.get('content') if isinstance(msg,dict) else None
-        kind=typ
-        if typ=='user':
-            if isinstance(c,str):
-                s=c.strip()
-                kind=('sysnotif' if s.startswith('[SYSTEM') or '<task-notif' in s
-                      else 'meta' if s.startswith('<') or s.startswith('Base directory')
-                      else 'HUMAN')
-            elif isinstance(c,list):
-                ks={b.get('type') for b in c if isinstance(b,dict)}
-                if 'tool_result' in ks: kind='tool_result'
-                else:
-                    txt=' '.join(b.get('text','') for b in c if isinstance(b,dict) and b.get('type')=='text').strip()
-                    kind='HUMAN' if txt and not txt.startswith('[SYSTEM') and '<task-notif' not in txt else 'meta'
-        ev.append((t,kind))
+        if not d.get('timestamp'): continue
+        t = dt.datetime.fromisoformat(d['timestamp'].replace('Z', '+00:00'))
+        m = d.get('message') or {}; c = m.get('content')
+        blocks = c if isinstance(c, list) else []
+        if d['type'] == 'assistant' and m.get('id') and m.get('usage'):
+            usage[m['id']] = m['usage']            # last snapshot per id wins
+        for b in blocks:                           # reads = the read tool's own path input
+            if b.get('type') == 'tool_use' and b.get('name') == 'Read':
+                reads[b.get('input', {}).get('file_path')] += 1
+        txt = c if isinstance(c, str) else ' '.join(
+            b.get('text', '') for b in blocks if b.get('type') == 'text')
+        human = (d['type'] == 'user' and txt.strip()
+                 and not any(b.get('type') == 'tool_result' for b in blocks)
+                 and not txt.lstrip().startswith(('[SYSTEM', '<', 'Base directory')))
+        ev.append((t, 'HUMAN' if human else d['type']))
 ev.sort()
-agent=lambda k:k in ('assistant','tool_result')
-span=(ev[-1][0]-ev[0][0]).total_seconds()/3600
-last=None; idle=0; stalls=[]
-for t,k in ev:
-    if k=='HUMAN' and last:
-        g=(t-last).total_seconds()/60; idle+=g
-        if g>20: stalls.append((t,g))
-    if agent(k): last=t
-print(f'span {span:.1f}h  human-idle {idle/60:.1f}h ({100*idle/60/span:.0f}%)  active ~{span-idle/60:.1f}h')
-for t,g in stalls: print(f'  stall: agent idle {g:.0f}min before human msg at {t}')
+span = (ev[-1][0] - ev[0][0]).total_seconds() / 3600
+last, idle, stalls = None, 0.0, []
+for t, k in ev:
+    if k == 'HUMAN' and last:
+        g = (t - last).total_seconds() / 60; idle += g
+        if g > 20: stalls.append((t, g))
+    if k != 'HUMAN': last = t
+print(f'span {span:.1f}h  idle {idle/60:.1f}h ({100*idle/60/span:.0f}%)  active {span-idle/60:.1f}h')
+for t, g in stalls: print(f'  stall {g:.0f}min before human msg at {t}')
+
+# Main loop: print only what trips a threshold. Silence = nothing worth digging into.
+s = lambda k: sum(u.get(k, 0) or 0 for u in usage.values())
+out, cr = s('output_tokens'), s('cache_read_input_tokens')
+inp = cr + s('input_tokens') + s('cache_creation_input_tokens')
+top = max((u.get('output_tokens', 0) or 0 for u in usage.values()), default=0)
+for p, n in reads.items():
+    if n >= 3: print(f'  FLAG {p} read {n}x')
+if out and top > .15 * out: print(f'  FLAG one turn = {100*top/out:.0f}% of run output')
+if inp and cr > .95 * inp: print(f'  FLAG cache reads {100*cr/inp:.0f}% of input ({cr:,})')
 ```
 
 ## Output — the "Run operations" block
@@ -138,6 +161,9 @@ removed the biggest stall (pre-authorize a green-tier gate, add a
 self-wakeup so a turn-end resumes, make a fallback non-blocking). That change
 is a candidate for the postmortem's single proposed system change when the
 operational leak outweighs any outcome gap.
+The section also carries every timing-row spend verdict and its evidence, plus
+the token-efficiency change the wasteful or marginal spend supports — and the
+main-loop stats only where one tripped a threshold.
 
 **Timeline visualization (render it, attach it).** Turn the per-step table
 into a Gantt: one row per dispatch (plus an Overseer row for the main loop's
