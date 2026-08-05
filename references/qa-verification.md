@@ -50,7 +50,9 @@ scripts before the first flow:
 Hooks absent from `package.json` → note `no React runtime hooks declared`
 in the report and move on — never improvise a profiler or a11y harness the
 repo doesn't declare (the build-what's-missing rule covers drivers and
-probes, not app instrumentation). Hook launch commands, flags, and ports
+probes, not app instrumentation; setting hooks up in a repo that wants
+them is its own user-approved change — see
+`react-runtime-hooks-setup.md`). Hook launch commands, flags, and ports
 come from the repo's `AGENTS.md`/docs like any other launch fact. **A
 declared hook that fails to start does not block the drive**: after one
 diagnostic retry, fall back to the app's normal documented server, drive
