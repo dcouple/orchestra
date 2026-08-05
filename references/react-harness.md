@@ -155,13 +155,36 @@ storm class). The seed proves the pattern: a test-local connected
 probe; unrelated store dispatch → zero new commits; relevant dispatch →
 exactly one (the positive control).
 
+## When to run what — the triggers
+
+The repo's agent docs must carry these (adapted to its script names), so
+any agent working there knows the moments, not just the mechanics:
+
+- Touching any frontend code → the blocking core lint, run as habitually
+  as the incumbent linter.
+- Changing components, hooks, selectors, or store wiring → also read the
+  advisory lane's output for the touched files, and add a render-count
+  test when the change is subscription- or memoization-sensitive.
+- Changing rendered UI → run the a11y scan against the changed screens
+  and compare with the recorded baseline.
+- Investigating render performance, or verifying a perf-sensitive change
+  in the running app → drive it under the perf hook and read the
+  evidence records.
+- Deleting or moving files/exports → the dead-code check before and
+  after shows what actually became unused.
+
+(The QA drive's own trigger — React-touching diffs probe and use the
+runtime hooks — lives in `qa-verification.md`; these are the
+inside-the-repo moments for developers and coding agents.)
+
 ## Script-name convention (the probe surface)
 
 `lint:ox` · `lint:ox:extra` · `deadcode` · `perf:scan` · `a11y:scan` —
 exact names in the app workspace's `package.json`; agents discover
 capabilities by probing scripts, so the names are the API. Document
-usage, ports, creds source, the evidence-line format, and the browser
-install one-liner in the repo's agent docs.
+usage, ports, creds source, the evidence-line format, the browser
+install one-liner, and the when-to-run triggers above in the repo's
+agent docs.
 
 ## Validation — it must work the first time
 
