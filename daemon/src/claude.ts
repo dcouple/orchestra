@@ -106,6 +106,10 @@ export interface RunTurnResult {
   usage?: TurnUsage;
   modelUsage?: Record<string, unknown>;
   linearMcpInitialized?: boolean;
+  /** resultText came from the last assistant message, not the result event. */
+  resultTextRecovered?: boolean;
+  /** subtype of the closing result event, for diagnosing empty replies. */
+  resultSubtype?: string;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -326,6 +330,12 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   });
   let latestId: string | undefined;
   let resultText: string | undefined;
+  // Last non-empty assistant text seen on the stream. Some harnesses close a turn
+  // with a result event that carries usage but no result string; the reply text is
+  // still on the stream, so keep it rather than losing the turn's output.
+  let lastAssistantText: string | undefined;
+  let resultTextRecovered = false;
+  let resultSubtype: string | undefined;
   let isError = false;
   let sawResult = false;
   let denials: unknown[] = [];
@@ -368,12 +378,15 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     }
     if (event.type === "assistant") {
       const message = record(event.message);
+      const messageText: string[] = [];
       if (Array.isArray(message?.content))
         for (const raw of message.content) {
           const block = record(raw);
           if (!block) continue;
-          if (block.type === "text" && typeof block.text === "string")
+          if (block.type === "text" && typeof block.text === "string") {
+            messageText.push(block.text);
             emit({ type: "text", text: block.text });
+          }
           if (
             block.type === "tool_use" &&
             typeof block.id === "string" &&
@@ -404,6 +417,8 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
             }
           }
         }
+      const joined = messageText.join("").trim();
+      if (joined) lastAssistantText = joined;
     }
     if (event.type === "user") {
       const message = record(event.message);
@@ -455,7 +470,14 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     if (event.type === "result") {
       sawResult = true;
       isError = event.is_error === true || event.subtype !== "success";
+      if (typeof event.subtype === "string") resultSubtype = event.subtype;
       if (typeof event.result === "string") resultText = event.result;
+      // A result event can close the turn carrying usage but no reply text. The text
+      // is still on the stream, so fall back to it instead of dropping the output.
+      if (!resultText?.trim() && lastAssistantText) {
+        resultText = lastAssistantText;
+        resultTextRecovered = true;
+      }
       if (Array.isArray(event.permission_denials))
         denials = event.permission_denials;
       if (denials.length) isError = true;
@@ -555,6 +577,8 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
       ok,
       ...(latestId ? { sessionId: latestId } : {}),
       ...(resultText !== undefined ? { resultText } : {}),
+      ...(resultTextRecovered ? { resultTextRecovered } : {}),
+      ...(resultSubtype !== undefined ? { resultSubtype } : {}),
       isError,
       exitCode: closed.code,
       signal: closed.signal,

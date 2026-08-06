@@ -1144,16 +1144,33 @@ export class SessionWorker {
         );
     };
     if (result.ok) {
+      // A turn that ends with no reply text anywhere is a defect, not a quiet success:
+      // the work was done and billed, and the output was lost. Say so in the thread
+      // rather than posting a bland placeholder that reads as a completed answer.
+      const responseBody = result.resultText?.trim()
+        || `Turn completed without reply text — the run produced no response body, so its output was lost. This is a daemon defect, not a result. turn=${turn.id} model=${result.usage?.model ?? "unknown"} subtype=${result.resultSubtype ?? "unknown"} outputTokens=${result.usage?.outputTokens ?? 0}`;
+      if (!result.resultText?.trim())
+        this.logger.error(
+          jsonLog({
+            event: "turn_missing_result_text",
+            turnId: turn.id,
+            issueIdentifier: identifier,
+            linearSessionId: turn.linearSessionId,
+            resultSubtype: result.resultSubtype,
+            model: result.usage?.model,
+            outputTokens: result.usage?.outputTokens,
+          }),
+        );
       this.log.finishTurn(
         turn.id,
         "response",
-        result.resultText || "Turn completed.",
+        responseBody,
         finishedAt,
         randomUUID(),
         true,
         result.usage,
       );
-      postTelemetry("response", result.resultText || "Turn completed.");
+      postTelemetry("response", responseBody);
       this.logger.log(
         jsonLog({
           event: "session_turn_completed",
@@ -1165,6 +1182,7 @@ export class SessionWorker {
             0,
             finishedAt - (turn.startedAt ?? turn.receivedAt),
           ),
+          ...(result.resultTextRecovered ? { resultTextRecovered: true } : {}),
           ...usageLog,
         }),
       );
