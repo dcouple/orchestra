@@ -255,39 +255,62 @@ install -m 0755 "${SOURCE_DIR}/ops/codex-otel-wrapper.sh" /usr/local/bin/codex
 # subagent stack is qualified against 0.144.6 and stays there; upgrading one
 # must never drag the other along. Installed from the signed release tarball
 # rather than a second pnpm global, which would collide in /opt/pnpm.
+#
+# `remote-control` refuses to run against a hand-placed binary: it requires the
+# standalone install the official installer manages, because the daemon starts
+# and self-updates app-server from that fixed path. So this uses install.sh
+# rather than the release tarball, pinned with --release.
+#
+# Two installer defaults would breach the isolation and are overridden:
+#   CODEX_INSTALL_DIR — defaults to $HOME/.local/bin, which is FIRST on the
+#     daemon's PATH; a codex there would shadow the subagent otel wrapper.
+#   CODEX_NON_INTERACTIVE — with prompts enabled the installer offers to run
+#     `npm uninstall -g @openai/codex`, which would delete the subagent Codex.
+#     Non-interactive declines every prompt.
+# It also appends a PATH line to the daemon user's .profile; that is stripped
+# below, for the same shadowing reason.
 CODEX_LIVE_VERSION="0.145.0"
-case "${ARCH}" in
-  amd64)
-    CODEX_LIVE_TARGET="x86_64-unknown-linux-musl"
-    CODEX_LIVE_SHA256="bfaf13c9ba34f2ad764e4a916c49cf7177aeba329cf0f719e2227566fc8d662a"
-    ;;
-  arm64)
-    CODEX_LIVE_TARGET="aarch64-unknown-linux-musl"
-    CODEX_LIVE_SHA256="d384f90bc842450b42bd675feef06a12a46a3b1ca97efcb22566b270e4a11227"
-    ;;
-  *) echo "unsupported live Codex architecture: ${ARCH}" >&2; exit 1 ;;
-esac
 CODEX_LIVE_BIN=/opt/codex-live/bin/codex
-CODEX_LIVE_MARKER=/opt/codex-live/version
-if [[ ! -x "${CODEX_LIVE_BIN}" ]] || [[ ! -f "${CODEX_LIVE_MARKER}" ]] \
-    || [[ "$(<"${CODEX_LIVE_MARKER}")" != "${CODEX_LIVE_VERSION}" ]]; then
+CODEX_LIVE_HOME=/var/lib/linear-agent-daemon/.codex-live
+install -d -o linear-daemon -g linear-daemon -m 0755 /opt/codex-live /opt/codex-live/bin
+install -d -o linear-daemon -g linear-daemon -m 0700 "${CODEX_LIVE_HOME}"
+codex_live_installed_version() {
+  runuser -u linear-daemon -- env HOME=/var/lib/linear-agent-daemon \
+    CODEX_HOME="${CODEX_LIVE_HOME}" "${CODEX_LIVE_BIN}" --version 2>/dev/null || true
+}
+if [[ "$(codex_live_installed_version)" != *"${CODEX_LIVE_VERSION}"* ]]; then
   tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
-  archive="codex-${CODEX_LIVE_TARGET}.tar.gz"
-  curl -fsSL "https://github.com/openai/codex/releases/download/rust-v${CODEX_LIVE_VERSION}/${archive}" \
-    -o "${tmp}/${archive}"
-  printf '%s  %s\n' "${CODEX_LIVE_SHA256}" "${tmp}/${archive}" | sha256sum -c -
-  tar -xzf "${tmp}/${archive}" -C "${tmp}"
-  # The tarball's binary carries its target triple in the name; resolve it
-  # rather than hardcoding, so a layout change fails loudly here.
-  extracted="$(find "${tmp}" -maxdepth 2 -type f -name 'codex*' ! -name '*.tar.gz' -print -quit)"
-  [[ -n "${extracted}" ]] || { echo "live Codex archive did not contain a codex binary" >&2; exit 1; }
-  install -d -m 0755 /opt/codex-live/bin
-  install -m 0755 "${extracted}" "${CODEX_LIVE_BIN}"
-  printf '%s\n' "${CODEX_LIVE_VERSION}" > "${CODEX_LIVE_MARKER}"
+  curl -fsSL https://chatgpt.com/codex/install.sh -o "${tmp}/codex-install.sh"
+  chmod 0755 "${tmp}" "${tmp}/codex-install.sh"
+  # cd out of the caller's directory first: provisioning runs from an operator
+  # home that linear-daemon cannot read, and the installer shells out to `find`,
+  # which fails when it cannot restore its initial working directory.
+  ( cd "${tmp}" && runuser -u linear-daemon -- env \
+      HOME=/var/lib/linear-agent-daemon \
+      CODEX_HOME="${CODEX_LIVE_HOME}" \
+      CODEX_INSTALL_DIR=/opt/codex-live/bin \
+      CODEX_NON_INTERACTIVE=1 \
+      sh "${tmp}/codex-install.sh" --release "${CODEX_LIVE_VERSION}" )
   rm -rf "${tmp}"; trap - EXIT
 fi
-"${CODEX_LIVE_BIN}" --version | grep -Fq "${CODEX_LIVE_VERSION}" \
-  || { echo "live Codex binary does not report ${CODEX_LIVE_VERSION}" >&2; exit 1; }
+# Idempotent: removes the installer's PATH block whether it was just written or
+# left by an earlier run.
+python3 - <<'PY'
+import re
+path = "/var/lib/linear-agent-daemon/.profile"
+try:
+    original = open(path).read()
+except FileNotFoundError:
+    raise SystemExit(0)
+stripped = re.sub(r"\n?# >>> Codex installer >>>.*?# <<< Codex installer <<<\n?", "\n", original, flags=re.S)
+if stripped != original:
+    open(path, "w").write(stripped)
+PY
+[[ "$(codex_live_installed_version)" == *"${CODEX_LIVE_VERSION}"* ]] \
+  || { echo "live Codex does not report ${CODEX_LIVE_VERSION}" >&2; exit 1; }
+# The subagent Codex must remain reachable and unshadowed on the daemon's PATH.
+[[ ! -e /var/lib/linear-agent-daemon/.local/bin/codex ]] \
+  || { echo "live Codex install shadowed the subagent codex in ~/.local/bin" >&2; exit 1; }
 
 if [[ "${INSTALL_ANDROID:-0}" == "1" ]]; then
   ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-35}"
