@@ -309,8 +309,15 @@ PY
 [[ "$(codex_live_installed_version)" == *"${CODEX_LIVE_VERSION}"* ]] \
   || { echo "live Codex does not report ${CODEX_LIVE_VERSION}" >&2; exit 1; }
 # The subagent Codex must remain reachable and unshadowed on the daemon's PATH.
+# The installer plants its own launcher in ~/.local/bin regardless of
+# CODEX_INSTALL_DIR, and ~/.local/bin precedes /usr/local/bin on the daemon's PATH,
+# so that launcher shadows the subagent otel wrapper. Remove it after every install
+# rather than asserting it never appeared: the assertion could not hold, because the
+# install runs on every provision (the live harness self-updates away from the pinned
+# release, so the version check never matches) and recreates the launcher each time.
+rm -f /var/lib/linear-agent-daemon/.local/bin/codex
 [[ ! -e /var/lib/linear-agent-daemon/.local/bin/codex ]] \
-  || { echo "live Codex install shadowed the subagent codex in ~/.local/bin" >&2; exit 1; }
+  || { echo "subagent codex remains shadowed in ~/.local/bin" >&2; exit 1; }
 
 if [[ "${INSTALL_ANDROID:-0}" == "1" ]]; then
   ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-35}"
