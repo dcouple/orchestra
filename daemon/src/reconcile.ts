@@ -84,7 +84,8 @@ export class ReconcileWorker {
 
   private async reconcilePlannerPrompts(): Promise<void> {
     // Prompt reconciliation only visits durable sessions, so it cannot assign a profile.
-    for (const session of this.log.plannerSessionsForReconcile()) {
+    const activeSince = this.now() - this.config.reconcileSessionMaxAgeMs;
+    for (const session of this.log.plannerSessionsForReconcile(activeSince)) {
       let activities: AgentPromptActivity[];
       try {
         activities = await this.gateway.listSessionActivitiesSince("planner", session.linearSessionId,

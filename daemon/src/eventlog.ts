@@ -1236,7 +1236,10 @@ export class EventLog {
         .get(identifier, mode) as SessionRow | undefined;
     return query("implementer") ?? query("planner");
   }
-  plannerSessionsForReconcile(): SessionRow[] {
+  // activeSince bounds the poll set: the reconcile sweep issues one Linear API call per
+  // returned row, so an unbounded set spends the workspace quota on sessions that ended
+  // weeks ago. Sessions that receive real traffic keep last_seen_at fresh via append().
+  plannerSessionsForReconcile(activeSince = 0): SessionRow[] {
     return this.db
       .prepare(
         `SELECT linear_session_id linearSessionId, app, issue_id issueId,
@@ -1245,9 +1248,10 @@ export class EventLog {
       browser_required browserRequired, browser_run_id browserRunId,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt,
       trace_id traceId,root_span_id rootSpanId,started_at startedAt,completed_at completedAt
-      FROM sessions WHERE app='planner' AND mode='planner' ORDER BY last_seen_at`,
+      FROM sessions WHERE app='planner' AND mode='planner' AND status='active'
+      AND last_seen_at>=? ORDER BY last_seen_at`,
       )
-      .all() as SessionRow[];
+      .all(activeSince) as SessionRow[];
   }
   sessionsWithWorktrees(): SessionRow[] {
     return this.db

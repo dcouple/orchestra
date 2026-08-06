@@ -162,6 +162,10 @@ IMPLEMENTER_LINEAR_CLIENT_SECRET=...
 IMPLEMENTER_APP_ACTOR_ID=...
 RECONCILE_INTERVAL_MS=60000
 RECONCILE_REQUEST_TIMEOUT_MS=10000
+# Prompt catch-up polls one Linear API call per active planner session per sweep; this
+# bounds that set to sessions seen within the window (default 6h) so ended sessions stop
+# consuming the workspace's 5,000 requests/hour quota.
+RECONCILE_SESSION_MAX_AGE_MS=21600000
 LINEAR_MCP_MONITOR_INTERVAL_MS=60000
 LINEAR_MCP_MONITOR_TIMEOUT_MS=10000
 SESSIONS_ENABLED=1
