@@ -108,6 +108,15 @@ if (mode === "mcp-shutdown") {
   await new Promise(() => {});
 }
 if (mode === "new-id") emit({ type: "assistant", session_id: "claude-session-2", message: { content: [{ type: "text", text: "compacted" }] } });
+// Closes the turn with usage but no result string, as observed from the fable harness.
+if (mode === "empty-result") {
+  emit({ type: "assistant", session_id: session, message: { content: [{ type: "text", text: "the real reply" }] } });
+  emit({ type: "assistant", session_id: session,
+    message: { content: [{ type: "tool_use", id: "tool-1", name: "Read", input: {} }] } });
+  emit({ type: "result", subtype: "success", is_error: false, session_id: session, permission_denials: [],
+    usage: { input_tokens: 2, output_tokens: 4797 } });
+  process.exit(0);
+}
 if (mode === "slow") await new Promise(resolve => setTimeout(resolve, Number(process.env.CLAUDE_FAKE_DELAY_MS || process.env.FAKE_DELAY_MS || 100)));
 const finalSession = mode === "new-id" ? "claude-session-2" : session;
 const errorResult = mode === "denied" || mode === "do-pr-error" ||

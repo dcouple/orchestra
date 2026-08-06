@@ -223,6 +223,20 @@ describe("runTurn", () => {
     );
     expect(JSON.stringify(events)).not.toContain("private Linear result");
   });
+  it("recovers reply text when the result event carries usage but no result string", async () => {
+    const result = await runTurn(
+      options({ env: { CLAUDE_FAKE_MODE: "empty-result" } }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      // the last assistant text, not the tool_use message that followed it
+      resultText: "the real reply",
+      resultTextRecovered: true,
+      resultSubtype: "success",
+      sawResult: true,
+    });
+    expect(result.usage?.outputTokens).toBe(4797);
+  });
   it("omits usage for a usage-free result", async () => {
     const result = await runTurn(
       options({ env: { CLAUDE_FAKE_MODE: "no-usage" } }),
