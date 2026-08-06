@@ -44,6 +44,7 @@ export interface Config {
   artifactMaxBodyBytes: number;
   reconcileIntervalMs: number;
   reconcileRequestTimeoutMs: number;
+  reconcileSessionMaxAgeMs: number;
   apps: Record<AppName, AppConfig>;
   sessionsEnabled: boolean;
   worktreesRoot: string;
@@ -192,6 +193,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     artifactMaxBodyBytes: positiveInteger(env, "ARTIFACT_MAX_BODY_BYTES", 32 * 1024 * 1024),
     reconcileIntervalMs: positiveInteger(env, "RECONCILE_INTERVAL_MS", 60_000),
     reconcileRequestTimeoutMs: positiveInteger(env, "RECONCILE_REQUEST_TIMEOUT_MS", 10_000),
+    reconcileSessionMaxAgeMs: positiveInteger(env, "RECONCILE_SESSION_MAX_AGE_MS", 6 * 60 * 60_000),
     apps: { planner: appConfig(env, "planner", testMode), implementer: appConfig(env, "implementer", testMode) },
     sessionsEnabled,
     worktreesRoot: env.WORKTREES_ROOT?.trim() || `${dirname(dbPath)}/worktrees`,

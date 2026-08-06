@@ -17,7 +17,7 @@ function config(overrides: Partial<Config> = {}): Config {
     port: 0, bindAddr: "127.0.0.1", dbPath: ":memory:", replayWindowMs: 60_000,
     dispatchQuarantineDir: "/tmp/dispatch-quarantine", dispatchQuarantineAgeMs: 86_400_000,
     linearGraphqlUrl: "http://unused", linearTokenUrl: "http://unused", webhookBaseUrl: "https://agent.example.com",
-    reconcileIntervalMs: 60_000, reconcileRequestTimeoutMs: 1_000,
+    reconcileIntervalMs: 60_000, reconcileRequestTimeoutMs: 1_000, reconcileSessionMaxAgeMs: 6 * 60 * 60_000,
     apps: {
       planner: { name: "planner", webhookSecret: "p", staticToken: "p", appActorId: "planner-actor" },
       implementer: { name: "implementer", webhookSecret: "i", staticToken: "i", appActorId: "implementer-actor" },
@@ -203,6 +203,28 @@ describe("ReconcileWorker", () => {
     await worker.trigger();
     expect(gateway.activityCalls).toEqual([{ app: "planner", session: "planner-session", since: seeded! }]);
     expect(log.turnStates()).toHaveLength(2);
+    await worker.stop();
+    log.close();
+  });
+
+  it("polls only active planner sessions inside the recency window", async () => {
+    const log = new EventLog(path());
+    created(log, "d-fresh", "planner", "fresh-session");
+    created(log, "d-stale", "planner", "stale-session", "issue-2", "ENG-2");
+    created(log, "d-done", "planner", "done-session", "issue-3", "ENG-3");
+    // fresh: inside the window. stale: last seen well before it. done: fresh but terminal.
+    const now = 100_000_000;
+    const maxAge = 6 * 60 * 60_000;
+    log.updateLastSeenActivity("fresh-session", 1, now - 60_000);
+    log.updateLastSeenActivity("stale-session", 1, now - maxAge - 60_000);
+    log.updateLastSeenActivity("done-session", 1, now - 60_000);
+    log.materializeOutbox("done-session", "[]", now - 60_000);
+
+    const gateway = new FakeGateway();
+    const worker = new ReconcileWorker(log, gateway as unknown as LinearGateway,
+      config({ reconcileSessionMaxAgeMs: maxAge }), { logger: { log: vi.fn(), error: vi.fn() }, now: () => now });
+    await worker.trigger();
+    expect(gateway.activityCalls.map(call => call.session)).toEqual(["fresh-session"]);
     await worker.stop();
     log.close();
   });
