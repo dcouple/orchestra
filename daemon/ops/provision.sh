@@ -231,6 +231,8 @@ if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
   chmod 0755 /usr/local/bin/pnpm
 fi
 
+# Subagent Codex. Pinned independently of the live-session Codex below: the
+# two never share a binary, a version, or a home.
 CODEX_VERSION="0.144.6"
 if [[ ! -x /opt/pnpm/bin/codex ]] || [[ "$(/opt/pnpm/bin/codex --version)" != *"${CODEX_VERSION}"* ]]; then
   env PNPM_HOME=/opt/pnpm PATH="/opt/pnpm/bin:${PATH}" \
@@ -246,6 +248,46 @@ fi
 printf '#!/bin/sh\nexec /opt/pnpm/bin/playwright-mcp "$@"\n' > /usr/local/bin/playwright-mcp
 chmod 0755 /usr/local/bin/playwright-mcp
 install -m 0755 "${SOURCE_DIR}/ops/codex-otel-wrapper.sh" /usr/local/bin/codex
+
+# Live-session Codex: a second, wholly separate install. It shares nothing with
+# the subagent Codex above — not the binary, the version pin, the PATH entry,
+# the otel wrapper, or the Codex home. Realtime landed in 0.145.0, but the
+# subagent stack is qualified against 0.144.6 and stays there; upgrading one
+# must never drag the other along. Installed from the signed release tarball
+# rather than a second pnpm global, which would collide in /opt/pnpm.
+CODEX_LIVE_VERSION="0.145.0"
+case "${ARCH}" in
+  amd64)
+    CODEX_LIVE_TARGET="x86_64-unknown-linux-musl"
+    CODEX_LIVE_SHA256="bfaf13c9ba34f2ad764e4a916c49cf7177aeba329cf0f719e2227566fc8d662a"
+    ;;
+  arm64)
+    CODEX_LIVE_TARGET="aarch64-unknown-linux-musl"
+    CODEX_LIVE_SHA256="d384f90bc842450b42bd675feef06a12a46a3b1ca97efcb22566b270e4a11227"
+    ;;
+  *) echo "unsupported live Codex architecture: ${ARCH}" >&2; exit 1 ;;
+esac
+CODEX_LIVE_BIN=/opt/codex-live/bin/codex
+CODEX_LIVE_MARKER=/opt/codex-live/version
+if [[ ! -x "${CODEX_LIVE_BIN}" ]] || [[ ! -f "${CODEX_LIVE_MARKER}" ]] \
+    || [[ "$(<"${CODEX_LIVE_MARKER}")" != "${CODEX_LIVE_VERSION}" ]]; then
+  tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
+  archive="codex-${CODEX_LIVE_TARGET}.tar.gz"
+  curl -fsSL "https://github.com/openai/codex/releases/download/rust-v${CODEX_LIVE_VERSION}/${archive}" \
+    -o "${tmp}/${archive}"
+  printf '%s  %s\n' "${CODEX_LIVE_SHA256}" "${tmp}/${archive}" | sha256sum -c -
+  tar -xzf "${tmp}/${archive}" -C "${tmp}"
+  # The tarball's binary carries its target triple in the name; resolve it
+  # rather than hardcoding, so a layout change fails loudly here.
+  extracted="$(find "${tmp}" -maxdepth 2 -type f -name 'codex*' ! -name '*.tar.gz' -print -quit)"
+  [[ -n "${extracted}" ]] || { echo "live Codex archive did not contain a codex binary" >&2; exit 1; }
+  install -d -m 0755 /opt/codex-live/bin
+  install -m 0755 "${extracted}" "${CODEX_LIVE_BIN}"
+  printf '%s\n' "${CODEX_LIVE_VERSION}" > "${CODEX_LIVE_MARKER}"
+  rm -rf "${tmp}"; trap - EXIT
+fi
+"${CODEX_LIVE_BIN}" --version | grep -Fq "${CODEX_LIVE_VERSION}" \
+  || { echo "live Codex binary does not report ${CODEX_LIVE_VERSION}" >&2; exit 1; }
 
 if [[ "${INSTALL_ANDROID:-0}" == "1" ]]; then
   ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-35}"
@@ -289,6 +331,8 @@ rsync -a --delete \
   "${SOURCE_DIR}/" /opt/linear-agent-daemon/
 chown -R linear-daemon:linear-daemon /opt/linear-agent-daemon
 chmod 0755 /opt/linear-agent-daemon/ops/proxy-accounts.sh /opt/linear-agent-daemon/ops/codex-provider-gate.sh
+chmod 0755 /opt/linear-agent-daemon/ops/codex-live-setup.sh
+chmod 0644 /opt/linear-agent-daemon/ops/codex-live-AGENTS.md
 chmod 0755 /opt/linear-agent-daemon/ops/daemonctl /opt/linear-agent-daemon/ops/wait-for-daemon-health.sh
 runuser -u linear-daemon -- bash -c 'cd /opt/linear-agent-daemon && pnpm install --frozen-lockfile && pnpm build && pnpm prune --prod'
 
@@ -296,6 +340,7 @@ install -o root -g root -m 0644 "${SOURCE_DIR}/ops/cliproxyapi.service" /etc/sys
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-daemon.service" /etc/systemd/system/linear-agent-daemon.service
 install -o root -g root -m 0755 "${SOURCE_DIR}/ops/daemonctl" /usr/local/sbin/daemonctl
 install -o root -g root -m 0755 "${SOURCE_DIR}/ops/wait-for-daemon-health.sh" /usr/local/sbin/wait-for-daemon-health.sh
+install -o root -g root -m 0644 "${SOURCE_DIR}/ops/codex-live.service" /etc/systemd/system/codex-live.service
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-operation.service" /etc/systemd/system/linear-agent-operation.service
 install -o root -g root -m 0644 "${SOURCE_DIR}/ops/linear-agent-operation.path" /etc/systemd/system/linear-agent-operation.path
 
@@ -367,6 +412,34 @@ else
     echo "standalone Codex provider gate skipped: management API unavailable; direct authentication remains selected" >&2
   fi
 fi
+# Live (voice) session. Its Codex home is separate from the gate-managed one
+# above: realtime needs direct ChatGPT credentials, which CLIProxyAPI does not
+# front. Setup is idempotent; the unit is only enabled once the home actually
+# holds those credentials, so an un-authenticated host does not boot into a
+# failing service.
+LIVE_SETUP_STATUS=0
+install -d -o linear-daemon -g linear-daemon -m 0750 /var/lib/linear-agent-daemon/live
+runuser -u linear-daemon -- env \
+  HOME=/var/lib/linear-agent-daemon \
+  PATH=/opt/codex-live/bin:/usr/bin:/bin \
+  CODEX_BIN="${CODEX_LIVE_BIN}" \
+  LIVE_CODEX_HOME=/var/lib/linear-agent-daemon/.codex-live \
+  LIVE_WORKSPACE=/var/lib/linear-agent-daemon/live \
+  AGENTS_SOURCE=/opt/linear-agent-daemon/ops/codex-live-AGENTS.md \
+  DAEMON_ENV_FILE=/etc/linear-agent-daemon/env \
+  /opt/linear-agent-daemon/ops/codex-live-setup.sh || LIVE_SETUP_STATUS=$?
+if [[ "${LIVE_SETUP_STATUS}" -eq 0 ]]; then
+  systemctl enable codex-live
+  systemctl restart codex-live
+  if ! systemctl is-active --quiet codex-live; then
+    echo "codex-live failed to start; journalctl -u codex-live" >&2
+  fi
+elif [[ "${LIVE_SETUP_STATUS}" -eq 3 ]]; then
+  echo "codex-live not enabled: live Codex home is unauthenticated (see message above)" >&2
+else
+  echo "codex-live not enabled: codex-live-setup.sh failed with status ${LIVE_SETUP_STATUS}" >&2
+fi
+
 env_has_key() {
   local key="$1"
   grep -Eq "^[[:space:]]*${key}=[^[:space:]]+" /etc/linear-agent-daemon/env

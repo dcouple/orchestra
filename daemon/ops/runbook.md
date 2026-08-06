@@ -981,10 +981,121 @@ and absence of MCP/Chrome descendants. To opt out or roll back, set
 may remain; existing Linear routing and non-browser sessions continue
 unchanged.
 
+## Codex live (voice) session
+
+A second Codex on the host, spoken to from a phone or laptop, that runs tools
+on the VM. It is a **separate installation**, not a second profile: it shares
+the host and the `linear-daemon` user and nothing else.
+
+| | Subagent Codex | Live Codex |
+| --- | --- | --- |
+| Binary | `/usr/local/bin/codex` (otel wrapper → pnpm global) | `/opt/codex-live/bin/codex` (pinned release tarball) |
+| Version | `CODEX_VERSION` in `provision.sh` | `CODEX_LIVE_VERSION` in `provision.sh` |
+| Codex home | `~/.codex` | `~/.codex-live` |
+| Owner of `config.toml` | `codex-provider-gate.sh` | `codex-live-setup.sh` |
+| Auth | CLIProxyAPI OAuth pool | direct ChatGPT (`auth.json`) |
+| Instructions | per-repo `AGENTS.md` | `~/.codex-live/AGENTS.md` |
+| Workspace | session worktrees | `~/live` |
+| Unit | `linear-agent-daemon` | `codex-live` |
+
+Two independent reasons for the split. Realtime audio needs direct ChatGPT
+credentials, which CLIProxyAPI does not front — it proxies the Responses
+protocol only. And the roles differ: subagent Codex implements inside a work
+item, live Codex is spoken to about operating the host.
+
+The version pins move independently on purpose. The subagent stack is
+qualified against its pin by `codex-provider-gate.sh`; bumping live Codex for
+a realtime fix must never drag `/do` onto an unqualified release, or the
+reverse. Neither home's config survives the other's rewrite, so a failed gate
+removes its own config without taking voice down.
+
+**The live agent has its own role.** `daemon/ops/codex-live-AGENTS.md` is
+installed as the live home's global `AGENTS.md`: answer aloud rather than in
+dumps, confirm before state changes, never touch `~/.codex`, never commit, and
+hand implementation work back to `/do` instead of doing it. Edit that file and
+re-provision to change how the voice agent behaves. The subagent Codex reads a
+different home and never sees it.
+
+**Audio never traverses the VM.** The client generates a WebRTC offer against
+its own microphone; the app-server only relays the SDP (`thread/realtime/sdp`)
+and runs the agent loop. Media flows client↔OpenAI directly.
+
+### One-time setup
+
+Provisioning installs the unit and config but will not enable the service
+until the live home holds ChatGPT credentials. Device auth prints a URL and a
+code — complete it in any browser:
+
+```bash
+sudo runuser -u linear-daemon -- env HOME=/var/lib/linear-agent-daemon \
+  CODEX_HOME=/var/lib/linear-agent-daemon/.codex-live \
+  /opt/codex-live/bin/codex login --device-auth
+sudo systemctl enable --now codex-live
+sudo daemonctl live status
+```
+
+Use the ChatGPT account whose plan carries Voice. This login is written only
+to `~/.codex-live/auth.json` and has no bearing on the CLIProxyAPI pool the
+subagent Codex draws from.
+
+### Attaching a phone
+
+Remote control is not LAN pairing. The VM enrols with an OpenAI-hosted relay
+and holds an *outbound* websocket, with a Noise handshake end-to-end between
+the two peers. No inbound firewall rule, no VPN, and `ufw` stays closed:
+
+```bash
+sudo daemonctl live pair       # short-lived, single-use; enter it on the phone
+```
+
+Install the Codex app, sign in as the account above, and enter the code. The
+host appears as a remote target; talking to it runs tools in `~/live` on the
+VM under the role instructions described above.
+
+For a laptop TUI instead of a phone, tunnel the control socket over SSH and
+attach locally — `--remote` accepts a loopback `ws://`:
+
+```bash
+ssh -N -L 8765:127.0.0.1:8765 linear-agent &
+codex --remote ws://127.0.0.1:8765
+```
+
+### Linear MCP
+
+Wired as a streamable HTTP server with a bearer token, not the `mcp-remote`
+OAuth bridge — a headless VM cannot service an OAuth callback. The token is
+the daemon's existing `LINEAR_API_KEY`, reaching the unit via
+`EnvironmentFile=/etc/linear-agent-daemon/env`. Rotating that key and
+restarting `codex-live` is the whole rotation story.
+
+### Operations
+
+```bash
+sudo daemonctl live status     # unit state, login identity, app-server version
+sudo daemonctl live pair
+sudo daemonctl live restart
+sudo daemonctl live stop       # voice off; daemon sessions unaffected
+sudo daemonctl live logs
+```
+
+Rollback is `systemctl disable --now codex-live`. Nothing else needs undoing:
+no daemon path, unit, or credential reads anything under `/opt/codex-live` or
+`~/.codex-live`, so the subagent stack is unaffected whether the live harness
+is running, stopped, or removed entirely.
+
+Two caveats worth knowing before relying on this. `realtime_conversation` is
+an under-development flag upstream, so the surface can move between Codex
+releases — `codex-live-setup.sh` sets it, and a release that renames it will
+surface as a live session that starts but never goes into audio. And the unit
+is `Type=oneshot` with `RemainAfterExit=yes`, matching Codex's self-managing
+app-server daemon, which means systemd will not auto-restart a live session
+that dies mid-call; `daemonctl live restart` brings it back.
+
 ## Logs and recovery
 
 ```bash
 journalctl -u linear-agent-daemon -f
+journalctl -u codex-live --since today
 journalctl -u cliproxyapi --since today
 journalctl -u caddy --since today
 ```

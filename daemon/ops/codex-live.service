@@ -1,0 +1,50 @@
+[Unit]
+Description=Codex live (voice) app-server with remote control
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# `remote-control start` launches Codex's own managed app-server daemon and
+# returns once it is up, so the unit is oneshot-and-stay-active rather than
+# simple. The forked app-server stays in this unit's cgroup, which is what
+# makes ExecStop and systemctl stop reach it.
+Type=oneshot
+RemainAfterExit=yes
+User=linear-daemon
+Group=linear-daemon
+WorkingDirectory=/var/lib/linear-agent-daemon/live
+EnvironmentFile=/etc/linear-agent-daemon/env
+Environment=HOME=/var/lib/linear-agent-daemon
+Environment=CODEX_HOME=/var/lib/linear-agent-daemon/.codex-live
+# /opt/codex-live/bin is deliberately first and /usr/local/bin is deliberately
+# absent: the latter holds the subagent Codex's otel wrapper, whose dispatch
+# telemetry and env stripping are meaningless for a live session and whose
+# pinned version differs.
+Environment=PATH=/opt/codex-live/bin:/var/lib/linear-agent-daemon/.local/bin:/usr/bin:/bin
+ExecStart=/opt/codex-live/bin/codex remote-control start
+ExecStop=/opt/codex-live/bin/codex app-server daemon stop
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+# Matches linear-agent-daemon.service: live turns run the same agent tooling,
+# including browser engines that build sandboxes from these namespace kinds.
+RestrictNamespaces=user pid net ipc uts cgroup
+RestrictRealtime=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service @sandbox unshare setns
+SystemCallArchitectures=native
+UMask=0077
+ReadWritePaths=/var/lib/linear-agent-daemon
+
+[Install]
+WantedBy=multi-user.target

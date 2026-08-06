@@ -9,6 +9,7 @@ usage: daemonctl config --planner claude|claudex --implementer claude|claudex [-
        daemonctl reload [--reason TEXT] [--dry-run]
        daemonctl update [--reason TEXT] [--dry-run]  # compatibility alias for reload
        daemonctl status [--refresh] | sessions | top [--watch SECONDS] [--count N]
+       daemonctl live status|pair|restart|stop|logs
        daemonctl subscriptions list|add|remove|reauth ... [--dry-run]
        daemonctl operation retry|cancel OPERATION_ID [--dry-run]
        daemonctl --help
@@ -46,6 +47,12 @@ HEALTH_URL="${DAEMONCTL_HEALTH_URL:-http://127.0.0.1:8787/healthz}"
 HEALTH_WAITER="${DAEMONCTL_HEALTH_WAITER:-${DAEMONCTL_SCRIPT_DIR}/wait-for-daemon-health.sh}"
 PROVISION="${DAEMONCTL_PROVISION:-${SOURCE_CHECKOUT}/daemon/ops/provision.sh}"
 PROXY_ACCOUNTS="${DAEMONCTL_PROXY_ACCOUNTS:-/opt/linear-agent-daemon/ops/proxy-accounts.sh}"
+LIVE_SERVICE="${DAEMONCTL_LIVE_SERVICE:-codex-live.service}"
+LIVE_CODEX_HOME="${DAEMONCTL_LIVE_CODEX_HOME:-/var/lib/linear-agent-daemon/.codex-live}"
+# The live Codex, not /usr/local/bin/codex — that one is the subagent wrapper
+# on a different version pin.
+CODEX_BIN="${DAEMONCTL_CODEX_BIN:-/opt/codex-live/bin/codex}"
+JOURNALCTL="${JOURNALCTL:-journalctl}"
 MAX_ATTEMPTS="${DAEMONCTL_MAX_ATTEMPTS:-3}"
 
 ops_cli() {
@@ -663,6 +670,56 @@ command_internal_execute() {
   (( failed == 0 ))
 }
 
+# The live session runs as linear-daemon against its own Codex home, so every
+# codex invocation here has to carry both. Pairing codes are short-lived and
+# single-use; print one per `daemonctl live pair`.
+live_codex() {
+  if [[ "${EUID}" -eq 0 && "${DAEMONCTL_ALLOW_NON_ROOT:-0}" != 1 ]]; then
+    "${RUNUSER}" -u linear-daemon -- env HOME=/var/lib/linear-agent-daemon \
+      CODEX_HOME="${LIVE_CODEX_HOME}" "${CODEX_BIN}" "$@"
+  else
+    HOME=/var/lib/linear-agent-daemon CODEX_HOME="${LIVE_CODEX_HOME}" "${CODEX_BIN}" "$@"
+  fi
+}
+
+command_live() {
+  local action="${1:-}"
+  case "${action}" in
+    status)
+      [[ $# -eq 1 ]] || usage_error "live status takes no arguments"
+      "${SYSTEMCTL}" show "${LIVE_SERVICE}" --property=ActiveState,SubState --no-pager 2>/dev/null \
+        || echo "${LIVE_SERVICE}: unavailable"
+      echo "login:"; live_codex login status 2>&1 || true
+      echo "app_server:"; live_codex app-server daemon version 2>&1 || true
+      ;;
+    pair)
+      [[ $# -eq 1 ]] || usage_error "live pair takes no arguments"
+      require_root
+      "${SYSTEMCTL}" is-active --quiet "${LIVE_SERVICE}" \
+        || die "${LIVE_SERVICE} is not active; run daemonctl live restart first"
+      live_codex remote-control pair
+      ;;
+    restart)
+      [[ $# -eq 1 ]] || usage_error "live restart takes no arguments"
+      require_root
+      "${SYSTEMCTL}" restart "${LIVE_SERVICE}"
+      "${SYSTEMCTL}" is-active --quiet "${LIVE_SERVICE}" || die "${LIVE_SERVICE} did not come back active"
+      echo "${LIVE_SERVICE} restarted"
+      ;;
+    stop)
+      [[ $# -eq 1 ]] || usage_error "live stop takes no arguments"
+      require_root
+      "${SYSTEMCTL}" stop "${LIVE_SERVICE}"
+      echo "${LIVE_SERVICE} stopped"
+      ;;
+    logs)
+      [[ $# -eq 1 ]] || usage_error "live logs takes no arguments"
+      "${JOURNALCTL}" -u "${LIVE_SERVICE}" -n 200 --no-pager
+      ;;
+    *) usage_error "live action must be status, pair, restart, stop, or logs" ;;
+  esac
+}
+
 command_top_once() {
   echo "host_load: $("${UPTIME_BIN}" | sed 's/^ *//')"
   echo "cpu_memory:"; "${PS_BIN}" -eo pcpu,pmem,pid,ppid,comm --sort=-pcpu | head -n 8
@@ -687,6 +744,7 @@ case "${1:-}" in
     if [[ "${watch}" == 0 ]]; then command_top_once; else i=0; while :; do command_top_once; i=$((i+1));
       if [[ "${DAEMONCTL_ALLOW_NON_ROOT:-0}" == 1 && "${DAEMONCTL_TEST_INTERRUPT_AFTER:-}" == "${i}" ]]; then exit 130; fi
       (( count > 0 && i >= count )) && break; "${SLEEP_BIN}" "${watch}"; done; fi ;;
+  live) shift; [[ $# -gt 0 ]] || usage_error "missing live action"; command_live "$@" ;;
   subscriptions) shift; require_root; [[ $# -gt 0 ]] || usage_error "missing subscriptions action"; if [[ "${DAEMONCTL_ALLOW_NON_ROOT:-0}" == 1 && "${DAEMONCTL_FORCE_RUNUSER:-0}" != 1 ]]; then "${PROXY_ACCOUNTS}" "$@"; else "${RUNUSER}" -u linear-daemon -- "${PROXY_ACCOUNTS}" "$@"; fi ;;
   operation)
     shift; require_root; action="${1:-}"; id="${2:-}"; [[ "${action}" == retry || "${action}" == cancel ]] || usage_error "operation action must be retry or cancel"; [[ -n "${id}" ]] || usage_error "missing operation id"; dry="${3:-}"; [[ $# -le 3 && ( -z "${dry}" || "${dry}" == --dry-run ) ]] || usage_error "invalid operation arguments"
