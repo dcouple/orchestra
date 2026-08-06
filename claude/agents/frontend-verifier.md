@@ -46,6 +46,21 @@ fall back to scripts, logs, or another browser surface as proof of browser
 criteria. Prove readiness with `browser_snapshot`, then close that probe so
 the journey starts with uncontaminated state.
 
+When the work under test touches React code, also probe the app workspace's
+`package.json` for repo-declared runtime hooks — `perf:scan` (render
+instrumentation) and `a11y:scan` (axe-style accessibility scan) — and use
+them per `.references/qa-verification.md` § React runtime hooks: drive the
+changed journeys against the scan-mode server when `perf:scan` exists,
+capture its structured render-evidence console lines with your other
+evidence, and report render fan-out disproportionate to the interaction as
+a finding. Absent hooks are noted (`no React runtime hooks declared`),
+never improvised. A declared hook that fails to start is not a blocked
+drive: retry once, then fall back to the app's normal documented server
+for every journey, record the failure as a named environment note, and
+mark only hook-only criteria `Left to human — hook failed to start` (the
+missing-or-failed-launch-is-blocked rule above governs the app itself,
+not this optional instrumentation).
+
 ## Testing instructions are the only route
 
 To test any app — web, mobile, or backend — follow the project's testing

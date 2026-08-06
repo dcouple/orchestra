@@ -25,6 +25,44 @@ in scratch and remove it after. Drive UIs by stable user-visible selectors
 (labels, button text, routes), and pull verification links/codes from
 local service logs when the environment emits them.
 
+## React runtime hooks (repo-declared)
+
+When the change under test touches React code (web or React Native), probe
+the app workspace's `package.json` for the conventional runtime-hook
+scripts before the first flow:
+
+- **`perf:scan`** — serves the web app in a scan mode that instruments
+  React re-renders (e.g. react-scan behind a dev-only flag) and emits
+  structured render-evidence lines to the browser console. When present,
+  drive the changed journeys against this server instead of the plain dev
+  server: capture the render-evidence console lines alongside your normal
+  captures, and report abnormal render fan-out — a whole list re-rendering
+  on a single interaction, renders continuing after the UI is idle, or
+  render counts far out of proportion to what changed on screen — as a
+  finding with the console excerpt as evidence. Render evidence is
+  qualitative: excessive-render findings are judgment calls backed by
+  quoted numbers, not threshold gates.
+- **`a11y:scan`** — runs an axe-style scan (e.g. @axe-core/playwright)
+  against key screens and emits a violations report. When present and the
+  diff touches rendered UI, run it per the repo's documented usage and
+  attach new violations on changed screens to the report.
+
+Hooks absent from `package.json` → note `no React runtime hooks declared`
+in the report and move on — never improvise a profiler or a11y harness the
+repo doesn't declare (the build-what's-missing rule covers drivers and
+probes, not app instrumentation; setting hooks up in a repo that wants
+them is its own user-approved change — see `react-harness.md`). Hook launch commands, flags, and ports
+come from the repo's `AGENTS.md`/docs like any other launch fact. **A
+declared hook that fails to start does not block the drive**: after one
+diagnostic retry, fall back to the app's normal documented server, drive
+every journey there as usual, record the hook failure as a named
+environment note, and mark only the criteria whose sole possible proof is
+hook evidence (a render-evidence or axe-report criterion) as
+`Left to human — hook failed to start`. The charter's missing-or-failed-
+launch-is-blocked rule governs the app launch itself, not this optional
+instrumentation layer — hooks degrade to a note plus per-criterion
+handoff, never to a blocked drive.
+
 ## External verification
 
 A network request only proves the app *tried*; ingestion is proven at the
