@@ -202,7 +202,9 @@ These preflight items are only checkable now that the item is loaded:
   **YOU MUST NOT** prompt for tracker authentication.
 - When verification criteria imply driving the running app (UI acceptance
   criteria, manual flows), confirm the repo `AGENTS.md`'s testing-accounts
-  section exists and is filled — it is the verifier's credentials source —
+  section exists and is filled — it is the verifier's credentials source,
+  provisioned per `.references/testing-accounts.md` (secret-manager storage,
+  `TESTING_ACCOUNT_<APP>_<ROLE>` naming, bootstrap procedure) —
   and prove the readiness executable, not documentary: the browser-automation
   transport connects and the named test sessions/credentials are actually
   reachable. Either half missing → an immediate preflight follow-up note
