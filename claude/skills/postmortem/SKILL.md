@@ -148,8 +148,8 @@ repo (`dcouple/orchestra` — e.g. `claude/skills/discussion/SKILL.md`,
 The copies in each consumer repo (`.claude/`, `.codex/`, `.references/`) are synced
 mirrors — the edit lands in orchestra and re-syncs. Quote the file path and show the
 proposed edit. Proposals target **operational** findings from step 2 (pre-authorize a
-green-tier gate, add a self-wakeup, make a fallback non-blocking) as readily as
-outcome gaps.
+green-tier gate, await a dispatch in-turn instead of yielding, make a fallback
+non-blocking) as readily as outcome gaps.
 
 Do **not** apply any of them. Record each in postmortem.md's "What to change so it
 doesn't recur" section for the human to weigh later — this step is a report, never a

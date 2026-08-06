@@ -31,18 +31,19 @@ sub-agent.
 This run is meant to finish unattended — started at night, reviewed in the
 morning. These rules make that safe:
 
-- **A phase or step boundary is not a turn boundary.** Chain straight into the
-  next step while work is ready. A detached Codex dispatch may remain
-  outstanding when a turn ends: its completion marker survives, turn-start
-  pickup recovers its report, and the daemon auto-resumes the run. Claude-lane
-  Agent-tool background sub-agents cannot be detached and die with the parent
-  process, so they must be awaited within the turn. Ending a turn with work
-  remaining — including a turn whose only outstanding work is background
-  dispatches — **requires** a scheduled self-wakeup (`ScheduleWakeup`): a hung
-  dispatch never sends a completion notification. While dispatches are
-  outstanding the fallback interval is ≤600s; the longer 1200s+ heartbeat is
-  for turns with nothing in flight. Idle-waiting on a human nudge is a
-  pipeline bug.
+- **A phase or step boundary is not a turn boundary, and neither is a
+  dispatch.** Chain straight into the next step while work is ready, and never
+  end a turn with work outstanding. Every dispatch — detached Codex `codex
+  exec` and Claude-lane Agent-tool sub-agents alike — is awaited inside the
+  turn that launched it: poll its completion marker until the report lands or
+  its deadline passes, then act on it. Codex dispatches still launch detached
+  (per the codex skill) so a lost harness process cannot orphan them, but
+  detaching is not licence to yield — **nothing resumes a turn that ends
+  itself.** If a turn dies for an external reason — budget ceiling, crash,
+  daemon restart — recovery comes from the run's durable state, not from a
+  scheduled wakeup: `plan-<n>.md` and its `phase_complete` flag record where
+  you were, and the next turn picks up from there. Idle-waiting on a human
+  nudge is a pipeline bug.
 - **A plain human message mid-run — "continue", "still running?", "does it
   work?" — is genuine input, never a task notification.** Inspect the dispatch
   markers and durable outputs, answer from them, and resume immediately.
@@ -677,6 +678,7 @@ never yield to wait for a "continue" between phases (see Autonomy & safety).
 - Finish unattended: chain steps and phases without stopping for a nudge;
   defer-note-and-notify red-tier actions rather than blocking; stop only for
   a red gate that blocks everything (see Autonomy & safety).
-- The run is resumable: plan.md — per phase, `plan-<n>.md` with its
-  `phase_complete` flag — says where you were — and if a turn ends with work remaining, a
-  self-wakeup resumes it rather than waiting for a human.
+- The run is resumable from durable state: plan.md — per phase, `plan-<n>.md`
+  with its `phase_complete` flag — says where you were, so a turn that was cut
+  short externally is picked up from that state rather than restarted. This is
+  a crash-recovery path, not a licence to end a turn with work remaining.
