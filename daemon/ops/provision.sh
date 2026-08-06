@@ -459,8 +459,11 @@ runuser -u linear-daemon -- env \
   DAEMON_ENV_FILE=/etc/linear-agent-daemon/env \
   /opt/linear-agent-daemon/ops/codex-live-setup.sh || LIVE_SETUP_STATUS=$?
 if [[ "${LIVE_SETUP_STATUS}" -eq 0 ]]; then
-  systemctl enable codex-live
-  systemctl restart codex-live
+  # Live voice is an auxiliary harness: it must never abort a daemon deploy. Under
+  # set -e an unguarded restart did exactly that whenever remote-control enrolment
+  # was errored, which also made the is-active check below unreachable.
+  systemctl enable codex-live || true
+  systemctl restart codex-live || true
   if ! systemctl is-active --quiet codex-live; then
     echo "codex-live failed to start; journalctl -u codex-live" >&2
   fi
