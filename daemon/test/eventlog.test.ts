@@ -302,6 +302,57 @@ describe("EventLog", () => {
     });
     reopened.close();
   });
+  it("stores payloads for actionable issue events and drops the rest", () => {
+    const dbPath = path();
+    const log = new EventLog(dbPath);
+    const payload = Buffer.from(JSON.stringify({ data: { id: "x" } }));
+    log.append(
+      event({
+        deliveryId: "issue-backlog",
+        agentSessionId: undefined,
+        action: "update",
+        type: "Issue",
+        stateType: "backlog",
+        rawBody: payload,
+      }),
+    );
+    log.append(
+      event({
+        deliveryId: "issue-completed",
+        agentSessionId: undefined,
+        action: "update",
+        type: "Issue",
+        stateType: "completed",
+        rawBody: payload,
+      }),
+    );
+    log.append(event({ deliveryId: "session-event", rawBody: payload }));
+    log.close();
+    const db = new Database(dbPath, { readonly: true });
+    const rows = db
+      .prepare("SELECT delivery_id id, length(raw_body) len FROM events")
+      .all() as { id: string; len: number }[];
+    const size = (id: string) => rows.find((row) => row.id === id)?.len;
+    expect(size("issue-backlog")).toBe(0);
+    expect(size("issue-completed")).toBe(payload.length);
+    expect(size("session-event")).toBe(payload.length);
+    db.close();
+  });
+  it("deduplicates a dropped-payload redelivery by its true body hash", () => {
+    const log = new EventLog(path());
+    const base = {
+      deliveryId: undefined,
+      agentSessionId: undefined,
+      action: "update",
+      type: "Issue",
+      stateType: "backlog",
+      rawBody: Buffer.from(JSON.stringify({ data: { id: "y" } })),
+    };
+    expect(log.append(event(base)).inserted).toBe(true);
+    expect(log.append(event(base)).inserted).toBe(false);
+    expect(log.count()).toBe(1);
+    log.close();
+  });
   it("makes turn and cleanup claims mutually exclusive per issue", () => {
     const log = new EventLog(path());
     log.append(event({ app: "implementer" }));

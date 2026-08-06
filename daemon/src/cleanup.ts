@@ -103,10 +103,10 @@ export class CleanupWorker {
         return;
       }
       if (await this.worktrees.isClean(session.worktreePath)) {
-        if (!this.log.hasExternalUrl(job.linearSessionId)) {
+        if (await this.worktrees.hasUnpushedCommits(session.worktreePath)) {
           this.log.retainCleanup(
             job.id,
-            `Worktree retained because no pull request was recorded; possible unpushed work is preserved: ${session.worktreePath}`,
+            `Worktree retained because it holds commits absent from origin; unpushed work is preserved: ${session.worktreePath}`,
             this.now(),
           );
           return;

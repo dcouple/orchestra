@@ -146,8 +146,30 @@ describe("CleanupWorker", () => {
     ).toThrow();
     s.log.close();
   });
-  it("retains a clean present worktree when no pull request URL was recorded", async () => {
+  it("removes a fully pushed worktree even when no pull request URL was recorded", async () => {
     const s = await setup();
+    complete(s.log);
+    const worker = new CleanupWorker(
+      s.log,
+      new Poster() as unknown as LinearGateway,
+      s.root,
+      s.repo,
+      { pollMs: 10, reconcileMs: 20 },
+    );
+    worker.start();
+    await waitFor(() => s.log.cleanupStates()[0]?.status === "done");
+    await worker.stop();
+    expect(existsSync(s.tree.path)).toBe(false);
+    expect(s.log.getSession("session")?.worktreePath).toBeNull();
+    s.log.close();
+  });
+  it("retains a clean worktree holding commits absent from origin", async () => {
+    const s = await setup();
+    writeFileSync(join(s.tree.path, "tracked.txt"), "x");
+    git(["config", "user.email", "test@example.com"], s.tree.path);
+    git(["config", "user.name", "Test"], s.tree.path);
+    git(["add", "tracked.txt"], s.tree.path);
+    git(["commit", "-m", "unpushed"], s.tree.path);
     complete(s.log);
     const poster = new Poster();
     const worker = new CleanupWorker(
@@ -163,7 +185,7 @@ describe("CleanupWorker", () => {
     );
     await worker.stop();
     expect(s.log.cleanupStates()[0]?.status).toBe("retained");
-    expect(poster.posts[0]).toContain("no pull request was recorded");
+    expect(poster.posts[0]).toContain("absent from origin");
     expect(poster.posts[0]).toContain(s.tree.path);
     expect(existsSync(s.tree.path)).toBe(true);
     s.log.close();

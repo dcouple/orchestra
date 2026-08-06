@@ -43,6 +43,19 @@ describe("WorktreeManager", () => {
     expect(await manager.isClean(tree.path)).toBe(true); await manager.remove("ENG-44");
     expect(existsSync(tree.path)).toBe(false); expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-44"],setup.repo)).toThrow();
   });
+  it("refuses to remove a clean worktree holding commits absent from origin",async()=>{
+    const setup=repository(); const manager=new WorktreeManager(setup.root,setup.repo); const tree=await manager.ensureWorktree("ENG-46");
+    git(["config","user.email","test@example.com"],tree.path); git(["config","user.name","Test"],tree.path);
+    writeFileSync(join(tree.path,"tracked.txt"),"x"); git(["add","tracked.txt"],tree.path); git(["commit","-m","unpushed"],tree.path);
+    expect(await manager.isClean(tree.path)).toBe(true);
+    expect(await manager.hasUnpushedCommits(tree.path)).toBe(true);
+    await expect(manager.remove("ENG-46")).rejects.toThrow("unpushed commits");
+    expect(existsSync(tree.path)).toBe(true);
+    expect(()=>git(["show-ref","--verify","refs/heads/agents/ENG-46"],setup.repo)).not.toThrow();
+    git(["push","origin","agents/ENG-46"],tree.path);
+    expect(await manager.hasUnpushedCommits(tree.path)).toBe(false);
+    await manager.remove("ENG-46"); expect(existsSync(tree.path)).toBe(false);
+  });
   it("refuses dirty worktrees and deletes dangling branches idempotently",async()=>{
     const setup=repository(); const manager=new WorktreeManager(setup.root,setup.repo); const tree=await manager.ensureWorktree("ENG-45");
     writeFileSync(join(tree.path,"dirty.txt"),"x"); expect(await manager.isClean(tree.path)).toBe(false);

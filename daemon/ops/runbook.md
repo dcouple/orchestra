@@ -132,9 +132,12 @@ In Linear, create `bloom-planner` and `bloom-implementer` separately. For each a
    or lost; this is an accepted degraded mode.
 2. Enable webhooks, select **Agent session events**, and use respectively
    `https://linear-agent.example.com/webhook/planner` or `/webhook/implementer`.
-   On bloom-implementer also enable the **Issues** category. If Linear requires a separate
-   webhook subscription, point it at the same implementer route with the same signing secret;
-   the daemon dispatches by payload `type`.
+   Enable the **Issues** category on **both** apps: each creates worktrees for every turn it
+   runs, so each needs the completed-state signal that drives cleanup. The category lives
+   under Data change events in the app's own webhook settings, not the workspace-level
+   webhook list. Without it no `Issue` payload ever arrives, no cleanup job is ever
+   enqueued, and worktrees accumulate indefinitely. These two categories are the whole set
+   the daemon consumes; anything else only writes rows nothing reads.
 3. Record the client ID, client secret, and webhook signing secret directly in the host env
    file. Do not put credentials in shell history or the repository.
 
@@ -793,7 +796,10 @@ elicitation/human-input request, `/do` starts on `agents/<identifier>`, a PR is 
 the PR appears in session external URLs. Confirm the final `/do` text matches PR extraction.
 Move the issue to a workflow state whose stable type is `completed`; verify the Issues
 webhook arrives and both worktree and local branch disappear. Repeat with an uncommitted
-file and verify the worktree remains and a thought names its path. Confirm the full flow
+file and verify the worktree remains and a thought names its path. Repeat with a committed
+but unpushed change and verify the worktree is likewise retained: cleanup removes a
+worktree only when it is clean and holds no commits absent from origin, so `branch -D`
+can never discard unpushed work. Confirm the full flow
 under systemd hardening.
 
 ```bash
