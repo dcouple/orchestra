@@ -989,7 +989,7 @@ the host and the `linear-daemon` user and nothing else.
 
 | | Subagent Codex | Live Codex |
 | --- | --- | --- |
-| Binary | `/usr/local/bin/codex` (otel wrapper → pnpm global) | `/opt/codex-live/bin/codex` (pinned release tarball) |
+| Binary | `/usr/local/bin/codex` (otel wrapper → pnpm global) | `/opt/codex-live/bin/codex` → managed standalone in `~/.codex-live` |
 | Version | `CODEX_VERSION` in `provision.sh` | `CODEX_LIVE_VERSION` in `provision.sh` |
 | Codex home | `~/.codex` | `~/.codex-live` |
 | Owner of `config.toml` | `codex-provider-gate.sh` | `codex-live-setup.sh` |
@@ -1037,6 +1037,26 @@ sudo daemonctl live status
 Use the ChatGPT account whose plan carries Voice. This login is written only
 to `~/.codex-live/auth.json` and has no bearing on the CLIProxyAPI pool the
 subagent Codex draws from.
+
+**The account must have MFA enabled.** Relay enrolment is gated on it, and an
+account without it fails closed with a message that names neither MFA nor the
+account:
+
+```
+Error: Remote control is enabled on <host> but the connection is errored.
+```
+
+The cause is only visible in the app-server log, which is where to look first
+for any enrolment failure:
+
+```bash
+sudo grep -i 'remote control' \
+  /var/lib/linear-agent-daemon/.codex-live/app-server-daemon/app-server.stderr.log | tail
+# ... enrollment failed ...: HTTP 403 Forbidden, body: {"detail":"Multi-factor authentication required"}
+```
+
+Enable MFA on the ChatGPT account, re-run `codex login --device-auth` so the
+new session carries it, then start the unit.
 
 ### Attaching a phone
 

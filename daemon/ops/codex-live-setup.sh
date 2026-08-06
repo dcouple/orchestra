@@ -74,10 +74,12 @@ install -d -m 0750 "${LIVE_WORKSPACE}"
 # survive. auth.json sits alongside it and is never touched — the operator's
 # one-time `codex login --device-auth` is what puts it there.
 config_tmp="${LIVE_CODEX_HOME}/config.toml.tmp.$$"
+# Unquoted heredoc: ${...} interpolation is wanted, but that also makes
+# backticks command substitution, so no prose below may use them.
 cat > "${config_tmp}" <<EOF
 ${MARKER}
 # Every bare key must stay above the first table header — TOML assigns them to
-# the preceding table otherwise, and `[features]` only accepts booleans.
+# the preceding table otherwise, and the features table only accepts booleans.
 model = "${LIVE_MODEL}"
 
 # A live session is spoken to, not watched. Approvals surface in whichever
