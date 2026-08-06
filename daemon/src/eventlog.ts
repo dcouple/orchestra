@@ -840,6 +840,10 @@ export class EventLog {
     const deliveryId =
       event.deliveryId?.trim() ||
       `sha256:${createHash("sha256").update(event.rawBody).digest("hex")}`;
+    const storedBody =
+      event.type === "Issue" && event.stateType !== "completed"
+        ? Buffer.alloc(0)
+        : event.rawBody;
     const run = this.db.transaction(() => {
       const result = this.db
         .prepare(
@@ -860,7 +864,7 @@ export class EventLog {
           event.stateType ?? null,
           event.signal ?? null,
           event.receivedAt,
-          event.rawBody,
+          storedBody,
         );
       if (result.changes === 0) return { inserted: false } as const;
       const eventId = Number(result.lastInsertRowid);
@@ -1945,15 +1949,6 @@ export class EventLog {
       WHERE status='pending' AND next_attempt_at<=? ORDER BY id`,
       )
       .all(now) as ExternalUrlRow[];
-  }
-  hasExternalUrl(linearSessionId: string): boolean {
-    return (
-      this.db
-        .prepare(
-          "SELECT 1 FROM session_external_urls WHERE linear_session_id=? LIMIT 1",
-        )
-        .get(linearSessionId) !== undefined
-    );
   }
   markExternalUrlPosted(id: number): void {
     this.db
