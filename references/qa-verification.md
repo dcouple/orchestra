@@ -124,6 +124,33 @@ when a band becomes a finding, cite its timestamp range in the report.
 
 ## Cleanup
 
+Kill the listeners, processes, and temp state the run started; leftovers
+poison the next run's evidence.
+
+### Product state the drive created
+
+The run's marker also names real things that now exist: accounts,
+organizations, records, subscriptions, and the analytics events they emitted.
+Disclosure is not disposal — a report that says an account was created and
+leaves it there has done half the job, and the leftovers land in someone's
+dashboard as real signups and real revenue.
+
+Delete in-run only when all three hold:
+
+- the surface is **non-production** — and that is established from the
+  environment the drive actually reached (the ingestion target, the key, the
+  project id), never assumed from the stack you launched;
+- the deletion is **scoped by this run's unique marker**, not a broader query;
+- the drive **already holds** the credentials that perform it.
+
+If any condition fails or is uncertain, do not delete — **register** it: name
+the marker, the system, and what remains, precisely enough that a repo-side
+reaper can find it by marker alone. Production analytics and live-mode billing
+are register-only by default; a QA drive never issues deletes against them.
+
+Either way the disposition is reported — see `verification-result.md`
+§ Cleanup disposition. "Nothing created" is a disposition too.
+
 ### Playwright attempt finalization
 
 Daemon browser attempts have sibling `state/` and `evidence/` directories.
@@ -133,6 +160,3 @@ only after trace and video stop successfully, media is validated, and a final
 that same run and attempt. Missing manifests, partial manifests, paths outside
 the current evidence directory, and files from earlier attempts are diagnostic
 only and cannot prove acceptance criteria or be published as QA evidence.
-
-Kill the listeners, processes, and temp state the run started; leftovers
-poison the next run's evidence.

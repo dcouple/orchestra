@@ -43,6 +43,17 @@ video rows so the caller knows they host as links/attachments, not inline
 embeds. A browser-required criterion with no completed current-attempt
 manifest fails; headless operation is not a reason to omit browser captures.
 
+## Cleanup disposition
+
+| Created | Marker | System | Disposition |
+|---------|--------|--------|-------------|
+| <account / org / record> | <run marker> | <staging app / analytics / billing> | deleted · registered — <why not safe> · none created |
+
+Required — never omitted. A run that created nothing says `none created`.
+Registered rows are the reaper's input: name what remains precisely enough to
+find it by marker alone. See `qa-verification.md` § Cleanup for which surfaces
+may be deleted in-run and which are register-only.
+
 ## Anomalies   (omit section if none)
 
 A Pass without quoted evidence is not a Pass. Do not report success until
@@ -57,6 +68,10 @@ partial.
 
 ## Reproduction steps
 <numbered, from a known state — the shortest deterministic path you found>
+
+## Cleanup disposition
+<same table and rule as verify mode — reproducing drives the app and creates
+state identically>
 
 ## Observed behavior
 <what happens, stated as observation, with quoted evidence>

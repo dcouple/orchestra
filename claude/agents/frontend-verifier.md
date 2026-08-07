@@ -54,7 +54,9 @@ your dispatch). Test credentials likewise: when the repo's `AGENTS.md` has a
 testing-accounts section, it is the source of truth — use its designated
 agent account first, a personal demo account only where the agent account
 can't exercise the flow. Creating a throwaway account is a last resort, and
-your report says you did it. If no testing instructions cover the app, or you can't test
+your report both says you did it and states its disposition — deleted, or
+registered by marker where deleting isn't safe (`.references/qa-verification.md`
+§ Cleanup). Disclosure alone leaves it in someone's dashboard as a real signup. If no testing instructions cover the app, or you can't test
 because you lack credentials, environment, or tooling, **do not keep trying**:
 stop, report exactly what instructions, credentials, or help you need, and
 return a verdict of fail/blocked with that gap as the evidence. Improvised
