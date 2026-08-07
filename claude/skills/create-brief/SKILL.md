@@ -152,6 +152,18 @@ honestly), and the resolution path; for multi-phase work, the Approach
 section carries the binding phase timeline and per-phase blocks. Fold
 corrections in as in-place edits.
 
+**User-facing items: reconnoitre before you draw.** Mockups are built from
+the app's real design language, never invented. Before authoring section 08,
+dispatch in parallel a `frontend-verifier` to screenshot the touched screens
+and the app shell into `./tmp/<id>/refs/shots/`, and a `code-researcher` to
+quote the design tokens and control CSS. A change spanning more than about
+two screens, or introducing a flow, then gets a **clickable prototype** —
+linked pages under `./tmp/<id>/mockups/` on a shared stylesheet, walkable end
+to end, including the error and blocked states. Full contract in
+`.references/html-brief.md` · UI mockups. Serve the item directory over
+`127.0.0.1` to open it: `file://` is commonly blocked for browser-driving
+extensions.
+
 Bug specifics: the Verification section's bug form — repro steps as AC1
 (flipping from fail to pass) plus prevention criteria — is specified in
 `.references/html-brief.md` (section map, row 07). Raw traces, logs, and

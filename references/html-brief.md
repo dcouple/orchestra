@@ -64,8 +64,9 @@ able to **judge** the change before it runs.
 - **Zone 0 — teach it.** Add a Concepts panel (the invariants at stake, why
   the chosen mechanism is safe, what breaks if it isn't); the opening diagram
   shows the failure path being prevented; mockups are mandatory and open (not
-  collapsed) when UI is touched; name what is irreversible and the rollback
-  story.
+  collapsed) when UI is touched, and a flow that spans screens gets the
+  clickable prototype rather than static pairs; name what is irreversible and
+  the rollback story.
 - **Zone 1 — full standard.** Every applicable section at full depth.
 - **Zone 2 — standard.** The normal lean page.
 - **Zone 3 — minimal.** Masthead, one-line why, before/after, ACs, minimal
@@ -90,7 +91,7 @@ fixed; omit sections that don't apply and leave the gap.
 | 05 | Approach | always present — how we'll tackle this (see below); multi-phase items add the binding timeline + per-phase blocks | the suggested resolution path; a strip only when it genuinely has stages |
 | 06 | Scope | in / out-of-scope panels | business impact + severity; out-of-scope if any |
 | 07 | Verification | categorized checklist + flow→AC map (see below) | AC1 = the reproduction steps flipping to pass (steps listed here, deterministic enough to re-run) + prevention criteria (regression test / lint rule / invariant) |
-| 08 | Mockups | user-facing items — collapsed `details`, open at zone 0 | — |
+| 08 | Mockups | user-facing items — see below; a clickable prototype for multi-screen flows, a collapsed `.shots` pair otherwise (open at zone 0) | — |
 | 09 | Run config | zone panel — see below | same |
 | 10 | Justification | written by the Socratic gate: one line per surviving question (claim challenged — reason that held); on waiver, "Socratic gate waived by user." | same |
 | 11 | Open questions | `[NEEDS CLARIFICATION]` `.question` blocks — named, never papered over; each must end resolved or explicitly deferred by the user (see Rules); omit if none | same |
@@ -189,15 +190,82 @@ honest sentence deferring to `/do`'s plan stage is valid.
 
 ## UI mockups (user-facing items)
 
-Inside a collapsed `details` (open at zone 0): a `.shots` stack, one `.pair`
-per touched surface. "Before" is a screenshot of the real app; "after" is the
-proposed change rendered inside the real app when a UI harness can drive it,
-otherwise a schematic composed **from the template's `.mock` parts** — and
-the caption says which side is real. Low fidelity is fine; the bar is that
+Backend-only items state "no UI delta" in section 01 and omit the section.
+Everything else starts from the same rule: **never invent a visual
+language.** The app already has one, and a mockup drawn from imagination
+teaches the user about a product that doesn't exist.
+
+### Reconnaissance first — always, before drawing anything
+
+Two dispatches, run in parallel, before the first line of mockup markup:
+
+1. **`frontend-verifier` — capture the real screens.** Boot the app, log in
+   with the repo's testing account, and screenshot every surface the change
+   touches, plus the app shell (global nav/chrome) and one existing
+   multi-step flow if the item has a wizard. PNGs land in
+   `./tmp/<id>/refs/shots/`. Ask for the agent's read of the visual language
+   in words too — colors, type, spacing, control shapes, how rows and
+   headers are laid out.
+2. **`code-researcher` — extract the design system.** The token
+   file(s), and the real CSS for buttons/inputs/selects/modals/tables:
+   actual hex values, font stacks, control heights, radii, spacing. Demand
+   **quoted values and real user-facing copy**, not descriptions. Also ask
+   for the structural markup of the touched screens and any existing step or
+   wizard chrome worth reusing.
+
+If the app can't be booted or reached, say so in the brief and fall back to
+code-derived styling — a mockup built only from tokens is still far better
+than one built from taste. Never present either shortfall as if it were a
+capture of the real thing.
+
+### Multi-screen flows — build a clickable prototype
+
+When the change spans **more than about two screens or introduces a flow**
+(a wizard, a new route, a redesigned journey), the mockup is a set of linked
+HTML pages under `./tmp/<id>/mockups/`, not a stack of static pairs:
+
+- One page per screen, named in flow order (`01-…`, `02-…`), plus an
+  `index.html` flow map that describes each page in a sentence and links it.
+- A **shared `mock.css`** built on the values the researcher quoted, with a
+  comment at the top naming its sources. Relative `<link>` is correct here;
+  these files travel together in the bundle.
+- Every page links to the next and back, so the user can walk the path
+  without touching the address bar. A persistent bottom bar with
+  position-in-flow, a link to the flow map, and prev/next keeps them
+  oriented.
+- **Make the interesting states reachable.** A prototype that only shows the
+  happy path hides exactly the decisions worth reviewing — drive the flow
+  into its error, empty, blocked, and mid-operation states, and make the
+  failure genuinely fire rather than describing it. If the flow has an
+  edit-after-the-fact path, that is a page too.
+- The flow map ends with **what to look for, and where the agent made a call
+  the user might disagree with** — the decisions the pictures encode that
+  nobody asked for. This is the part that earns the mockups their place.
+- **Fidelity gaps are stated, never papered over.** Licensed webfonts that
+  can't load offline, an interaction that can't be shown statically: name it
+  on the flow map.
+
+Link the prototype prominently from the brief's masthead and from section
+08, and keep section 08 itself short — a table mapping each page to what it
+shows and the ACs it demonstrates. The brief points at the prototype; it
+does not duplicate it.
+
+Opening it: `file://` URLs are commonly blocked for browser-driving
+extensions. Serving the item directory over `127.0.0.1` and handing the user
+a localhost URL works everywhere, and makes the brief's relative links to
+`mockups/` and `refs/` resolve too.
+
+### Single-surface changes — the `.shots` pair stays
+
+For a change confined to one or two surfaces, a clickable prototype is
+overkill. Use the collapsed `details` (open at zone 0): a `.shots` stack,
+one `.pair` per touched surface. "Before" is a screenshot of the real app;
+"after" is the proposed change rendered inside the real app when a UI
+harness can drive it, otherwise a schematic composed **from the template's
+`.mock` parts** — and the caption says which side is real. The bar is that
 the user clearly understands what's being built, not pixel accuracy. Never
 set a fixed height on a mock; one pair per row; inline images as `data:`
-URIs with raw PNGs kept in `refs/`. Backend-only items state "no UI delta"
-in section 01 and omit the section.
+URIs with raw PNGs kept in `refs/`.
 
 ## User journeys
 
