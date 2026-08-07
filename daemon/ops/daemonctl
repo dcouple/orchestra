@@ -49,8 +49,10 @@ PROVISION="${DAEMONCTL_PROVISION:-${SOURCE_CHECKOUT}/daemon/ops/provision.sh}"
 PROXY_ACCOUNTS="${DAEMONCTL_PROXY_ACCOUNTS:-/opt/linear-agent-daemon/ops/proxy-accounts.sh}"
 LIVE_SERVICE="${DAEMONCTL_LIVE_SERVICE:-codex-live.service}"
 LIVE_CODEX_HOME="${DAEMONCTL_LIVE_CODEX_HOME:-/var/lib/linear-agent-daemon/.codex-live}"
-# The live Codex, not /usr/local/bin/codex — that one is the subagent wrapper
-# on a different version pin.
+QUALIFIED_CODEX_VERSION_FILE="${DAEMONCTL_QUALIFIED_CODEX_VERSION_FILE:-/var/lib/linear-agent-daemon/.codex/qualified-codex-version}"
+# The managed install directly, bypassing the otel wrapper: this is for version
+# and status probes, which have no dispatch to instrument. One binary now serves
+# both the subagent and the live session.
 CODEX_BIN="${DAEMONCTL_CODEX_BIN:-/opt/codex-live/bin/codex}"
 JOURNALCTL="${JOURNALCTL:-journalctl}"
 MAX_ATTEMPTS="${DAEMONCTL_MAX_ATTEMPTS:-3}"
@@ -443,11 +445,19 @@ command_status() {
       && "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" merge-base --is-ancestor "${accepted}" "${checkout_commit}" 2>/dev/null; then accepted_to_checkout=1; fi
   if [[ "${checkout_commit}" =~ ^[0-9a-fA-F]{40}$ && "${remote_commit}" =~ ^[0-9a-fA-F]{40}$ ]] \
       && "${GIT_BIN}" -C "${SOURCE_CHECKOUT}" merge-base --is-ancestor "${checkout_commit}" "${remote_commit}" 2>/dev/null; then checkout_to_remote=1; fi
+  # Codex version drift. One managed install serves both the subagent and the
+  # live session, and it self-updates, so the version behind /do can move
+  # between provisions with nothing to announce it. Compare what is running
+  # against what codex-provider-gate.sh last qualified.
+  local codex_running codex_qualified
+  codex_running="$("${CODEX_BIN}" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  codex_qualified="$(cat "${QUALIFIED_CODEX_VERSION_FILE}" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
   local operation_status; operation_status="$(ops_cli status)"
-  python3 - "${operation_status}" "${accepted}" "${deployed}" "${checkout_state}" "${checkout_commit}" "${remote_commit}" "${refreshed}" "${accepted_to_checkout}" "${checkout_to_remote}" <<'PY'
+  python3 - "${operation_status}" "${accepted}" "${deployed}" "${checkout_state}" "${checkout_commit}" "${remote_commit}" "${refreshed}" "${accepted_to_checkout}" "${checkout_to_remote}" "${codex_running}" "${codex_qualified}" <<'PY'
 import json,sys
 status=json.loads(sys.argv[1])
-accepted,deployed,checkout_state,checkout,remote,refreshed,accepted_to_checkout,checkout_to_remote=sys.argv[2:]
+(accepted,deployed,checkout_state,checkout,remote,refreshed,accepted_to_checkout,
+ checkout_to_remote,codex_running,codex_qualified)=sys.argv[2:]
 valid=lambda value: len(value)==40 and all(c in "0123456789abcdefABCDEF" for c in value)
 pending=status.get("pending")
 if pending:
@@ -475,6 +485,21 @@ status["revision"]={
     "remoteTrackingRef": "refs/remotes/origin/HEAD",
     "refreshed": refreshed=="1",
     "reconciliation": reconciliation,
+}
+# drift is "the gate has not seen what is running", not "newer than qualified":
+# a rollback below the qualified version is equally unqualified.
+if not codex_qualified:
+    codex_state="never_qualified"
+elif not codex_running:
+    codex_state="unavailable"
+elif codex_running==codex_qualified:
+    codex_state="qualified"
+else:
+    codex_state="drifted"
+status["codex"]={
+    "runningVersion": codex_running or None,
+    "qualifiedVersion": codex_qualified or None,
+    "state": codex_state,
 }
 print(json.dumps(status,separators=(",",":")))
 PY

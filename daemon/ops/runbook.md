@@ -1028,12 +1028,37 @@ when a newer release is genuinely required; expect the running version to be
 above it.
 
 > **The consequence to accept.** Because the shared install self-updates, the
-> subagent Codex behind `/do` now floats too. There is no exact pin to qualify
+> subagent Codex behind `/do` floats too. There is no exact pin to qualify
 > against. `codex-provider-gate.sh` re-qualifies whatever version is current on
 > each provision — an after-the-fact check, not a gate on the upgrade itself, so
-> a bad release can reach `/do` between provisions. If a `/do` regression ever
-> correlates with a Codex release, `daemonctl live status` shows the running
-> version, and the floor is the lever for forcing a known-good one.
+> a bad release can reach `/do` between provisions.
+
+### Codex version drift
+
+Prevention is not available against a self-updater, so detection stands in for
+it. On PASS the gate records the version it actually qualified to
+`~/.codex/qualified-codex-version`, and `daemonctl status` compares that with
+what is running, under `codex`:
+
+```json
+"codex": { "runningVersion": "0.147.0", "qualifiedVersion": "0.147.0", "state": "qualified" }
+```
+
+| state | meaning |
+| --- | --- |
+| `qualified` | running version is the one the gate last passed |
+| `drifted` | it self-updated since — `/do` is on an unqualified release |
+| `never_qualified` | no marker; the gate has not passed since this was added |
+| `unavailable` | the binary did not report a version |
+
+`drifted` is not an incident by itself; it is the expected state after any
+self-update and clears at the next `daemonctl reload`, which re-runs the gate.
+It matters when a `/do` regression needs explaining: it names the release to
+suspect. Note drift is "the gate has not seen this version", not "newer than
+qualified" — a rollback below the qualified version is equally unqualified.
+
+To force a known-good version, raise or lower `CODEX_LIVE_MIN_VERSION` and
+reload; the floor is the only lever, since the install cannot be pinned.
 
 **Nothing about live voice may abort a daemon deploy.** Its install, its unit
 enable, and its start are all warn-on-failure. If the live harness is broken,
