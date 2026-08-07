@@ -375,9 +375,14 @@ setInterval(() => {}, 1_000);
     expect(recursive.stderr).toContain("real binary unavailable");
   });
 
-  it("provisioning pins the real binary and installs the wrapper byte-identically on rerun", () => {
+  it("provisioning removes the second codex and installs the wrapper byte-identically on rerun", () => {
     const source = readFileSync(resolve("ops/provision.sh"), "utf8");
-    expect(source).toContain("/opt/pnpm/bin/codex --version");
+    // One Codex binary on the host: the pnpm global is removed, and the wrapper
+    // defers to the single managed standalone install.
+    expect(source).toContain("pnpm remove --global @openai/codex");
+    expect(
+      readFileSync(resolve("ops/codex-otel-wrapper.sh"), "utf8"),
+    ).toContain("ORCHESTRA_CODEX_REAL_BIN:-/opt/codex-live/bin/codex");
     expect(source).toContain(
       'install -m 0755 "${SOURCE_DIR}/ops/codex-otel-wrapper.sh" /usr/local/bin/codex',
     );

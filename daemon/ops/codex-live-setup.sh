@@ -14,8 +14,8 @@ subagent:
 
                     Subagent Codex              Live Codex
   binary            /usr/local/bin/codex        /opt/codex-live/bin/codex
-                    (otel wrapper -> pnpm)      (pinned release tarball)
-  version           0.144.6 (exact pin)         >= floor; self-updates
+                    (otel wrapper) ------- same managed install -------^
+  version           shared; >= floor, self-updates on this host
   Codex home        ~/.codex                    ~/.codex-live
   config owner      codex-provider-gate.sh      this script
   auth              CLIProxyAPI OAuth pool      direct ChatGPT (auth.json)
