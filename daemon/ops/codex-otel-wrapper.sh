@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-real_codex=${ORCHESTRA_CODEX_REAL_BIN:-/opt/pnpm/bin/codex}
+# The single managed standalone install on this host. It lives under the live
+# session's CODEX_HOME because `remote-control` requires it there; the path is
+# an artifact of that requirement, not a sign this wrapper is live-specific.
+# Only the binary is shared — this wrapper never sets CODEX_HOME, so subagent
+# dispatches still resolve their own home, credentials, and config.
+real_codex=${ORCHESTRA_CODEX_REAL_BIN:-/opt/codex-live/bin/codex}
 wrapper_path=$(realpath "$0" 2>/dev/null || true)
 real_path=$(realpath "$real_codex" 2>/dev/null || true)
 if [[ ! -x "$real_codex" || -z "$real_path" || "$real_path" == "$wrapper_path" ]]; then

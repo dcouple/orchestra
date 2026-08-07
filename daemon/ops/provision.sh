@@ -231,12 +231,24 @@ if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 11.* ]]; then
   chmod 0755 /usr/local/bin/pnpm
 fi
 
-# Subagent Codex. Pinned independently of the live-session Codex below: the
-# two never share a binary, a version, or a home.
-CODEX_VERSION="0.144.6"
-if [[ ! -x /opt/pnpm/bin/codex ]] || [[ "$(/opt/pnpm/bin/codex --version)" != *"${CODEX_VERSION}"* ]]; then
+# One Codex binary on this host, shared by both consumers. The install itself
+# is done by the live block below, because `remote-control` requires the
+# managed standalone install and looks for it under the runtime CODEX_HOME.
+# The subagent reaches it through the otel wrapper; what stays separate is the
+# part that matters — home, credentials, config, instructions, lifecycle.
+#
+# Consequence, stated plainly: the managed app-server self-updates and cannot
+# be pinned, so the subagent's Codex version now floats with it. There is no
+# exact pin to qualify against; codex-provider-gate.sh re-qualifies whatever
+# version is current on each provision, which is an after-the-fact check rather
+# than a gate on the upgrade itself.
+#
+# The previous pnpm-global @openai/codex is removed rather than left in place:
+# a second codex binary on this host is what produced the ~/.local/bin
+# shadowing class of bug in the first place.
+if [[ -x /opt/pnpm/bin/codex ]]; then
   env PNPM_HOME=/opt/pnpm PATH="/opt/pnpm/bin:${PATH}" \
-    pnpm add --global "@openai/codex@${CODEX_VERSION}"
+    pnpm remove --global @openai/codex || true
 fi
 
 PLAYWRIGHT_MCP_VERSION="$(node -e 'const p=require(process.argv[1]); const v=p.dependencies?.["@playwright/mcp"]; if(!/^\d+\.\d+\.\d+$/.test(v||"")) process.exit(1); process.stdout.write(v)' "${SOURCE_DIR}/package.json")" \

@@ -257,7 +257,8 @@ on native leaf generations. A degraded root explicitly sets both completeness fl
 
 ### Codex telemetry
 
-Provisioning pins the real Codex binary at `/opt/pnpm/bin/codex` and idempotently installs
+Provisioning points the wrapper at the single managed Codex binary
+(`/opt/codex-live/bin/codex`) and idempotently installs
 the authoritative `/usr/local/bin/codex` wrapper. The provider gate continues to own Codex
 routing configuration; provisioning does not write a static `[otel]` section. For a valid
 daemon dispatch the wrapper validates the owner/report/capability, mints the dispatch span
@@ -307,7 +308,7 @@ sudo install -o linear-daemon -g linear-daemon -m 0600 \
   /var/lib/linear-agent-daemon/events.db.pre-phase4
 sudo DAEMON_HOST=linear-agent.example.com daemon/ops/provision.sh daemon
 sudo -u linear-daemon -H /var/lib/linear-agent-daemon/.local/bin/claude --version
-sudo -u linear-daemon -H /opt/pnpm/bin/codex --version
+sudo -u linear-daemon -H /opt/codex-live/bin/codex --version
 sudo systemctl restart linear-agent-daemon
 sudo systemctl is-active linear-agent-daemon
 ```
@@ -993,8 +994,9 @@ the host and the `linear-daemon` user and nothing else.
 
 | | Subagent Codex | Live Codex |
 | --- | --- | --- |
-| Binary | `/usr/local/bin/codex` (otel wrapper → pnpm global) | `/opt/codex-live/bin/codex` → managed standalone in `~/.codex-live` |
-| Version | `CODEX_VERSION` — an exact pin | `CODEX_LIVE_MIN_VERSION` — a floor; it self-updates above this |
+| Binary | `/usr/local/bin/codex` (otel wrapper) | `/opt/codex-live/bin/codex` |
+| | *both resolve to the one managed standalone install* ||
+| Version | *shared* — `CODEX_LIVE_MIN_VERSION` is a floor; it self-updates above this ||
 | Codex home | `~/.codex` | `~/.codex-live` |
 | Owner of `config.toml` | `codex-provider-gate.sh` | `codex-live-setup.sh` |
 | Auth | CLIProxyAPI OAuth pool | direct ChatGPT (`auth.json`) |
@@ -1007,21 +1009,31 @@ credentials, which CLIProxyAPI does not front — it proxies the Responses
 protocol only. And the roles differ: subagent Codex implements inside a work
 item, live Codex is spoken to about operating the host.
 
-The versions move independently on purpose. The subagent stack is qualified
-against its exact pin by `codex-provider-gate.sh`; a live-Codex change must
-never drag `/do` onto an unqualified release, or the reverse. Neither home's
-config survives the other's rewrite, so a failed gate removes its own config
-without taking voice down.
+**One Codex binary, one version, host-wide.** Both consumers resolve to the
+same managed standalone install. Two binaries on one host is what produced the
+`~/.local/bin` shadowing bug, and running different versions bought nothing
+that the separate *homes* do not already provide. What stays separate is what
+matters: credentials, config, instructions, workspace, lifecycle. Neither
+home's config survives the other's rewrite, so a failed gate removes its own
+config without taking voice down.
 
-**The live version is a floor, not a pin, and cannot be one.** The managed
-app-server self-updates — that is the same mechanism `remote-control` requires,
-so it is not optional. `CODEX_LIVE_MIN_VERSION` therefore governs only the
-initial install: provisioning installs when live Codex is absent or *older*
-than the floor, and otherwise leaves a self-updated install alone. Demanding an
-exact match reinstalls on every provision — a ~100MB download that downgrades a
-possibly-live session mid-call and is undone by the next self-update. Raise the
-floor when a newer release is genuinely required; expect the running version to
-be above it. Drift is contained to the live harness and cannot reach `/do`.
+**The version is a floor, not a pin, and cannot be one.** The managed
+app-server self-updates — the same mechanism `remote-control` requires, so it
+is not optional. `CODEX_LIVE_MIN_VERSION` governs only the initial install:
+provisioning installs when Codex is absent or *older* than the floor, and
+otherwise leaves a self-updated install alone. Demanding an exact match
+reinstalls on every provision — a ~100MB download that downgrades a possibly
+live session mid-call and is undone by the next self-update. Raise the floor
+when a newer release is genuinely required; expect the running version to be
+above it.
+
+> **The consequence to accept.** Because the shared install self-updates, the
+> subagent Codex behind `/do` now floats too. There is no exact pin to qualify
+> against. `codex-provider-gate.sh` re-qualifies whatever version is current on
+> each provision — an after-the-fact check, not a gate on the upgrade itself, so
+> a bad release can reach `/do` between provisions. If a `/do` regression ever
+> correlates with a Codex release, `daemonctl live status` shows the running
+> version, and the floor is the lever for forcing a known-good one.
 
 **Nothing about live voice may abort a daemon deploy.** Its install, its unit
 enable, and its start are all warn-on-failure. If the live harness is broken,
