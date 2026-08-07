@@ -225,4 +225,18 @@ else
   install -d -m 0700 "$(dirname "${TARGET_CONFIG}")"
   install -m 0600 "${candidate}" "${TARGET_CONFIG}"
 fi
-echo "PASS: standalone Codex provider installed"
+
+# Record which Codex version this run actually qualified. The single managed
+# install self-updates and cannot be pinned, so there is no static version to
+# compare against — without this marker a self-update between provisions moves
+# the subagent onto an unqualified release silently. `daemonctl status` reads
+# it and reports drift. Written only on PASS, so it always names a version that
+# passed this gate rather than merely the one that happens to be installed.
+QUALIFIED_VERSION="$("${CODEX_BIN}" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+if [[ -n "${QUALIFIED_VERSION}" ]]; then
+  qualified_marker="$(dirname "${TARGET_CONFIG}")/qualified-codex-version"
+  printf '%s\n' "${QUALIFIED_VERSION}" > "${qualified_marker}.tmp.$$"
+  chmod 0600 "${qualified_marker}.tmp.$$"
+  mv "${qualified_marker}.tmp.$$" "${qualified_marker}"
+fi
+echo "PASS: standalone Codex provider installed${QUALIFIED_VERSION:+ (qualified codex ${QUALIFIED_VERSION})}"
