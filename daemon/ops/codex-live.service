@@ -26,8 +26,26 @@ Environment=PATH=/opt/codex-live/bin:/var/lib/linear-agent-daemon/.local/bin:/us
 # PATH ordering in linear-agent-daemon.service: this stops the shadowing
 # launcher being created, that stops it mattering if one ever is.
 Environment=CODEX_INSTALL_DIR=/opt/codex-live/bin
-ExecStart=/opt/codex-live/bin/codex remote-control start
+# Clear state left by an abrupt teardown before starting. The managed daemon
+# records its pid as JSON and refuses to start while that pid still exists —
+# and a zombie counts as existing, so a reaped-but-unwaited app-server wedges
+# every subsequent start with "app server did not become ready" while the
+# control socket is gone. Reap what we can, then drop the stale records.
+ExecStartPre=-/usr/bin/env sh -c 'p=$(sed -n "s/.*\\"pid\\":\\([0-9]*\\).*/\\1/p" "$CODEX_HOME/app-server-daemon/app-server.pid" 2>/dev/null); \
+  if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null || [ "$(ps -o stat= -p "${p:-0}" 2>/dev/null | cut -c1)" = "Z" ]; then \
+    rm -f "$CODEX_HOME/app-server-daemon/app-server.pid" \
+          "$CODEX_HOME/app-server-control/app-server-control.sock"; \
+  fi'
+# Two steps rather than `remote-control start`, which is both at once: when
+# enrolment fails this distinguishes "app-server did not come up" from "the
+# relay refused us", which are different problems with different fixes.
+ExecStart=/opt/codex-live/bin/codex app-server daemon start
+ExecStart=/opt/codex-live/bin/codex app-server daemon enable-remote-control
 ExecStop=/opt/codex-live/bin/codex app-server daemon stop
+# The app-server manages its own lifetime and its own updater child. Letting
+# systemd SIGKILL the cgroup on stop is what orphaned the updater loop and left
+# a zombie behind it; ExecStop already asks it to shut down cleanly.
+KillMode=process
 # A self-update stops the app-server and can leave the control socket missing,
 # which fails the next start. Retry rather than staying dead until someone
 # notices the voice session is gone.
