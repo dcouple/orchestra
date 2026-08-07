@@ -152,17 +152,30 @@ honestly), and the resolution path; for multi-phase work, the Approach
 section carries the binding phase timeline and per-phase blocks. Fold
 corrections in as in-place edits.
 
-**User-facing items: reconnoitre before you draw.** Mockups are built from
-the app's real design language, never invented. Before authoring section 08,
-dispatch in parallel a `frontend-verifier` to screenshot the touched screens
-and the app shell into `./tmp/<id>/refs/shots/`, and a `code-researcher` to
-quote the design tokens and control CSS. A change spanning more than about
-two screens, or introducing a flow, then gets a **clickable prototype** —
-linked pages under `./tmp/<id>/mockups/` on a shared stylesheet, walkable end
-to end, including the error and blocked states. Full contract in
-`.references/html-brief.md` · UI mockups. Serve the item directory over
-`127.0.0.1` to open it: `file://` is commonly blocked for browser-driving
-extensions.
+**User-facing items: draw fast, reconnoitre in the background.** Mockups are
+built from the app's real design language, never invented — but the brief
+must not wait on a browser. At section-08 time, do two things at once:
+
+1. **Inline, now:** quote the design tokens and control CSS yourself — a few
+   greps in this thread (token files; button/input/modal/table styles; real
+   user-facing copy). No `code-researcher` dispatch — it's a round-trip for
+   work this thread does in seconds. Draw the first-pass mockups immediately
+   from the template's `.mock` parts styled with those quoted values, and
+   caption them "first pass — real captures pending."
+2. **Background, meanwhile:** dispatch one `frontend-verifier` in the
+   background to screenshot the touched screens and the app shell into
+   `./tmp/<id>/refs/shots/`. Keep authoring and aligning — the user reads
+   Why/Direction/ACs while it runs. When the capture returns, upgrade
+   section 08 in place and re-upload the bundle if already published.
+
+A change spanning more than about two screens, or introducing a flow, still
+gets a **clickable prototype** — linked pages under `./tmp/<id>/mockups/` on
+a shared stylesheet, walkable end to end, including the error and blocked
+states — which may likewise start first-pass and be upgraded by the same
+background capture. Zone 0 is the exception: the upgrade lands before the
+brief goes `ready`. Full contract in `.references/html-brief.md` · UI
+mockups. Serve the item directory over `127.0.0.1` to open a prototype:
+`file://` is commonly blocked for browser-driving extensions.
 
 Bug specifics: the Verification section's bug form — repro steps as AC1
 (flipping from fail to pass) plus prevention criteria — is specified in

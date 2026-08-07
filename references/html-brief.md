@@ -195,28 +195,42 @@ Everything else starts from the same rule: **never invent a visual
 language.** The app already has one, and a mockup drawn from imagination
 teaches the user about a product that doesn't exist.
 
-### Reconnaissance first — always, before drawing anything
+### Reconnaissance — inline tokens now, screenshots in the background
 
-Two dispatches, run in parallel, before the first line of mockup markup:
+Reconnaissance precedes *fidelity*, never *drafting*: the brief must not
+wait minutes on a browser before the user can start reading. Two lanes, and
+only one of them is a dispatch:
 
-1. **`frontend-verifier` — capture the real screens.** Boot the app, log in
-   with the repo's testing account, and screenshot every surface the change
-   touches, plus the app shell (global nav/chrome) and one existing
-   multi-step flow if the item has a wizard. PNGs land in
-   `./tmp/<id>/refs/shots/`. Ask for the agent's read of the visual language
-   in words too — colors, type, spacing, control shapes, how rows and
-   headers are laid out.
-2. **`code-researcher` — extract the design system.** The token
-   file(s), and the real CSS for buttons/inputs/selects/modals/tables:
-   actual hex values, font stacks, control heights, radii, spacing. Demand
-   **quoted values and real user-facing copy**, not descriptions. Also ask
-   for the structural markup of the touched screens and any existing step or
-   wizard chrome worth reusing.
+1. **Design-system extraction is inline work, not a dispatch.** The
+   authoring thread greps the token file(s) and the real CSS for
+   buttons/inputs/selects/modals/tables itself — actual hex values, font
+   stacks, control heights, radii, spacing — plus the structural markup of
+   the touched screens, any step/wizard chrome worth reusing, and real
+   user-facing copy. **Quoted values, not descriptions.** This is a few
+   tool calls; a `code-researcher` dispatch here is a round-trip that buys
+   nothing.
+2. **Screen capture is one `frontend-verifier` dispatch, run in the
+   background.** Boot the app, log in with the repo's testing account, and
+   screenshot every surface the change touches, plus the app shell (global
+   nav/chrome) and one existing multi-step flow if the item has a wizard,
+   into `./tmp/<id>/refs/shots/` — with the agent's read of the visual
+   language in words (colors, type, spacing, control shapes, how rows and
+   headers are laid out). Dispatch it before drawing, then keep authoring
+   while it runs.
 
-If the app can't be booted or reached, say so in the brief and fall back to
-code-derived styling — a mockup built only from tokens is still far better
-than one built from taste. Never present either shortfall as if it were a
-capture of the real thing.
+**Two-pass fidelity.** The first pass — `.mock` parts (or prototype pages)
+styled from the inline-quoted values — ships with the draft brief so
+alignment starts immediately; captions say "first pass — real captures
+pending." When the background capture returns, upgrade the mockups in
+place ("before" becomes the real screenshot, "after" is re-rendered against
+it) and re-upload the bundle if the item is already published. Zone 0 is
+the exception: the upgrade lands before `status: ready` — everywhere else a
+named fidelity gap may ride through publish.
+
+If the app can't be booted or reached, say so in the brief and keep the
+token-derived styling — a mockup built from quoted values is still far
+better than one built from taste. Never present either shortfall as if it
+were a capture of the real thing.
 
 ### Multi-screen flows — build a clickable prototype
 
@@ -226,7 +240,7 @@ HTML pages under `./tmp/<id>/mockups/`, not a stack of static pairs:
 
 - One page per screen, named in flow order (`01-…`, `02-…`), plus an
   `index.html` flow map that describes each page in a sentence and links it.
-- A **shared `mock.css`** built on the values the researcher quoted, with a
+- A **shared `mock.css`** built on the inline-quoted values, with a
   comment at the top naming its sources. Relative `<link>` is correct here;
   these files travel together in the bundle.
 - Every page links to the next and back, so the user can walk the path
