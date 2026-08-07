@@ -994,7 +994,7 @@ the host and the `linear-daemon` user and nothing else.
 | | Subagent Codex | Live Codex |
 | --- | --- | --- |
 | Binary | `/usr/local/bin/codex` (otel wrapper → pnpm global) | `/opt/codex-live/bin/codex` → managed standalone in `~/.codex-live` |
-| Version | `CODEX_VERSION` in `provision.sh` | `CODEX_LIVE_VERSION` in `provision.sh` |
+| Version | `CODEX_VERSION` — an exact pin | `CODEX_LIVE_MIN_VERSION` — a floor; it self-updates above this |
 | Codex home | `~/.codex` | `~/.codex-live` |
 | Owner of `config.toml` | `codex-provider-gate.sh` | `codex-live-setup.sh` |
 | Auth | CLIProxyAPI OAuth pool | direct ChatGPT (`auth.json`) |
@@ -1007,11 +1007,25 @@ credentials, which CLIProxyAPI does not front — it proxies the Responses
 protocol only. And the roles differ: subagent Codex implements inside a work
 item, live Codex is spoken to about operating the host.
 
-The version pins move independently on purpose. The subagent stack is
-qualified against its pin by `codex-provider-gate.sh`; bumping live Codex for
-a realtime fix must never drag `/do` onto an unqualified release, or the
-reverse. Neither home's config survives the other's rewrite, so a failed gate
-removes its own config without taking voice down.
+The versions move independently on purpose. The subagent stack is qualified
+against its exact pin by `codex-provider-gate.sh`; a live-Codex change must
+never drag `/do` onto an unqualified release, or the reverse. Neither home's
+config survives the other's rewrite, so a failed gate removes its own config
+without taking voice down.
+
+**The live version is a floor, not a pin, and cannot be one.** The managed
+app-server self-updates — that is the same mechanism `remote-control` requires,
+so it is not optional. `CODEX_LIVE_MIN_VERSION` therefore governs only the
+initial install: provisioning installs when live Codex is absent or *older*
+than the floor, and otherwise leaves a self-updated install alone. Demanding an
+exact match reinstalls on every provision — a ~100MB download that downgrades a
+possibly-live session mid-call and is undone by the next self-update. Raise the
+floor when a newer release is genuinely required; expect the running version to
+be above it. Drift is contained to the live harness and cannot reach `/do`.
+
+**Nothing about live voice may abort a daemon deploy.** Its install, its unit
+enable, and its start are all warn-on-failure. If the live harness is broken,
+`daemonctl reload` still deploys the daemon and says so on stderr.
 
 **The live agent has its own role.** `daemon/ops/codex-live-AGENTS.md` is
 installed as the live home's global `AGENTS.md`: answer aloud rather than in

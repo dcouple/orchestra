@@ -269,16 +269,29 @@ install -m 0755 "${SOURCE_DIR}/ops/codex-otel-wrapper.sh" /usr/local/bin/codex
 #     Non-interactive declines every prompt.
 # It also appends a PATH line to the daemon user's .profile; that is stripped
 # below, for the same shadowing reason.
-CODEX_LIVE_VERSION="0.145.0"
+#
+# A FLOOR, not a pin. The managed app-server self-updates, by design and
+# unavoidably — that is the same mechanism `remote-control` requires. Demanding
+# an exact match therefore reinstalls on every single provision: it downloads
+# ~100MB, downgrades a possibly-live session mid-call, and is immediately undone
+# by the next self-update. Install only when live Codex is missing or older than
+# this floor, and otherwise leave a self-updated install alone. Raise the floor
+# when a newer release is actually required.
+CODEX_LIVE_MIN_VERSION="0.145.0"
 CODEX_LIVE_BIN=/opt/codex-live/bin/codex
 CODEX_LIVE_HOME=/var/lib/linear-agent-daemon/.codex-live
 install -d -o linear-daemon -g linear-daemon -m 0755 /opt/codex-live /opt/codex-live/bin
 install -d -o linear-daemon -g linear-daemon -m 0700 "${CODEX_LIVE_HOME}"
 codex_live_installed_version() {
   runuser -u linear-daemon -- env HOME=/var/lib/linear-agent-daemon \
-    CODEX_HOME="${CODEX_LIVE_HOME}" "${CODEX_LIVE_BIN}" --version 2>/dev/null || true
+    CODEX_HOME="${CODEX_LIVE_HOME}" "${CODEX_LIVE_BIN}" --version 2>/dev/null \
+    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
 }
-if [[ "$(codex_live_installed_version)" != *"${CODEX_LIVE_VERSION}"* ]]; then
+# $1 >= $2, semver-aware; equal versions satisfy it.
+codex_live_version_at_least() {
+  [[ -n "$1" ]] && [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" == "$2" ]]
+}
+if ! codex_live_version_at_least "$(codex_live_installed_version)" "${CODEX_LIVE_MIN_VERSION}"; then
   tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
   curl -fsSL https://chatgpt.com/codex/install.sh -o "${tmp}/codex-install.sh"
   chmod 0755 "${tmp}" "${tmp}/codex-install.sh"
@@ -290,7 +303,7 @@ if [[ "$(codex_live_installed_version)" != *"${CODEX_LIVE_VERSION}"* ]]; then
       CODEX_HOME="${CODEX_LIVE_HOME}" \
       CODEX_INSTALL_DIR=/opt/codex-live/bin \
       CODEX_NON_INTERACTIVE=1 \
-      sh "${tmp}/codex-install.sh" --release "${CODEX_LIVE_VERSION}" )
+      sh "${tmp}/codex-install.sh" --release "${CODEX_LIVE_MIN_VERSION}" )
   rm -rf "${tmp}"; trap - EXIT
 fi
 # Idempotent: removes the installer's PATH block whether it was just written or
@@ -306,8 +319,13 @@ stripped = re.sub(r"\n?# >>> Codex installer >>>.*?# <<< Codex installer <<<\n?"
 if stripped != original:
     open(path, "w").write(stripped)
 PY
-[[ "$(codex_live_installed_version)" == *"${CODEX_LIVE_VERSION}"* ]] \
-  || { echo "live Codex does not report ${CODEX_LIVE_VERSION}" >&2; exit 1; }
+# Warn, never abort. Live voice is auxiliary; a failed install of it must not
+# take a daemon deploy down with it — the same rule the enable block below
+# follows. A newer version than the floor is the expected steady state.
+CODEX_LIVE_ACTUAL_VERSION="$(codex_live_installed_version)"
+if ! codex_live_version_at_least "${CODEX_LIVE_ACTUAL_VERSION}" "${CODEX_LIVE_MIN_VERSION}"; then
+  echo "codex-live: live Codex is ${CODEX_LIVE_ACTUAL_VERSION:-absent}, below the ${CODEX_LIVE_MIN_VERSION} floor; voice may not work" >&2
+fi
 # The subagent Codex must remain reachable and unshadowed on the daemon's PATH.
 # The installer plants its own launcher in ~/.local/bin regardless of
 # CODEX_INSTALL_DIR, and ~/.local/bin precedes /usr/local/bin on the daemon's PATH,
