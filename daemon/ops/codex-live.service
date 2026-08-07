@@ -21,8 +21,18 @@ Environment=CODEX_HOME=/var/lib/linear-agent-daemon/.codex-live
 # telemetry and env stripping are meaningless for a live session and whose
 # pinned version differs.
 Environment=PATH=/opt/codex-live/bin:/var/lib/linear-agent-daemon/.local/bin:/usr/bin:/bin
+# The app-server self-updater inherits this and writes its launcher here rather
+# than the ~/.local/bin default, which sits on the daemon's PATH. Belt to the
+# PATH ordering in linear-agent-daemon.service: this stops the shadowing
+# launcher being created, that stops it mattering if one ever is.
+Environment=CODEX_INSTALL_DIR=/opt/codex-live/bin
 ExecStart=/opt/codex-live/bin/codex remote-control start
 ExecStop=/opt/codex-live/bin/codex app-server daemon stop
+# A self-update stops the app-server and can leave the control socket missing,
+# which fails the next start. Retry rather than staying dead until someone
+# notices the voice session is gone.
+Restart=on-failure
+RestartSec=30
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true

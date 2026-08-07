@@ -10,7 +10,13 @@ Group=linear-daemon
 WorkingDirectory=/opt/linear-agent-daemon
 EnvironmentFile=/etc/linear-agent-daemon/env
 Environment=HOME=/var/lib/linear-agent-daemon
-Environment=PATH=/var/lib/linear-agent-daemon/.local/bin:/usr/local/bin:/usr/bin:/bin
+# /usr/local/bin FIRST. The live-voice harness self-updates and its updater
+# plants a `codex` launcher in ~/.local/bin; with ~/.local/bin ahead, that
+# launcher shadowed the subagent otel wrapper and silently swapped the pinned
+# subagent Codex for the live one. Ordering is the durable fix — deleting the
+# launcher only holds until the next self-update. Nothing else collides:
+# claude, claudex, claudex-fable, uv, and uvx exist only in ~/.local/bin.
+Environment=PATH=/usr/local/bin:/var/lib/linear-agent-daemon/.local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/node /opt/linear-agent-daemon/dist/index.js
 Restart=always
 RestartSec=2
