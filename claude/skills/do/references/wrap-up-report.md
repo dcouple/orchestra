@@ -52,6 +52,7 @@ findings: {plan: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: 
            post_pr: {pass1: {codex: <n>, claude: <n>}, later: {codex: <n>, claude: <n>}}}
 verifiers: {frontend: <ran|skipped|disabled_by_item>, qa_pass: <ran|trimmed|skipped>}  # disabled_by_item: list each app-only AC as "unverified — frontend verifier disabled by the item" under Verification evidence
 qa_findings: <n>
+cleanup: {disposition: <clean | registered | none_created>, markers: [<run marker>], registered: <n>}  # product state the QA drive created; "registered" means recorded for a reaper, not yet purged
 wall_clock: <h:mm, run start to wrap-up — script the session transcript JSONL (first event → now), scanning every session of a resumed/compacted run; dispatch output mtimes / commit times / PR createdAt are the fallback only when no transcript is readable; never estimated from memory — the postmortem re-derives this and a mismatch is a finding>
 deviations: <none | "escalated <z>→<z-1>: reason">
 pr_size: {files_changed: <n>, additions: <n>, deletions: <n>}  # gh pr view --json changedFiles,additions,deletions
