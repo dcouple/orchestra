@@ -42,6 +42,7 @@ See the Layout table in `README.md`. Canonical sources live in
 
 `daemon/` is an orchestra-only service package. Neither sync script includes
 it, and daemon code must never be placed in a synced directory.
+`machines/` is likewise orchestra-only and never synced into consumer repos.
 
 This repo is also a consumer of itself: `.claude/skills`, `.claude/agents`,
 `.codex/skills`, and `.references` are **symlinks** to those canonical
