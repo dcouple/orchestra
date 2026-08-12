@@ -89,7 +89,19 @@ if [[ -f $HOME_DIR/.cloudflared/config.yml ]]; then
 else
   echo "skip-drift: cloudflared plist pending tunnel config" >&2
 fi
-check_artifact "$MACOS_DIR/sudoers-linearagent-services" /etc/sudoers.d/linearagent-services root:wheel 0440
+# The sudoers policy is 0440 root:wheel — unreadable to linearagent, so its
+# content cannot be compared here; existence/owner/mode drift is still
+# detectable, and content convergence is provision.sh's (root) job.
+check_artifact_metadata_only() {
+  local installed=$1 owner_group=$2 mode=$3
+  if [[ -L $installed || ! -e $installed ]] \
+    || [[ $(stat -f %Su:%Sg "$installed" 2>/dev/null || true) != "$owner_group" ]] \
+    || [[ $(stat -f %Lp "$installed" 2>/dev/null || true) != "${mode#0}" ]]; then
+    echo "needs-provision: $installed" >&2
+    drift=1
+  fi
+}
+check_artifact_metadata_only /etc/sudoers.d/linearagent-services root:wheel 0440
 check_artifact "$MACOS_DIR/run-daemon.sh" /usr/local/sbin/run-daemon.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cliproxyapi.sh" /usr/local/sbin/run-cliproxyapi.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cloudflared.sh" /usr/local/sbin/run-cloudflared.sh root:wheel 0755
