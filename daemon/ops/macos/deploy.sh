@@ -84,9 +84,15 @@ check_artifact() {
 MACOS_DIR=$SOURCE_DIR/ops/macos
 check_artifact "$MACOS_DIR/com.dcouple.linear-agent-daemon.plist" /Library/LaunchDaemons/com.dcouple.linear-agent-daemon.plist root:wheel 0644
 check_artifact "$MACOS_DIR/com.dcouple.cliproxyapi.plist" /Library/LaunchDaemons/com.dcouple.cliproxyapi.plist root:wheel 0644
+if [[ -f $HOME_DIR/.cloudflared/config.yml ]]; then
+  check_artifact "$MACOS_DIR/com.dcouple.cloudflared.plist" /Library/LaunchDaemons/com.dcouple.cloudflared.plist root:wheel 0644
+else
+  echo "skip-drift: cloudflared plist pending tunnel config" >&2
+fi
 check_artifact "$MACOS_DIR/sudoers-linearagent-services" /etc/sudoers.d/linearagent-services root:wheel 0440
 check_artifact "$MACOS_DIR/run-daemon.sh" /usr/local/sbin/run-daemon.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cliproxyapi.sh" /usr/local/sbin/run-cliproxyapi.sh root:wheel 0755
+check_artifact "$MACOS_DIR/run-cloudflared.sh" /usr/local/sbin/run-cloudflared.sh root:wheel 0755
 check_artifact "$MACOS_DIR/deploy.sh" /usr/local/sbin/deploy.sh root:wheel 0755
 check_artifact "$MACOS_DIR/daemonctl" /usr/local/sbin/daemonctl root:wheel 0755
 check_artifact "$SOURCE_DIR/ops/wait-for-daemon-health.sh" /usr/local/sbin/wait-for-daemon-health.sh root:wheel 0755
