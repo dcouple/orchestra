@@ -1,0 +1,312 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: daemonctl config --planner claude|claudex --implementer claude|claudex [--reason TEXT] [--dry-run]
+       daemonctl restart [--reason TEXT] [--dry-run]
+       daemonctl restart --hard [--yes] [--dry-run]
+       daemonctl reload [--reason TEXT] [--dry-run]
+       daemonctl update [--reason TEXT] [--dry-run]
+       daemonctl status [--refresh] | sessions | top [--watch SECONDS] [--count N]
+       daemonctl subscriptions list|add|remove|reauth ... [--dry-run]
+       daemonctl --help
+
+Config, restart, and reload execute synchronously as linearagent. Reload never pulls.
+EOF
+}
+
+HOME_DIR=${LINEAR_AGENT_HOME:-/Users/linearagent}
+STATE_DIR=${DAEMONCTL_STATE_DIR:-$HOME_DIR/.local/state/linear-agent-operations}
+ENV_FILE=${DAEMONCTL_ENV_FILE:-$HOME_DIR/.config/linear-agent-daemon/env}
+SOURCE_CHECKOUT=${DAEMONCTL_SOURCE_CHECKOUT:-$HOME_DIR/orchestra-source}
+ACCEPTED_COMMIT_FILE=${DAEMONCTL_ACCEPTED_COMMIT_FILE:-$STATE_DIR/accepted-commit}
+DEPLOYED_COMMIT_FILE=${DAEMONCTL_DEPLOYED_COMMIT_FILE:-$STATE_DIR/deployed-commit}
+DB_PATH=${DB_PATH:-$HOME_DIR/events.db}
+OPS_CLI=${DAEMONCTL_OPS_CLI:-$HOME_DIR/linear-agent-daemon/dist/operations-cli.js}
+NODE_BIN=${NODE_BIN:-/opt/homebrew/opt/node@22/bin/node}
+DEPLOY=${DAEMONCTL_DEPLOY:-/usr/local/sbin/deploy.sh}
+HEALTH_WAITER=${DAEMONCTL_HEALTH_WAITER:-/usr/local/sbin/wait-for-daemon-health.sh}
+HEALTH_URL=${DAEMONCTL_HEALTH_URL:-http://127.0.0.1:8787/healthz}
+PROXY_ACCOUNTS=${DAEMONCTL_PROXY_ACCOUNTS:-$HOME_DIR/linear-agent-daemon/ops/proxy-accounts.sh}
+CODEX_BIN=${DAEMONCTL_CODEX_BIN:-$HOME_DIR/.codex-managed/bin/codex}
+QUALIFIED_CODEX_VERSION_FILE=${DAEMONCTL_QUALIFIED_CODEX_VERSION_FILE:-$HOME_DIR/.codex/qualified-codex-version}
+GIT_BIN=${GIT_BIN:-git}
+MAINTENANCE_LOCK=$STATE_DIR/maintenance.lock
+
+die() { echo "$*" >&2; exit 1; }
+usage_error() { echo "$*" >&2; usage >&2; exit 2; }
+require_user() { [[ $(id -un) == linearagent || ${DAEMONCTL_ALLOW_OTHER_USER:-0} == 1 ]] || die "run as linearagent (sudo -u linearagent -i daemonctl ...)"; }
+validate_harness() { [[ $1 == claude || $1 == claudex ]] || usage_error "harness must be claude or claudex"; }
+validate_reason() { [[ $1 != *$'\n'* && ${#1} -le 240 ]] || usage_error "reason must be one line of at most 240 characters"; }
+ops_cli() { DB_PATH="$DB_PATH" "$NODE_BIN" "$OPS_CLI" "$@"; }
+fault_after() { [[ ${DAEMONCTL_FAULT_AFTER:-} == "$1" ]] || return 0; echo "fixture crash after $1" >&2; exit 99; }
+health_accept() {
+  sudo /bin/launchctl print system/com.dcouple.linear-agent-daemon 2>/dev/null | grep -q 'state = running' || return 1
+  CURL_BIN=curl SLEEP_BIN=sleep bash "$HEALTH_WAITER" "$HEALTH_URL"
+}
+service_pid() { sudo /bin/launchctl print system/com.dcouple.linear-agent-daemon 2>/dev/null | awk '/pid =/{print $3; exit}'; }
+marker_value() {
+  [[ -f $1 ]] || { echo missing; return; }
+  local value; value=$(<"$1")
+  [[ $value =~ ^[0-9a-fA-F]{40}$ ]] && echo "$value" || echo malformed
+}
+new_id() { python3 -c 'import uuid; print(uuid.uuid4())'; }
+schedule_inline() {
+  local id=$1 type=$2 reason=$3 target_ref=$4 target=$5 previous=$6 digest result actual actual_digest
+  digest=$(printf '%s\0%s\0%s\0%s\0%s\n' "$type" "$reason" "$target_ref" "$target" "$previous" | shasum -a 256 | cut -d' ' -f1)
+  result=$(ops_cli schedule "$id" "$digest" "$type" "$reason" "$target_ref" "$target" "$previous")
+  actual=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["operation"]["id"])' <<<"$result")
+  actual_digest=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["operation"]["requestDigest"])' <<<"$result")
+  ops_cli claim "$actual" "$actual_digest" >/dev/null
+  echo "$actual"
+}
+transition() { ops_cli transition "$@" >/dev/null; }
+restart_service() { sudo /bin/launchctl kickstart -k system/com.dcouple.linear-agent-daemon; }
+release_maintenance_lock() {
+  [[ ${MAINTENANCE_LOCK_OWNED:-0} == 1 ]] || return 0
+  if [[ -d $MAINTENANCE_LOCK && $(cat "$MAINTENANCE_LOCK/pid" 2>/dev/null || true) == "$$" ]]; then
+    rm -f "$MAINTENANCE_LOCK/pid"
+    rmdir "$MAINTENANCE_LOCK" 2>/dev/null || true
+  fi
+}
+acquire_maintenance_lock() {
+  local holder stale
+  install -d -m 0700 "$STATE_DIR"
+  while ! mkdir "$MAINTENANCE_LOCK" 2>/dev/null; do
+    holder=$(cat "$MAINTENANCE_LOCK/pid" 2>/dev/null || true)
+    [[ $holder =~ ^[1-9][0-9]*$ ]] \
+      || die "maintenance lock has no valid holder pid: $MAINTENANCE_LOCK"
+    if kill -0 "$holder" 2>/dev/null; then
+      die "maintenance already in progress (pid $holder): $MAINTENANCE_LOCK"
+    fi
+    stale="$MAINTENANCE_LOCK.stale.$$.$RANDOM"
+    while [[ -e $stale || -L $stale ]]; do stale="$MAINTENANCE_LOCK.stale.$$.$RANDOM"; done
+    if mv "$MAINTENANCE_LOCK" "$stale" 2>/dev/null; then
+      rm -f "$stale/pid"
+      rmdir "$stale" 2>/dev/null || die "cannot reclaim stale maintenance lock: $stale"
+    fi
+  done
+  printf '%s\n' "$$" > "$MAINTENANCE_LOCK/pid"
+  chmod 0600 "$MAINTENANCE_LOCK/pid"
+  MAINTENANCE_LOCK_OWNED=1
+  trap release_maintenance_lock EXIT
+}
+
+replace_harness_env() {
+  python3 - "$1" "$2" "$3" "$4" <<'PY'
+import re,sys
+source,planner,implementer,target=sys.argv[1:]
+data=open(source).read().splitlines(True); wanted={"PLANNER_HARNESS":planner,"IMPLEMENTER_HARNESS":implementer}; seen=set(); out=[]
+for line in data:
+    match=re.match(r"^([A-Z_][A-Z0-9_]*)=",line)
+    if match and match.group(1) in wanted:
+        key=match.group(1)
+        if key not in seen: out.append(f"{key}={wanted[key]}\n"); seen.add(key)
+    else: out.append(line)
+for key in ("PLANNER_HARNESS","IMPLEMENTER_HARNESS"):
+    if key not in seen: out.append(f"{key}={wanted[key]}\n")
+open(target,"w").writelines(out)
+PY
+}
+
+command_config() {
+  require_user
+  local planner='' implementer='' reason="configuration change" dry=0
+  while (( $# )); do case $1 in
+    --planner) [[ $# -ge 2 ]] || usage_error "--planner needs a value"; planner=$2; shift ;;
+    --implementer) [[ $# -ge 2 ]] || usage_error "--implementer needs a value"; implementer=$2; shift ;;
+    --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;;
+    --dry-run) dry=1 ;; *) usage_error "unknown config argument: $1" ;; esac; shift
+  done
+  validate_harness "$planner"; validate_harness "$implementer"; validate_reason "$reason"
+  [[ -f $ENV_FILE ]] || die "environment file not found: $ENV_FILE"
+  if (( dry )); then echo "would update harnesses, back up $ENV_FILE, restart launchd daemon, health-check, and roll back on failure"; return; fi
+  acquire_maintenance_lock
+  local id backup replacement; id=$(new_id); install -d -m 0700 "$STATE_DIR/backups"
+  backup="$STATE_DIR/backups/$id.env.$(date -u +%Y%m%dT%H%M%SZ)"; replacement="$ENV_FILE.new.$id"
+  id=$(schedule_inline "$id" config "$reason" - - -)
+  cp -p "$ENV_FILE" "$backup"; replace_harness_env "$ENV_FILE" "$planner" "$implementer" "$replacement"
+  chmod "$(stat -f %Lp "$ENV_FILE")" "$replacement"
+  transition "$id" executing replace_environment - - 1 -
+  mv "$replacement" "$ENV_FILE"
+  fault_after replace_environment
+  transition "$id" executing restart_service - - 1 -
+  if restart_service; then
+    fault_after restart_service
+    if health_accept; then transition "$id" succeeded accepted "service active and health accepted" - 1 -; echo "operation $id succeeded"; return; fi
+  fi
+  transition "$id" rolling_back health_failed - health 1 -
+  cp -p "$backup" "$ENV_FILE"
+  if restart_service && health_accept; then
+    transition "$id" failed rolled_back "configuration failed; rollback accepted" health 1 1
+    die "configuration failed; rollback accepted"
+  fi
+  transition "$id" blocked rollback_acceptance - rollback_acceptance 1 -
+  die "configuration failed and rollback did not pass health acceptance"
+}
+
+command_restart() {
+  require_user
+  local hard=0 yes=0 dry=0 reason="operator restart"
+  while (( $# )); do case $1 in --hard) hard=1 ;; --yes) yes=1 ;; --dry-run) dry=1 ;;
+    --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;;
+    *) usage_error "unknown restart argument: $1" ;; esac; shift; done
+  validate_reason "$reason"
+  if (( dry )); then echo "would record restart, kickstart launchd daemon, and verify $HEALTH_URL"; return; fi
+  if (( hard && ! yes )); then
+    [[ -t 0 ]] || die "hard restart confirmation requires a TTY or --yes"
+    read -r -p "Interrupt active turns? Type HARD-RESTART: " answer
+    [[ $answer == HARD-RESTART ]] || { echo unchanged; return; }
+  fi
+  acquire_maintenance_lock
+  local id; id=$(new_id); id=$(schedule_inline "$id" restart "$reason" - - -)
+  (( hard )) && ops_cli restart-intent-set "$reason" >/dev/null
+  transition "$id" executing restart_service - - 1 -
+  restart_service || { transition "$id" blocked restart_service - restart_service 1 -; die "restart failed"; }
+  fault_after restart_service
+  health_accept || { transition "$id" blocked health - health 1 -; die "restart failed health acceptance"; }
+  transition "$id" succeeded accepted "service active and health accepted" - 1 -
+  echo "operation $id succeeded"
+}
+
+validate_worktree_owner() {
+  local owner=$1 id=$2 role=$3 checkout=$4 path=$5 commit=$6
+  [[ ! -L $owner && -f $owner && $(stat -f %Lp "$owner") == 600 ]] || return 1
+  python3 - "$owner" "$id" "$role" "$checkout" "$path" "$commit" <<'PY'
+import json,os,sys
+owner,oid,role,checkout,path,commit=sys.argv[1:]
+try: data=json.load(open(owner))
+except (OSError,ValueError): raise SystemExit(1)
+expected={"version":1,"operationId":oid,"role":role,"checkout":os.path.realpath(checkout),"path":os.path.realpath(path),"commit":commit}
+raise SystemExit(0 if all(data.get(k)==v for k,v in expected.items()) and data.get("state") in ("creating","created") else 1)
+PY
+}
+prepare_worktree() {
+  local id=$1 role=$2 checkout=$3 path=$4 commit=$5 owner="$STATE_DIR/worktree-owners/$1.$2.json"
+  install -d -m 0700 "$STATE_DIR/worktrees" "$STATE_DIR/worktree-owners" "$STATE_DIR/worktree-quarantine"
+  if [[ -e $owner ]]; then validate_worktree_owner "$owner" "$id" "$role" "$checkout" "$path" "$commit" || die "worktree ownership metadata mismatch: $owner"
+  else
+    [[ ! -e $path && ! -L $path ]] || die "refusing unowned worktree path: $path"
+    python3 - "$owner" "$id" "$role" "$checkout" "$path" "$commit" <<'PY'
+import json,os,sys
+target,oid,role,checkout,path,commit=sys.argv[1:]
+json.dump({"version":1,"operationId":oid,"role":role,"checkout":os.path.realpath(checkout),"path":os.path.realpath(path),"commit":commit,"state":"creating"},open(target,"w"),sort_keys=True,separators=(",",":")); open(target,"a").write("\n")
+PY
+    chmod 0600 "$owner"
+    fault_after worktree_owner_reserved
+  fi
+  if [[ -e $path ]]; then mv "$path" "$STATE_DIR/worktree-quarantine/$(basename "$path").partial.$(date +%s).$$"; "$GIT_BIN" -C "$checkout" worktree prune; fi
+  "$GIT_BIN" -C "$checkout" worktree prune
+  "$GIT_BIN" -C "$checkout" worktree add --detach "$path" "$commit" >/dev/null
+  fault_after worktree_create
+  [[ $($GIT_BIN -C "$path" rev-parse HEAD) == "$commit" && -z $($GIT_BIN -C "$path" status --porcelain) ]] || die "worktree validation failed: $path"
+  python3 - "$owner" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1])); p["state"]="created"; json.dump(p,open(sys.argv[1],"w"),sort_keys=True,separators=(",",":")); open(sys.argv[1],"a").write("\n")
+PY
+  chmod 0600 "$owner"
+  fault_after worktree_owner_confirmed
+}
+remove_worktree() {
+  local id=$1 role=$2 checkout=$3 path=$4 commit=$5 owner="$STATE_DIR/worktree-owners/$1.$2.json"
+  validate_worktree_owner "$owner" "$id" "$role" "$checkout" "$path" "$commit" || die "refusing cleanup without exact ownership metadata"
+  [[ ! -e $path || $($GIT_BIN -C "$path" rev-parse HEAD 2>/dev/null) == "$commit" ]] || die "refusing worktree cleanup at wrong commit"
+  "$GIT_BIN" -C "$checkout" worktree remove --force "$path" >/dev/null 2>&1 || true
+  [[ ! -e $path && ! -L $path ]] || die "worktree cleanup failed: $path"
+  rm -f "$owner"
+}
+
+command_reload() {
+  require_user
+  local reason="operator reload" dry=0
+  while (( $# )); do case $1 in --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;; --dry-run) dry=1 ;; *) usage_error "unknown reload argument: $1" ;; esac; shift; done
+  validate_reason "$reason"
+  [[ -d $SOURCE_CHECKOUT/.git ]] || die "reload validation failed: persistent checkout missing: $SOURCE_CHECKOUT"
+  [[ -z $($GIT_BIN -C "$SOURCE_CHECKOUT" status --porcelain) ]] || die "reload validation failed: checkout is dirty"
+  local remote accepted deployed target id tree rollback
+  remote=$($GIT_BIN -C "$SOURCE_CHECKOUT" config --get remote.origin.url); [[ $remote == https://* ]] || die "reload validation failed: origin must use HTTPS"
+  accepted=$(marker_value "$ACCEPTED_COMMIT_FILE"); [[ $accepted =~ ^[0-9a-fA-F]{40}$ ]] || die "reload validation failed: accepted commit marker missing or malformed"
+  deployed=$(marker_value "$DEPLOYED_COMMIT_FILE"); target=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'HEAD^{commit}')
+  "$GIT_BIN" -C "$SOURCE_CHECKOUT" cat-file -e "$accepted^{commit}" 2>/dev/null || die "reload validation failed: accepted commit is absent"
+  "$GIT_BIN" -C "$SOURCE_CHECKOUT" merge-base --is-ancestor "$accepted" "$target" || die "reload validation failed: HEAD is not a fast-forward descendant"
+  [[ $target != "$accepted" || $deployed != "$accepted" ]] || { echo "already deployed and accepted: $accepted"; return; }
+  if (( dry )); then echo "would deploy exact clean checkout commit $target over accepted commit $accepted via detached worktree and deploy.sh; health-gate; mark accepted; rollback on failure"; return; fi
+  acquire_maintenance_lock
+  id=$(new_id); id=$(schedule_inline "$id" update "$reason" checkout/HEAD "$target" "$accepted")
+  tree="$STATE_DIR/worktrees/$id"; prepare_worktree "$id" deploy "$SOURCE_CHECKOUT" "$tree" "$target"
+  transition "$id" executing provision - - 1 -
+  if DAEMONCTL_LOCK_HELD=1 DAEMONCTL_LOCK_PID=$$ SOURCE_COMMIT="$target" ACCEPTED_COMMIT_FILE="$ACCEPTED_COMMIT_FILE" DEPLOYED_COMMIT_FILE="$DEPLOYED_COMMIT_FILE" "$DEPLOY" "$tree/daemon"; then
+    fault_after provision
+    remove_worktree "$id" deploy "$SOURCE_CHECKOUT" "$tree" "$target"
+    transition "$id" succeeded accepted "deployed $accepted -> $target; service active and health accepted" - 1 -
+    echo "operation $id succeeded"; return
+  fi
+  transition "$id" rolling_back provision_failed - provision 1 -
+  remove_worktree "$id" deploy "$SOURCE_CHECKOUT" "$tree" "$target"
+  rollback="$STATE_DIR/worktrees/$id-rollback"; prepare_worktree "$id" rollback "$SOURCE_CHECKOUT" "$rollback" "$accepted"
+  if DAEMONCTL_LOCK_HELD=1 DAEMONCTL_LOCK_PID=$$ SOURCE_COMMIT="$accepted" ACCEPTED_COMMIT_FILE="$ACCEPTED_COMMIT_FILE" DEPLOYED_COMMIT_FILE="$DEPLOYED_COMMIT_FILE" "$DEPLOY" "$rollback/daemon" && health_accept; then
+    remove_worktree "$id" rollback "$SOURCE_CHECKOUT" "$rollback" "$accepted"
+    transition "$id" failed rolled_back "reload failed; rollback accepted" provision 1 1
+    die "reload failed; rollback accepted"
+  fi
+  transition "$id" blocked rollback_acceptance - rollback_acceptance 1 -
+  die "reload failed and rollback was not accepted"
+}
+
+command_status() {
+  require_user
+  local refresh=0; [[ ${1:-} == --refresh ]] && { refresh=1; shift; }; [[ $# -eq 0 ]] || usage_error "invalid status arguments"
+  local checkout_state=missing checkout='' remote='' remote_url='' accepted deployed running qualified service_state
+  if [[ -d $SOURCE_CHECKOUT/.git ]]; then
+    remote_url=$($GIT_BIN -C "$SOURCE_CHECKOUT" config --get remote.origin.url 2>/dev/null || true)
+    if (( refresh )); then [[ $remote_url == https://* ]] || die "status refresh requires HTTPS origin"; "$GIT_BIN" -C "$SOURCE_CHECKOUT" fetch --no-tags origin; fi
+    checkout=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'HEAD^{commit}' 2>/dev/null || true)
+    [[ -z $($GIT_BIN -C "$SOURCE_CHECKOUT" status --porcelain 2>/dev/null || true) ]] && checkout_state=clean || checkout_state=dirty
+    remote=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'refs/remotes/origin/HEAD^{commit}' 2>/dev/null || true)
+  fi
+  accepted=$(marker_value "$ACCEPTED_COMMIT_FILE"); deployed=$(marker_value "$DEPLOYED_COMMIT_FILE")
+  running=$($CODEX_BIN --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+  qualified=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$QUALIFIED_CODEX_VERSION_FILE" 2>/dev/null | head -1 || true)
+  service_state=stopped; health_accept >/dev/null 2>&1 && service_state=healthy
+  python3 - "$(ops_cli status)" "$accepted" "$deployed" "$checkout_state" "$checkout" "$remote" "$refresh" "$running" "$qualified" "$service_state" <<'PY'
+import json,sys
+s=json.loads(sys.argv[1]); accepted,deployed,state,checkout,remote,refresh,running,qualified,service=sys.argv[2:]
+valid=lambda x: len(x)==40 and all(c in "0123456789abcdefABCDEF" for c in x)
+if state=="dirty": reconciliation="dirty_checkout"
+elif not all(map(valid,(accepted,deployed,checkout))): reconciliation="incomplete"
+elif accepted!=deployed: reconciliation="diverged"
+elif checkout!=accepted: reconciliation="checkout_ahead_reload_required"
+elif valid(remote) and remote!=checkout: reconciliation="remote_ahead_pull_required"
+else: reconciliation="current"
+s["service"]={"state":service}; s["revision"]={"acceptedCommit":accepted if valid(accepted) else None,"deployedCommit":deployed if valid(deployed) else None,"checkoutCommit":checkout if valid(checkout) else None,"checkoutState":state,"remoteTrackingCommit":remote if valid(remote) else None,"refreshed":refresh=="1","reconciliation":reconciliation}
+s["codex"]={"runningVersion":running or None,"qualifiedVersion":qualified or None,"state":"qualified" if running and running==qualified else ("never_qualified" if not qualified else "drifted")}
+print(json.dumps(s,separators=(",",":")))
+PY
+}
+
+command_top_once() {
+  echo "host_load: $(uptime | sed 's/^ *//')"
+  echo "cpu_memory:"; ps -A -o pcpu,pmem,pid,ppid,comm -r | head -n 8
+  echo "services:"
+  for label in com.dcouple.linear-agent-daemon com.dcouple.cliproxyapi; do sudo /bin/launchctl print "system/$label" 2>/dev/null | awk -v l="$label" '/state =|pid =/{print l ": " $0}' || echo "$label: unavailable"; done
+  echo "logs:"; tail -n 5 "$HOME_DIR/Library/Logs/linear-agent-daemon.log" 2>/dev/null || true
+  echo "disk:"; df -h "$STATE_DIR" 2>/dev/null | awk 'NR<=2'
+  echo "running_turns: $(ops_cli running | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+}
+
+case ${1:-} in
+  --help|-h) [[ $# -eq 1 ]] || usage_error "unexpected arguments"; usage ;;
+  config) shift; command_config "$@" ;;
+  restart) shift; command_restart "$@" ;;
+  reload|update) shift; command_reload "$@" ;;
+  status) shift; command_status "$@" ;;
+  sessions) require_user; [[ $# -eq 1 ]] || usage_error "sessions takes no arguments"; result=$(ops_cli running); [[ $result == '[]' ]] && echo 'no running turns' || echo "$result" ;;
+  top)
+    require_user; shift; watch=0; count=0
+    while (( $# )); do case $1 in --watch) [[ $# -ge 2 ]] || usage_error "--watch needs seconds"; watch=$2; shift ;; --count) [[ $# -ge 2 ]] || usage_error "--count needs a value"; count=$2; shift ;; *) usage_error "unknown top argument" ;; esac; shift; done
+    [[ $watch =~ ^[0-9]+([.][0-9]+)?$ && $count =~ ^[0-9]+$ ]] || usage_error "watch/count must be non-negative numbers"
+    if [[ $watch == 0 ]]; then command_top_once; else i=0; while :; do command_top_once; i=$((i+1)); (( count > 0 && i >= count )) && break; sleep "$watch"; done; fi ;;
+  subscriptions) require_user; shift; [[ $# -gt 0 ]] || usage_error "missing subscriptions action"; CLIPROXY_ENV_FILE="$HOME_DIR/.config/linear-agent-daemon/cliproxyapi.env" CLIPROXY_CONFIG="$HOME_DIR/.config/linear-agent-daemon/cliproxyapi.yaml" "$PROXY_ACCOUNTS" "$@" ;;
+  *) usage_error "unknown command: ${1:-}" ;;
+esac

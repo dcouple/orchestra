@@ -1,0 +1,9 @@
+Cmnd_Alias LINEARAGENT_SERVICES = /bin/launchctl kickstart -k system/com.dcouple.linear-agent-daemon, \
+    /bin/launchctl kickstart -k system/com.dcouple.cliproxyapi, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/com.dcouple.linear-agent-daemon.plist, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/com.dcouple.cliproxyapi.plist, \
+    /bin/launchctl bootout system/com.dcouple.linear-agent-daemon, \
+    /bin/launchctl bootout system/com.dcouple.cliproxyapi, \
+    /bin/launchctl print system/com.dcouple.linear-agent-daemon, \
+    /bin/launchctl print system/com.dcouple.cliproxyapi
+linearagent ALL=(root) NOPASSWD: LINEARAGENT_SERVICES
