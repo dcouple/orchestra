@@ -27,6 +27,11 @@ export class WorktreeManager {
 
   async isPresent(path: string): Promise<boolean> { return this.exists(path); }
 
+  async hasUnpushedCommits(path: string): Promise<boolean> {
+    await this.validate(path);
+    return (await this.git(["rev-list", "--count", "HEAD", "--not", "--remotes=origin"], path)).trim() !== "0";
+  }
+
   async remove(rawIdentifier: string): Promise<void> {
     const previous = this.mutation;
     let release!: () => void;
@@ -38,6 +43,7 @@ export class WorktreeManager {
       if (await this.exists(path)) {
         await this.validate(path);
         if (!(await this.isClean(path))) throw new Error(`Refusing to remove dirty worktree: ${path}`);
+        if (await this.hasUnpushedCommits(path)) throw new Error(`Refusing to remove worktree with unpushed commits: ${path}`);
         await rm(resolve(path, ".linear-attachments"), { recursive: true, force: true });
         await rm(resolve(path, ".codex-dispatches"), { recursive: true, force: true });
         await this.git(["worktree", "remove", path], this.repo);
