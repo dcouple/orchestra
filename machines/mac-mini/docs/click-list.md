@@ -1,7 +1,7 @@
 # Mac Mini GUI handoffs
 
 These are the only GUI/browser steps. Complete them at the Mini or through
-an already-working Screen Sharing session, then run each read-back check from
+an already-working remote desktop session, then run each read-back check from
 the MacBook.
 
 ## Allow full disk access for remote users
@@ -17,18 +17,22 @@ ssh mini 'ls ~/Documents'
 
 The command must exit successfully without a TCC denial.
 
-## Enable Screen Sharing (conditional)
+## Enable Remote Management (conditional)
 
-Do this only if `apply.sh` reports `screen-sharing pending-human`. In System
-Settings → General → Sharing, enable **Screen Sharing** and allow the intended
-user access.
+Do this only if `apply.sh` reports `remote-desktop pending-human`. In System
+Settings → General → Sharing, enable **Remote Management**. Set access to
+**Only these users** and add the admin user. Leave **Anyone may request
+permission to control screen** off and **VNC viewers may control screen with
+password** off.
 
 Verify, substituting the Mini's LAN or Tailscale address:
 
 ```bash
+ssh mini 'pgrep -x ARDAgent'
 nc -z <mini-address> 5900
 ```
 
+The first command must print an ARDAgent PID and the port check must succeed.
 Then connect with the macOS Screen Sharing app and confirm that the screen
 renders and accepts input.
 

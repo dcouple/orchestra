@@ -52,6 +52,10 @@ clean_zsh_has_tmux() {
   /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=/tmp /bin/zsh -c '[[ $(command -v tmux) == /opt/homebrew/bin/tmux ]]'
 }
 
+remote_desktop_ready() {
+  pgrep -x ARDAgent >/dev/null 2>&1 && /usr/bin/nc -z localhost 5900 >/dev/null 2>&1
+}
+
 dry_run_inventory() {
   local package setting key value power_correct
   printf 'DRY RUN: inspecting state; no changes will be made.\n'
@@ -118,7 +122,7 @@ dry_run_inventory() {
     record session-settings would-apply
   fi
 
-  if sudo launchctl print system/com.apple.screensharing >/dev/null 2>&1; then record screen-sharing already-correct; else record screen-sharing would-apply; fi
+  if remote_desktop_ready; then record remote-desktop already-correct; else record remote-desktop would-apply; fi
 
   if ! sudo test -f /usr/local/etc/dcouple/heartbeat-sa.json; then
     record heartbeat-key pending-human
@@ -295,16 +299,17 @@ fi
 [[ $(defaults -currentHost read com.apple.screensaver idleTime) == 0 ]] || fail "screensaver setting did not verify"
 if (( session_changed )); then record session-settings applied; else record session-settings already-correct; fi
 
-if sudo launchctl print system/com.apple.screensharing >/dev/null 2>&1; then
-  record screen-sharing already-correct
+if remote_desktop_ready; then
+  record remote-desktop already-correct
 else
-  sudo launchctl enable system/com.apple.screensharing
-  if sudo launchctl bootstrap system /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null &&
-     sudo launchctl print system/com.apple.screensharing >/dev/null 2>&1; then
-    record screen-sharing applied
+  remote_management_kickstart=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
+  if sudo "$remote_management_kickstart" -activate -configure -access -on \
+       -users "$(id -un)" -privs -all -restart -agent >/dev/null 2>&1 &&
+     remote_desktop_ready; then
+    record remote-desktop applied
   else
-    printf '\nHUMAN STEP: enable Screen Sharing using docs/click-list.md.\n'
-    record screen-sharing pending-human
+    printf '\nHUMAN STEP: enable Remote Management using docs/click-list.md.\n'
+    record remote-desktop pending-human
   fi
 fi
 

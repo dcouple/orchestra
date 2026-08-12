@@ -2,8 +2,8 @@
 
 This directory is the versioned source of truth for the always-on Mac Mini.
 It installs the command-line Tailscale system daemon, tmux, SSH hardening,
-power/session settings, Screen Sharing, and a tunnel-gated Cloud Logging
-heartbeat. It is orchestra-only and is not copied by either sync script.
+power/session settings, Remote Management (ARD), and a tunnel-gated Cloud
+Logging heartbeat. It is orchestra-only and is not copied by either sync script.
 
 ## Safety rules
 
@@ -69,9 +69,9 @@ file, setting, or service changes:
 ssh mini 'cd /path/to/orchestra && machines/mac-mini/apply.sh --dry-run'
 ```
 
-If `tailscale up` prints a URL, open it and approve the Mini. If Screen
-Sharing cannot be enabled through launchd, use the conditional click-list
-step. Re-run `apply.sh` after completing handoffs; an already configured
+If `tailscale up` prints a URL, open it and approve the Mini. If Remote
+Management cannot be enabled through `kickstart`, use the conditional
+click-list step. Re-run `apply.sh` after completing handoffs; an already configured
 machine reports every item as `already-correct`.
 
 ## Verify and operate
@@ -86,12 +86,14 @@ ssh mini 'pmset -g custom'
 ssh mini 'sudo defaults read /Library/Preferences/com.apple.SoftwareUpdate AutomaticallyInstallMacOSUpdates'
 ssh mini 'tailscale status'
 ssh mini 'command -v tmux'
+ssh mini 'pgrep -x ARDAgent'
+nc -z <mini-address> 5900
 ```
 
 The apply script manages a root-owned `/etc/zshenv` block that exposes
 `/opt/homebrew/bin` to interactive and non-interactive zsh sessions for all
-users. The final command above must print `/opt/homebrew/bin/tmux`; no user
-dotfiles are modified.
+users. The `command -v tmux` check above must print `/opt/homebrew/bin/tmux`;
+no user dotfiles are modified.
 
 Safe operations are run from the MacBook:
 
