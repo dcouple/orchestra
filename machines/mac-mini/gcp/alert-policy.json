@@ -1,0 +1,29 @@
+{
+  "displayName": "Mac Mini heartbeat absent",
+  "combiner": "OR",
+  "enabled": true,
+  "notificationChannels": ["__NOTIFICATION_CHANNEL__"],
+  "conditions": [
+    {
+      "displayName": "No Mac Mini heartbeat for 15 minutes",
+      "conditionAbsent": {
+        "filter": "metric.type=\"logging.googleapis.com/user/mac_mini_heartbeat\" AND resource.type=\"global\"",
+        "duration": "900s",
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_COUNT"
+          }
+        ]
+      }
+    }
+  ],
+  "alertStrategy": {
+    "autoClose": "1800s",
+    "notificationPrompts": ["OPENED", "CLOSED"]
+  },
+  "documentation": {
+    "content": "The FileVault-enabled home Mac Mini stopped reporting while Tailscale was healthy. Check power and tailnet reachability. Planned restarts must use machines/mac-mini/bin/mini-restart.",
+    "mimeType": "text/markdown"
+  }
+}

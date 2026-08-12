@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Arm FileVault authrestart interactively, then install all macOS updates.
+
+Usage: mini-update [--help]
+
+MINI_HOST selects the SSH host (default: mini). There are no update flags;
+the remote softwareupdate command installs all available updates.
+USAGE
+}
+
+case ${1:-} in
+  --help|-h) usage; exit 0 ;;
+  '') ;;
+  *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+esac
+(( $# <= 1 )) || { usage >&2; exit 2; }
+
+host=${MINI_HOST:-mini}
+# This script body is intentionally expanded only by bash on the Mini.
+# shellcheck disable=SC2016
+remote='set -euo pipefail
+supported=$(sudo fdesetup supportsauthrestart 2>&1) || {
+  echo "supportsauthrestart check failed: $supported" >&2
+  exit 21
+}
+if [[ $supported != true ]]; then
+  echo "authrestart unsupported: $supported" >&2
+  exit 22
+fi
+echo "Step 1/2: arm FileVault authrestart (interactive credential prompt)."
+if ! sudo fdesetup authrestart -delayminutes -1; then
+  echo "authrestart arming failed; software update will not start" >&2
+  exit 23
+fi
+echo "Step 2/2: install all macOS updates; restart if required."
+sudo softwareupdate -i -a -R'
+
+ssh -t "$host" "bash -c $(printf %q "$remote")"

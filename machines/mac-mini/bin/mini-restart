@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Safely restart the FileVault-enabled Mac Mini with interactive authrestart.
+
+Usage: mini-restart [--help]
+
+MINI_HOST selects the SSH host (default: mini). Test-only environment flags
+MINI_RESTART_FORCE_UNSUPPORTED=1 and MINI_RESTART_FORCE_ARM_FAIL=1 exercise
+the two no-restart failure paths. MINI_OFFLINE_TIMEOUT_SECONDS (default: 120)
+and MINI_ONLINE_TIMEOUT_SECONDS (default: 600) bound the two SSH polling
+transitions.
+USAGE
+}
+
+case ${1:-} in
+  --help|-h) usage; exit 0 ;;
+  '') ;;
+  *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+esac
+(( $# <= 1 )) || { usage >&2; exit 2; }
+
+host=${MINI_HOST:-mini}
+offline_timeout=${MINI_OFFLINE_TIMEOUT_SECONDS:-120}
+online_timeout=${MINI_ONLINE_TIMEOUT_SECONDS:-600}
+[[ $offline_timeout =~ ^[1-9][0-9]*$ ]] || { printf 'MINI_OFFLINE_TIMEOUT_SECONDS must be a positive integer\n' >&2; exit 2; }
+[[ $online_timeout =~ ^[1-9][0-9]*$ ]] || { printf 'MINI_ONLINE_TIMEOUT_SECONDS must be a positive integer\n' >&2; exit 2; }
+started=$(date +%s)
+
+# This script body is intentionally expanded only by bash on the Mini.
+# shellcheck disable=SC2016
+remote='set -euo pipefail
+if [[ ${MINI_RESTART_FORCE_UNSUPPORTED:-0} == 1 ]]; then
+  echo "authrestart unsupported (forced)" >&2
+  exit 20
+fi
+supported=$(sudo fdesetup supportsauthrestart 2>&1) || {
+  echo "supportsauthrestart check failed: $supported" >&2
+  exit 21
+}
+if [[ $supported != true ]]; then
+  echo "authrestart unsupported: $supported" >&2
+  exit 22
+fi
+echo "FileVault will prompt interactively to arm authrestart."
+if [[ ${MINI_RESTART_FORCE_ARM_FAIL:-0} == 1 ]]; then
+  echo "authrestart arming failed (forced)" >&2
+  arm_status=24
+elif sudo fdesetup authrestart; then
+  arm_status=0
+else
+  arm_status=$?
+fi
+if (( arm_status != 0 )); then
+  echo "authrestart arming failed (exit $arm_status); no restart was initiated" >&2
+  exit "$arm_status"
+fi'
+
+remote_env=''
+[[ ${MINI_RESTART_FORCE_UNSUPPORTED:-0} == 1 ]] && remote_env+='MINI_RESTART_FORCE_UNSUPPORTED=1 '
+[[ ${MINI_RESTART_FORCE_ARM_FAIL:-0} == 1 ]] && remote_env+='MINI_RESTART_FORCE_ARM_FAIL=1 '
+ssh -t "$host" "${remote_env}bash -c $(printf %q "$remote")"
+
+printf 'Waiting for %s to go offline...\n' "$host"
+offline_started=$(date +%s)
+while ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" true >/dev/null 2>&1; do
+  now=$(date +%s)
+  if (( now - offline_started >= offline_timeout )); then
+    printf 'ERROR: offline transition never happened; %s remained reachable for %ss\n' "$host" "$offline_timeout" >&2
+    exit 30
+  fi
+  printf '  %ss elapsed (still reachable)\n' "$(( now - started ))"
+  sleep 2
+done
+printf '%s is offline; waiting for it to return...\n' "$host"
+online_started=$(date +%s)
+while ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" true >/dev/null 2>&1; do
+  now=$(date +%s)
+  if (( now - online_started >= online_timeout )); then
+    printf 'ERROR: online transition never happened; %s did not return within %ss\n' "$host" "$online_timeout" >&2
+    exit 31
+  fi
+  printf '  %ss elapsed\n' "$(( now - started ))"
+  sleep 5
+done
+printf '%s returned after %ss.\n' "$host" "$(( $(date +%s) - started ))"
