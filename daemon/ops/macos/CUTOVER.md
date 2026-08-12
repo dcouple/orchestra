@@ -66,14 +66,15 @@ does not match.
 
 Stop if either request fails.
 
-## D — Take a consistent VM snapshot and restore it on the mini
+## D — Take a consistent archive-VM snapshot and restore it on the mini
 
 From the first command below until step F completes, the VM daemon must stay
 stopped. Caddy returns failures, so Linear retains and retries deliveries. Old
 artifact links are unavailable for these few minutes. Do not restart the VM
 daemon early.
 
-1. `[RUN]` Stop the VM writer, checkpoint SQLite, and verify it remains down:
+1. `[RUN]` As an archive-bridge migration operation, stop the VM writer,
+   checkpoint SQLite, and verify it remains down:
 
    ```bash
    gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a \
@@ -167,7 +168,8 @@ The two hashes must match.
    ssh mini 'sudo -u linearagent sqlite3 /Users/linearagent/events.db "select delivery_id, app, action, received_at from events order by id desc limit 3"'
    ```
 
-3. `[RUN]` Repeat DNS, ingress, bridge, and service-state acceptance:
+3. `[RUN]` Repeat DNS, ingress, and archive-bridge VM service-state
+   acceptance:
 
    ```bash
    dig NS blmapp.com @1.1.1.1
@@ -177,8 +179,8 @@ The two hashes must match.
    gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a --command='systemctl is-active linear-agent-daemon caddy'
    ```
 
-4. `[RUN]` Using the recorded re-point time, verify the VM did not process
-   webhook deliveries after ownership moved:
+4. `[RUN]` Using the recorded re-point time, verify the archive-bridge VM did
+   not process webhook deliveries after ownership moved:
 
    ```bash
    repoint_time='REPLACE_WITH_RECORDED_ISO_8601_TIME'

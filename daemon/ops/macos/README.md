@@ -3,7 +3,7 @@
 This directory provisions the Linear webhook daemon and CLIProxyAPI on an
 Apple Silicon Mac mini. Both are system LaunchDaemons running as the dedicated
 `linearagent` administrator account and listening only on loopback. The Linux
-deployment remains independent and unchanged.
+deployment remains in service only as the archive bridge.
 
 ## Run from an operator checkout
 
@@ -31,8 +31,9 @@ grant as the final privileged setup action.
 
 ## Human handoffs
 
-Copy the VM environment file over SSH, then rewrite its path-valued settings
-for the mini. Secrets must never enter this repository:
+Copy the archive VM environment file over SSH as a one-time bridge migration
+operation, then rewrite its path-valued settings for the mini. Secrets must
+never enter this repository:
 
 ```bash
 gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a \
@@ -60,11 +61,20 @@ The subscription command runs CLIProxyAPI's one-time `--codex-login
 the server process. Re-run the provisioner after all handoffs. A fully
 converged second run reports every setting `already-correct`.
 
-Normal operation also runs as the service user:
+The `bloomi` alias connects directly to `linearagent` with a key and is the
+normal one-shot operations path:
 
 ```bash
-ssh mini 'sudo -u linearagent -i daemonctl status'
-ssh mini 'sudo -u linearagent -i daemonctl reload --reason "operator deploy"'
+ssh bloomi '/usr/local/sbin/daemonctl status'
+ssh -t bloomi '/usr/local/sbin/daemonctl reload --reason "operator deploy"'
+```
+
+Operators without that alias can use the password-prompting fallback (without
+`-i`, which would re-concatenate the command):
+
+```bash
+ssh -t mini 'sudo -u linearagent /usr/local/sbin/daemonctl status'
+ssh -t mini 'sudo -u linearagent /usr/local/sbin/daemonctl reload --reason "operator deploy"'
 ```
 
 ## Public ingress
