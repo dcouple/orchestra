@@ -30,9 +30,11 @@ bash -n ops/provision.sh ops/daemonctl ops/wait-for-daemon-health.sh ops/claudex
 
 ## Live daemon diagnostics
 
-The user-level `~/.zshrc` alias `bloom-deamon` connects to the Bloom daemon
-host for live service-log inspection. Its canonical target command is
-`gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a`.
+Use the operator's key-only `bloomi` SSH alias for production diagnostics, for
+example `ssh bloomi '/usr/local/sbin/daemonctl status'`. The user-level
+`~/.zshrc` alias `bloom-deamon` is legacy: its
+`gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a`
+target reaches only the archive-bridge VM.
 
 ## Architecture
 
@@ -72,7 +74,7 @@ sub-reports, plan.md, wrapup.md) locally under `./tmp/<id>/`.
 ```yaml
 tracker: github
 github_repo: dcouple/orchestra
-artifact_host: https://linear-agent.bloomapi.com
+artifact_host: https://linear-agent.blmapp.com
 ```
 
 > Publish a lean GitHub issue body containing the brief's full metadata YAML, an Intent

@@ -1,4 +1,19 @@
-# Linear agent daemon — Linux setup guide
+# Linear agent daemon — production and legacy setup
+
+## Production setup (macOS / Mac mini)
+
+The production daemon runs on the Mac mini under launchd and is exposed by a
+Cloudflare Tunnel at `linear-agent.blmapp.com`. Follow
+`daemon/ops/macos/README.md` for provisioning and routine operation, then
+`daemon/ops/macos/CUTOVER.md` for ingress and webhook ownership. Those
+runbooks are authoritative for the production host.
+
+## Legacy VM deployment (archive bridge)
+
+The Linux deployment below is retained as the legacy VM record. That VM stays
+running as the archive bridge for pre-migration
+`linear-agent.bloomapi.com/a/…` links; retiring it is a deferred follow-up. It
+is not the production webhook host.
 
 This guide takes you from a fresh Linux host to working `bloom-planner` /
 `bloom-implementer` agents in a Linear workspace. It is the practical
@@ -268,7 +283,7 @@ have the exact SQL/GraphQL evidence queries.
   credentials only, nothing else valuable on the box, and branch
   protection on the target repo's default branch as the backstop.
 
-## Local development variant (macOS)
+## Historical local development variant (macOS)
 
 The daemon also runs on a Mac for development: build with `pnpm build`,
 run with the same env via a wrapper script, and expose the listener with
