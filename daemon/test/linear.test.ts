@@ -394,4 +394,57 @@ describe("LinearGateway", () => {
     expect(api.requests.filter(request => request.url === "/graphql")).toHaveLength(0);
     await api.close(); db.close();
   });
+
+  it("returns found, not_found, and error issue-state outcomes without throwing", async () => {
+    const api = await stub((request) => {
+      const id = (request.body.variables as { id: string }).id;
+      if (id === "ENG-1")
+        return {
+          body: {
+            data: {
+              issue: {
+                id: "issue-1",
+                identifier: "ENG-1",
+                state: { type: "completed" },
+              },
+            },
+          },
+        };
+      if (id === "ENG-404") return { body: { data: { issue: null } } };
+      return { status: 503, body: { error: "unavailable" } };
+    });
+    const db = log();
+    const gateway = new LinearGateway(
+      db,
+      {
+        planner: {
+          name: "planner",
+          webhookSecret: "p",
+          staticToken: "token",
+        },
+        implementer: {
+          name: "implementer",
+          webhookSecret: "i",
+          staticToken: "i",
+        },
+      },
+      api.graphqlUrl,
+      api.tokenUrl,
+    );
+    await expect(
+      gateway.issueState("implementer", "ENG-1", Date.now() + 1000),
+    ).resolves.toEqual({
+      kind: "found",
+      issueId: "issue-1",
+      stateType: "completed",
+    });
+    await expect(
+      gateway.issueState("implementer", "ENG-404", Date.now() + 1000),
+    ).resolves.toEqual({ kind: "not_found" });
+    await expect(
+      gateway.issueState("implementer", "ENG-500", Date.now() + 1000),
+    ).resolves.toMatchObject({ kind: "error" });
+    await api.close();
+    db.close();
+  });
 });

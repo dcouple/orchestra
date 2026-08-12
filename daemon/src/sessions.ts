@@ -61,6 +61,7 @@ export interface SessionWorkerOptions {
   attachmentTimeoutMs?: number;
   onTurnComplete?: () => void;
   relay?: OtlpRelay;
+  worktrees?: WorktreeManager;
 }
 export type ShutdownPolicy = "recover" | "hard_restart";
 
@@ -350,10 +351,9 @@ export class SessionWorker {
   ) {
     this.now = options.now ?? Date.now;
     this.logger = options.logger ?? console;
-    this.worktrees = new WorktreeManager(
-      config.worktreesRoot,
-      config.targetRepoPath!,
-    );
+    this.worktrees =
+      options.worktrees ??
+      new WorktreeManager(config.worktreesRoot, config.targetRepoPath!);
   }
   async start(): Promise<void> {
     this.stopped = false;

@@ -31,10 +31,10 @@ function setup() {
       implementer: { name: "implementer", webhookSecret: "implementer-secret", staticToken: "i" },
     },
   };
-  const onInserted = vi.fn(); const onStop = vi.fn();
+  const onInserted = vi.fn(); const onIssueCompleted = vi.fn(); const onStop = vi.fn();
   const logger = { log: vi.fn(), error: vi.fn() };
-  const server = new WebhookServer({ config, log, onInserted, onStop, logger });
-  return { config, log, server, onInserted, onStop, logger, managementKey };
+  const server = new WebhookServer({ config, log, onInserted, onIssueCompleted, onStop, logger });
+  return { config, log, server, onInserted, onIssueCompleted, onStop, logger, managementKey };
 }
 
 function signed(body: string, secret = "planner-secret", delivery = "delivery-1") {
@@ -63,9 +63,27 @@ async function waitForHealth(port: number, child: ChildProcess): Promise<void> {
 
 describe("webhook HTTP integration", () => {
   it("persists a signed Issue webhook without acking or creating a turn",async()=>{
-    const {log,server}=setup();const address=await server.listen();const body=JSON.stringify({webhookTimestamp:Date.now(),type:"Issue",action:"update",data:{id:"issue",identifier:"ENG-42",state:{type:"completed"}}});
+    const {log,server,onIssueCompleted}=setup();const address=await server.listen();const body=JSON.stringify({webhookTimestamp:Date.now(),type:"Issue",action:"update",data:{id:"issue",identifier:"ENG-42",state:{type:"completed"}}});
     const response=await fetch(`http://127.0.0.1:${address.port}/webhook/implementer`,{method:"POST",headers:signed(body,"implementer-secret","issue-delivery"),body});
-    expect(response.status).toBe(200);expect(log.count()).toBe(1);expect(log.ackCount()).toBe(0);expect(log.turnStates()).toHaveLength(0);await server.close();log.close();
+    expect(response.status).toBe(200);expect(log.count()).toBe(1);expect(log.ackCount()).toBe(0);expect(log.turnStates()).toHaveLength(0);expect(onIssueCompleted).toHaveBeenCalledOnce();await server.close();log.close();
+  });
+  it("does not fire the Issue-completed callback for non-completed events", async () => {
+    const { log, server, onIssueCompleted } = setup();
+    const address = await server.listen();
+    const body = JSON.stringify({
+      webhookTimestamp: Date.now(),
+      type: "Issue",
+      action: "update",
+      data: { id: "issue", identifier: "ENG-42", state: { type: "started" } },
+    });
+    await fetch(`http://127.0.0.1:${address.port}/webhook/implementer`, {
+      method: "POST",
+      headers: signed(body, "implementer-secret", "started-delivery"),
+      body,
+    });
+    expect(onIssueCompleted).not.toHaveBeenCalled();
+    await server.close();
+    log.close();
   });
   it("AC1: responds under 5s and persists a signed fresh event", async () => {
     const { log, server } = setup(); const address = await server.listen();

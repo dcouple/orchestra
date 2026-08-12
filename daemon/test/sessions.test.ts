@@ -3186,12 +3186,13 @@ describe("SessionWorker", () => {
       server.listen(0, "127.0.0.1", resolve),
     );
     const ntfyUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const onTurnComplete = vi.fn();
     append(log, "d1", "session", "created");
     const worker = new SessionWorker(
       log,
       poster as unknown as LinearGateway,
       { ...config, ntfyUrl },
-      { pollMs: 10, reconcileMs: 20 },
+      { pollMs: 10, reconcileMs: 20, onTurnComplete },
     );
     await worker.start();
     await waitFor(
@@ -3204,6 +3205,7 @@ describe("SessionWorker", () => {
     expect(received[0].title).toContain("ENG-42");
     expect(received[0].priority).toBe("default");
     expect(received[0].body).toBe("planner answer");
+    expect(onTurnComplete).toHaveBeenCalledOnce();
   });
   it("AC1/AC2/AC3-contract: creates worktree, posts response, then resumes in the same cwd", async () => {
     const { dir, log, config } = setup();

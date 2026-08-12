@@ -43,6 +43,10 @@ describe("loadConfig", () => {
       providerStateStaleMs: 300_000, providerInitialProbeTimeoutMs: 5_000 });
     expect(config).toMatchObject({ bashDefaultTimeoutMs: 900_000, bashMaxTimeoutMs: 900_000 });
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
+    expect(config.worktreeUnlinkedGraceMs).toBe(14 * 24 * 60 * 60 * 1000);
+    expect(config.worktreeBundlesDir).toBe(
+      "/var/lib/linear-agent-daemon/worktree-bundles",
+    );
   });
   it("loads independent harness preferences and names invalid settings", () => {
     const config = loadConfig({ ...base, PLANNER_HARNESS: "claudex", IMPLEMENTER_HARNESS: "claude" });
@@ -118,6 +122,23 @@ describe("loadConfig", () => {
       claudeArgv: ["node", "fixture.mjs"], claudePermissionMode: "bypassPermissions", claudeMaxTurns: 100,
       sessionConcurrency: 5, keepaliveMs: 900_000, attachmentsEnabled: true, attachmentHosts: ["uploads.linear.app"] });
     expect(loadConfig({ ...base, SESSION_CONCURRENCY: "3" }).sessionConcurrency).toBe(3);
+  });
+  it("loads and validates worktree reconciliation settings", () => {
+    expect(
+      loadConfig({
+        ...base,
+        DB_PATH: "/state/events.db",
+        WORKTREE_UNLINKED_GRACE_DAYS: "3",
+        WORKTREE_BUNDLES_DIR: " /archive/bundles ",
+      }),
+    ).toMatchObject({
+      worktreeUnlinkedGraceMs: 3 * 24 * 60 * 60 * 1000,
+      worktreeBundlesDir: "/archive/bundles",
+    });
+    for (const value of ["0", "-1", "1.5", "nope"])
+      expect(() =>
+        loadConfig({ ...base, WORKTREE_UNLINKED_GRACE_DAYS: value }),
+      ).toThrow("WORKTREE_UNLINKED_GRACE_DAYS");
   });
   it("names missing variables", () => {
     expect(() => loadConfig({ ...base, PLANNER_WEBHOOK_SECRET: "" })).toThrow("PLANNER_WEBHOOK_SECRET");

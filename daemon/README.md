@@ -6,10 +6,13 @@ to SQLite, acknowledges new sessions asynchronously, and runs bloom-planner disc
 per-issue git worktrees. Planner turns stream Claude progress to Linear, persist terminal
 activities for retry, and resume the stored Claude session on follow-up prompts. Implementer
 assignments run a fresh, unattended literal `/do <identifier>` turn in the same issue worktree,
-durably attach an opened PR to the Linear session, and clean up clean worktrees after completed
-Issue webhooks. Follow-up replies to an implementer session resume its stored Claude session
+durably attach an opened PR to the Linear session, and clean up worktrees after Linear confirms
+their issues completed or canceled. Issue webhooks remain the fast path; an event-driven
+reconciliation sweep also runs at startup and after session completion, with no standing sweep
+timer. Follow-up replies to an implementer session resume its stored Claude session
 the same way planner prompts do, so a human can answer an implementer's question mid-stream.
-Dirty worktrees are retained and reported to the session.
+Dirty or PR-less state is pushed to its `agents/<id>` branch (or saved as a git bundle) before
+force removal.
 
 ## Local checks
 

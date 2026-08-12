@@ -35,6 +35,10 @@ export interface AgentPromptActivity {
   createdAt: number;
   signal?: string;
 }
+export type IssueStateResult =
+  | { kind: "found"; issueId: string; stateType: string }
+  | { kind: "not_found" }
+  | { kind: "error"; error: string };
 interface Logger { warn(...args: unknown[]): void; }
 
 interface TokenResponse { access_token?: unknown; expires_in?: unknown; error?: unknown; error_description?: unknown; }
@@ -308,6 +312,49 @@ export class LinearGateway {
       } while (after);
       return sessions;
     });
+  }
+
+  async issueState(
+    app: AppName,
+    identifier: string,
+    deadlineAt = this.now() + 10_000,
+  ): Promise<IssueStateResult> {
+    try {
+      const data = await this.withLinearClient(
+        app,
+        deadlineAt,
+        "Linear issue-state request",
+        (client) =>
+          this.rawRequest<{
+            issue: {
+              id: string;
+              identifier: string;
+              state: { type: string } | null;
+            } | null;
+          }>(
+            client,
+            `query WorktreeIssueState($id: String!) {
+              issue(id: $id) { id identifier state { type } }
+            }`,
+            { id: identifier },
+          ),
+      );
+      if (!data.issue) return { kind: "not_found" };
+      return {
+        kind: "found",
+        issueId: data.issue.id,
+        stateType: data.issue.state?.type ?? "",
+      };
+    } catch (error) {
+      const message = errorMessage(error);
+      if (
+        /entity.+not found|issue.+not found|could not find.+issue|does not exist/i.test(
+          message,
+        )
+      )
+        return { kind: "not_found" };
+      return { kind: "error", error: message };
+    }
   }
 
   async listDelegatedIssueAgentSessions(app: AppName, appActorId: string, deadlineAt = this.now() + 10_000): Promise<AgentSessionSummary[]> {

@@ -171,6 +171,8 @@ LINEAR_MCP_MONITOR_TIMEOUT_MS=10000
 SESSIONS_ENABLED=1
 TARGET_REPO_PATH=/var/lib/linear-agent-daemon/repos/bloom-mono
 WORKTREES_ROOT=/var/lib/linear-agent-daemon/worktrees
+WORKTREE_UNLINKED_GRACE_DAYS=14
+WORKTREE_BUNDLES_DIR=/var/lib/linear-agent-daemon/worktree-bundles
 LINEAR_API_KEY=...
 PLANNER_HARNESS=claude
 IMPLEMENTER_HARNESS=claude
@@ -798,7 +800,11 @@ elicitation/human-input request, `/do` starts on `agents/<identifier>`, a PR is 
 the PR appears in session external URLs. Confirm the final `/do` text matches PR extraction.
 Move the issue to a workflow state whose stable type is `completed`; verify the Issues
 webhook arrives and both worktree and local branch disappear. Repeat with an uncommitted
-file and verify the worktree remains and a thought names its path. Confirm the full flow
+file and verify the worktree is removed only after a thought names the pushed
+`agents/<identifier>` branch or a bundle under `WORKTREE_BUNDLES_DIR`. Restore a pushed
+branch with `git fetch origin agents/<identifier>:agents/<identifier>`; inspect or restore
+a bundle with `git bundle verify <bundle>` followed by
+`git fetch <bundle> 'refs/heads/*:refs/remotes/bundle/*'`. Confirm the full flow
 under systemd hardening.
 
 ```bash
