@@ -67,11 +67,43 @@ ssh mini 'sudo -u linearagent -i daemonctl status'
 ssh mini 'sudo -u linearagent -i daemonctl reload --reason "operator deploy"'
 ```
 
+## Public ingress
+
+Phase 2 exposes the loopback daemon through a locally-managed Cloudflare
+Tunnel at `linear-agent.blmapp.com`. This is the amended design recorded in
+[issue 154](https://github.com/dcouple/orchestra/issues/154#issuecomment-5272668315):
+the root `blmapp.com` zone is on Cloudflare's free plan, while `bloomapi.com`
+and the existing VM remain unchanged as the archive path for old artifact
+links.
+
+Do not create or route the tunnel until the `blmapp.com` zone shows **Active**
+and its two pre-existing Metabase records are confirmed DNS-only. Then perform
+the interactive handoff as `linearagent` so the certificate and tunnel
+credentials land in its home:
+
+```bash
+ssh -t mini 'sudo -u linearagent -i'
+/opt/homebrew/bin/cloudflared tunnel login
+/opt/homebrew/bin/cloudflared tunnel create linear-agent
+/opt/homebrew/bin/cloudflared tunnel route dns linear-agent linear-agent.blmapp.com
+exit
+ssh mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
+```
+
+The provisioner chooses the newest UUID-named credentials JSON, renders the
+versioned config template, and starts `com.dcouple.cloudflared`. Cloudflared is
+a floating Homebrew formula, matching the other brew-managed packages; the
+wrapper disables cloudflared's own updater. Do not use `cloudflared service
+install`, which would create an unmanaged competing plist.
+
+Follow [CUTOVER.md](CUTOVER.md) for the ordered public-health, state-copy,
+environment, webhook re-point, and archive-bridge verification sequence.
+
 ## Security and deferred verification
 
 Launchd has no equivalents for the Linux unit's systemd sandbox directives;
 those controls are intentionally absent on this single-purpose machine. There
-is no public ingress in phase 1 and no codex-live service. Reboot acceptance
+is no codex-live service. Reboot acceptance
 (P1.AC5) is deferred until the operator is physically near the mini; `RunAtLoad`
 and `KeepAlive` provide the intended no-login startup behavior but are not
 claimed as reboot evidence until that test is performed.
