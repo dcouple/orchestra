@@ -53,6 +53,17 @@ clean_zsh_has_tmux() {
 }
 
 remote_desktop_ready() {
+  local ard_all_users naprivs
+
+  ard_all_users=$(sudo defaults read /Library/Preferences/com.apple.RemoteManagement ARD_AllLocalUsers 2>/dev/null || true)
+  if [[ $ard_all_users != 1 ]]; then
+    naprivs=$(dscl . -read "/Users/$(id -un)" naprivs 2>/dev/null | awk 'END {print $NF}') || return 1
+    [[ $naprivs =~ ^-?[0-9]+$ ]] || return 1
+    case $naprivs in
+      0|-0|-2147483648) return 1 ;;
+    esac
+  fi
+
   pgrep -x ARDAgent >/dev/null 2>&1 && /usr/bin/nc -z localhost 5900 >/dev/null 2>&1
 }
 

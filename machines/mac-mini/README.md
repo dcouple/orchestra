@@ -87,6 +87,7 @@ ssh mini 'sudo defaults read /Library/Preferences/com.apple.SoftwareUpdate Autom
 ssh mini 'tailscale status'
 ssh mini 'command -v tmux'
 ssh mini 'pgrep -x ARDAgent'
+ssh mini 'dscl . -read /Users/$(id -un) naprivs'
 nc -z <mini-address> 5900
 ```
 

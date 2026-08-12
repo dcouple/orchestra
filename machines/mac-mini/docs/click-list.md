@@ -29,12 +29,15 @@ Verify, substituting the Mini's LAN or Tailscale address:
 
 ```bash
 ssh mini 'pgrep -x ARDAgent'
+ssh mini 'dscl . -read /Users/$(id -un) naprivs'
 nc -z <mini-address> 5900
 ```
 
-The first command must print an ARDAgent PID and the port check must succeed.
-Then connect with the macOS Screen Sharing app and confirm that the screen
-renders and accepts input.
+The first command must print an ARDAgent PID. The second must print a nonzero
+privilege mask other than `-2147483648` (or the global `ARD_AllLocalUsers`
+preference must be `1`), and the port check must succeed. Then connect with
+the macOS Screen Sharing app and confirm that the screen renders and accepts
+input.
 
 ## Authenticate Tailscale (conditional)
 
