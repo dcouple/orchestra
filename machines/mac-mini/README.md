@@ -56,18 +56,22 @@ anything:
 machines/mac-mini/gcp/setup-monitoring.sh --dry-run
 ```
 
-Then run the machine setup from a checkout on the Mini:
+Then sync this directory to the Mini and run the machine setup there — the
+Mini needs no repo checkout of its own:
 
 ```bash
-ssh -t mini 'cd /path/to/orchestra && machines/mac-mini/apply.sh'
+rsync -a --delete machines/mac-mini/ mini:mac-mini-setup/
+ssh -t mini 'bash ~/mac-mini-setup/apply.sh'
 ```
 
 `apply.sh --dry-run` performs the same state inventory but makes no package,
 file, setting, or service changes:
 
 ```bash
-ssh mini 'cd /path/to/orchestra && machines/mac-mini/apply.sh --dry-run'
+ssh mini 'bash ~/mac-mini-setup/apply.sh --dry-run'
 ```
+
+Re-sync before every run so the Mini always executes the committed version.
 
 If `tailscale up` prints a URL, open it and approve the Mini. If Remote
 Management cannot be enabled through `kickstart`, use the conditional
