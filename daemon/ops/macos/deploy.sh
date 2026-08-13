@@ -115,7 +115,7 @@ check_artifact "$SOURCE_DIR/ops/claudex-fable" "$HOME_DIR/.local/bin/claudex-fab
 
 [[ -d $CODE_DIR ]] || install -d -m 0750 "$CODE_DIR"
 [[ -d $STATE_DIR ]] || install -d -m 0700 "$STATE_DIR"
-rsync -a --no-perms --no-owner --no-group --delete \
+rsync -aO --no-perms --no-owner --no-group --delete \
   --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' \
   "$SOURCE_DIR/" "$CODE_DIR/"
 chmod 0755 "$CODE_DIR/ops/proxy-accounts.sh" "$CODE_DIR/ops/codex-provider-gate.sh"
