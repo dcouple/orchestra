@@ -49,9 +49,12 @@ does not match.
    ```bash
    rsync -a daemon/ops/macos/ mini:~/daemon-macos-setup/
    ssh mini 'git -C ~/orchestra-bootstrap pull --ff-only'
-   ssh mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
+   ssh -t mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
    ssh mini 'sudo launchctl print system/com.dcouple.cloudflared >/dev/null && sudo -u linearagent grep -E "^(tunnel|credentials-file):" /Users/linearagent/.cloudflared/config.yml'
    ```
+
+   The TTY permits an interactive sudo prompt after the temporary broad grant
+   is removed. Unattended provisioner runs still require that grant.
 
 ## C — Prove public ingress before changing ownership
 
@@ -113,7 +116,7 @@ daemon early.
 
    ```bash
    ssh mini 'sudo launchctl bootstrap system /Library/LaunchDaemons/com.dcouple.cliproxyapi.plist && sudo launchctl bootstrap system /Library/LaunchDaemons/com.dcouple.linear-agent-daemon.plist && sudo /usr/local/sbin/wait-for-daemon-health.sh http://127.0.0.1:8787/healthz'
-   ssh mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
+   ssh -t mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
    ssh mini 'sudo -u linearagent test -s /Users/linearagent/.codex/config.toml; key=$(sudo -u linearagent sed -n "s/^CLIPROXY_API_KEY=//p" /Users/linearagent/.config/linear-agent-daemon/cliproxyapi.env); test -n "$key"; curl -fsS --connect-timeout 2 --max-time 10 -H "Authorization: Bearer $key" http://127.0.0.1:8317/v1/models | python3 -c '\''import json,sys; raise SystemExit(0 if any(x.get("id")=="gpt-5.6-sol" for x in json.load(sys.stdin).get("data",[])) else 1)'\'''
    ```
 

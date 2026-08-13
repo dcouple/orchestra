@@ -109,7 +109,13 @@ cloudflared_config_credential_exists() {
   sudo test -f "$credentials_file"
 }
 
-sudo -n true 2>/dev/null || fail "passwordless sudo is required temporarily; see README.md"
+if ! sudo -n true 2>/dev/null; then
+  if [[ -t 0 ]]; then
+    sudo -v || fail "sudo authentication failed"
+  else
+    fail "passwordless sudo is required temporarily; see README.md"
+  fi
+fi
 [[ $(uname -s) == Darwin ]] || fail "provision.sh must run on macOS"
 [[ $(uname -m) == arm64 ]] || fail "provision.sh requires Apple Silicon (arm64)"
 command -v git >/dev/null || fail "git from Command Line Tools is required"
@@ -333,6 +339,19 @@ proxy_config_converged() {
 if ! proxy_config_converged; then sudo install -o "$AGENT" -g staff -m 0600 "$proxy_tmp" "$CLIPROXY_CONFIG"; proxy_changed=1; fi
 rm -f "$proxy_tmp"; trap - EXIT
 (( proxy_changed )) && record proxy-config applied || record proxy-config already-correct
+proxy_api_responds() {
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    : "$attempt"
+    if curl -fsS --connect-timeout 2 --max-time 10 -o /dev/null \
+      -H "Authorization: Bearer $api_key" http://127.0.0.1:8317/v1/models \
+      2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
 
 if compat_symlink_correct; then record compat-symlink already-correct; else
   if [[ -e $COMPAT_STATE_LINK || -L $COMPAT_STATE_LINK ]]; then
@@ -407,8 +426,14 @@ for label in com.dcouple.cliproxyapi com.dcouple.linear-agent-daemon; do
   elif (( root_files_changed )); then
     sudo /bin/launchctl kickstart -k "system/$label"
     changed=1
+  elif [[ $label == com.dcouple.cliproxyapi ]] && (( proxy_changed )); then
+    sudo /bin/launchctl kickstart -k "system/$label"
+    changed=1
   fi
   sudo /bin/launchctl print "system/$label" >/dev/null 2>&1 || fail "$label did not verify"
+  if [[ $label == com.dcouple.cliproxyapi ]] && (( proxy_changed )); then
+    proxy_api_responds || fail "com.dcouple.cliproxyapi did not accept its configured API key"
+  fi
   (( changed )) && record "service-$label" applied || record "service-$label" already-correct
 done
 
