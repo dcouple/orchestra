@@ -32,7 +32,7 @@ release_maintenance_lock() {
 }
 acquire_maintenance_lock() {
   local holder stale
-  install -d -m 0700 "$STATE_DIR"
+  [[ -d $STATE_DIR ]] || install -d -m 0700 "$STATE_DIR"
   if [[ ${DAEMONCTL_LOCK_HELD:-0} == 1 ]]; then
     holder=$(cat "$MAINTENANCE_LOCK/pid" 2>/dev/null || true)
     [[ $holder =~ ^[1-9][0-9]*$ && $holder == "${DAEMONCTL_LOCK_PID:-}" ]] \
@@ -113,8 +113,9 @@ check_artifact "$SOURCE_DIR/ops/claudex" "$HOME_DIR/.local/bin/claudex" linearag
 check_artifact "$SOURCE_DIR/ops/claudex-fable" "$HOME_DIR/.local/bin/claudex-fable" linearagent:staff 0750
 (( drift == 0 )) || exit 78
 
-install -d -m 0750 "$CODE_DIR" "$STATE_DIR"
-rsync -a --delete \
+[[ -d $CODE_DIR ]] || install -d -m 0750 "$CODE_DIR"
+[[ -d $STATE_DIR ]] || install -d -m 0700 "$STATE_DIR"
+rsync -a --no-perms --no-owner --no-group --delete \
   --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' \
   "$SOURCE_DIR/" "$CODE_DIR/"
 chmod 0755 "$CODE_DIR/ops/proxy-accounts.sh" "$CODE_DIR/ops/codex-provider-gate.sh"
