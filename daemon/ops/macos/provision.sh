@@ -134,7 +134,7 @@ dry_inventory() {
   [[ -x /usr/local/bin/cliproxyapi && -f $CLIPROXY_MARKER && $(sudo cat "$CLIPROXY_MARKER") == "$CLIPROXY_VERSION" ]] && record cliproxyapi already-correct || record cliproxyapi would-apply
   sudo test -x "$AGENT_HOME/.local/bin/claude" && record claude-cli already-correct || record claude-cli would-apply
   version_at_least "$(command_version "$AGENT_HOME/.codex-managed/bin/codex")" "$CODEX_MIN_VERSION" && record managed-codex already-correct || record managed-codex would-apply
-  sudo test -x "$AGENT_HOME/.pnpm/playwright-mcp" && sudo test -f "$AGENT_HOME/.pnpm/playwright-mcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/playwright-mcp-version") == "$PLAYWRIGHT_MCP_VERSION" ]] && record playwright-mcp already-correct || record playwright-mcp would-apply
+  sudo test -x "$AGENT_HOME/.pnpm/bin/playwright-mcp" && sudo test -f "$AGENT_HOME/.pnpm/playwright-mcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/playwright-mcp-version") == "$PLAYWRIGHT_MCP_VERSION" ]] && record playwright-mcp already-correct || record playwright-mcp would-apply
   sudo test -f "$CLIPROXY_ENV" && sudo test -f "$CLIPROXY_CONFIG" && record proxy-config already-correct || record proxy-config would-apply
   compat_symlink_correct && record compat-symlink already-correct || record compat-symlink would-apply
   /opt/homebrew/bin/brew list --formula cloudflared >/dev/null 2>&1 && record cloudflared already-correct || record cloudflared would-apply
@@ -260,12 +260,12 @@ if install_if_changed "$SOURCE_DIR/ops/codex-otel-wrapper.sh" /usr/local/bin/cod
 
 MCP_VERSION=$(/opt/homebrew/opt/node@22/bin/node -p "require('$SOURCE_DIR/package.json').dependencies['@playwright/mcp']")
 [[ $MCP_VERSION == "$PLAYWRIGHT_MCP_VERSION" ]] || fail "unexpected @playwright/mcp pin: $MCP_VERSION"
-if sudo test -x "$AGENT_HOME/.pnpm/playwright-mcp" && sudo test -f "$AGENT_HOME/.pnpm/playwright-mcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/playwright-mcp-version") == "$MCP_VERSION" ]]; then mcp_changed=0; else
+if sudo test -x "$AGENT_HOME/.pnpm/bin/playwright-mcp" && sudo test -f "$AGENT_HOME/.pnpm/playwright-mcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/playwright-mcp-version") == "$MCP_VERSION" ]]; then mcp_changed=0; else
   agent /usr/local/bin/pnpm add --global "@playwright/mcp@$MCP_VERSION"
   printf '%s\n' "$MCP_VERSION" | sudo -u "$AGENT" tee "$AGENT_HOME/.pnpm/playwright-mcp-version" >/dev/null; mcp_changed=1
 fi
 mcp_wrapper=$(mktemp); trap 'rm -f "$mcp_wrapper"' EXIT
-printf '#!/bin/sh\nexec /Users/linearagent/.pnpm/playwright-mcp "$@"\n' > "$mcp_wrapper"
+printf '#!/bin/sh\nexec /Users/linearagent/.pnpm/bin/playwright-mcp "$@"\n' > "$mcp_wrapper"
 install_if_changed "$mcp_wrapper" /usr/local/bin/playwright-mcp 0755 root wheel && mcp_changed=1
 rm -f "$mcp_wrapper"; trap - EXIT
 (( mcp_changed )) && record playwright-mcp applied || record playwright-mcp already-correct
@@ -431,7 +431,7 @@ source_commit=
 git -C "$(cd "$SOURCE_DIR/.." && pwd)" rev-parse --is-inside-work-tree >/dev/null 2>&1 && source_commit=$(git -C "$(cd "$SOURCE_DIR/.." && pwd)" rev-parse HEAD)
 accepted=$(sudo cat "$OPS_STATE/accepted-commit" 2>/dev/null || true)
 code_drift=1
-if sudo test -d "$AGENT_HOME/linear-agent-daemon" && [[ -z $(agent rsync -ani --delete --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' "$SOURCE_DIR/" "$AGENT_HOME/linear-agent-daemon/") ]]; then code_drift=0; fi
+if sudo test -d "$AGENT_HOME/linear-agent-daemon" && [[ -z $(agent rsync -ani --no-perms --no-owner --no-group --delete --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' "$SOURCE_DIR/" "$AGENT_HOME/linear-agent-daemon/") ]]; then code_drift=0; fi
 if [[ -n $source_commit && $accepted == "$source_commit" && $code_drift -eq 0 ]]; then
   record daemon-deploy already-correct
 else
