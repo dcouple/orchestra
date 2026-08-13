@@ -444,7 +444,7 @@ credential_status=1
 management_json=$(curl -fsS --connect-timeout 2 --max-time 10 -H "Authorization: Bearer $management_key" http://127.0.0.1:8317/v0/management/auth-files 2>/dev/null || true)
 if [[ -n $management_json ]] && python3 -c 'import json,sys; p=json.load(sys.stdin); xs=p.get("files",p.get("data",[])); raise SystemExit(0 if any(x.get("provider")=="codex" and not x.get("disabled",False) and (x.get("account") or x.get("email")) for x in xs) else 1)' <<<"$management_json"; then credential_status=0; fi
 if (( credential_status == 0 )); then
-  if agent env CLIPROXY_ENV_FILE="$CLIPROXY_ENV" CLIPROXY_VERSION_MARKER="$CLIPROXY_MARKER" EXPECTED_PROXY_VERSION="$CLIPROXY_VERSION" TARGET_CONFIG="$AGENT_HOME/.codex/config.toml" "$AGENT_HOME/linear-agent-daemon/ops/codex-provider-gate.sh"; then record provider-gate already-correct; else record provider-gate pending-human; fi
+  if agent env CLIPROXY_ENV_FILE="$CLIPROXY_ENV" CLIPROXY_VERSION_MARKER="$CLIPROXY_MARKER" EXPECTED_PROXY_VERSION="$CLIPROXY_VERSION" TARGET_CONFIG="$AGENT_HOME/.codex/config.toml" ORCHESTRA_CODEX_REAL_BIN="$AGENT_HOME/.codex-managed/bin/codex" "$AGENT_HOME/linear-agent-daemon/ops/codex-provider-gate.sh"; then record provider-gate already-correct; else record provider-gate pending-human; fi
 else record provider-gate pending-human; fi
 
 print_summary
