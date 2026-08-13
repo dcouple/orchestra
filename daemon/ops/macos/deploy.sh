@@ -119,7 +119,9 @@ rsync -aO --no-perms --no-owner --no-group --delete \
   --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' \
   "$SOURCE_DIR/" "$CODE_DIR/"
 chmod 0755 "$CODE_DIR/ops/proxy-accounts.sh" "$CODE_DIR/ops/codex-provider-gate.sh"
-(cd "$CODE_DIR" && "$PNPM_BIN" install --frozen-lockfile && "$PNPM_BIN" build && "$PNPM_BIN" prune --prod)
+# CI=true: pnpm otherwise refuses to purge a stale modules dir without a TTY
+# (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) — deploys are always headless.
+(cd "$CODE_DIR" && CI=true "$PNPM_BIN" install --frozen-lockfile && CI=true "$PNPM_BIN" build && CI=true "$PNPM_BIN" prune --prod)
 
 env_has_key() { grep -Eq "^[[:space:]]*$1=[^[:space:]]+" "$ENV_FILE"; }
 env_sessions_enabled() { ! grep -Eq '^[[:space:]]*SESSIONS_ENABLED=0([[:space:]]*(#.*)?)?$' "$ENV_FILE"; }
