@@ -220,6 +220,36 @@ describe("durable maintenance operations", () => {
     log.close();
   });
 
+  it("requires fresh rollback verification after retrying an operation", () => {
+    const { db } = fixture();
+    const log = new EventLog(db);
+    log.scheduleOperation({
+      id: "fresh-rollback",
+      requestDigest: "b".repeat(64),
+      type: "update",
+      reason: "retry safely",
+    });
+    log.transitionOperation("fresh-rollback", "executing", "provision", {
+      mutated: true,
+    });
+    log.transitionOperation("fresh-rollback", "failed", "rolled_back", {
+      errorStage: "provision",
+      rollbackVerified: true,
+    });
+
+    expect(log.retryOperation("fresh-rollback")).toMatchObject({
+      state: "pending",
+      rollbackVerified: 0,
+    });
+    log.transitionOperation("fresh-rollback", "executing", "provision", {
+      mutated: true,
+    });
+    expect(() => log.cancelOperation("fresh-rollback")).toThrow(
+      "operation may not be cancelled after mutation without verified rollback",
+    );
+    log.close();
+  });
+
   it("projects only safe running and operation fields", () => {
     const { db } = fixture(); const log = new EventLog(db);
     appendTurn(log, "raw-session-secret", "OPS-9");
