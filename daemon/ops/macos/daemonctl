@@ -8,6 +8,7 @@ usage: daemonctl config --planner claude|claudex --implementer claude|claudex [-
        daemonctl restart --hard [--yes] [--dry-run]
        daemonctl reload [--reason TEXT] [--dry-run]
        daemonctl update [--reason TEXT] [--dry-run]
+       daemonctl operation retry|cancel OPERATION_ID [--dry-run]
        daemonctl status [--refresh] | sessions | top [--watch SECONDS] [--count N]
        daemonctl subscriptions list|add|remove|reauth ... [--dry-run]
        daemonctl --help
@@ -53,13 +54,52 @@ marker_value() {
 }
 new_id() { python3 -c 'import uuid; print(uuid.uuid4())'; }
 schedule_inline() {
-  local id=$1 type=$2 reason=$3 target_ref=$4 target=$5 previous=$6 digest result actual actual_digest
+  local id=$1 type=$2 reason=$3 target_ref=$4 target=$5 previous=$6 digest result parsed actual actual_digest deduplicated
   digest=$(printf '%s\0%s\0%s\0%s\0%s\n' "$type" "$reason" "$target_ref" "$target" "$previous" | shasum -a 256 | cut -d' ' -f1)
-  result=$(ops_cli schedule "$id" "$digest" "$type" "$reason" "$target_ref" "$target" "$previous")
-  actual=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["operation"]["id"])' <<<"$result")
-  actual_digest=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["operation"]["requestDigest"])' <<<"$result")
+  if ! result=$(ops_cli schedule "$id" "$digest" "$type" "$reason" "$target_ref" "$target" "$previous" 2>&1); then
+    print_pending_operation
+    die "operation scheduling refused: $result"
+  fi
+  if ! parsed=$(python3 -c 'import json,sys
+try: p=json.load(sys.stdin); o=p["operation"]; print(o["id"],o["requestDigest"],int(bool(p.get("deduplicated"))))
+except (ValueError,KeyError,TypeError): raise SystemExit(1)' <<<"$result"); then
+    print_pending_operation
+    die "operation scheduling returned an invalid response"
+  fi
+  read -r actual actual_digest deduplicated <<<"$parsed"
+  if (( deduplicated )); then
+    print_operation_recovery "$actual"
+    die "operation scheduling deduplicated to an existing operation"
+  fi
+  [[ -n $actual && -n $actual_digest ]] || die "operation scheduling returned an incomplete response"
   ops_cli claim "$actual" "$actual_digest" >/dev/null
   echo "$actual"
+}
+print_operation_recovery() {
+  local id=$1 row
+  row=$(ops_cli get "$id" 2>/dev/null || true)
+  python3 - "$row" <<'PY' >&2
+import json,sys
+try: op=json.loads(sys.argv[1])
+except (ValueError,TypeError): op=None
+if not isinstance(op,dict): raise SystemExit(0)
+state=op.get("state") or "unknown"; stage=op.get("stage") or "-"; oid=op.get("id") or "unknown"
+recovery=f"daemonctl operation retry {oid}" if state in ("blocked","failed") else f"daemonctl status"
+print(f"pending operation: id={oid} state={state} stage={stage}")
+print(f"recovery: {recovery}")
+PY
+}
+print_pending_operation() {
+  local status pending_id
+  status=$(ops_cli status 2>/dev/null || true)
+  pending_id=$(python3 - "$status" <<'PY'
+import json,sys
+try: p=json.loads(sys.argv[1]).get("pending")
+except (ValueError,TypeError): p=None
+print(p.get("id","") if isinstance(p,dict) else "")
+PY
+)
+  [[ -z $pending_id ]] || print_operation_recovery "$pending_id"
 }
 transition() { ops_cli transition "$@" >/dev/null; }
 restart_service() { sudo /bin/launchctl kickstart -k system/com.dcouple.linear-agent-daemon; }
@@ -110,22 +150,10 @@ open(target,"w").writelines(out)
 PY
 }
 
-command_config() {
-  require_user
-  local planner='' implementer='' reason="configuration change" dry=0
-  while (( $# )); do case $1 in
-    --planner) [[ $# -ge 2 ]] || usage_error "--planner needs a value"; planner=$2; shift ;;
-    --implementer) [[ $# -ge 2 ]] || usage_error "--implementer needs a value"; implementer=$2; shift ;;
-    --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;;
-    --dry-run) dry=1 ;; *) usage_error "unknown config argument: $1" ;; esac; shift
-  done
-  validate_harness "$planner"; validate_harness "$implementer"; validate_reason "$reason"
-  [[ -f $ENV_FILE ]] || die "environment file not found: $ENV_FILE"
-  if (( dry )); then echo "would update harnesses, back up $ENV_FILE, restart launchd daemon, health-check, and roll back on failure"; return; fi
-  acquire_maintenance_lock
-  local id backup replacement; id=$(new_id); install -d -m 0700 "$STATE_DIR/backups"
+execute_config_operation() {
+  local id=$1 planner=$2 implementer=$3 backup replacement
+  install -d -m 0700 "$STATE_DIR/backups"
   backup="$STATE_DIR/backups/$id.env.$(date -u +%Y%m%dT%H%M%SZ)"; replacement="$ENV_FILE.new.$id"
-  id=$(schedule_inline "$id" config "$reason" - - -)
   cp -p "$ENV_FILE" "$backup"; replace_harness_env "$ENV_FILE" "$planner" "$implementer" "$replacement"
   chmod "$(stat -f %Lp "$ENV_FILE")" "$replacement"
   transition "$id" executing replace_environment - - 1 -
@@ -144,6 +172,23 @@ command_config() {
   fi
   transition "$id" blocked rollback_acceptance - rollback_acceptance 1 -
   die "configuration failed and rollback did not pass health acceptance"
+}
+
+command_config() {
+  require_user
+  local planner='' implementer='' reason="configuration change" dry=0
+  while (( $# )); do case $1 in
+    --planner) [[ $# -ge 2 ]] || usage_error "--planner needs a value"; planner=$2; shift ;;
+    --implementer) [[ $# -ge 2 ]] || usage_error "--implementer needs a value"; implementer=$2; shift ;;
+    --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;;
+    --dry-run) dry=1 ;; *) usage_error "unknown config argument: $1" ;; esac; shift
+  done
+  validate_harness "$planner"; validate_harness "$implementer"; validate_reason "$reason"
+  [[ -f $ENV_FILE ]] || die "environment file not found: $ENV_FILE"
+  if (( dry )); then echo "would update harnesses, back up $ENV_FILE, restart launchd daemon, health-check, and roll back on failure"; return; fi
+  acquire_maintenance_lock
+  local id; id=$(new_id); id=$(schedule_inline "$id" config "$reason" "$planner:$implementer" - -)
+  execute_config_operation "$id" "$planner" "$implementer"
 }
 
 command_restart() {
@@ -217,28 +262,34 @@ remove_worktree() {
   rm -f "$owner"
 }
 
-command_reload() {
-  require_user
-  local reason="operator reload" dry=0
-  while (( $# )); do case $1 in --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;; --dry-run) dry=1 ;; *) usage_error "unknown reload argument: $1" ;; esac; shift; done
-  validate_reason "$reason"
-  [[ -d $SOURCE_CHECKOUT/.git ]] || die "reload validation failed: persistent checkout missing: $SOURCE_CHECKOUT"
-  [[ -z $($GIT_BIN -C "$SOURCE_CHECKOUT" status --porcelain) ]] || die "reload validation failed: checkout is dirty"
-  local remote accepted deployed target id tree rollback
-  remote=$($GIT_BIN -C "$SOURCE_CHECKOUT" config --get remote.origin.url); [[ $remote == https://* ]] || die "reload validation failed: origin must use HTTPS"
-  accepted=$(marker_value "$ACCEPTED_COMMIT_FILE"); [[ $accepted =~ ^[0-9a-fA-F]{40}$ ]] || die "reload validation failed: accepted commit marker missing or malformed"
-  deployed=$(marker_value "$DEPLOYED_COMMIT_FILE"); target=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'HEAD^{commit}')
-  "$GIT_BIN" -C "$SOURCE_CHECKOUT" cat-file -e "$accepted^{commit}" 2>/dev/null || die "reload validation failed: accepted commit is absent"
-  "$GIT_BIN" -C "$SOURCE_CHECKOUT" merge-base --is-ancestor "$accepted" "$target" || die "reload validation failed: HEAD is not a fast-forward descendant"
-  [[ $target != "$accepted" || $deployed != "$accepted" ]] || { echo "already deployed and accepted: $accepted"; return; }
-  if (( dry )); then echo "would deploy exact clean checkout commit $target over accepted commit $accepted via detached worktree and deploy.sh; health-gate; mark accepted; rollback on failure"; return; fi
-  acquire_maintenance_lock
-  id=$(new_id); id=$(schedule_inline "$id" update "$reason" checkout/HEAD "$target" "$accepted")
+cleanup_operation_worktree() {
+  local id=$1 role=$2 checkout=$3 path=$4 commit=$5 owner="$STATE_DIR/worktree-owners/$1.$2.json"
+  if [[ -e $owner || -L $owner ]]; then
+    remove_worktree "$id" "$role" "$checkout" "$path" "$commit"
+  elif [[ -e $path || -L $path ]]; then
+    die "refusing unowned worktree path: $path"
+  fi
+}
+validate_operation_worktree_cleanup() {
+  local id=$1 role=$2 checkout=$3 path=$4 commit=$5 owner="$STATE_DIR/worktree-owners/$1.$2.json"
+  if [[ -e $owner || -L $owner ]]; then
+    validate_worktree_owner "$owner" "$id" "$role" "$checkout" "$path" "$commit" \
+      || die "refusing cleanup without exact ownership metadata"
+    [[ ! -e $path || $($GIT_BIN -C "$path" rev-parse HEAD 2>/dev/null) == "$commit" ]] \
+      || die "refusing worktree cleanup at wrong commit"
+  elif [[ -e $path || -L $path ]]; then
+    die "refusing unowned worktree path: $path"
+  fi
+}
+
+execute_update_operation() {
+  local id=$1 target=$2 accepted=$3 tree rollback
   tree="$STATE_DIR/worktrees/$id"; prepare_worktree "$id" deploy "$SOURCE_CHECKOUT" "$tree" "$target"
   transition "$id" executing provision - - 1 -
   if DAEMONCTL_LOCK_HELD=1 DAEMONCTL_LOCK_PID=$$ SOURCE_COMMIT="$target" ACCEPTED_COMMIT_FILE="$ACCEPTED_COMMIT_FILE" DEPLOYED_COMMIT_FILE="$DEPLOYED_COMMIT_FILE" "$DEPLOY" "$tree/daemon"; then
     fault_after provision
     remove_worktree "$id" deploy "$SOURCE_CHECKOUT" "$tree" "$target"
+    cleanup_operation_worktree "$id" rollback "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id-rollback" "$accepted"
     transition "$id" succeeded accepted "deployed $accepted -> $target; service active and health accepted" - 1 -
     echo "operation $id succeeded"; return
   fi
@@ -252,6 +303,95 @@ command_reload() {
   fi
   transition "$id" blocked rollback_acceptance - rollback_acceptance 1 -
   die "reload failed and rollback was not accepted"
+}
+
+command_reload() {
+  require_user
+  local reason="operator reload" dry=0
+  while (( $# )); do case $1 in --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;; --dry-run) dry=1 ;; *) usage_error "unknown reload argument: $1" ;; esac; shift; done
+  validate_reason "$reason"
+  [[ -d $SOURCE_CHECKOUT/.git ]] || die "reload validation failed: persistent checkout missing: $SOURCE_CHECKOUT"
+  [[ -z $($GIT_BIN -C "$SOURCE_CHECKOUT" status --porcelain) ]] || die "reload validation failed: checkout is dirty"
+  local remote accepted deployed target id
+  remote=$($GIT_BIN -C "$SOURCE_CHECKOUT" config --get remote.origin.url); [[ $remote == https://* ]] || die "reload validation failed: origin must use HTTPS"
+  accepted=$(marker_value "$ACCEPTED_COMMIT_FILE"); [[ $accepted =~ ^[0-9a-fA-F]{40}$ ]] || die "reload validation failed: accepted commit marker missing or malformed"
+  deployed=$(marker_value "$DEPLOYED_COMMIT_FILE"); target=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'HEAD^{commit}')
+  "$GIT_BIN" -C "$SOURCE_CHECKOUT" cat-file -e "$accepted^{commit}" 2>/dev/null || die "reload validation failed: accepted commit is absent"
+  "$GIT_BIN" -C "$SOURCE_CHECKOUT" merge-base --is-ancestor "$accepted" "$target" || die "reload validation failed: HEAD is not a fast-forward descendant"
+  [[ $target != "$accepted" || $deployed != "$accepted" ]] || { echo "already deployed and accepted: $accepted"; return; }
+  if (( dry )); then echo "would deploy exact clean checkout commit $target over accepted commit $accepted via detached worktree and deploy.sh; health-gate; mark accepted; rollback on failure"; return; fi
+  acquire_maintenance_lock
+  id=$(new_id); id=$(schedule_inline "$id" update "$reason" checkout/HEAD "$target" "$accepted")
+  execute_update_operation "$id" "$target" "$accepted"
+}
+
+command_operation() {
+  require_user
+  local action=${1:-} id=${2:-} dry=${3:-} row type target_ref target previous digest
+  [[ $action == retry || $action == cancel ]] || usage_error "operation action must be retry or cancel"
+  [[ -n $id ]] || usage_error "missing operation id"
+  [[ $id =~ ^[A-Za-z0-9-]{1,64}$ ]] || usage_error "invalid operation id"
+  [[ $# -le 3 && ( -z $dry || $dry == --dry-run ) ]] || usage_error "invalid operation arguments"
+  if [[ $dry == --dry-run ]]; then echo "would $action operation $id without changing state"; return; fi
+  acquire_maintenance_lock
+  row=$(ops_cli get "$id")
+  [[ $row != null ]] || die "unknown operation: $id"
+  type=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["type"])' <<<"$row")
+  target_ref=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("targetRef") or "")' <<<"$row")
+  target=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("targetCommit") or "")' <<<"$row")
+  previous=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("previousCommit") or "")' <<<"$row")
+  case $action in
+    retry)
+      case $type in
+        update)
+          [[ $target =~ ^[0-9a-fA-F]{40}$ && $previous =~ ^[0-9a-fA-F]{40}$ ]] \
+            || die "cannot retry update operation with incomplete commit metadata"
+          validate_operation_worktree_cleanup "$id" deploy "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id" "$target"
+          validate_operation_worktree_cleanup "$id" rollback "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id-rollback" "$previous"
+          ;;
+        config)
+          [[ $target_ref == *:* ]] || die "cannot retry legacy config operation without harness metadata"
+          target=${target_ref#*:}; target_ref=${target_ref%%:*}
+          validate_harness "$target_ref"; validate_harness "$target"
+          [[ -f $ENV_FILE ]] || die "environment file not found: $ENV_FILE"
+          ;;
+        restart) ;;
+        *) die "unsupported operation type: $type" ;;
+      esac
+      row=$(ops_cli retry "$id")
+      digest=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["requestDigest"])' <<<"$row")
+      ops_cli claim "$id" "$digest" >/dev/null
+      case $type in
+        update)
+          cleanup_operation_worktree "$id" deploy "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id" "$target"
+          cleanup_operation_worktree "$id" rollback "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id-rollback" "$previous"
+          execute_update_operation "$id" "$target" "$previous"
+          ;;
+        config) execute_config_operation "$id" "$target_ref" "$target" ;;
+        restart)
+          transition "$id" executing restart_service - - 1 -
+          restart_service || { transition "$id" blocked restart_service - restart_service 1 -; die "restart failed"; }
+          health_accept || { transition "$id" blocked health - health 1 -; die "restart failed health acceptance"; }
+          transition "$id" succeeded accepted "service active and health accepted" - 1 -
+          echo "operation $id succeeded"
+          ;;
+      esac
+      ;;
+    cancel)
+      if [[ $type == update ]]; then
+        [[ $target =~ ^[0-9a-fA-F]{40}$ && $previous =~ ^[0-9a-fA-F]{40}$ ]] \
+          || die "cannot safely clean update operation with incomplete commit metadata"
+        validate_operation_worktree_cleanup "$id" deploy "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id" "$target"
+        validate_operation_worktree_cleanup "$id" rollback "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id-rollback" "$previous"
+      fi
+      ops_cli cancel "$id" >/dev/null
+      if [[ $type == update ]]; then
+        cleanup_operation_worktree "$id" deploy "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id" "$target"
+        cleanup_operation_worktree "$id" rollback "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id-rollback" "$previous"
+      fi
+      echo "operation $id cancelled"
+      ;;
+  esac
 }
 
 command_status() {
@@ -300,6 +440,7 @@ case ${1:-} in
   config) shift; command_config "$@" ;;
   restart) shift; command_restart "$@" ;;
   reload|update) shift; command_reload "$@" ;;
+  operation) shift; command_operation "$@" ;;
   status) shift; command_status "$@" ;;
   sessions) require_user; [[ $# -eq 1 ]] || usage_error "sessions takes no arguments"; result=$(ops_cli running); [[ $result == '[]' ]] && echo 'no running turns' || echo "$result" ;;
   top)
