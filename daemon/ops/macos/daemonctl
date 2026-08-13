@@ -327,7 +327,7 @@ command_reload() {
 
 command_operation() {
   require_user
-  local action=${1:-} id=${2:-} dry=${3:-} row type target_ref target previous digest
+  local action=${1:-} id=${2:-} dry=${3:-} row type target_ref target previous digest mutated rollback_verified
   [[ $action == retry || $action == cancel ]] || usage_error "operation action must be retry or cancel"
   [[ -n $id ]] || usage_error "missing operation id"
   [[ $id =~ ^[A-Za-z0-9-]{1,64}$ ]] || usage_error "invalid operation id"
@@ -340,6 +340,8 @@ command_operation() {
   target_ref=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("targetRef") or "")' <<<"$row")
   target=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("targetCommit") or "")' <<<"$row")
   previous=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("previousCommit") or "")' <<<"$row")
+  mutated=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("mutated",0))' <<<"$row")
+  rollback_verified=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("rollbackVerified",0))' <<<"$row")
   case $action in
     retry)
       case $type in
@@ -383,6 +385,23 @@ command_operation() {
           || die "cannot safely clean update operation with incomplete commit metadata"
         validate_operation_worktree_cleanup "$id" deploy "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id" "$target"
         validate_operation_worktree_cleanup "$id" rollback "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id-rollback" "$previous"
+      fi
+      if [[ $mutated == 1 && $rollback_verified != 1 ]]; then
+        local accepted_now deployed_now health_now=unhealthy
+        accepted_now=$(marker_value "$ACCEPTED_COMMIT_FILE")
+        deployed_now=$(marker_value "$DEPLOYED_COMMIT_FILE")
+        health_accept >/dev/null 2>&1 && health_now=healthy
+        if [[ $previous =~ ^[0-9a-fA-F]{40}$ && $accepted_now == "$previous" \
+            && $deployed_now == "$previous" && $health_now == healthy ]]; then
+          if [[ $type == update ]]; then
+            cleanup_operation_worktree "$id" deploy "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id" "$target"
+            cleanup_operation_worktree "$id" rollback "$SOURCE_CHECKOUT" "$STATE_DIR/worktrees/$id-rollback" "$previous"
+          fi
+          transition "$id" failed rolled_back "cancelled after verified rollback" rollback_acceptance 1 1
+          echo "operation $id resolved as rolled back: accepted and deployed markers match $previous; health accepted"
+          return
+        fi
+        die "operation $id may not be cancelled after mutation: verified rollback requires accepted-commit=$previous, deployed-commit=$previous, and health=healthy; observed accepted-commit=$accepted_now, deployed-commit=$deployed_now, health=$health_now"
       fi
       ops_cli cancel "$id" >/dev/null
       if [[ $type == update ]]; then
