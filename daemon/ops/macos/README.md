@@ -7,27 +7,28 @@ deployment remains in service only as the archive bridge.
 
 ## Run from an operator checkout
 
-The first run requires temporary passwordless sudo, as described in
-`machines/mac-mini/README.md`. From the repository root, copy the setup bundle
-and run it with the daemon source directory:
+From the repository root, copy the setup bundle and run it with the daemon
+source directory. The allocated TTY lets the provisioner prompt for the
+operator's sudo password when no passwordless grant is present:
 
 ```bash
 rsync -a daemon/ops/macos/ mini:~/daemon-macos-setup/
 ssh mini 'test -d ~/orchestra-bootstrap/.git || git clone https://github.com/dcouple/orchestra.git ~/orchestra-bootstrap'
 ssh mini 'git -C ~/orchestra-bootstrap pull --ff-only'
-ssh mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
+ssh -t mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
 ```
 
 Inventory-only mode performs no mutation:
 
 ```bash
-ssh mini 'bash ~/daemon-macos-setup/provision.sh --dry-run ~/orchestra-bootstrap/daemon'
+ssh -t mini 'bash ~/daemon-macos-setup/provision.sh --dry-run ~/orchestra-bootstrap/daemon'
 ```
 
 The provisioner installs a permanent, narrow sudoers rule for the fixed
 `launchctl` commands used by `daemonctl` and `deploy.sh`. It does not grant a
 passwordless operator shell. After verification, remove the temporary broad
 grant as the final privileged setup action.
+Unattended provisioning runs still require that temporary passwordless grant.
 
 ## Human handoffs
 
@@ -97,7 +98,7 @@ ssh -t mini 'sudo -u linearagent -i'
 /opt/homebrew/bin/cloudflared tunnel create linear-agent
 /opt/homebrew/bin/cloudflared tunnel route dns linear-agent linear-agent.blmapp.com
 exit
-ssh mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
+ssh -t mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
 ```
 
 The provisioner chooses the newest UUID-named credentials JSON, renders the
