@@ -322,7 +322,15 @@ payload:
     - models: [{name: "gpt-5.6-sol-xhigh", protocol: "codex"}]
       params: {"reasoning.effort": "xhigh"}
 EOF
-if ! sudo cmp -s "$proxy_tmp" "$CLIPROXY_CONFIG" 2>/dev/null; then sudo install -o "$AGENT" -g staff -m 0600 "$proxy_tmp" "$CLIPROXY_CONFIG"; proxy_changed=1; fi
+# CLIProxyAPI rewrites its own config at startup, replacing the plaintext
+# management secret-key with a bcrypt hash — compare with that line
+# normalized so a healthy self-rewritten config counts as converged.
+proxy_config_converged() {
+  sudo test -f "$CLIPROXY_CONFIG" || return 1
+  sudo sed 's/^\(  secret-key: \).*/\1NORMALIZED/' "$CLIPROXY_CONFIG" \
+    | cmp -s - <(sed 's/^\(  secret-key: \).*/\1NORMALIZED/' "$proxy_tmp")
+}
+if ! proxy_config_converged; then sudo install -o "$AGENT" -g staff -m 0600 "$proxy_tmp" "$CLIPROXY_CONFIG"; proxy_changed=1; fi
 rm -f "$proxy_tmp"; trap - EXIT
 (( proxy_changed )) && record proxy-config applied || record proxy-config already-correct
 
@@ -431,7 +439,7 @@ source_commit=
 git -C "$(cd "$SOURCE_DIR/.." && pwd)" rev-parse --is-inside-work-tree >/dev/null 2>&1 && source_commit=$(git -C "$(cd "$SOURCE_DIR/.." && pwd)" rev-parse HEAD)
 accepted=$(sudo cat "$OPS_STATE/accepted-commit" 2>/dev/null || true)
 code_drift=1
-if sudo test -d "$AGENT_HOME/linear-agent-daemon" && [[ -z $(agent rsync -ani --no-perms --no-owner --no-group --delete --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' "$SOURCE_DIR/" "$AGENT_HOME/linear-agent-daemon/") ]]; then code_drift=0; fi
+if sudo test -d "$AGENT_HOME/linear-agent-daemon" && [[ -z $(agent rsync -aniO --no-perms --no-owner --no-group --delete --exclude node_modules --exclude dist --exclude '*.db*' --exclude '.env*' "$SOURCE_DIR/" "$AGENT_HOME/linear-agent-daemon/") ]]; then code_drift=0; fi
 if [[ -n $source_commit && $accepted == "$source_commit" && $code_drift -eq 0 ]]; then
   record daemon-deploy already-correct
 else
