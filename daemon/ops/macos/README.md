@@ -44,6 +44,12 @@ ssh mini 'sudo -u linearagent sed -i "" \
   -e "s|/var/lib/linear-agent-daemon|/Users/linearagent|g" \
   -e "s|/etc/linear-agent-daemon/cliproxyapi.env|/Users/linearagent/.config/linear-agent-daemon/cliproxyapi.env|g" \
   /Users/linearagent/.config/linear-agent-daemon/env'
+# The VM env may omit env-overridable settings whose compiled-in defaults are
+# Linux paths outside the /var/lib compat symlink. CLIPROXY_ENV_FILE is the
+# known case (default /etc/linear-agent-daemon/cliproxyapi.env): without it the
+# daemon passes health checks but fails live turns with proxy_env_unreadable.
+ssh mini 'f=/Users/linearagent/.config/linear-agent-daemon/env; sudo -u linearagent grep -q "^CLIPROXY_ENV_FILE=" "$f" || \
+  printf "CLIPROXY_ENV_FILE=/Users/linearagent/.config/linear-agent-daemon/cliproxyapi.env\n" | sudo -u linearagent tee -a "$f" >/dev/null'
 ```
 
 Open an interactive `linearagent` login context for credentials and identity:
