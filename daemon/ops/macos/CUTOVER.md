@@ -149,7 +149,16 @@ daemon early.
 
 ## F2 — Restore the VM archive bridge
 
-1. `[RUN]` Restart the VM daemon and prove both archive services are active:
+1. `[RUN]` **Demote before restarting**: set `SESSIONS_ENABLED=0` in the VM's
+   `/etc/linear-agent-daemon/env`. Webhook re-pointing alone does NOT stop the
+   VM from claiming agent sessions — the daemon's Linear reconciliation loop
+   polls and claims sessions with no webhook involved, so a fully-enabled
+   archive daemon races the mini for every new session (observed live: the VM
+   answered a session whose webhook had been delivered to the mini). With
+   `SESSIONS_ENABLED=0` the archive daemon serves `/a/…` links and `/healthz`
+   only.
+
+2. `[RUN]` Restart the VM daemon and prove both archive services are active:
 
    ```bash
    gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a \
