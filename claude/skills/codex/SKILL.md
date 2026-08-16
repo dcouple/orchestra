@@ -24,7 +24,7 @@ this conversation — the prompt must carry everything the role needs.
 | `code-researcher` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 
-Efforts are defaults: `medium` for the implementer, `low` for every other role. The dispatcher may raise a reviewer to `medium` or
+Efforts are defaults: `medium` for the implementer and the refactor roles, `low` for every other role. The dispatcher may raise a reviewer to `medium` or
 `high` — rarely, when the zone warrants it (zone 0, or a multi-phase item), with the
 reason stated in the dispatch; never above `high`, never by default. The investigator and
 backend-verifier act on the environment (tests, scripts, app boots), but
@@ -72,7 +72,7 @@ Print the report as your final message, in exactly the specified format.
 ```
 
 Role instructions: Codex-only roles (implementer, investigator,
-backend-verifier) → `.references/agents/<role>/instructions.md` · roles
+backend-verifier, refactor-simple, refactor-deep) → `.references/agents/<role>/instructions.md` · roles
 with a Claude twin (code-researcher, plan-reviewer, code-reviewer) →
 `.claude/agents/<role>.md` (tell Codex to follow the body and ignore the
 YAML frontmatter — it applies to a different harness).
@@ -82,7 +82,7 @@ Format files, under `.references/agents/<role>/`: implementer →
 `review-report.md` · code-researcher → `codebase-findings.md` ·
 investigator → `root-cause-finding.md` · backend-verifier →
 `../frontend-verifier/verification-result.md` (shared verifier format,
-verify mode).
+verify mode) · refactor-simple / refactor-deep → `refactor-report.md`.
 
 **Path resolution**: all paths are relative to the current repo root —
 `.references/` and `.claude/agents/` are synced into every consumer repo

@@ -26,7 +26,10 @@ pr: <url or #>
 `<final state after the review loop — "Must Fix: 0 · passes used: k/<cap>" — and the`
 `QA pass: manual tests executed vs left to the human. Note any`
 `Should Fix / Nice to Have items intentionally deferred, and why — the same`
-`survivors live as inline PR comments; this is the summary, not a second list.>`
+`survivors live as inline PR comments; this is the summary, not a second list.`
+`Then the refactor line: "refactor: applied <n> auto-fixable [S/D/S+D tags] ·`
+`manual <m> below" | "skipped (size)" — and "fresh-eyes: <k>`
+`passes".>`
 
 ## Human action required
 `<This is what the user-facing report leads with. Split by owner, ordered`
@@ -38,6 +41,7 @@ pr: <url or #>
 
 ## Residual risks / follow-ups
 - `<genuine risks or future work items — NOT actions; actions go in the block above>`
+- `<refactor manual items, verbatim from the merged plan with file:line and source tag — the human's call, never applied in-run; omit the line when there are none>`
 
 ## Dial record
 ```yaml
