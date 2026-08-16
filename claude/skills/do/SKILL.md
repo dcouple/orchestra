@@ -505,14 +505,16 @@ comment) before ending.
   auto-fixable items as one scoped commit under Step 4's selective-commit
   rule; manual items go to the wrap-up as a list, never applied unasked.
   A refactor commit changes the head, so one **scoped review pass over its
-  diff alone** follows (the QA-bug rule below, same reason). Under the size
-  trigger, skip and record `refactor: skipped (size)`. **Fresh-eyes**, always:
-  run `fresh-eyes` on the PR body — the zero-context Monday-morning
+  diff alone** follows (the QA-bug rule below, same reason). Below the
+  size threshold, skip and record `refactor: skipped (size)`. **Fresh-eyes**,
+  always: run `fresh-eyes` on the PR body — the zero-context Monday-morning
   recipient read, improved with creative freedom, repeated by a fresh
   sub-agent until a pass changes nothing — presentation only; claims,
   numbers, evidence, and the Manual tests items themselves are read-only.
-  It runs here so the checklist the QA drive executes is the one the
-  reader will see. Both skills are dcouple/skills user-level installs;
+  **Cap 3 passes**, a ceiling like the review loop's: after the third,
+  continue with the last body and note `fresh-eyes: cap reached` in the
+  wrap-up. It runs here so the checklist the QA drive executes is the one
+  the reader will see. Both skills are dcouple/skills user-level installs;
   when either is not installed, record `refactor`/`fresh-eyes: unavailable`
   and continue.
 - Then — zero Must Fix, or the cap reached with
@@ -643,7 +645,7 @@ comment) before ending.
 - Write `./tmp/<id>/wrapup.md` following this skill's
   `references/wrap-up-report.md`; run `fresh-eyes` on it (the human reads
   this cold, Monday morning; presentation only, every number and evidence
-  link read-only); post
+  link read-only; same 3-pass cap); post
   it as a PR comment. `plan.md` and `wrapup.md` stay in `./tmp/<id>/` —
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
