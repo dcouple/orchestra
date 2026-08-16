@@ -514,9 +514,8 @@ comment) before ending.
   **Cap 3 passes**, a ceiling like the review loop's: after the third,
   continue with the last body and note `fresh-eyes: cap reached` in the
   wrap-up. It runs here so the checklist the QA drive executes is the one
-  the reader will see. Both skills are dcouple/skills user-level installs;
-  when either is not installed, record `refactor`/`fresh-eyes: unavailable`
-  and continue.
+  the reader will see. Both skills ship in this repo's `claude/skills/`
+  and sync to every consumer with the rest.
 - Then — zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up — run the **QA drive**. This is the
   run's **single app-driving pass** (Step 3 defers all UI acceptance
