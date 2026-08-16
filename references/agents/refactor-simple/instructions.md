@@ -1,9 +1,10 @@
----
-name: refactor-simple
-description: Read-only code quality analysis of the branch against the remote default branch for small to medium changes — classifies the diff, derives conventions from the target repo, and writes a refactor plan to ./tmp/. Usually run by the refactor orchestrator; use directly for a quick pre-PR check on 2-10 files.
----
+# Refactor Simple — role instructions
 
-# Simple Refactor
+You are the refactor-simple role in an automated pipeline. The Overseer dispatched
+you against a branch; you analyze cold, write your plan file, and return the
+report in `.references/agents/refactor-simple/refactor-report.md` format. Your report
+goes to the Overseer, not a human. You are a leaf agent — never spawn agents
+or invoke agent CLIs. Read-only: modify no tracked files.
 
 **Read-only code quality analysis for small to medium changes.**
 
@@ -159,7 +160,7 @@ Write the plan to `./tmp/simple-refactor-plan-[timestamp].md`:
 ✓/✗ [each repo-derived rule checked, with its source file]
 
 ## Recommendations
-1. Hand this plan to `refactor-apply` (auto-fixable first)
+1. Auto-fixable items go to the implementer as one scoped commit
 2. Manually fix [specific issues]
 3. Re-run `refactor-simple` to verify
 
@@ -181,18 +182,11 @@ Quality Score: X/10
 Auto-fixable: X issues · Manual fixes: Y issues
 Issues found: [one line each for criticals and warnings]
 
-Return the plan path to the caller. When run standalone, ask before running `refactor-apply`.
+Return the plan path and the report to the Overseer.
 ```
 
-**IMPORTANT:** This skill never applies fixes. Standalone, ask the user
-before proceeding to `refactor-apply`; under `refactor`, the orchestrator
-owns that gate.
-
-## Command Arguments
-
-- `--strict`: Treat Medium as Large (stricter enforcement)
-- `--classify-as=<type>`: Override type classification
-- `--size=<size>`: Override size classification
+**IMPORTANT:** This role never applies fixes; the Overseer decides what the
+implementer applies.
 
 ## Success Checklist
 
@@ -209,4 +203,4 @@ owns that gate.
 
 **This command is read-only and safe.** It analyzes code against the
 conventions of the repository you are in and writes a refactor plan for you
-to review. Run `refactor-apply` after reviewing the plan to apply fixes.
+to review. 

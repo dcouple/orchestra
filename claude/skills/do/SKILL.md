@@ -494,28 +494,29 @@ comment) before ending.
   tests checklist — anything that changes head or body goes first.
   **Refactor**, on size only: when the hand-written diff (lockfiles,
   generated, and vendored files excluded) exceeds ~10 files or ~300 lines,
-  fan out `refactor-simple` and `refactor-deep` as two fresh sub-agents
-  dispatched in one message that **cannot see each other's output**, then
-  merge their plans once yourself: cluster by file:line and issue, keep the
-  **maximum severity, never average**, keep sole-source findings, tag each
-  by source. The review lanes asked "should this merge?"; refactor asks
-  "should this be cleaner before it does?" — repo-derived convention and
-  structure debt plus a correctness hunt over the new paths — so it is a
-  different question, not a fourth review pass. Apply the merged
-  auto-fixable items as one scoped commit under Step 4's selective-commit
-  rule; manual items go to the wrap-up as a list, never applied unasked.
-  A refactor commit changes the head, so one **scoped review pass over its
-  diff alone** follows (the QA-bug rule below, same reason). Below the
-  size threshold, skip and record `refactor: skipped (size)`. **Fresh-eyes**,
-  always: run `fresh-eyes` on the PR body — the zero-context Monday-morning
-  recipient read, improved with creative freedom, repeated by a fresh
-  sub-agent until a pass changes nothing — presentation only; claims,
-  numbers, evidence, and the Manual tests items themselves are read-only.
-  **Cap 3 passes**, a ceiling like the review loop's: after the third,
-  continue with the last body and note `fresh-eyes: cap reached` in the
-  wrap-up. It runs here so the checklist the QA drive executes is the one
-  the reader will see. Both skills ship in this repo's `claude/skills/`
-  and sync to every consumer with the rest.
+  dispatch the Codex `refactor-simple` and `refactor-deep` roles via the
+  `codex` skill — **two detached dispatches in one message**, like the
+  review lanes; each reads the branch cold and neither sees the other's
+  output. Merge their reports yourself, once: cluster by file:line and
+  issue, keep the **maximum severity, never average**, keep sole-source
+  findings, tag each `[S]`/`[D]`/`[S+D]`; never re-dispatch a role to
+  "confirm" the other. The review lanes asked "should this merge?";
+  refactor asks "should this be cleaner before it does?" — repo-derived
+  convention and structure debt plus a correctness hunt over the new
+  paths — so it is a different question, not a fourth review pass. Hand
+  the merged auto-fixable items to the `implementer` as one scoped commit
+  under Step 4's selective-commit rule; manual items go to the wrap-up as
+  a list, never applied unasked. A refactor commit changes the head, so
+  one **scoped review pass over its diff alone** follows (the QA-bug rule
+  below, same reason). Below the size threshold, skip and record
+  `refactor: skipped (size)`. **Fresh-eyes**, always: run `fresh-eyes` on
+  the PR body — the zero-context Monday-morning recipient read, improved
+  with creative freedom, repeated by a fresh sub-agent until a pass changes
+  nothing — presentation only; claims, numbers, evidence, and the Manual
+  tests items themselves are read-only. **Cap 3 passes**, a ceiling like
+  the review loop's: after the third, continue with the last body and note
+  `fresh-eyes: cap reached` in the wrap-up. It runs here so the checklist
+  the QA drive executes is the one the reader will see.
 - Then — zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up — run the **QA drive**. This is the
   run's **single app-driving pass** (Step 3 defers all UI acceptance

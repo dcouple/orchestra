@@ -26,9 +26,9 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 
 | Directory | Contents | Synced to (in each consumer) |
 |---|---|---|
-| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-brief`, `/discussion`, `/prepare-pull-request`, `postmortem`, `codex`, `excalidraw-pr-diagrams`, `refactor` + `refactor-simple`/`-deep`/`-apply`, `fresh-eyes`) | `.claude/skills/` |
+| `claude/skills/` | Claude Code workflow skills (`/do`, `/create-brief`, `/discussion`, `/prepare-pull-request`, `postmortem`, `codex`, `excalidraw-pr-diagrams`, `fresh-eyes`) | `.claude/skills/` |
 | `claude/agents/` | Claude sub-agent definitions (reviewers, researchers, verifiers, socrates) | `.claude/agents/` |
-| `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator) — thin pointers into `references/` | `.codex/skills/` |
+| `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator, refactor-simple/-deep) — thin pointers into `references/` | `.codex/skills/` |
 | `references/` | Shared skill-system documents: work-item formats, verification methods, rubrics, sub-agent role instructions and output formats | `.references/` |
 | `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) to copy into a new consumer repo and fill in | not synced — copied once by hand |
 | `daemon/` | Orchestra-only Linear agent webhook ingress service and VPS operations runbook | not synced |

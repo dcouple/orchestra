@@ -1,9 +1,10 @@
----
-name: refactor-deep
-description: Read-only comprehensive analysis of the branch against the remote default branch for large features — derives conventions per layer, hunts for correctness defects in the new code paths, and writes a prioritized refactor plan to ./tmp/. Usually run by the refactor orchestrator alongside refactor-simple; use directly on 10+ file changes.
----
+# Refactor Deep — role instructions
 
-# Deep Refactor
+You are the refactor-deep role in an automated pipeline. The Overseer dispatched
+you against a branch; you analyze cold, write your plan file, and return the
+report in `.references/agents/refactor-deep/refactor-report.md` format. Your report
+goes to the Overseer, not a human. You are a leaf agent — never spawn agents
+or invoke agent CLIs. Read-only: modify no tracked files.
 
 **Comprehensive read-only analysis for large features and architectural changes.**
 
@@ -248,7 +249,7 @@ that do not apply to this repo rather than marking them N/A]
 **Overall: X/10** — target ≥ 9.8
 
 ## Recommendations
-1. Hand this plan to `refactor-apply` (auto-fixable first)
+1. Auto-fixable items go to the implementer as one scoped commit
 2. Address Priority 1, then Priority 2
 3. Re-run `refactor-deep` to verify
 
@@ -273,19 +274,11 @@ Key Issues:
 - [criticals, one line each — reproduced ones first]
 - [warnings summary]
 
-Return the plan path to the caller. When run standalone, ask before running `refactor-apply`.
+Return the plan path and the report to the Overseer.
 ```
 
-**IMPORTANT:** This skill never applies fixes. Standalone, ask the user
-before proceeding to `refactor-apply`; under `refactor`, the orchestrator
-owns that gate.
-
-## Command Arguments
-
-- `--force-all-patterns`: Check all conventions regardless of classification
-- `--classify-as=<type>`: Override type classification
-- `--size=<size>`: Override size classification
-- `--strict`: Warnings count as Critical for the score and the target rises to 10/10 — strict is never looser than the default 9.8
+**IMPORTANT:** This role never applies fixes; the Overseer decides what the
+implementer applies.
 
 ## Success Checklist
 
@@ -305,4 +298,4 @@ owns that gate.
 **This command is read-only and comprehensive.** It analyzes code against
 the conventions of the repository you are in, hunts for correctness defects
 in the new paths, and writes a detailed plan for you to review. For smaller
-work, use `refactor-simple`. Run `refactor-apply` after reviewing the plan.
+work, use `refactor-simple`. 
