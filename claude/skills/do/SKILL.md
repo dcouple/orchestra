@@ -489,7 +489,33 @@ comment) before ending.
   open: apply the Should Fixes you judge worth it (or leave them to the
   inline comments below) — a Should Fix never triggers a re-review by
   itself.
-- When the loop ends — zero Must Fix, or the cap reached with
+- When the loop ends, two passes run **before the QA drive**, in this
+  order, because QA proves the final head and executes the body's Manual
+  tests checklist — anything that changes head or body goes first.
+  **Refactor**, on size only: when the hand-written diff (lockfiles,
+  generated, and vendored files excluded) exceeds ~10 files or ~300 lines,
+  fan out `refactor-simple` and `refactor-deep` as two fresh sub-agents
+  dispatched in one message that **cannot see each other's output**, then
+  merge their plans once yourself: cluster by file:line and issue, keep the
+  **maximum severity, never average**, keep sole-source findings, tag each
+  by source. The review lanes asked "should this merge?"; refactor asks
+  "should this be cleaner before it does?" — repo-derived convention and
+  structure debt plus a correctness hunt over the new paths — so it is a
+  different question, not a fourth review pass. Apply the merged
+  auto-fixable items as one scoped commit under Step 4's selective-commit
+  rule; manual items go to the wrap-up as a list, never applied unasked.
+  A refactor commit changes the head, so one **scoped review pass over its
+  diff alone** follows (the QA-bug rule below, same reason). Under the size
+  trigger, skip and record `refactor: skipped (size)`. **Fresh-eyes**, always:
+  run `fresh-eyes` on the PR body — the zero-context Monday-morning
+  recipient read, improved with creative freedom, repeated by a fresh
+  sub-agent until a pass changes nothing — presentation only; claims,
+  numbers, evidence, and the Manual tests items themselves are read-only.
+  It runs here so the checklist the QA drive executes is the one the
+  reader will see. Both skills are dcouple/skills user-level installs;
+  when either is not installed, record `refactor`/`fresh-eyes: unavailable`
+  and continue.
+- Then — zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up — run the **QA drive**. This is the
   run's **single app-driving pass** (Step 3 defers all UI acceptance
   criteria here): the `frontend-verifier` proves the deferred UI ACs *and*
@@ -615,7 +641,9 @@ comment) before ending.
   `effective_lanes`, `runtime_fallback`, and `fallback_cause` into the dial
   record; effective lanes remain single/Codex-only regardless of the request.
 - Write `./tmp/<id>/wrapup.md` following this skill's
-  `references/wrap-up-report.md`; post
+  `references/wrap-up-report.md`; run `fresh-eyes` on it (the human reads
+  this cold, Monday morning; presentation only, every number and evidence
+  link read-only); post
   it as a PR comment. `plan.md` and `wrapup.md` stay in `./tmp/<id>/` —
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
