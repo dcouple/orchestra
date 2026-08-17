@@ -20,7 +20,7 @@ this conversation — the prompt must carry everything the role needs.
 | `implementer` | `gpt-5.6-sol` / `medium` | `--yolo` | persistent — resume for fix rounds |
 | `backend-verifier` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `plan-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
-| `code-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
+| `code-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral`; persistent when dispatched as the refactor adversary, so the same reviewer verifies the repair |
 | `code-researcher` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 

@@ -509,21 +509,25 @@ comment) before ending.
   a list, never applied unasked. A refactor commit changes the head, so
   an **adversarial scoped review of its diff alone** follows: dispatch the
   `code-reviewer` role over `git diff <sha>~1..<sha>` with the apply
-  report's claims as the list to falsify. Where a new test claims to
-  demonstrate a defect fix, it runs on the parent (must fail) and head
-  (must pass) — a refactor's own tests have passed trivially while the
-  bug remained; characterization tests for behaviour-preserving changes
-  may pass on both. Adversary passes are numbered 1-3 and **3 is the
-  cap**: pass 1 reviews the apply commit; a Must Fix loops to the
-  implementer as a repair, committed, then pass 2 on the repair commit
-  alone; the repair before pass 3 is spec-driven — the implementer writes
-  the input class as a test table or replaces the mechanism with a pure
-  derivation — and stops rather than widens scope. Run the loop as one
-  chain within the run. A clean pass advances to fresh-eyes and QA; at
-  the cap the run advances anyway, carrying pass 3's survivors into the
-  wrap-up as open Must Fix items — the cap is a ceiling on repair, never
-  a reason the run cannot complete. Below the size threshold, skip and
-  record `refactor: skipped (size)`. **Fresh-eyes**, always: run `fresh-eyes` on
+  report's claims as the list to falsify, as a **persistent** session
+  (like the implementer) so it can be resumed. A new test that claims to
+  fix a defect runs on the parent (must fail) and head (must pass); a
+  refactor's own tests have passed trivially while the bug remained;
+  characterization tests for behaviour-preserving changes may pass on
+  both. Three adversary passes is the cap. Pass 1 reviews the apply
+  commit. A Must Fix loops to the implementer (resumed, it knows the code)
+  as a repair, committed; then **the same reviewer verifies**: resume its
+  session with the repair commit, briefed to re-run its own repro against
+  the repair and attack the repair itself, since it knows the failure
+  best. A fresh reviewer is for pass 1 and for a finding with no prior
+  reviewer. The repair before pass 3 is spec-driven: the implementer
+  writes the input class as a test table or replaces the mechanism with a
+  pure derivation, and stops rather than widens scope. Run the loop as one
+  chain within the run. A clean pass advances to fresh-eyes and QA; at the
+  cap the run advances anyway, carrying pass 3's survivors into the
+  wrap-up as open Must Fix items. The cap is a ceiling on repair; the run
+  completes either way. Below the size threshold, skip and record
+  `refactor: skipped (size)`. **Fresh-eyes**, always: run `fresh-eyes` on
   the PR body — the zero-context Monday-morning recipient read, improved
   with creative freedom, repeated by a fresh sub-agent until a pass changes
   nothing — presentation only; claims, numbers, evidence, and the Manual
