@@ -516,11 +516,14 @@ comment) before ending.
   characterization tests for behaviour-preserving changes may pass on
   both. Three adversary passes is the cap. Pass 1 reviews the apply
   commit. A Must Fix loops to the implementer (resumed, it knows the code)
-  as a repair, committed; then **the same reviewer verifies**: resume its
-  session with the repair commit, briefed to re-run its own repro against
-  the repair and attack the repair itself, since it knows the failure
-  best. A fresh reviewer is for pass 1 and for a finding with no prior
-  reviewer. The repair before pass 3 is spec-driven: the implementer
+  as a repair, committed; then two reviewers look, dispatched in one
+  message: **resume the reviewer that found the finding** with the repair
+  commit, to re-run its own repro and say whether that finding is closed;
+  and **dispatch a fresh `code-reviewer`** over the repair commit's diff
+  alone, briefed to break the repair itself, since a repair that changed
+  code can break an adjacent case the first reviewer was primed to look
+  past. The resume settles the finding; the fresh dispatch is the numbered
+  pass and counts toward the cap. The repair before pass 3 is spec-driven: the implementer
   writes the input class as a test table or replaces the mechanism with a
   pure derivation, and stops rather than widens scope. Run the loop as one
   chain within the run. A clean pass advances to fresh-eyes and QA; at the
