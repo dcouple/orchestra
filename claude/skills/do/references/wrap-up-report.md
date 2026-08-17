@@ -28,8 +28,8 @@ pr: <url or #>
 `Should Fix / Nice to Have items intentionally deferred, and why — the same`
 `survivors live as inline PR comments; this is the summary, not a second list.`
 `Then the refactor line: "refactor: applied <n> auto-fixable [S/D/S+D tags] ·`
-`manual <m> below" | "skipped (size)" — and "fresh-eyes: <k>`
-`passes".>`
+`manual <m> below · adversary passes <p>/3, final: clean | survivors below"`
+`| "skipped (size)" — and "fresh-eyes: <k> passes".>`
 
 ## Human action required
 `<This is what the user-facing report leads with. Split by owner, ordered`
