@@ -507,9 +507,20 @@ comment) before ending.
   the merged auto-fixable items to the `implementer` as one scoped commit
   under Step 4's selective-commit rule; manual items go to the wrap-up as
   a list, never applied unasked. A refactor commit changes the head, so
-  one **scoped review pass over its diff alone** follows (the QA-bug rule
-  below, same reason). Below the size threshold, skip and record
-  `refactor: skipped (size)`. **Fresh-eyes**, always: run `fresh-eyes` on
+  an **adversarial scoped review of its diff alone** follows: dispatch the
+  `code-reviewer` role over `git diff <sha>~1..<sha>` with the apply
+  report's claims as the list to falsify, and the instruction to run the
+  commit's new tests on the parent (must fail) and head (must pass) — a
+  refactor's own tests have passed trivially while the bug remained. A
+  Must Fix loops to the implementer as a fix round, then a fresh
+  adversary on the fix commit alone; **cap 3 fix rounds**. If round 3 is
+  reached, the fixes are hand-tuning to the last reported inputs while
+  breaking the next: round 3 is spec-driven — the implementer writes the
+  input class as a test table or replaces the mechanism with a pure
+  derivation — and stops rather than widens scope; round 3's survivors go
+  to the wrap-up. Run the loop as one chain within the run; only a clean
+  adversary advances to fresh-eyes and QA. Below the size threshold, skip
+  and record `refactor: skipped (size)`. **Fresh-eyes**, always: run `fresh-eyes` on
   the PR body — the zero-context Monday-morning recipient read, improved
   with creative freedom, repeated by a fresh sub-agent until a pass changes
   nothing — presentation only; claims, numbers, evidence, and the Manual
