@@ -18,8 +18,9 @@ this agent; this skill's job still ends at clarity.
 
 Don't edit source files, propose diffs to apply, or write documents, specs, tickets,
 or verification criteria unless the user explicitly asks for one mid-discussion.
-Capture belongs to the `create-brief` skill. The one exception is Step 3's
-decision log — a record of what was decided, not a deliverable.
+Capture belongs to the `create-brief` skill. Two exceptions: Step 3's decision
+log — a record of what was decided, not a deliverable — and Step 2's throwaway
+probes, which are research.
 
 ## Steps
 
@@ -44,7 +45,7 @@ the other way around. Dispatch mid-conversation as new questions arise; run
 independent dispatches in parallel.
 
 **Success criteria**: every claim you make about the codebase, ecosystem, or defect
-traces to a sub-agent finding or user statement, not a guess.
+traces to a sub-agent finding, a probe result, or a user statement, not a guess.
 
 ### 2. Discuss and converge
 - Present findings and options with tradeoffs; be opinionated — recommend with
@@ -55,6 +56,14 @@ traces to a sub-agent finding or user statement, not a guess.
   assumption. Where a choice hinges on an intangible — the user's risk
   appetite, priorities, taste — ask the user; never substitute an assumption
   for their answer.
+- **Probe before you ask.** Classify a fork before surfacing it. When the answer
+  is observable by running something — behavior, timing, output, perf, layout —
+  build the cheapest throwaway probe under `./tmp/`, run it, and present the
+  result with a recommendation. Probes run local and read-only against isolated
+  state; anything that touches production or mutates real data gets the user's
+  go-ahead first. Reserve questions for the product and preference calls no
+  experiment settles. A probe answers faster than the user can, and hands them a
+  result to react to.
 - Name disagreements and unresolved choices instead of papering over them.
 - Keep altitude: decisions and direction, not file-by-file detail.
 
