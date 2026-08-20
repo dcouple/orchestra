@@ -2,7 +2,6 @@
 name: prepare-pull-request
 description: Take ad-hoc changes made in-session (outside /do) to a pull request — gate them through Socrates (right approach?) and the PR reviewers (correct?), then commit, push, and open the PR in the repo's standard format. /do handles its own PR prep; this skill is for everything else.
 argument-hint: "[optional: issue # to close, or extra context for the PR body]"
-disable-model-invocation: true
 ---
 
 # Prepare Pull Request
