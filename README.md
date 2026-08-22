@@ -31,7 +31,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 | `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator, refactor-simple/-deep) — thin pointers into `references/` | `.codex/skills/` |
 | `references/` | Shared skill-system documents: work-item formats, verification methods, rubrics, sub-agent role instructions and output formats | `.references/` |
 | `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) to copy into a new consumer repo and fill in | not synced — copied once by hand |
-| `daemon/` | Orchestra-only Linear agent webhook ingress service and VPS operations runbook | not synced |
+| `daemon/` | Orchestra-only Linear agent webhook service, running on the Mac mini under launchd behind a Cloudflare Tunnel at `linear-agent.blmapp.com`; the legacy VM remains the archive bridge for old artifact links | not synced |
 | `machines/` | Orchestra-only, versioned physical-machine setup and operations artifacts | not synced |
 | `scripts/sync.sh` | The mirror logic (four `rsync --delete` targets) | — |
 

@@ -1,20 +1,16 @@
-GCLOUD ?= gcloud
-DAEMON_HOST ?= linear-agent
-DAEMON_PROJECT ?= bloom-agents
-DAEMON_ZONE ?= us-central1-a
+DAEMON_SSH ?= ssh
+DAEMON_SSH_HOST ?= bloomi
 DAEMONCTL ?= /usr/local/sbin/daemonctl
 
 # Capture command-line variables without expanding embedded Make or shell syntax. The
-# Python transport parses ARGS and creates both the local gcloud argv and remote command.
-override DAEMON_REMOTE_GCLOUD := $(value GCLOUD)
-override DAEMON_REMOTE_HOST := $(value DAEMON_HOST)
-override DAEMON_REMOTE_PROJECT := $(value DAEMON_PROJECT)
-override DAEMON_REMOTE_ZONE := $(value DAEMON_ZONE)
+# Python transport parses ARGS and creates both the local ssh argv and remote command.
+override DAEMON_REMOTE_SSH := $(value DAEMON_SSH)
+override DAEMON_REMOTE_HOST := $(value DAEMON_SSH_HOST)
 override DAEMON_REMOTE_DAEMONCTL := $(value DAEMONCTL)
 override DAEMON_REMOTE_ARGS := $(value ARGS)
 override DAEMON_REMOTE_PLANNER := $(value PLANNER)
 override DAEMON_REMOTE_IMPLEMENTER := $(value IMPLEMENTER)
-export DAEMON_REMOTE_GCLOUD DAEMON_REMOTE_HOST DAEMON_REMOTE_PROJECT DAEMON_REMOTE_ZONE
+export DAEMON_REMOTE_SSH DAEMON_REMOTE_HOST
 export DAEMON_REMOTE_DAEMONCTL DAEMON_REMOTE_ARGS
 export DAEMON_REMOTE_PLANNER DAEMON_REMOTE_IMPLEMENTER
 

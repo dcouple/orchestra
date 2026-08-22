@@ -9,43 +9,41 @@ describe("root Makefile remote transport", () => {
     const { dir } = fixture();
     const bin = join(dir, "bin");
     mkdirSync(bin);
-    const gcloudLog = join(dir, "gcloud.json");
-    const sudoLog = join(dir, "sudo.json");
+    const sshLog = join(dir, "ssh.json");
+    const daemonctlLog = join(dir, "daemonctl.json");
     const localSentinel = join(dir, "local-sentinel");
     const remoteSentinel = join(dir, "remote-sentinel");
-    const sudo = executable(join(bin, "sudo"), `
+    const daemonctlLogger = executable(join(bin, "daemonctl-log"), `
 python3 - "$@" <<'PY'
 import json,sys
-json.dump(sys.argv[1:],open('${sudoLog}','w'))
+json.dump(sys.argv[1:],open('${daemonctlLog}','w'))
 PY
 `);
-    const gcloud = executable(join(bin, "gcloud"), `
+    const ssh = executable(join(bin, "ssh"), `
 python3 - "$@" <<'PY'
-import json,sys
-json.dump(sys.argv[1:],open('${gcloudLog}','w'))
+import json,os,shlex,subprocess,sys
+json.dump(sys.argv[1:],open('${sshLog}','w'))
+command=sys.argv[-1]
+env={**os.environ,"PATH":'${bin}:/usr/bin:/bin'}
+result=subprocess.run(["/bin/sh","-c",f"set -- {command}; exec {shlex.quote('${daemonctlLogger}')} \\\"$@\\\""],env=env)
+raise SystemExit(result.returncode)
 PY
-command=""
-for value in "$@"; do case "$value" in --command=*) command="\${value#*=}" ;; esac; done
-[[ -n "$command" ]]
-PATH='${bin}:/usr/bin:/bin' /bin/sh -c "$command"
 `);
-    expect(sudo).toBe(join(bin, "sudo"));
     const repo = resolve("..");
-    const run = (target: string, variables: string[]) => spawnSync("make", [target, `GCLOUD=${gcloud}`, ...variables], {
+    const run = (target: string, variables: string[]) => spawnSync("make", [target, `DAEMON_SSH=${ssh}`, ...variables], {
       cwd: repo,
       env: { ...process.env },
       encoding: "utf8",
     });
-    const sudoArgv = () => JSON.parse(readFileSync(sudoLog, "utf8")) as string[];
-    const gcloudArgv = () => JSON.parse(readFileSync(gcloudLog, "utf8")) as string[];
+    const daemonctlArgv = () => JSON.parse(readFileSync(daemonctlLog, "utf8")) as string[];
+    const sshArgv = () => JSON.parse(readFileSync(sshLog, "utf8")) as string[];
 
     const reason = `founder's release; touch ${remoteSentinel}; $(touch ${localSentinel})`;
     const restart = run("daemon-restart", [`ARGS=--reason "${reason}"`]);
     expect(restart.status, restart.stderr).toBe(0);
-    expect(sudoArgv()).toEqual(["/usr/local/sbin/daemonctl", "restart", "--reason", reason]);
-    expect(gcloudArgv()).toEqual([
-      "compute", "ssh", "linear-agent", "--project=bloom-agents", "--zone=us-central1-a",
-      expect.stringContaining("--command=sudo /usr/local/sbin/daemonctl restart --reason"), "--", "-t",
+    expect(daemonctlArgv()).toEqual(["/usr/local/sbin/daemonctl", "restart", "--reason", reason]);
+    expect(sshArgv()).toEqual([
+      "-t", "bloomi", expect.stringContaining("/usr/local/sbin/daemonctl restart --reason"),
     ]);
     expect(existsSync(localSentinel)).toBe(false);
     expect(existsSync(remoteSentinel)).toBe(false);
@@ -54,17 +52,17 @@ PATH='${bin}:/usr/bin:/bin' /bin/sh -c "$command"
     const implementer = `claud'ex $(touch ${localSentinel})`;
     const config = run("daemon-config", [`PLANNER=${planner}`, `IMPLEMENTER=${implementer}`, `ARGS=--reason "two words"`]);
     expect(config.status, config.stderr).toBe(0);
-    expect(sudoArgv()).toEqual(["/usr/local/sbin/daemonctl", "config", "--planner", planner,
+    expect(daemonctlArgv()).toEqual(["/usr/local/sbin/daemonctl", "config", "--planner", planner,
       "--implementer", implementer, "--reason", "two words"]);
     expect(existsSync(localSentinel)).toBe(false);
     expect(existsSync(remoteSentinel)).toBe(false);
 
     const update = run("daemon-update", [`ARGS=--reason "release's candidate"`]);
     expect(update.status, update.stderr).toBe(0);
-    expect(sudoArgv()).toEqual(["/usr/local/sbin/daemonctl", "update", "--reason", "release's candidate"]);
+    expect(daemonctlArgv()).toEqual(["/usr/local/sbin/daemonctl", "update", "--reason", "release's candidate"]);
     const reload = run("daemon-reload", [`ARGS=--reason "reload's checkout; touch ${remoteSentinel}"`]);
     expect(reload.status, reload.stderr).toBe(0);
-    expect(sudoArgv()).toEqual(["/usr/local/sbin/daemonctl", "reload", "--reason", `reload's checkout; touch ${remoteSentinel}`]);
+    expect(daemonctlArgv()).toEqual(["/usr/local/sbin/daemonctl", "reload", "--reason", `reload's checkout; touch ${remoteSentinel}`]);
     expect(existsSync(localSentinel)).toBe(false);
     expect(existsSync(remoteSentinel)).toBe(false);
   }, 15_000);

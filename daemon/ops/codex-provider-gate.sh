@@ -165,12 +165,12 @@ run_detached() {
   rm -f "${done_file}" "${done_file}.tmp"
   if [[ "${mode}" == initial ]]; then
     # shellcheck disable=SC2016
-    nohup perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec failed: $!"' \
+    perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec failed: $!"' \
       sh -c 'perl -e '\''alarm shift; exec @ARGV or die "exec failed: $!"'\'' "$1" "$2" exec -m gpt-5.6-sol -c model_reasoning_effort="medium" --yolo --skip-git-repo-check -C "$3" -o "$4" "$5"; status=$?; echo "$status" > "$6.tmp" && mv "$6.tmp" "$6"' \
       gate-launch "${GATE_TIMEOUT_SECONDS}" "${CODEX_BIN}" "$(pwd)" "${report}" "$1" "${done_file}" >"${log}" 2>&1 </dev/null &
   else
     # shellcheck disable=SC2016
-    nohup perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec failed: $!"' \
+    perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec failed: $!"' \
       sh -c 'perl -e '\''alarm shift; exec @ARGV or die "exec failed: $!"'\'' "$1" "$2" exec resume --last --yolo --skip-git-repo-check -o "$3" "$4"; status=$?; echo "$status" > "$5.tmp" && mv "$5.tmp" "$5"' \
       gate-resume "${GATE_TIMEOUT_SECONDS}" "${CODEX_BIN}" "${report}" "$1" "${done_file}" >"${log}" 2>&1 </dev/null &
   fi

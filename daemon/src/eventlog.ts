@@ -1136,7 +1136,8 @@ export class EventLog {
     const row = this.operationById(id);
     if (!row || (row.state !== "blocked" && row.state !== "failed"))
       throw new Error("only a blocked or failed operation can be retried");
-    this.db.prepare("UPDATE operations SET state='pending',stage=NULL,error_stage=NULL,updated_at=? WHERE id=?")
+    this.db.prepare(`UPDATE operations SET state='pending',stage=NULL,error_stage=NULL,
+      rollback_verified=0,updated_at=? WHERE id=?`)
       .run(now, id);
     return this.operationById(id)!;
   }
