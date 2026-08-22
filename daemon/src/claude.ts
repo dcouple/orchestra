@@ -199,6 +199,7 @@ function childEnv(
       key.startsWith("ANTHROPIC_") ||
       key.startsWith("CLAUDE_") ||
       key === "CLIPROXY_API_KEY" ||
+      key === "FABLE_MODELS_ENV_FILE" ||
       key === "BASH_DEFAULT_TIMEOUT_MS" ||
       key === "BASH_MAX_TIMEOUT_MS" ||
       key === "LINEAR_API_KEY" ||
