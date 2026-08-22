@@ -158,6 +158,9 @@ dry_inventory() {
   fi
   sudo test -d "$CHECKOUT/.git" && record source-checkout already-correct || record source-checkout would-apply
   file_correct "$SCRIPT_DIR/sudoers-linearagent-services" /etc/sudoers.d/linearagent-services 0440 root wheel && record sudoers already-correct || record sudoers would-apply
+  paths_tmp=$(mktemp); printf '/usr/local/sbin\n' > "$paths_tmp"
+  file_correct "$paths_tmp" /etc/paths.d/dcouple 0644 root wheel && record paths-d already-correct || record paths-d would-apply
+  rm -f "$paths_tmp"
   for spec in "com.dcouple.linear-agent-daemon.plist:/Library/LaunchDaemons/com.dcouple.linear-agent-daemon.plist:0644" "com.dcouple.cliproxyapi.plist:/Library/LaunchDaemons/com.dcouple.cliproxyapi.plist:0644" "com.dcouple.cloudflared.plist:/Library/LaunchDaemons/com.dcouple.cloudflared.plist:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755"; do
     source=$SCRIPT_DIR/${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
     if [[ $(basename "$destination") == com.dcouple.cloudflared.plist ]] && ! cloudflared_config_credential_exists; then
@@ -412,6 +415,13 @@ for spec in "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.
 done
 install_if_changed "$SOURCE_DIR/ops/wait-for-daemon-health.sh" /usr/local/sbin/wait-for-daemon-health.sh 0755 root wheel && root_files_changed=1
 (( root_files_changed )) && record service-scripts applied || record service-scripts already-correct
+
+# macOS's default PATH omits /usr/local/sbin, where daemonctl and deploy.sh
+# live; a path_helper drop-in adds it to every login shell.
+paths_tmp=$(mktemp); trap 'rm -f "$paths_tmp"' EXIT
+printf '/usr/local/sbin\n' > "$paths_tmp"
+if install_if_changed "$paths_tmp" /etc/paths.d/dcouple 0644 root wheel; then record paths-d applied; else record paths-d already-correct; fi
+rm -f "$paths_tmp"; trap - EXIT
 
 for label in com.dcouple.cliproxyapi com.dcouple.linear-agent-daemon; do
   plist=$SCRIPT_DIR/$label.plist; installed=/Library/LaunchDaemons/$label.plist; changed=0; plist_changed=0
