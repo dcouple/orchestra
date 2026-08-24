@@ -81,6 +81,30 @@ app prefix are test-only static overrides and are ignored unless `DAEMON_TEST_MO
 production uses client credentials. Optional settings are `PORT`, `BIND_ADDR`,
 `REPLAY_WINDOW_MS`, `LINEAR_GRAPHQL_URL`, and `LINEAR_TOKEN_URL`.
 
+### Doozy work provider
+
+`WORK_PROVIDER` selects the work source and defaults to `linear`. Set it to `doozy` to
+poll Doozy todos instead of accepting Linear webhooks. A Doozy run requires
+`DOOZY_API_URL`, `DOOZY_API_KEY`, and at least one selector: `DOOZY_AGENT_ID` for todos
+assigned to a specific agent, or `DOOZY_TAG` for an API tag or a bracketed title tag such
+as `[daemon-agent]`.
+`DOOZY_POLL_INTERVAL_MS` defaults to 5000 and `DOOZY_POLL_LIMIT` defaults to one new
+claim per poll.
+
+The poller claims a matching `ready` todo by changing it to `in_progress`, then feeds the
+todo through the same durable turn queue, worktree manager, Claude session persistence,
+progress queue, terminal delivery, and pull request detection used by Linear. A title or
+tag containing `implementer`, `implementation`, or `/do` selects the implementer role;
+other todos select the planner role. Progress and pull request links are appended to an
+`Orchestra daemon activity` section in the todo body. The terminal result is posted once
+to an existing todo-linked chat, or to the activity section when no chat exists, and a
+successful todo is marked `done`. Later human messages in an existing chat resume the
+stored Claude session after the todo is moved back to `in_progress`.
+
+Doozy does not currently expose a webhook or streaming ingress shape equivalent to
+Linear `AgentSessionEvent`. Polling is the v1 adapter boundary. A future provider can
+replace the poller without changing the durable turn worker.
+
 Set `ARTIFACT_TOKEN` to enable artifact hosting. An authenticated `POST /a` creates a
 bundle with a server-generated id; authenticated `PUT /a/<id>` atomically replaces an
 existing bundle. Both accept a JSON manifest whose file contents are base64 encoded:

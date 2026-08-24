@@ -3,7 +3,7 @@ import type {
   CleanupJobRow,
   CleanupNotificationRow,
 } from "./eventlog.js";
-import type { LinearGateway } from "./linear.js";
+import type { WorkProvider } from "./provider.js";
 import { WorktreeManager } from "./worktrees.js";
 import {
   buildInvocationSpan,
@@ -38,7 +38,7 @@ export class CleanupWorker {
   private readonly logger: Logger;
   constructor(
     private readonly log: EventLog,
-    private readonly gateway: LinearGateway,
+    private readonly gateway: WorkProvider,
     worktreesRoot: string,
     targetRepoPath: string,
     private readonly options: CleanupWorkerOptions = {},

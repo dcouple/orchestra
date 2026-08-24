@@ -63,6 +63,9 @@ export class WebhookServer {
         return;
       }
       const routeMatch = /^\/webhook\/(planner|implementer)$/.exec(pathname);
+      if (routeMatch && this.options.config.workProvider === "doozy") {
+        this.earlyJson(request, response, 404, { error: "not_found" }); return;
+      }
       if (routeMatch && request.method !== "POST") {
         this.earlyJson(request, response, 405, { error: "method_not_allowed" }, { Allow: "POST" });
         return;

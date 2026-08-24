@@ -38,7 +38,8 @@ import type {
   TurnActivityRow,
   TurnRow,
 } from "./eventlog.js";
-import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
+import type { PostResult, ProgressContent } from "./linear.js";
+import type { WorkProvider } from "./provider.js";
 import { buildTurnSpan, mintSpanId, postSpans, traceContext } from "./otel.js";
 import type { OtlpRelay, RelayCapability } from "./otel-relay.js";
 import {
@@ -344,7 +345,7 @@ export class SessionWorker {
 
   constructor(
     private readonly log: EventLog,
-    private readonly gateway: LinearGateway,
+    private readonly gateway: WorkProvider,
     private readonly config: Config,
     private readonly options: SessionWorkerOptions = {},
   ) {
@@ -529,8 +530,9 @@ export class SessionWorker {
     const cliproxyApiKey = await readCliproxyApiKey(
       this.config.cliproxyEnvFile,
     );
-    let prompt =
-      implementer && !resuming
+    let prompt = this.gateway.turnPrompt
+      ? this.gateway.turnPrompt(turn, identifier, implementer, resuming)
+      : implementer && !resuming
         ? `/do ${identifier}`
         : this.composePrompt(turn, identifier);
     if ((!implementer || resuming) && this.config.attachmentsEnabled)
@@ -567,7 +569,7 @@ export class SessionWorker {
       Math.max(10, Math.min(this.config.keepaliveMs, 60_000)),
     );
     keepalive.unref();
-    const linearMcpConfigJson = JSON.stringify({
+    const linearMcpConfigJson = this.gateway.mcpConfigJson?.(this.config) ?? JSON.stringify({
       mcpServers: {
         linear: {
           type: "http",
@@ -675,7 +677,7 @@ export class SessionWorker {
         CLIPROXY_API_KEY: cliproxyApiKey,
         BASH_DEFAULT_TIMEOUT_MS: String(this.config.bashDefaultTimeoutMs),
         BASH_MAX_TIMEOUT_MS: String(this.config.bashMaxTimeoutMs),
-        LINEAR_API_KEY: this.config.linearApiKey!,
+        ...(this.config.linearApiKey ? { LINEAR_API_KEY: this.config.linearApiKey } : {}),
         GH_TOKEN: process.env.GH_TOKEN,
         GITHUB_TOKEN: process.env.GITHUB_TOKEN,
         ...(this.config.artifactToken

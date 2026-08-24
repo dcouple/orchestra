@@ -15,22 +15,34 @@ import { ArtifactStore } from "./artifacts.js";
 import { OtlpRelay } from "./otel-relay.js";
 import { resolveOtlpTraces } from "./otel.js";
 import { LinearMcpMonitor } from "./linear-mcp-monitor.js";
+import { DoozyProvider } from "./doozy.js";
+import type { WorkProvider } from "./provider.js";
 
 const config = loadConfig();
 let log: EventLog;
 log = new EventLog(config.dbPath, (app) =>
   selectSessionProfile(log, config, app),
 );
-const gateway = new LinearGateway(
+const linearGateway = new LinearGateway(
   log,
   config.apps,
   config.linearGraphqlUrl,
   config.linearTokenUrl,
 );
-const worker = new AckWorker(log, gateway);
 let cleanupWorker: CleanupWorker | undefined;
 let sessionWorker: SessionWorker | undefined;
-const linearMcpMonitor = config.sessionsEnabled
+let worker: AckWorker;
+const doozyProvider = config.workProvider === "doozy"
+  ? new DoozyProvider(log, config, {
+      onInserted: () => {
+        worker.trigger();
+        sessionWorker?.trigger();
+      },
+    })
+  : undefined;
+const gateway: WorkProvider = doozyProvider ?? linearGateway;
+worker = new AckWorker(log, gateway);
+const linearMcpMonitor = config.sessionsEnabled && config.workProvider !== "doozy"
   ? new LinearMcpMonitor({
       url: config.linearMcpUrl,
       token: config.linearApiKey!,
@@ -96,8 +108,8 @@ const triggerWorkers = () => {
   void cleanupWorker?.trigger();
 };
 const onStop = (id: string) => sessionWorker?.stopSession(id);
-const reconcileWorker = hasLinearApiCreds()
-  ? new ReconcileWorker(log, gateway, config, {
+const reconcileWorker = config.workProvider !== "doozy" && hasLinearApiCreds()
+  ? new ReconcileWorker(log, linearGateway, config, {
       onInserted: triggerWorkers,
       onStop,
     })
@@ -134,6 +146,7 @@ if (providerPoller) {
 worker.start();
 linearMcpMonitor?.start();
 await sessionWorker?.start();
+doozyProvider?.start();
 cleanupWorker?.start();
 reconcileWorker?.start();
 const address = await server.listen();
@@ -161,6 +174,7 @@ async function shutdown(signal: string): Promise<void> {
     }),
   );
   await reconcileWorker?.stop();
+  await doozyProvider?.stop();
   await linearMcpMonitor?.stop();
   await server.close();
   await worker.stop();
