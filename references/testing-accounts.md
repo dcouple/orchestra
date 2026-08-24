@@ -17,17 +17,19 @@ notification.
 2. **Credentials live in the org's secret manager** (the same store the repo's
    secrets tooling already uses — e.g. the GCP project named in the repo's
    secrets mapping). Naming: `TESTING_ACCOUNT_<APP>_<ROLE>` (role defaults to
-   `E2E`, e.g. `TESTING_ACCOUNT_DOOZY_E2E`). Payload is JSON:
+   `E2E`, e.g. `TESTING_ACCOUNT_ACME_E2E` for an app named Acme). Payload is JSON:
    `{"email", "password", "purpose", "environment"}` — `environment` is never
    `production`.
-3. **The repo documents the pointer, never the value.** The `AGENTS.md` (or
-   `CLAUDE.md`) `## Testing accounts` section names each secret, the
-   environment it belongs to, and the fetch command, e.g.:
+3. **The repo documents the pointer, never the value.** The repo
+   `AGENTS.md` `## Testing accounts` section names each secret, the
+   environment it belongs to, and the fetch command. `AGENTS.md`
+   specifically: /do's Step 0 preflight and the frontend-verifier read
+   that file, not `CLAUDE.md`. E.g.:
 
    ```
    ## Testing accounts
-   - TESTING_ACCOUNT_DOOZY_E2E — dev webapp E2E login (Firebase email/password).
-     Fetch: gcloud secrets versions access latest --secret TESTING_ACCOUNT_DOOZY_E2E --project <project>
+   - TESTING_ACCOUNT_<APP>_E2E — <env> webapp E2E login (<auth mechanism>).
+     Fetch: gcloud secrets versions access latest --secret TESTING_ACCOUNT_<APP>_E2E --project <project>
    ```
 
 4. **Agents fetch at dispatch time.** The Overseer (or the verifier itself when
@@ -38,7 +40,8 @@ notification.
 5. **Account hygiene.** Test accounts are never deleted or destructively
    mutated by a run (they are shared infrastructure); test entities created
    inside them carry a unique run marker (`agent-e2e-<timestamp>`) per
-   `references/qa-verification.md` cleanup rules. Rotation goes through the
+   `.references/qa-verification.md` cleanup rules (the path as synced into
+   consumer repos). Rotation goes through the
    secret manager (new version), not through the repo.
 6. **Preflight probes are executable, not documentary** (restating the /do
    Step 0 rule this file backs): the section existing is half; the named
@@ -54,6 +57,6 @@ notification.
    the standard transport; complete onboarding to a usable state).
 3. `printf '<json>' | gcloud secrets create TESTING_ACCOUNT_<APP>_E2E
    --data-file=- --project <project>` (or the org's equivalent store).
-4. Add the `## Testing accounts` section to the repo's `AGENTS.md`/`CLAUDE.md`
+4. Add the `## Testing accounts` section to the repo's `AGENTS.md`
    and, where the repo keeps deeper docs, a `docs/testing-accounts.md` with
    environment notes.
