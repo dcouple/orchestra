@@ -134,8 +134,8 @@ Fold the numbers into the postmortem's **Run operations** section (see
 post-completion-idle carve-out, **the per-step timing table (required — see
 above)**, the ranked stalls with what each was waiting on, the blocker
 inventory, and — the payoff — the one operational change that would have
-removed the biggest stall (pre-authorize a green-tier gate, add a
-self-wakeup so a turn-end resumes, make a fallback non-blocking). That change
+removed the biggest stall (pre-authorize a green-tier gate, await a dispatch
+in-turn instead of ending the turn, make a fallback non-blocking). That change
 is a candidate for the postmortem's single proposed system change when the
 operational leak outweighs any outcome gap.
 
