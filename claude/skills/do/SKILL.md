@@ -587,7 +587,10 @@ comment) before ending.
   network request proves the browser tried; the provider/connector query
   proves the product received it). Both
   dispatches follow `.references/qa-verification.md` — external-system
-  confirmation by unique marker, preflight, test-mode safety, cleanup.
+  confirmation by unique marker, preflight, test-mode safety, cleanup of
+  both the run's machinery and the product state it created (deleted where
+  the surface is safe, registered by marker where it isn't — reported either
+  way).
   **The capture contract rides in every frontend-verifier/QA dispatch you
   write** — the sub-agent only knows what its prompt says, so state it:
   screenshot every UI state verified, record a video of every journey

@@ -35,6 +35,10 @@ not dashboards.
    criterion.
 4. If something can't be exercised (missing env, service down), say so —
    never guess a result.
+5. Dispose of the product state your checks created — records, subscriptions,
+   the analytics events they emitted — deleting where the surface is safe and
+   registering by marker where it isn't, and report the disposition
+   (`qa-verification.md` § Cleanup).
 
 ## Output format
 
