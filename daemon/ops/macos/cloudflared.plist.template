@@ -3,31 +3,31 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.dcouple.cloudflared</string>
+  <string>@LAUNCHD_PREFIX@.cloudflared</string>
   <key>Program</key>
   <string>/usr/local/sbin/run-cloudflared.sh</string>
   <key>UserName</key>
-  <string>linearagent</string>
+  <string>@SERVICE_USER@</string>
   <key>GroupName</key>
   <string>staff</string>
   <key>WorkingDirectory</key>
-  <string>/Users/linearagent</string>
+  <string>@SERVICE_HOME@</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>
-    <string>/Users/linearagent</string>
+    <string>@SERVICE_HOME@</string>
     <key>USER</key>
-    <string>linearagent</string>
+    <string>@SERVICE_USER@</string>
     <key>PATH</key>
-    <string>/usr/local/bin:/Users/linearagent/.local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <string>/usr/local/bin:@SERVICE_HOME@/.local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Users/linearagent/Library/Logs/cloudflared.log</string>
+  <string>@SERVICE_HOME@/Library/Logs/cloudflared.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/linearagent/Library/Logs/cloudflared.log</string>
+  <string>@SERVICE_HOME@/Library/Logs/cloudflared.log</string>
 </dict>
 </plist>

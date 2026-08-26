@@ -1,19 +1,18 @@
 # Linear agent daemon — production and legacy setup
 
-## Production setup (macOS / Mac mini)
+## Production setup (macOS)
 
-The production daemon runs on the Mac mini under launchd and is exposed by a
-Cloudflare Tunnel at `linear-agent.blmapp.com`. Follow
-`daemon/ops/macos/README.md` for provisioning and routine operation, then
-`daemon/ops/macos/CUTOVER.md` for ingress and webhook ownership. Those
-runbooks are authoritative for the production host.
+The production daemon runs on a Mac under launchd and is exposed by a
+Cloudflare Tunnel at the hostname set in the host's site config. Follow
+`daemon/ops/macos/README.md` for provisioning, routine operation, ingress,
+and the cutover order. Deployment-specific values (hostname, SSH aliases,
+service account) live in the consumer repo's daemon docs, never here.
 
-## Legacy VM deployment (archive bridge)
+## Legacy Linux deployment
 
-The Linux deployment below is retained as the legacy VM record. That VM stays
-running as the archive bridge for pre-migration
-`linear-agent.bloomapi.com/a/…` links; retiring it is a deferred follow-up. It
-is not the production webhook host.
+The Linux deployment below is retained as a supported path and as the record
+of the original production host. A retired Linux host can keep running with
+`SESSIONS_ENABLED=0` purely to serve pre-migration artifact links.
 
 This guide takes you from a fresh Linux host to working `bloom-planner` /
 `bloom-implementer` agents in a Linear workspace. It is the practical

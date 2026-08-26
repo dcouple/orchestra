@@ -1,5 +1,8 @@
 DAEMON_SSH ?= ssh
-DAEMON_SSH_HOST ?= bloomi
+# SSH alias for the daemon's service account on the production host. Set it
+# per invocation or export it in your shell; it is deployment-specific and has
+# no default here.
+DAEMON_SSH_HOST ?=
 DAEMONCTL ?= /usr/local/sbin/daemonctl
 
 # Capture command-line variables without expanding embedded Make or shell syntax. The
@@ -14,7 +17,7 @@ export DAEMON_REMOTE_SSH DAEMON_REMOTE_HOST
 export DAEMON_REMOTE_DAEMONCTL DAEMON_REMOTE_ARGS
 export DAEMON_REMOTE_PLANNER DAEMON_REMOTE_IMPLEMENTER
 
-REMOTE_DAEMONCTL := python3 daemon/ops/daemonctl-remote.py
+REMOTE_DAEMONCTL := $(if $(DAEMON_SSH_HOST),,$(error DAEMON_SSH_HOST is required: the SSH alias for the daemon service account))python3 daemon/ops/daemonctl-remote.py
 
 .PHONY: daemon-status daemon-sessions daemon-top daemon-restart daemon-hard-restart daemon-config daemon-reload daemon-update daemon-subscriptions
 

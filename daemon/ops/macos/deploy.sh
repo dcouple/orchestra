@@ -5,12 +5,16 @@ usage() { echo "usage: deploy.sh <source-daemon-dir>" >&2; exit 2; }
 die() { echo "$*" >&2; exit 1; }
 
 [[ $# -eq 1 ]] || usage
-[[ $(id -un) == linearagent || ${DAEMON_DEPLOY_ALLOW_OTHER_USER:-0} == 1 ]] \
-  || die "deploy.sh must run as linearagent"
 
 SOURCE_DIR=$(cd "$1" && pwd)
 SOURCE_ROOT=$(cd "$SOURCE_DIR/.." && pwd)
-HOME_DIR=${LINEAR_AGENT_HOME:-/Users/linearagent}
+MACOS_DIR=$SOURCE_DIR/ops/macos
+# shellcheck source=daemon-site-lib.sh
+. "${DAEMON_SITE_LIB:-$MACOS_DIR/daemon-site-lib.sh}"
+load_site_env || exit 78
+[[ $(id -un) == "$DAEMON_SERVICE_USER" || ${DAEMON_DEPLOY_ALLOW_OTHER_USER:-0} == 1 ]] \
+  || die "deploy.sh must run as $DAEMON_SERVICE_USER"
+HOME_DIR=${LINEAR_AGENT_HOME:-$DAEMON_SERVICE_HOME}
 CODE_DIR=${LINEAR_AGENT_CODE_DIR:-$HOME_DIR/linear-agent-daemon}
 STATE_DIR=${OPERATIONS_STATE_DIR:-$HOME_DIR/.local/state/linear-agent-operations}
 ENV_FILE=${LINEAR_AGENT_ENV_FILE:-$HOME_DIR/.config/linear-agent-daemon/env}
@@ -58,7 +62,7 @@ acquire_maintenance_lock() {
   printf '%s\n' "$$" > "$MAINTENANCE_LOCK/pid"
   chmod 0600 "$MAINTENANCE_LOCK/pid"
   MAINTENANCE_LOCK_OWNED=1
-  trap release_maintenance_lock EXIT
+  trap 'release_maintenance_lock; rm -rf "${RENDER_DIR:-}"' EXIT
 }
 
 [[ -f "$SOURCE_DIR/package.json" ]] || die "source daemon directory is invalid: $SOURCE_DIR"
@@ -81,15 +85,18 @@ check_artifact() {
     drift=1
   fi
 }
-MACOS_DIR=$SOURCE_DIR/ops/macos
-check_artifact "$MACOS_DIR/com.dcouple.linear-agent-daemon.plist" /Library/LaunchDaemons/com.dcouple.linear-agent-daemon.plist root:wheel 0644
-check_artifact "$MACOS_DIR/com.dcouple.cliproxyapi.plist" /Library/LaunchDaemons/com.dcouple.cliproxyapi.plist root:wheel 0644
+RENDER_DIR=$(mktemp -d); trap 'release_maintenance_lock; rm -rf "$RENDER_DIR"' EXIT
+render_site_templates "$RENDER_DIR" || die "site templates did not render"
+check_artifact "$DAEMON_SITE_ENV" /usr/local/etc/linear-agent-daemon/site.env root:wheel 0644
+check_artifact "$MACOS_DIR/daemon-site-lib.sh" /usr/local/sbin/daemon-site-lib.sh root:wheel 0644
+check_artifact "$RENDER_DIR/$DAEMON_LABEL.plist" "/Library/LaunchDaemons/$DAEMON_LABEL.plist" root:wheel 0644
+check_artifact "$RENDER_DIR/$PROXY_LABEL.plist" "/Library/LaunchDaemons/$PROXY_LABEL.plist" root:wheel 0644
 if [[ -f $HOME_DIR/.cloudflared/config.yml ]]; then
-  check_artifact "$MACOS_DIR/com.dcouple.cloudflared.plist" /Library/LaunchDaemons/com.dcouple.cloudflared.plist root:wheel 0644
+  check_artifact "$RENDER_DIR/$TUNNEL_LABEL.plist" "/Library/LaunchDaemons/$TUNNEL_LABEL.plist" root:wheel 0644
 else
   echo "skip-drift: cloudflared plist pending tunnel config" >&2
 fi
-# The sudoers policy is 0440 root:wheel — unreadable to linearagent, so its
+# The sudoers policy is 0440 root:wheel — unreadable to the service user, so its
 # content cannot be compared here; existence/owner/mode drift is still
 # detectable, and content convergence is provision.sh's (root) job.
 check_artifact_metadata_only() {
@@ -101,7 +108,7 @@ check_artifact_metadata_only() {
     drift=1
   fi
 }
-check_artifact_metadata_only /etc/sudoers.d/linearagent-services root:wheel 0440
+check_artifact_metadata_only /etc/sudoers.d/linear-agent-daemon-services root:wheel 0440
 check_artifact "$MACOS_DIR/run-daemon.sh" /usr/local/sbin/run-daemon.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cliproxyapi.sh" /usr/local/sbin/run-cliproxyapi.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cloudflared.sh" /usr/local/sbin/run-cloudflared.sh root:wheel 0755
@@ -109,8 +116,8 @@ check_artifact "$MACOS_DIR/deploy.sh" /usr/local/sbin/deploy.sh root:wheel 0755
 check_artifact "$MACOS_DIR/daemonctl" /usr/local/sbin/daemonctl root:wheel 0755
 check_artifact "$SOURCE_DIR/ops/wait-for-daemon-health.sh" /usr/local/sbin/wait-for-daemon-health.sh root:wheel 0755
 check_artifact "$SOURCE_DIR/ops/codex-otel-wrapper.sh" /usr/local/bin/codex root:wheel 0755
-check_artifact "$SOURCE_DIR/ops/claudex" "$HOME_DIR/.local/bin/claudex" linearagent:staff 0750
-check_artifact "$SOURCE_DIR/ops/claudex-fable" "$HOME_DIR/.local/bin/claudex-fable" linearagent:staff 0750
+check_artifact "$SOURCE_DIR/ops/claudex" "$HOME_DIR/.local/bin/claudex" "$DAEMON_SERVICE_USER:staff" 0750
+check_artifact "$SOURCE_DIR/ops/claudex-fable" "$HOME_DIR/.local/bin/claudex-fable" "$DAEMON_SERVICE_USER:staff" 0750
 (( drift == 0 )) || exit 78
 
 [[ -d $CODE_DIR ]] || install -d -m 0750 "$CODE_DIR"
@@ -157,7 +164,7 @@ write_marker() {
   chmod 0600 "$tmp"
   mv "$tmp" "$marker"
 }
-sudo /bin/launchctl kickstart -k system/com.dcouple.linear-agent-daemon
+sudo /bin/launchctl kickstart -k "system/$DAEMON_LABEL"
 if [[ -n $SOURCE_COMMIT ]]; then
   write_marker "$DEPLOYED_COMMIT_FILE" "$SOURCE_COMMIT"
 fi

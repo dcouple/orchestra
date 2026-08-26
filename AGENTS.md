@@ -26,15 +26,16 @@ pnpm typecheck
 pnpm build
 pnpm test
 bash -n ops/provision.sh ops/daemonctl ops/wait-for-daemon-health.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh ops/codex-live-setup.sh
+bash -n ops/macos/provision.sh ops/macos/deploy.sh ops/macos/daemonctl ops/macos/daemon-site-lib.sh ops/macos/run-daemon.sh ops/macos/run-cliproxyapi.sh ops/macos/run-cloudflared.sh
 ```
 
 ## Live daemon diagnostics
 
-Use the operator's key-only `bloomi` SSH alias for production diagnostics, for
-example `ssh bloomi '/usr/local/sbin/daemonctl status'`. The user-level
-`~/.zshrc` alias `bloom-deamon` is legacy: its
-`gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a`
-target reaches only the archive-bridge VM.
+Use a key-only SSH alias to the daemon's service account, for example
+`ssh <service-alias> '/usr/local/sbin/daemonctl status'`, or the root
+`Makefile` targets with `DAEMON_SSH_HOST=<service-alias>`. The alias, host,
+and hostname for a given deployment are documented in that consumer repo's
+daemon docs alongside its site config — never in this repo.
 
 ## Architecture
 
