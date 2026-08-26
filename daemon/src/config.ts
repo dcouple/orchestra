@@ -2,6 +2,7 @@ import { dirname } from "node:path";
 
 export type AppName = "planner" | "implementer";
 export type HarnessPreference = "claude" | "claudex";
+export type WorkProviderName = "linear" | "doozy";
 
 export interface AppConfig {
   name: AppName;
@@ -22,6 +23,7 @@ function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPrefere
 }
 
 export interface Config {
+  workProvider?: WorkProviderName;
   port: number;
   bindAddr: string;
   dbPath: string;
@@ -71,6 +73,12 @@ export interface Config {
   attachmentsEnabled: boolean;
   attachmentHosts: string[];
   ntfyUrl?: string;
+  doozyApiUrl?: string;
+  doozyApiKey?: string;
+  doozyAgentId?: string;
+  doozyTag?: string;
+  doozyPollIntervalMs?: number;
+  doozyPollLimit?: number;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -116,12 +124,14 @@ function stringMap(env: NodeJS.ProcessEnv, name: string): Record<string, string>
   return value as Record<string, string>;
 }
 
-function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean): AppConfig {
+function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean, provider: WorkProviderName): AppConfig {
   const prefix = name.toUpperCase();
   const staticToken = env[`${prefix}_LINEAR_TOKEN`]?.trim();
   const appActorId = env[`${prefix}_APP_ACTOR_ID`]?.trim();
   const base = { name, harness: harnessPreference(env, `${prefix}_HARNESS`),
-    webhookSecret: required(env, `${prefix}_WEBHOOK_SECRET`), ...(appActorId ? { appActorId } : {}) };
+    webhookSecret: provider === "linear" ? required(env, `${prefix}_WEBHOOK_SECRET`) : "",
+    ...(appActorId ? { appActorId } : {}) };
+  if (provider === "doozy") return base;
   if (testMode && staticToken) return { ...base, staticToken };
   return {
     ...base,
@@ -132,14 +142,28 @@ function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean): Ap
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const testMode = env.DAEMON_TEST_MODE === "1";
+  const workProviderRaw = env.WORK_PROVIDER?.trim() || "linear";
+  if (workProviderRaw !== "linear" && workProviderRaw !== "doozy")
+    throw new Error("WORK_PROVIDER must be linear or doozy");
+  const workProvider: WorkProviderName = workProviderRaw;
   const dbPath = env.DB_PATH?.trim() || "/var/lib/linear-agent-daemon/events.db";
   const sessionsEnabled = enabled(env, "SESSIONS_ENABLED");
   const targetRepoPath = env.TARGET_REPO_PATH?.trim();
   const linearApiKey = env.LINEAR_API_KEY?.trim();
   const artifactToken = env.ARTIFACT_TOKEN?.trim();
-  const webhookBaseUrl = env.WEBHOOK_BASE_URL?.trim() || (testMode ? "http://127.0.0.1:8787" : required(env, "WEBHOOK_BASE_URL"));
+  const webhookBaseUrl = env.WEBHOOK_BASE_URL?.trim() || (testMode || workProvider === "doozy" ? "http://127.0.0.1:8787" : required(env, "WEBHOOK_BASE_URL"));
   if (sessionsEnabled && !targetRepoPath) required(env, "TARGET_REPO_PATH");
-  if (sessionsEnabled && !linearApiKey) required(env, "LINEAR_API_KEY");
+  if (sessionsEnabled && workProvider === "linear" && !linearApiKey) required(env, "LINEAR_API_KEY");
+  const doozyApiUrl = env.DOOZY_API_URL?.trim()?.replace(/\/+$/, "");
+  const doozyApiKey = env.DOOZY_API_KEY?.trim();
+  const doozyAgentId = env.DOOZY_AGENT_ID?.trim();
+  const doozyTag = env.DOOZY_TAG?.trim();
+  if (workProvider === "doozy") {
+    if (!doozyApiUrl) required(env, "DOOZY_API_URL");
+    if (!doozyApiKey) required(env, "DOOZY_API_KEY");
+    if (!doozyAgentId && !doozyTag)
+      throw new Error("DOOZY_AGENT_ID or DOOZY_TAG is required");
+  }
   const claudeArgv = (env.CLAUDE_BIN?.trim() || "claude").split(/\s+/);
   const claudexArgv = optionalArgv(env, "CLAUDEX_BIN");
   const claudexEnv = stringMap(env, "CLAUDEX_ENV");
@@ -161,6 +185,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error("DO_MAX_BUDGET_USD must be a positive number");
   }
   return {
+    workProvider,
     port: positiveInteger(env, "PORT", 8787),
     bindAddr: env.BIND_ADDR?.trim() || "127.0.0.1",
     dbPath,
@@ -194,7 +219,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     reconcileIntervalMs: positiveInteger(env, "RECONCILE_INTERVAL_MS", 60_000),
     reconcileRequestTimeoutMs: positiveInteger(env, "RECONCILE_REQUEST_TIMEOUT_MS", 10_000),
     reconcileSessionMaxAgeMs: positiveInteger(env, "RECONCILE_SESSION_MAX_AGE_MS", 6 * 60 * 60_000),
-    apps: { planner: appConfig(env, "planner", testMode), implementer: appConfig(env, "implementer", testMode) },
+    apps: { planner: appConfig(env, "planner", testMode, workProvider), implementer: appConfig(env, "implementer", testMode, workProvider) },
     sessionsEnabled,
     worktreesRoot: env.WORKTREES_ROOT?.trim() || `${dirname(dbPath)}/worktrees`,
     ...(targetRepoPath ? { targetRepoPath } : {}),
@@ -220,5 +245,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ...(env.NTFY_URL?.trim() ? { ntfyUrl: env.NTFY_URL.trim() } : {}),
     attachmentsEnabled: enabled(env, "ATTACHMENTS_ENABLED"),
     attachmentHosts: (env.ATTACHMENT_HOSTS?.trim() || "uploads.linear.app").split(",").map(host => host.trim()).filter(Boolean),
+    ...(doozyApiUrl ? { doozyApiUrl } : {}),
+    ...(doozyApiKey ? { doozyApiKey } : {}),
+    ...(doozyAgentId ? { doozyAgentId } : {}),
+    ...(doozyTag ? { doozyTag } : {}),
+    doozyPollIntervalMs: positiveInteger(env, "DOOZY_POLL_INTERVAL_MS", 5_000),
+    doozyPollLimit: positiveInteger(env, "DOOZY_POLL_LIMIT", 1),
   };
 }

@@ -12,6 +12,7 @@ describe("loadConfig", () => {
   it("loads test static tokens and defaults", () => {
     const config = loadConfig(base);
     expect(config.bindAddr).toBe("127.0.0.1");
+    expect(config.workProvider).toBe("linear");
     expect(config.replayWindowMs).toBe(60_000);
     expect(config.webhookBaseUrl).toBe("http://127.0.0.1:8787");
     expect(config.artifactToken).toBeUndefined();
@@ -121,6 +122,31 @@ describe("loadConfig", () => {
   });
   it("names missing variables", () => {
     expect(() => loadConfig({ ...base, PLANNER_WEBHOOK_SECRET: "" })).toThrow("PLANNER_WEBHOOK_SECRET");
+  });
+  it("loads Doozy without Linear credentials and validates provider settings", () => {
+    const doozy = loadConfig({
+      DAEMON_TEST_MODE: "1",
+      WORK_PROVIDER: "doozy",
+      SESSIONS_ENABLED: "0",
+      DOOZY_API_URL: "https://staging.example.test/api/v1/",
+      DOOZY_API_KEY: "key",
+      DOOZY_TAG: "daemon-agent",
+      DOOZY_POLL_INTERVAL_MS: "2500",
+      DOOZY_POLL_LIMIT: "2",
+    });
+    expect(doozy).toMatchObject({
+      workProvider: "doozy",
+      doozyApiUrl: "https://staging.example.test/api/v1",
+      doozyTag: "daemon-agent",
+      doozyPollIntervalMs: 2500,
+      doozyPollLimit: 2,
+    });
+    expect(doozy.apps.planner.webhookSecret).toBe("");
+    expect(() => loadConfig({ ...base, WORK_PROVIDER: "other" })).toThrow("WORK_PROVIDER");
+    expect(() => loadConfig({
+      DAEMON_TEST_MODE: "1", WORK_PROVIDER: "doozy", SESSIONS_ENABLED: "0",
+      DOOZY_API_URL: "https://staging.example.test", DOOZY_API_KEY: "key",
+    })).toThrow("DOOZY_AGENT_ID or DOOZY_TAG");
   });
   it("parses and validates the optional Claudex runtime", () => {
     expect(loadConfig({ ...base, CLAUDEX_BIN: "claude --model gpt-5.6-sol",
