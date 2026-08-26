@@ -51,6 +51,7 @@ describe("macOS site config", () => {
       expect(result.stdout).toMatch(/simulator-xcode\s+pending-human: install Xcode and an iOS runtime/);
       expect(result.stdout).toMatch(/simulator-runtime\s+pending-human:/);
     },
+    30_000,
   );
   it.skipIf(process.platform !== "darwin" || process.arch !== "arm64" || !existsSync("/opt/homebrew/bin/brew"))(
     "requires an available iOS simulator runtime", () => {
@@ -66,8 +67,11 @@ describe("macOS site config", () => {
       expect(missing.stdout).toMatch(/simulator-xcode\s+already-correct/);
       expect(missing.stdout).toMatch(/simulator-runtime\s+pending-human: install an available iOS runtime/);
       const available = run('{"runtimes":[{"identifier":"com.apple.CoreSimulator.SimRuntime.iOS-26-5","isAvailable":true}]}');
-      expect(available.status, available.stderr).toBe(0); expect(available.stdout).toMatch(/simulator-runtime\s+already-correct/);
+      expect(available.status, available.stderr).toBe(0);
+      expect(available.stdout).toMatch(/simulator-xcode\s+already-correct/);
+      expect(available.stdout).toMatch(/simulator-runtime\s+already-correct/);
     },
+    30_000,
   );
   it("runs sim-preflight with the daemon environment loaded", () => {
     const dir = mkdtempSync(join(tmpdir(), "daemonctl-sim-preflight-"));

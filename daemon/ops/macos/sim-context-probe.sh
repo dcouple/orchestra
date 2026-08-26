@@ -311,11 +311,32 @@ const stop = (code, error) => {
   child.kill();
   process.exit(code);
 };
-const call = (method, params) => new Promise((resolve, reject) => {
-  const id = ++nextId;
-  pending.set(id, { resolve, reject });
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+const writeMessage = (message) => new Promise((resolve, reject) => {
+  const fail = (error) => {
+    const detail = `MCP stdin write failed: ${error instanceof Error ? error.message : String(error)}`;
+    stop(1, detail);
+    reject(new Error(detail));
+  };
+  try {
+    child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
+      if (error) fail(error);
+      else resolve();
+    });
+  } catch (error) {
+    fail(error);
+  }
 });
+const call = async (method, params) => {
+  const id = ++nextId;
+  const response = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+  try {
+    await writeMessage({ jsonrpc: "2.0", id, method, params });
+  } catch (error) {
+    pending.delete(id);
+    throw error;
+  }
+  return response;
+};
 child.stdout.on("data", (data) => {
   buffer += data;
   let newline;
@@ -334,12 +355,13 @@ child.stdout.on("data", (data) => {
   }
 });
 child.on("error", (error) => stop(1, error.message));
+child.stdin.on("error", (error) => stop(1, `MCP stdin failed: ${error.message}`));
 child.on("exit", (code) => { if (!settled) stop(1, `MCP server exited before completion (exit ${code})`); });
 const overallTimeout = setTimeout(() => stop(1, "MCP request timed out after 90 seconds"), 90000);
 try {
   const initialized = await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "orchestra-sim-context-probe", version: "1" } });
   if (!Object.prototype.hasOwnProperty.call(initialized, "result")) throw new Error("initialize returned no result");
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+  await writeMessage({ jsonrpc: "2.0", method: "notifications/initialized" });
   const defaults = await call("tools/call", { name: "session_set_defaults", arguments: { simulatorId: udid } });
   if (defaults.result?.isError) throw new Error(responseText(defaults) || "session_set_defaults failed");
   let snapshot;

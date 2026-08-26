@@ -10,7 +10,7 @@ import { goldenDeviceName, LEASE_NAME, type SimDevice, type SimDeviceType, type 
 
 const execFileAsync = promisify(execFile);
 interface Io { stdout: { write(value: string): unknown }; stderr: { write(value: string): unknown } }
-interface Settings { runtime: string; deviceType: string; developerDir: string; simctl: string[]; mcpBin: string; dbPath: string; probe: string; childEnv: NodeJS.ProcessEnv; bindAddr: string; port: number }
+interface Settings { runtime: string; deviceType: string; simctl: string[]; dbPath: string; probe: string; childEnv: NodeJS.ProcessEnv; bindAddr: string; port: number }
 interface Report { golden?: string; disposition?: "created" | "adopted" | "skipped"; orphansSwept: number; probe: "ok" | "FAILED" | "skipped"; dryRun: boolean }
 interface DaemonHealth { ok?: unknown; sim?: { enabled?: unknown; available?: unknown; kind?: unknown } }
 
@@ -22,9 +22,8 @@ function settings(env: NodeJS.ProcessEnv): Settings {
   if (env.SIM_PROBE_APP_SRC !== undefined) childEnv.SIM_PROBE_APP_SRC = env.SIM_PROBE_APP_SRC;
   return {
     runtime: env.IOS_SIM_RUNTIME!.trim(), deviceType: env.IOS_SIM_DEVICE_TYPE!.trim(),
-    developerDir: env.IOS_SIM_DEVELOPER_DIR || "/Applications/Xcode.app/Contents/Developer",
     simctl: (env.IOS_SIM_SIMCTL_BIN || "xcrun simctl").split(/\s+/),
-    mcpBin: env.XCODEBUILD_MCP_BIN || "/usr/local/bin/xcodebuildmcp", dbPath: env.DB_PATH || resolve("events.db"),
+    dbPath: env.DB_PATH || resolve("events.db"),
     probe: env.SIM_PREFLIGHT_PROBE || fileURLToPath(new URL("../ops/macos/sim-context-probe.sh", import.meta.url)), childEnv,
     bindAddr: env.BIND_ADDR || "127.0.0.1", port: Number(env.PORT || "8787"),
   };
