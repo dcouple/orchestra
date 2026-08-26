@@ -152,6 +152,33 @@ The repository the agents work on must have:
    criteria cannot be auto-verified here and stay with human QA on the
    PR.
 
+### Project MCP servers
+
+Full setup, secret storage, rotation and smoke-test procedure:
+`docs/daemon-mcp-setup.md`. Summary:
+
+A consumer repository's checked-in `.mcp.json` is its project tool list. The
+daemon lets Claude Code discover that file and pre-approves its servers in
+every turn with `enableAllProjectMcpServers: true` in the per-turn
+`--settings` file; the daemon does not copy or merge the project file.
+
+Never commit MCP secrets. Use Claude Code's `${VAR}` expansion in a server's
+`url`, `headers`, `env`, `args`, or `command`, set each variable in the
+deployment env file, and list its name in the comma-separated
+`MCP_ENV_PASSTHROUGH=NAME1,NAME2` setting. Stdio server executables must also
+be pre-installed for the daemon service account. The daemon rejects denied
+names (`*_WEBHOOK_SECRET`, `*_LINEAR_CLIENT_SECRET`, `*_LINEAR_TOKEN`,
+`CLIPROXY_MANAGEMENT_KEY`, `ARTIFACT_TOKEN`, `OAUTH_*`, `*_OAUTH_TOKEN`) and
+daemon-owned names (`LINEAR_API_KEY`, `CLIPROXY_API_KEY`,
+`ARTIFACT_HOST_TOKEN`, `BASH_*_TIMEOUT_MS`) at startup.
+
+The daemon still injects `linear` through `--mcp-config`. That entry has
+precedence and overrides a project `linear` entry as a whole. Headless turns
+support static tokens, not interactive OAuth. Every passthrough token is also
+visible to the agent's Bash in a prompt-injectable turn—the same trust class as
+`GH_TOKEN` and `LINEAR_API_KEY`—so apply a least-privilege scope, prefer
+read-only access where the tool allows it, and keep the token revocable.
+
 Clone the repository over HTTPS as the service user (see the **Planner
 credentials and repository** section of the runbook for the credential
 install flow):
@@ -218,6 +245,8 @@ SESSION_CONCURRENCY=2
 KEEPALIVE_MS=900000
 ATTACHMENTS_ENABLED=1
 ATTACHMENT_HOSTS=uploads.linear.app
+# Project MCP secret names; set each named variable in this file too.
+#MCP_ENV_PASSTHROUGH=POSTHOG_API_KEY,NOTION_TOKEN
 
 # Optional: one-way push notification (ntfy) whenever an agent posts a
 # terminal response or error. Subscribe to the topic in the ntfy app.

@@ -15,6 +15,7 @@ describe("loadConfig", () => {
     expect(config.replayWindowMs).toBe(60_000);
     expect(config.webhookBaseUrl).toBe("http://127.0.0.1:8787");
     expect(config.artifactToken).toBeUndefined();
+    expect(config.mcpEnvPassthrough).toBeUndefined();
     expect(config.artifactsDir).toBe("/var/lib/linear-agent-daemon/artifacts");
     expect(config.dispatchQuarantineDir).toBe(
       "/var/lib/linear-agent-daemon/dispatch-quarantine",
@@ -44,6 +45,51 @@ describe("loadConfig", () => {
     expect(config).toMatchObject({ bashDefaultTimeoutMs: 900_000, bashMaxTimeoutMs: 900_000 });
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
   });
+  it.each([undefined, "", "  ", " , ,"])(
+    "treats an empty MCP_ENV_PASSTHROUGH value %s as unset",
+    (value) => {
+      expect(
+        loadConfig({ ...base, MCP_ENV_PASSTHROUGH: value })
+          .mcpEnvPassthrough,
+      ).toBeUndefined();
+    },
+  );
+  it("trims and deduplicates MCP environment passthrough names", () => {
+    expect(
+      loadConfig({ ...base, MCP_ENV_PASSTHROUGH: " A , B ,,A " })
+        .mcpEnvPassthrough,
+    ).toEqual(["A", "B"]);
+  });
+  it.each([
+    ["CLIPROXY_MANAGEMENT_KEY", "denied child secret"],
+    ["ARTIFACT_TOKEN", "denied child secret"],
+    ["PLANNER_WEBHOOK_SECRET", "denied child secret"],
+    ["PLANNER_LINEAR_CLIENT_SECRET", "denied child secret"],
+    ["PLANNER_LINEAR_TOKEN", "denied child secret"],
+    ["OAUTH_X", "denied child secret"],
+    ["X_OAUTH_TOKEN", "denied child secret"],
+    ["CLIPROXY_API_KEY", "daemon-owned"],
+    ["BASH_DEFAULT_TIMEOUT_MS", "daemon-owned"],
+    ["BASH_MAX_TIMEOUT_MS", "daemon-owned"],
+    ["LINEAR_API_KEY", "daemon-owned"],
+    ["ARTIFACT_HOST_TOKEN", "daemon-owned"],
+    ["9BAD", "environment variable name"],
+    ["A-B", "environment variable name"],
+    ["A B", "environment variable name"],
+  ])(
+    "rejects reserved or malformed MCP passthrough key %s",
+    (key, reason) => {
+      let message = "";
+      try {
+        loadConfig({ ...base, MCP_ENV_PASSTHROUGH: `GOOD,${key},OTHER` });
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toContain("MCP_ENV_PASSTHROUGH");
+      expect(message).toContain(key);
+      expect(message).toContain(reason);
+    },
+  );
   it("loads independent harness preferences and names invalid settings", () => {
     const config = loadConfig({ ...base, PLANNER_HARNESS: "claudex", IMPLEMENTER_HARNESS: "claude" });
     expect(config.apps.planner.harness).toBe("claudex");

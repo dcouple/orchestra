@@ -44,6 +44,7 @@ const oldArgs = process.env.CLAUDE_FAKE_ARGS_FILE;
 const oldEnv = process.env.CLAUDE_FAKE_ENV_FILE;
 const oldDelay = process.env.CLAUDE_FAKE_DELAY_MS;
 const oldDispatchOwner = process.env.ORCHESTRA_DISPATCH_OWNER;
+const oldMcpPassS = process.env.MCP_PASS_S;
 const ownerOne = "a0000000-0000-0000-0000-000000000001";
 const ownerTwo = "a0000000-0000-0000-0000-000000000002";
 const otelTestKeys = [
@@ -84,6 +85,8 @@ afterEach(() => {
   if (oldDispatchOwner === undefined)
     delete process.env.ORCHESTRA_DISPATCH_OWNER;
   else process.env.ORCHESTRA_DISPATCH_OWNER = oldDispatchOwner;
+  if (oldMcpPassS === undefined) delete process.env.MCP_PASS_S;
+  else process.env.MCP_PASS_S = oldMcpPassS;
   for (const key of otelTestKeys) {
     if (oldOtelEnv[key] === undefined) delete process.env[key];
     else process.env[key] = oldOtelEnv[key];
@@ -395,6 +398,28 @@ async function healthy(port: number, child: ChildProcess): Promise<void> {
 }
 
 describe("SessionWorker", () => {
+  it("forwards configured MCP passthrough values to session turns", async () => {
+    const { dir, log, config } = setup();
+    const poster = new Poster();
+    process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "mcp-pass-env.jsonl");
+    process.env.MCP_PASS_S = "session-secret";
+    config.mcpEnvPassthrough = ["MCP_PASS_S"];
+    append(log, "mcp-pass", "mcp-pass-session", "created");
+    const worker = new SessionWorker(
+      log,
+      poster as unknown as LinearGateway,
+      config,
+      { pollMs: 10, reconcileMs: 20 },
+    );
+    await worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done");
+    await worker.stop();
+    const row = JSON.parse(
+      readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim(),
+    ) as { env: Record<string, string> };
+    expect(row.env.MCP_PASS_S).toBe("session-secret");
+    log.close();
+  });
   it("reads only exact proxy credential assignments with redacted failures", async () => {
     const { dir } = setup();
     const path = join(dir, "exact-proxy.env");
@@ -436,7 +461,7 @@ describe("SessionWorker", () => {
     expect(logger.entries().filter(entry => entry.event === "browser_relaunch_required")).toHaveLength(1);
     await worker.stop(); log.close();
   });
-  it.each([["crash", 5000], ["hang", 40]])("removes browser state but retains evidence after %s", async (mode, timeout) => {
+  it.each([["crash", 5000], ["hang", 400]])("removes browser state but retains evidence after %s", async (mode, timeout) => {
     const { log, config, dir } = setup(); const poster = new Poster();
     process.env.CLAUDE_FAKE_MODE = mode; process.env.CLAUDE_FAKE_ENV_FILE = join(dir, `${mode}-env.jsonl`);
     Object.assign(config, { browserEnabled: true, playwrightMcpBin: process.execPath, playwrightChromeBin: process.execPath,

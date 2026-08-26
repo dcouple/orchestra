@@ -1,4 +1,5 @@
 import { dirname } from "node:path";
+import { isReservedChildEnvKey } from "./claude.js";
 
 export type AppName = "planner" | "implementer";
 export type HarnessPreference = "claude" | "claudex";
@@ -33,6 +34,7 @@ export interface Config {
   linearMcpMonitorTimeoutMs: number;
   webhookBaseUrl: string;
   artifactToken?: string;
+  mcpEnvPassthrough?: string[];
   artifactsDir: string;
   dispatchQuarantineDir: string;
   dispatchQuarantineAgeMs: number;
@@ -116,6 +118,33 @@ function stringMap(env: NodeJS.ProcessEnv, name: string): Record<string, string>
   return value as Record<string, string>;
 }
 
+function mcpEnvPassthrough(env: NodeJS.ProcessEnv): string[] {
+  const names = [
+    ...new Set(
+      (env.MCP_ENV_PASSTHROUGH ?? "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean),
+    ),
+  ];
+  for (const name of names) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+      throw new Error(
+        `MCP_ENV_PASSTHROUGH key ${name} must be an environment variable name`,
+      );
+    const reserved = isReservedChildEnvKey(name);
+    if (reserved === "denied")
+      throw new Error(
+        `MCP_ENV_PASSTHROUGH must not name ${name} (denied child secret)`,
+      );
+    if (reserved === "daemon-owned")
+      throw new Error(
+        `MCP_ENV_PASSTHROUGH must not name ${name} (daemon-owned)`,
+      );
+  }
+  return names;
+}
+
 function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean): AppConfig {
   const prefix = name.toUpperCase();
   const staticToken = env[`${prefix}_LINEAR_TOKEN`]?.trim();
@@ -137,6 +166,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const targetRepoPath = env.TARGET_REPO_PATH?.trim();
   const linearApiKey = env.LINEAR_API_KEY?.trim();
   const artifactToken = env.ARTIFACT_TOKEN?.trim();
+  const passthrough = mcpEnvPassthrough(env);
   const webhookBaseUrl = env.WEBHOOK_BASE_URL?.trim() || (testMode ? "http://127.0.0.1:8787" : required(env, "WEBHOOK_BASE_URL"));
   if (sessionsEnabled && !targetRepoPath) required(env, "TARGET_REPO_PATH");
   if (sessionsEnabled && !linearApiKey) required(env, "LINEAR_API_KEY");
@@ -172,6 +202,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     linearMcpMonitorTimeoutMs: positiveInteger(env, "LINEAR_MCP_MONITOR_TIMEOUT_MS", 10_000),
     webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
     ...(artifactToken ? { artifactToken } : {}),
+    ...(passthrough.length > 0 ? { mcpEnvPassthrough: passthrough } : {}),
     artifactsDir: env.ARTIFACTS_DIR?.trim() || `${dirname(dbPath)}/artifacts`,
     dispatchQuarantineDir:
       env.DISPATCH_QUARANTINE_DIR?.trim() ||

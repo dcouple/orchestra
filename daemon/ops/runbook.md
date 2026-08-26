@@ -196,6 +196,8 @@ SESSION_CONCURRENCY=5
 KEEPALIVE_MS=900000
 ATTACHMENTS_ENABLED=1
 ATTACHMENT_HOSTS=uploads.linear.app
+# Project MCP secret names; set each named variable in this file too.
+#MCP_ENV_PASSTHROUGH=
 # NTFY_URL=https://ntfy.sh/<unguessable-topic>
 
 # Langfuse Cloud via Claude Code native OpenTelemetry tracing
@@ -232,6 +234,8 @@ main env file and do not add `/etc/linear-agent-daemon/cliproxyapi.env` as a sys
 and `claudex-fable` wrappers preserve a caller-supplied API key. When none is supplied they
 parse only `CLIPROXY_API_KEY` from `CLIPROXY_ENV_FILE`, and fail nonzero with a redacted
 message if the file or key is unavailable.
+`MCP_ENV_PASSTHROUGH` names extend the child allow-list; the secret deny-list
+still runs last, and denied or daemon-owned names fail startup.
 
 With sessions enabled, `LINEAR_MCP_MONITOR_INTERVAL_MS` defaults to 60000 and
 `LINEAR_MCP_MONITOR_TIMEOUT_MS` defaults to 10000. The monitor runs bounded authenticated

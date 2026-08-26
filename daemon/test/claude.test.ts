@@ -2,7 +2,11 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildToolHookSettings, runTurn } from "../src/claude.js";
+import {
+  buildToolHookSettings,
+  buildTurnSettings,
+  runTurn,
+} from "../src/claude.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -117,14 +121,56 @@ describe("runTurn", () => {
       }),
     );
     expect(result.ok).toBe(true);
-    const args = (
-      JSON.parse(readFileSync(argsFile, "utf8").trim().split("\n")[0]!) as {
-        args: string[];
-      }
-    ).args;
+    const row = JSON.parse(
+      readFileSync(argsFile, "utf8").trim().split("\n")[0]!,
+    ) as {
+      args: string[];
+      settings: Record<string, unknown>;
+    };
+    const args = row.args;
     const settingsAt = args.indexOf("--settings");
     expect(settingsAt).toBeGreaterThan(-1);
     expect(args[settingsAt + 1]).toMatch(/settings\.json$/);
+    expect(row.settings.enableAllProjectMcpServers).toBe(true);
+    expect(row.settings).toMatchObject({
+      hooks: { PreToolUse: expect.any(Array) },
+    });
+  });
+
+  it("pre-approves project MCP servers without a tool hook", async () => {
+    const dir = cwd();
+    const argsFile = join(dir, "args.jsonl");
+    const result = await runTurn(
+      options({ cwd: dir, env: { CLAUDE_FAKE_ARGS_FILE: argsFile } }),
+    );
+    expect(result.ok).toBe(true);
+    const row = JSON.parse(
+      readFileSync(argsFile, "utf8").trim().split("\n")[0]!,
+    ) as {
+      args: string[];
+      settings: Record<string, unknown>;
+    };
+    expect(row.args).toContain("--settings");
+    expect(row.settings).toEqual({ enableAllProjectMcpServers: true });
+  });
+
+  it("builds project MCP settings with and without tool hooks", () => {
+    expect(buildTurnSettings()).toEqual({
+      enableAllProjectMcpServers: true,
+    });
+    const dbPath = "/tmp/events.db";
+    const turnId = 9;
+    const operationsCliPath = "/tmp/operations-cli.js";
+    expect(
+      buildTurnSettings({
+        dbPath,
+        turnId,
+        operationsCliPath,
+      }),
+    ).toEqual({
+      enableAllProjectMcpServers: true,
+      ...buildToolHookSettings(dbPath, turnId, operationsCliPath),
+    });
   });
 
   it("parses every mixed assistant block and captures the first session id", async () => {
@@ -429,6 +475,212 @@ describe("runTurn", () => {
       else process.env.FABLE_MODELS_ENV_FILE = oldFableModelsEnvFile;
     }
   });
+  it("keeps the child environment unchanged when passthrough is not configured", async () => {
+    const dir = cwd();
+    const envFile = join(dir, "golden-env.jsonl");
+    const passthroughEnvFile = join(dir, "golden-passthrough-env.jsonl");
+    const ambient = {
+      CLAUDE_GOLD: "x",
+      ANTHROPIC_GOLD: "y",
+      GH_TOKEN: "z",
+      MCP_GOLD_DROPPED: "q",
+      PLANNER_WEBHOOK_SECRET: "w",
+      OTEL_RESOURCE_ATTRIBUTES: "o",
+      TRACEPARENT: "t",
+    };
+    const previous = Object.fromEntries(
+      Object.keys(ambient).map((key) => [key, process.env[key]]),
+    );
+    Object.assign(process.env, ambient);
+    try {
+      const result = await runTurn(
+        options({
+          cwd: dir,
+          env: {
+            CLAUDE_FAKE_ENV_FILE: envFile,
+            CLIPROXY_API_KEY: "cliproxy-extra",
+            LINEAR_API_KEY: "linear-extra",
+            ARTIFACT_HOST_TOKEN: "artifact-extra",
+            OTEL_RESOURCE_ATTRIBUTES: "e",
+            TRACEPARENT: "te",
+            PLANNER_LINEAR_CLIENT_SECRET: "client-extra",
+            MCP_GOLD_EXTRA_DROPPED: "extra-dropped",
+          },
+          trustedEnv: {
+            TRUSTED_GOLD: "1",
+            LINEAR_API_KEY: "override-attempt",
+          },
+        }),
+      );
+      expect(result.ok).toBe(true);
+      const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as {
+        env: Record<string, string>;
+      };
+      const keys = [
+        "CLAUDE_GOLD",
+        "ANTHROPIC_GOLD",
+        "GH_TOKEN",
+        "MCP_GOLD_DROPPED",
+        "PLANNER_WEBHOOK_SECRET",
+        "OTEL_RESOURCE_ATTRIBUTES",
+        "TRACEPARENT",
+        "CLIPROXY_API_KEY",
+        "LINEAR_API_KEY",
+        "ARTIFACT_HOST_TOKEN",
+        "PLANNER_LINEAR_CLIENT_SECRET",
+        "MCP_GOLD_EXTRA_DROPPED",
+        "TRUSTED_GOLD",
+      ];
+      const project = (env: Record<string, string>) =>
+        Object.fromEntries(
+          keys
+            .filter((key) => env[key] !== undefined)
+            .map((key) => [key, env[key]]),
+        );
+      const expected = {
+        CLAUDE_GOLD: "x",
+        ANTHROPIC_GOLD: "y",
+        GH_TOKEN: "z",
+        OTEL_RESOURCE_ATTRIBUTES: "e",
+        TRACEPARENT: "te",
+        CLIPROXY_API_KEY: "cliproxy-extra",
+        LINEAR_API_KEY: "linear-extra",
+        ARTIFACT_HOST_TOKEN: "artifact-extra",
+        TRUSTED_GOLD: "1",
+      };
+      expect(project(row.env)).toEqual(expected);
+
+      const passthroughResult = await runTurn(
+        options({
+          cwd: dir,
+          mcpEnvPassthrough: ["MCP_GOLD_DROPPED"],
+          env: {
+            CLAUDE_FAKE_ENV_FILE: passthroughEnvFile,
+            CLIPROXY_API_KEY: "cliproxy-extra",
+            LINEAR_API_KEY: "linear-extra",
+            ARTIFACT_HOST_TOKEN: "artifact-extra",
+            OTEL_RESOURCE_ATTRIBUTES: "e",
+            TRACEPARENT: "te",
+            PLANNER_LINEAR_CLIENT_SECRET: "client-extra",
+            MCP_GOLD_EXTRA_DROPPED: "extra-dropped",
+          },
+          trustedEnv: {
+            TRUSTED_GOLD: "1",
+            LINEAR_API_KEY: "override-attempt",
+          },
+        }),
+      );
+      expect(passthroughResult.ok).toBe(true);
+      const passthroughRow = JSON.parse(
+        readFileSync(passthroughEnvFile, "utf8").trim(),
+      ) as { env: Record<string, string> };
+      expect(project(passthroughRow.env)).toEqual({
+        ...expected,
+        MCP_GOLD_DROPPED: "q",
+      });
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+  it("passes configured ambient and per-turn MCP environment values", async () => {
+    const dir = cwd();
+    const envFile = join(dir, "passthrough-env.jsonl");
+    const previousA = process.env.MCP_PASS_A;
+    const previousB = process.env.MCP_PASS_B;
+    process.env.MCP_PASS_A = "ambient-a";
+    process.env.MCP_PASS_B = "ambient-b";
+    try {
+      const result = await runTurn(
+        options({
+          cwd: dir,
+          mcpEnvPassthrough: ["MCP_PASS_A", "MCP_PASS_B"],
+          env: {
+            CLAUDE_FAKE_ENV_FILE: envFile,
+            MCP_PASS_A: "extra-a",
+          },
+        }),
+      );
+      expect(result.ok).toBe(true);
+      const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as {
+        env: Record<string, string>;
+      };
+      expect(row.env).toMatchObject({
+        MCP_PASS_A: "extra-a",
+        MCP_PASS_B: "ambient-b",
+      });
+    } finally {
+      if (previousA === undefined) delete process.env.MCP_PASS_A;
+      else process.env.MCP_PASS_A = previousA;
+      if (previousB === undefined) delete process.env.MCP_PASS_B;
+      else process.env.MCP_PASS_B = previousB;
+    }
+  });
+  it.each([
+    "CLIPROXY_MANAGEMENT_KEY",
+    "ARTIFACT_TOKEN",
+    "X_WEBHOOK_SECRET",
+    "X_LINEAR_CLIENT_SECRET",
+    "X_LINEAR_TOKEN",
+    "OAUTH_X",
+    "X_OAUTH_TOKEN",
+  ])("drops denied passthrough key %s from the child environment", async (key) => {
+    const dir = cwd();
+    const envFile = join(dir, "denied-env.jsonl");
+    const previous = process.env[key];
+    process.env[key] = "denied-value";
+    try {
+      const result = await runTurn(
+        options({
+          cwd: dir,
+          mcpEnvPassthrough: [key],
+          env: { CLAUDE_FAKE_ENV_FILE: envFile },
+        }),
+      );
+      expect(result.ok).toBe(true);
+      const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as {
+        env: Record<string, string>;
+      };
+      expect(row.env[key]).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  });
+  it.each([
+    ["CLIPROXY_API_KEY", "ambient-value"],
+    ["BASH_DEFAULT_TIMEOUT_MS", "ambient-value"],
+    ["BASH_MAX_TIMEOUT_MS", "ambient-value"],
+    ["LINEAR_API_KEY", "ambient-value"],
+    ["ARTIFACT_HOST_TOKEN", undefined],
+  ])(
+    "does not widen the ambient source for daemon-owned passthrough key %s",
+    async (key, expected) => {
+      const dir = cwd();
+      const envFile = join(dir, "daemon-owned-env.jsonl");
+      const previous = process.env[key];
+      process.env[key] = "ambient-value";
+      try {
+        const result = await runTurn(
+          options({
+            cwd: dir,
+            mcpEnvPassthrough: [key],
+            env: { CLAUDE_FAKE_ENV_FILE: envFile },
+          }),
+        );
+        expect(result.ok).toBe(true);
+        const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as {
+          env: Record<string, string>;
+        };
+        expect(row.env[key]).toBe(expected);
+      } finally {
+        if (previous === undefined) delete process.env[key];
+        else process.env[key] = previous;
+      }
+    },
+  );
   it("passes only the named browser handshake and attempt context", async () => {
     const dir = cwd(); const envFile = join(dir, "env.jsonl");
     await runTurn(options({ cwd: dir, env: { CLAUDE_FAKE_ENV_FILE: envFile,
