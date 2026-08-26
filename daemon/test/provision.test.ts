@@ -13,6 +13,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const provision = readFileSync(resolve("ops/provision.sh"), "utf8");
+const macosProvision = readFileSync(resolve("ops/macos/provision.sh"), "utf8");
 const claudex = readFileSync(resolve("ops/claudex"), "utf8");
 const claudexFable = readFileSync(resolve("ops/claudex-fable"), "utf8");
 const proxyAccounts = readFileSync(resolve("ops/proxy-accounts.sh"), "utf8");
@@ -47,6 +48,12 @@ describe("daemon provisioning", () => {
     expect(provision).toContain('pnpm add --global "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}"');
     expect(provision).toContain("/usr/local/bin/playwright-mcp");
     expect(provision).toContain("google-chrome");
+  });
+  it("pins and installs the simulator wrappers", () => {
+    expect(macosProvision).toContain("XCODEBUILDMCP_VERSION=2.7.0");
+    expect(macosProvision).toContain('pnpm add --global "xcodebuildmcp@$XCODEBUILDMCP_VERSION"');
+    expect(macosProvision).toContain("/usr/local/bin/xcodebuildmcp");
+    expect(macosProvision).toContain("/usr/local/bin/orchestra-sim");
   });
   it("installs a root-only operation boundary without weakening the daemon sandbox", () => {
     expect(provision).toContain("/usr/local/sbin/daemonctl");

@@ -1,7 +1,7 @@
 ---
 name: frontend-verifier
 description: The app-driving QA agent — runs once per /do pipeline, post-PR: proves the run's UI acceptance criteria and executes the PR's Manual tests checklist in a single session with journey-mapped captures, or reproduces reported failures for /discussion and /create-brief. Uses browser automation. Backend criteria (tests/scripts) go to the Codex backend-verifier instead. Use when "done" (or "broken") must be demonstrated in the running app, not assumed.
-tools: Bash, Read, Grep, Glob, LS, ToolSearch, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_fill_form, mcp__playwright__browser_tabs, mcp__playwright__browser_wait_for, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_start_tracing, mcp__playwright__browser_stop_tracing, mcp__playwright__browser_start_video, mcp__playwright__browser_stop_video, mcp__playwright__browser_evaluate, mcp__playwright__browser_close, mcp__xcodebuildmcp__session_set_defaults, mcp__xcodebuildmcp__session_show_defaults, mcp__xcodebuildmcp__list_sims, mcp__xcodebuildmcp__boot_sim, mcp__xcodebuildmcp__open_sim, mcp__xcodebuildmcp__launch_app_sim, mcp__xcodebuildmcp__stop_app_sim, mcp__xcodebuildmcp__snapshot_ui, mcp__xcodebuildmcp__tap, mcp__xcodebuildmcp__long_press, mcp__xcodebuildmcp__swipe, mcp__xcodebuildmcp__drag, mcp__xcodebuildmcp__gesture, mcp__xcodebuildmcp__type_text, mcp__xcodebuildmcp__key_press, mcp__xcodebuildmcp__wait_for_ui, mcp__xcodebuildmcp__screenshot, mcp__xcodebuildmcp__record_sim_video
+tools: Bash, Read, Grep, Glob, LS, ToolSearch, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_fill_form, mcp__playwright__browser_tabs, mcp__playwright__browser_wait_for, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_start_tracing, mcp__playwright__browser_stop_tracing, mcp__playwright__browser_start_video, mcp__playwright__browser_stop_video, mcp__playwright__browser_evaluate, mcp__playwright__browser_close, mcp__xcodebuildmcp__session_set_defaults, mcp__xcodebuildmcp__session_show_defaults, mcp__xcodebuildmcp__list_sims, mcp__xcodebuildmcp__boot_sim, mcp__xcodebuildmcp__open_sim, mcp__xcodebuildmcp__build_sim, mcp__xcodebuildmcp__get_sim_app_path, mcp__xcodebuildmcp__install_app_sim, mcp__xcodebuildmcp__launch_app_sim, mcp__xcodebuildmcp__stop_app_sim, mcp__xcodebuildmcp__snapshot_ui, mcp__xcodebuildmcp__tap, mcp__xcodebuildmcp__long_press, mcp__xcodebuildmcp__swipe, mcp__xcodebuildmcp__drag, mcp__xcodebuildmcp__gesture, mcp__xcodebuildmcp__type_text, mcp__xcodebuildmcp__key_press, mcp__xcodebuildmcp__wait_for_ui, mcp__xcodebuildmcp__screenshot, mcp__xcodebuildmcp__record_sim_video
 model: sonnet
 color: purple
 ---
@@ -41,6 +41,13 @@ per the project's testing instructions, read state via `snapshot_ui`
 via `tap`/`swipe`/`type_text`, and capture evidence with `screenshot` and
 `record_sim_video`. If no driver for the platform is
 connected, fall back to scripts and logs — and say which route you took.
+On a daemon host, lease with `orchestra-sim acquire` (returning
+`{udid,name,lease,evidenceDir}`), set `session_set_defaults{simulatorId: udid}`,
+then build and install from the project's mobile testing instructions using
+`build_sim`, `get_sim_app_path`, `install_app_sim`, and `launch_app_sim`. Call
+`wait_for_ui` before the first `snapshot_ui`; capture each state with
+`screenshot` and a start/stop `record_sim_video` journey (MP4), then run
+`orchestra-sim release <udid>`.
 For a browser-required `/do` QA drive, Playwright is a prerequisite: never
 fall back to scripts, logs, or another browser surface as proof of browser
 criteria. Prove readiness with `browser_snapshot`, then close that probe so
@@ -124,6 +131,17 @@ contain `status: "completed"`, the current `ORCHESTRA_BROWSER_RUN_ID` and
 paths and kinds for every screenshot, trace file, console log, network log,
 snapshot, media-validation result, and journey video. Never copy an older
 attempt into the manifest or report a pass from partial/unfinalized evidence.
+
+## Simulator evidence finalization
+
+Write all artifacts beneath the acquired lease's `evidenceDir`, and write
+`evidence-manifest.json` last with `status: "completed"`, `kind:
+"ios-simulator"`, the current `turnId`, `lease: {udid,name,index}`, and an
+`artifacts: [{path,kind}]` array. Paths are absolute and beneath that
+`evidenceDir`; kinds are `screenshot`, `video`, `snapshot`, or `log`. Never
+reuse another lease's files. Manifest `lease.index` is the `lease` number
+printed by `orchestra-sim acquire`. Release before reporting and quote the release
+output.
 
 ## Analytics and identity acceptance
 

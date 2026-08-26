@@ -62,6 +62,7 @@ CLIPROXY_VERSION=7.2.93
 CLIPROXY_SHA256=3ebffcf346c79925ff393225c2769a509a2297dcc1b8154c49235cb1d80a69ac
 PNPM_VERSION=11.8.0
 PLAYWRIGHT_MCP_VERSION=0.0.78
+XCODEBUILDMCP_VERSION=2.7.0
 CODEX_MIN_VERSION=0.145.0
 CLOUDFLARED_CONFIG_DIR=$AGENT_HOME/.cloudflared
 CLOUDFLARED_CONFIG=$CLOUDFLARED_CONFIG_DIR/config.yml
@@ -100,6 +101,13 @@ raise SystemExit(0 if parts(sys.argv[1]) >= parts(sys.argv[2]) else 1)
 PY
 }
 command_version() { agent "$1" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
+ios_runtime_available() {
+  DEVELOPER_DIR="$1" xcrun simctl list runtimes available -j 2>/dev/null \
+    | python3 -c 'import json,sys
+try: runtimes=json.load(sys.stdin).get("runtimes",[])
+except (ValueError,AttributeError): raise SystemExit(1)
+raise SystemExit(0 if any("SimRuntime.iOS" in str(r.get("identifier","")) and r.get("isAvailable") is True for r in runtimes if isinstance(r,dict)) else 1)'
+}
 dir_correct() { sudo test -d "$1" && [[ $(sudo stat -f %Lp "$1") == "${2#0}" && $(sudo stat -f %Su "$1") == "$AGENT" ]]; }
 compat_symlink_correct() {
   [[ -L $COMPAT_STATE_LINK ]] \
@@ -162,6 +170,10 @@ dry_inventory() {
   sudo test -x "$AGENT_HOME/.local/bin/claude" && record claude-cli already-correct || record claude-cli would-apply
   version_at_least "$(command_version "$AGENT_HOME/.codex-managed/bin/codex")" "$CODEX_MIN_VERSION" && record managed-codex already-correct || record managed-codex would-apply
   sudo test -x "$AGENT_HOME/.pnpm/bin/playwright-mcp" && sudo test -f "$AGENT_HOME/.pnpm/playwright-mcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/playwright-mcp-version") == "$PLAYWRIGHT_MCP_VERSION" ]] && record playwright-mcp already-correct || record playwright-mcp would-apply
+  developer_dir=${SIM_PROVISION_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
+  [[ -x "$developer_dir/usr/bin/xcodebuild" ]] && record simulator-xcode already-correct || record simulator-xcode "pending-human: install Xcode and an iOS runtime"
+  ios_runtime_available "$developer_dir" && record simulator-runtime already-correct || record simulator-runtime "pending-human: install an available iOS runtime and accept the Xcode license"
+  sudo test -x "$AGENT_HOME/.pnpm/bin/xcodebuildmcp" && sudo test -f "$AGENT_HOME/.pnpm/xcodebuildmcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/xcodebuildmcp-version") == "$XCODEBUILDMCP_VERSION" ]] && sudo test -x /usr/local/bin/xcodebuildmcp && record xcodebuildmcp already-correct || record xcodebuildmcp would-apply
   sudo test -f "$CLIPROXY_ENV" && sudo test -f "$CLIPROXY_CONFIG" && record proxy-config already-correct || record proxy-config would-apply
   compat_symlink_correct && record compat-symlink already-correct || record compat-symlink would-apply
   /opt/homebrew/bin/brew list --formula cloudflared >/dev/null 2>&1 && record cloudflared already-correct || record cloudflared would-apply
@@ -183,7 +195,7 @@ dry_inventory() {
   paths_tmp=$(mktemp); printf '/usr/local/sbin\n' > "$paths_tmp"
   file_correct "$paths_tmp" "$PATHS_D_INSTALLED" 0644 root wheel && record paths-d already-correct || record paths-d would-apply
   rm -f "$paths_tmp"
-  for spec in "$RENDER_DIR/$DAEMON_LABEL.plist:/Library/LaunchDaemons/$DAEMON_LABEL.plist:0644" "$RENDER_DIR/$PROXY_LABEL.plist:/Library/LaunchDaemons/$PROXY_LABEL.plist:0644" "$RENDER_DIR/$TUNNEL_LABEL.plist:/Library/LaunchDaemons/$TUNNEL_LABEL.plist:0644" "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755"; do
+  for spec in "$RENDER_DIR/$DAEMON_LABEL.plist:/Library/LaunchDaemons/$DAEMON_LABEL.plist:0644" "$RENDER_DIR/$PROXY_LABEL.plist:/Library/LaunchDaemons/$PROXY_LABEL.plist:0644" "$RENDER_DIR/$TUNNEL_LABEL.plist:/Library/LaunchDaemons/$TUNNEL_LABEL.plist:0644" "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755" "$SCRIPT_DIR/orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
     source=${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
     if [[ $(basename "$destination") == "$TUNNEL_LABEL.plist" ]] && ! cloudflared_config_credential_exists; then
       status="pending-human: create tunnel as $AGENT"
@@ -300,6 +312,20 @@ printf '#!/bin/sh\nexec %s/.pnpm/bin/playwright-mcp "$@"\n' "$AGENT_HOME" > "$mc
 install_if_changed "$mcp_wrapper" /usr/local/bin/playwright-mcp 0755 root wheel && mcp_changed=1
 rm -f "$mcp_wrapper"; trap - EXIT
 (( mcp_changed )) && record playwright-mcp applied || record playwright-mcp already-correct
+
+if sudo test -x "$AGENT_HOME/.pnpm/bin/xcodebuildmcp" && sudo test -f "$AGENT_HOME/.pnpm/xcodebuildmcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/xcodebuildmcp-version") == "$XCODEBUILDMCP_VERSION" ]]; then xcodebuildmcp_changed=0; else
+  agent /usr/local/bin/pnpm add --global "xcodebuildmcp@$XCODEBUILDMCP_VERSION"
+  printf '%s\n' "$XCODEBUILDMCP_VERSION" | sudo -u "$AGENT" tee "$AGENT_HOME/.pnpm/xcodebuildmcp-version" >/dev/null; xcodebuildmcp_changed=1
+fi
+xcodebuildmcp_wrapper=$(mktemp); trap 'rm -f "$xcodebuildmcp_wrapper"' EXIT
+printf '#!/bin/sh\nexec %s/.pnpm/bin/xcodebuildmcp "$@"\n' "$AGENT_HOME" > "$xcodebuildmcp_wrapper"
+install_if_changed "$xcodebuildmcp_wrapper" /usr/local/bin/xcodebuildmcp 0755 root wheel && xcodebuildmcp_changed=1
+rm -f "$xcodebuildmcp_wrapper"; trap - EXIT
+(( xcodebuildmcp_changed )) && record xcodebuildmcp applied || record xcodebuildmcp already-correct
+
+developer_dir=${SIM_PROVISION_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
+[[ -x "$developer_dir/usr/bin/xcodebuild" ]] && record simulator-xcode already-correct || record simulator-xcode "pending-human: install Xcode and an iOS runtime"
+ios_runtime_available "$developer_dir" && record simulator-runtime already-correct || record simulator-runtime "pending-human: install an available iOS runtime and accept the Xcode license"
 
 helpers_changed=0
 for helper in claudex claudex-fable; do
@@ -433,7 +459,7 @@ if install_if_changed "$RENDER_DIR/sudoers" "$SUDOERS_INSTALLED" 0440 root wheel
 sudo /usr/sbin/visudo -cf "$SUDOERS_INSTALLED" >/dev/null || fail "installed sudoers did not verify"
 
 root_files_changed=0
-for spec in "daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755"; do
+for spec in "daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755" "orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
   source=$SCRIPT_DIR/${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
   install_if_changed "$source" "$destination" "${spec##*:}" root wheel && root_files_changed=1
 done

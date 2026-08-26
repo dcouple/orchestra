@@ -1,4 +1,5 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,6 +36,12 @@ async function setup() {
 }
 
 describe.sequential("orchestra-sim CLI", () => {
+  it.skipIf(!existsSync(resolve("dist/sim-cli.js")))("runs the built entrypoint through a symlink", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sim-cli-link-")); dirs.push(dir);
+    const linkedDaemon = join(dir, "daemon"); symlinkSync(resolve("."), linkedDaemon, "dir");
+    const result = spawnSync(process.execPath, [join(linkedDaemon, "dist/sim-cli.js"), "--help"], { encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0); expect(result.stdout).toContain("usage: orchestra-sim");
+  });
   it("acquires, reports status, and releases through a real daemon server", async () => {
     const value = await setup(); const acquireIo = io(); expect(await main(["acquire"], { ORCHESTRA_SIM_CONTEXT: value.context }, acquireIo.streams)).toBe(0);
     const acquired = JSON.parse(acquireIo.stdout) as { udid: string }; const statusIo = io();

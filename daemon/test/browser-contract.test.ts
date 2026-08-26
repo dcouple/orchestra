@@ -8,6 +8,7 @@ describe("browser publication contract", () => {
     const verifier = readFileSync(resolve("../claude/agents/frontend-verifier.md"), "utf8");
     const toolsLine = verifier.split("\n").find(line => line.startsWith("tools:"))!;
     for (const tool of REQUIRED_TOOLS) expect(toolsLine).toContain(`mcp__playwright__${tool}`);
+    for (const tool of ["build_sim", "install_app_sim"]) expect(toolsLine).toContain(`mcp__xcodebuildmcp__${tool}`);
     expect(toolsLine).not.toContain("claude-in-chrome");
     expect(toolsLine).not.toContain("browser_run_code_unsafe");
   });

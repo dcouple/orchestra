@@ -1,5 +1,6 @@
+import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 interface Io { stdout: { write(value: string): unknown }; stderr: { write(value: string): unknown } }
 interface Context { version: 1; baseUrl: string; turnId: number; linearSessionId: string; token: string }
@@ -7,7 +8,8 @@ const usage = "usage: orchestra-sim acquire | release <udid> | status\n";
 function write(io: Io["stdout"], value: unknown): void { io.write(`${typeof value === "string" ? value : JSON.stringify(value)}\n`); }
 
 export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env, io: Io = process): Promise<number> {
-  if (argv[0] === "--help" || !["acquire", "release", "status"].includes(argv[0] ?? "") || (argv[0] === "release" && !argv[1])) {
+  if (argv[0] === "--help" || argv[0] === "-h") { io.stdout.write(usage); return 0; }
+  if (!["acquire", "release", "status"].includes(argv[0] ?? "") || (argv[0] === "release" && !argv[1])) {
     io.stderr.write(usage); return 2;
   }
   const path = env.ORCHESTRA_SIM_CONTEXT;
@@ -37,6 +39,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main(process.argv.slice(2));
+if (process.argv[1]) {
+  try { if (realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = await main(process.argv.slice(2)); }
+  catch {}
 }

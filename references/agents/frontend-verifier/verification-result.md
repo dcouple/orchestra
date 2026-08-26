@@ -36,6 +36,13 @@ run id and attempt id match the dispatched environment. Enumerate every
 manifest artifact in Captures, including trace, console, network, media
 validation, and video, not only screenshots.
 
+For simulator evidence, give `<evidenceDir>/evidence-manifest.json` with
+`status: "completed"`, `kind: "ios-simulator"`, current `turnId`,
+`lease: {udid,name,index}`, and absolute `screenshot`, `video`, `snapshot`, or
+`log` artifact paths beneath that lease's evidence directory. Include the MP4
+recording and quote the lease-release output. `lease.index` is the `lease`
+number printed by `orchestra-sim acquire`.
+
 Every screenshot taken during the run is a row here — the caller hosts and
 embeds from this table, so a capture not listed does not exist. Journey
 videos are rows too (`<journey>.webm` — one line: journey + duration); mark

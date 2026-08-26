@@ -68,6 +68,18 @@ launch with "missing Fable model file". The Fable models file itself stays
 operator-authored (see the runbook's "Enable and verify Fable routing").
 Secrets never enter this repository.
 
+### Simulator capability
+
+The operator installs Xcode and an available iOS runtime, accepts the Xcode
+license, and configures the `IOS_SIM_*` and `XCODEBUILD_MCP_BIN` keys listed in
+the main setup guide. Provisioning installs the pinned XcodeBuildMCP and the
+`orchestra-sim` wrapper; it inventories Xcode/runtime availability but does
+not install either Apple component. Run `daemonctl sim-preflight --dry-run`
+first, then `daemonctl sim-preflight` to ensure one shut-down golden device,
+sweep unleased orphans, and prove the boot, install, launch, screenshot,
+accessibility snapshot, and shutdown round trip. Re-run that preflight after
+Xcode/runtime updates or a restart.
+
 Open an interactive login context as the service user for credentials and
 identity:
 
@@ -158,16 +170,13 @@ test is performed.
 
 ### Simulator automation
 
-Simulator automation was verified on 2026-08-26 from a daemon-spawned turn in
-the system launchd domain (`launchctl managername` reported `System`), with no
-GUI session for the service account and other accounts logged in at the
-console, so the daemon remains a LaunchDaemon. Restart acceptance remains a
-deferred round-trip: restart through the documented wrapper and, before anyone
-logs in at the GUI, run `sim-context-probe.sh` as the service account against
-the stock device. A pass confirms that no manual step beyond the FileVault
-credential is required. If it fails with a session-binding error, log in once
-(Screen Sharing suffices), re-run the probe, and record a console session as a
-host requirement; that result reopens the LaunchAgent design as a new item.
+Simulator automation runs from the system launchd domain, so the daemon remains
+a LaunchDaemon. After a restart through the documented wrapper, run
+`daemonctl sim-preflight` before anyone logs in at the GUI. A pass confirms the
+golden-device and full simulator round trip without an interactive session. If
+it fails with a session-binding error, log in once, re-run the preflight, and
+record a console session as a host requirement; that result reopens the
+LaunchAgent design as a new item.
 Classic automatic login is unavailable while FileVault is enabled, so it is
 not configured.
 
