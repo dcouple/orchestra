@@ -154,6 +154,9 @@ The repository the agents work on must have:
 
 ### Project MCP servers
 
+Full setup, secret storage, rotation and smoke-test procedure:
+`docs/daemon-mcp-setup.md`. Summary:
+
 A consumer repository's checked-in `.mcp.json` is its project tool list. The
 daemon lets Claude Code discover that file and pre-approves its servers in
 every turn with `enableAllProjectMcpServers: true` in the per-turn
