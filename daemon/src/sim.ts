@@ -10,6 +10,7 @@ import type { EventLog, SimLeaseRow } from "./eventlog.js";
 const execFileAsync = promisify(execFile);
 const OPEN_STATES = new Set(["creating", "booted", "orphan"]);
 export const LEASE_NAME = /^orchestra-(\d+)-(\d+)$/;
+export const XCODEBUILDMCP_WORKFLOWS = "session-management,simulator,ui-automation";
 
 export class SimPrerequisiteError extends Error {
   constructor(readonly kind: "disabled" | "xcode_unavailable" | "runtime_unavailable" | "mcp_unavailable" | "golden_unavailable", message: string) {
@@ -277,7 +278,8 @@ export class SimReaper {
 }
 
 export function simMcpServer(config: Pick<Config, "xcodebuildMcpBin" | "iosSimDeveloperDir">) {
-  return { type: "stdio" as const, command: config.xcodebuildMcpBin, args: ["mcp"], env: { DEVELOPER_DIR: config.iosSimDeveloperDir } };
+  return { type: "stdio" as const, command: config.xcodebuildMcpBin, args: ["mcp"],
+    env: { DEVELOPER_DIR: config.iosSimDeveloperDir, XCODEBUILDMCP_ENABLED_WORKFLOWS: XCODEBUILDMCP_WORKFLOWS } };
 }
 export function mergeSimMcpConfig(baseJson: string, server: ReturnType<typeof simMcpServer>): string {
   const parsed = JSON.parse(baseJson) as { mcpServers?: Record<string, unknown> };

@@ -172,6 +172,8 @@ test is performed.
 
 ### Simulator automation
 
+The daemon enables XcodeBuildMCP's `session-management`, `simulator`, and
+`ui-automation` workflows so leased turns expose both lifecycle and UI-driving tools.
 Simulator automation runs from the system launchd domain, so the daemon remains
 a LaunchDaemon. Run the mutating `daemonctl sim-preflight` before enabling the
 capability, or while the daemon is stopped, to confirm the golden-device and

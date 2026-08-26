@@ -45,8 +45,12 @@ On a daemon host, lease with `orchestra-sim acquire` (returning
 `{udid,name,lease,evidenceDir}`), set `session_set_defaults{simulatorId: udid}`,
 then build and install from the project's mobile testing instructions using
 `build_sim`, `get_sim_app_path`, `install_app_sim`, and `launch_app_sim`. Call
-`wait_for_ui` before the first `snapshot_ui`; capture each state with
-`screenshot` and a start/stop `record_sim_video` journey (MP4), then run
+`wait_for_ui` before the first `snapshot_ui`; its `predicate` is a string enum
+such as `"settled"` or `"exists"`, never an object. Capture each state with
+`screenshot{returnFormat:"path"}` using a `.jpg` filename because the simulator
+driver returns JPEG data regardless of the filename. For a `record_sim_video`
+journey (MP4), pass the same `outputFile` path when starting and when stopping
+with `stop:true`, then run
 `orchestra-sim release <udid>`.
 For a browser-required `/do` QA drive, Playwright is a prerequisite: never
 fall back to scripts, logs, or another browser surface as proof of browser
@@ -102,7 +106,8 @@ launch is blocked, never grounds to improvise a command.
 3. Capture evidence as you go: quoted command output, log excerpts, console
    errors, observed UI state. Quoted text/log evidence is the proof, and
    **every UI state you verify is also screenshotted**: save each capture to
-   the scratchpad with a stable name (`<item>-<criterion or J#>-<state>.png`)
+   the scratchpad with a stable name (`<item>-<criterion or J#>-<state>.png`
+   for browser captures, `.jpg` for simulator captures)
    and enumerate it in your report's Captures section — path, one-line
    description, the criterion or checklist item it evidences. When a journey
    runs through a scriptable driver, also record it as a video (driver-level

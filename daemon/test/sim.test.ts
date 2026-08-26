@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig, type Config } from "../src/config.js";
 import { EventLog } from "../src/eventlog.js";
 import { WebhookServer } from "../src/server.js";
-import { detectSimCapability, SimCapacityError, SimPool, SimReaper, Simctl, SimTurnLimitError } from "../src/sim.js";
+import { detectSimCapability, simMcpServer, SimCapacityError, SimPool, SimReaper, Simctl, SimTurnLimitError,
+  XCODEBUILDMCP_WORKFLOWS } from "../src/sim.js";
 
 const dirs: string[] = [];
 const baseEnv = { DAEMON_TEST_MODE: "1", SESSIONS_ENABLED: "0", PLANNER_WEBHOOK_SECRET: "p",
@@ -39,6 +40,15 @@ function turn(log: EventLog, session = `session-${Math.random()}`) {
 const calls = (path: string) => existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line) as string[]) : [];
 
 describe.sequential("simulator capability and pool", () => {
+  it("enables the UI automation workflow in the per-turn MCP server", () => {
+    const config = { xcodebuildMcpBin: "/xcodebuildmcp", iosSimDeveloperDir: "/Developer" };
+    expect(simMcpServer(config)).toEqual({ type: "stdio", command: "/xcodebuildmcp", args: ["mcp"], env: {
+      DEVELOPER_DIR: "/Developer",
+      XCODEBUILDMCP_ENABLED_WORKFLOWS: XCODEBUILDMCP_WORKFLOWS,
+    } });
+    expect(XCODEBUILDMCP_WORKFLOWS).toBe("session-management,simulator,ui-automation");
+  });
+
   it("scrubs daemon secrets from simctl children and failure logs", async () => {
     process.env.PLANNER_WEBHOOK_SECRET = "x";
     const value = setup(); const current = turn(value.log, "secret-test");

@@ -206,5 +206,10 @@ the native MP4 recording, write `evidence-manifest.json` last with
 `status: "completed"`, `kind: "ios-simulator"`, current `turnId`,
 `lease: {udid,name,index}`, and absolute artifact paths beneath that directory.
 The manifest's `lease.index` is the `lease` number printed by
-`orchestra-sim acquire`. Files from another lease are invalid. Release the lease before reporting and
+`orchestra-sim acquire`. Pass the recording's original `outputFile` path again
+when calling `record_sim_video{stop:true}`. `wait_for_ui` takes a string-enum
+`predicate` such as `"settled"` or `"exists"`, not an object. Name
+`screenshot{returnFormat:"path"}` captures with `.jpg`, because the simulator
+driver writes JPEG data regardless of the requested filename. Files from
+another lease are invalid. Release the lease before reporting and
 preserve the release output as evidence.

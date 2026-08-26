@@ -297,7 +297,8 @@ cat >"$OUT/mcp.mjs" <<'JS'
 import { spawn } from "node:child_process";
 import { openSync, writeFileSync } from "node:fs";
 const [binary, udid, out] = process.argv.slice(2);
-const child = spawn(binary, ["mcp"], { stdio: ["pipe", "pipe", openSync(`${out}/mcp.log`, "a")], env: process.env });
+const child = spawn(binary, ["mcp"], { stdio: ["pipe", "pipe", openSync(`${out}/mcp.log`, "a")],
+  env: { ...process.env, XCODEBUILDMCP_ENABLED_WORKFLOWS: "session-management,simulator,ui-automation" } });
 let buffer = "", nextId = 0, settled = false, lastResponse = "";
 const pending = new Map();
 const responseText = (message) => (message.result?.content || []).map((item) => item.text || "").join("\n");

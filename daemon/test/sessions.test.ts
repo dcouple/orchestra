@@ -470,6 +470,8 @@ describe("SessionWorker", () => {
     expect(rows[1]).toMatchObject({ ORCHESTRA_BROWSER_RUN_ID: expect.any(String), ORCHESTRA_BROWSER_ATTEMPT_ID: expect.stringMatching(/^attempt-/) });
     expect(rows[1].ORCHESTRA_BROWSER_REQUEST_FILE).toBeUndefined();
     expect(records[0].mcpConfig.mcpServers.xcodebuildmcp.args).toEqual(["mcp"]);
+    expect(records[0].mcpConfig.mcpServers.xcodebuildmcp.env.XCODEBUILDMCP_ENABLED_WORKFLOWS)
+      .toBe("session-management,simulator,ui-automation");
     expect(records[1].mcpConfig.mcpServers).toMatchObject({ xcodebuildmcp: expect.any(Object), playwright: expect.any(Object) });
     expect(existsSync(rows[1].ORCHESTRA_BROWSER_STATE_DIR)).toBe(false);
     expect(existsSync(rows[1].ORCHESTRA_BROWSER_EVIDENCE_DIR)).toBe(true);
@@ -492,6 +494,8 @@ describe("SessionWorker", () => {
       const record = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim());
       if (state === "available") {
         expect(record.mcpConfig.mcpServers.xcodebuildmcp.args).toEqual(["mcp"]);
+        expect(record.mcpConfig.mcpServers.xcodebuildmcp.env.XCODEBUILDMCP_ENABLED_WORKFLOWS)
+          .toBe("session-management,simulator,ui-automation");
         expect(record.env.DEVELOPER_DIR).toBe(config.iosSimDeveloperDir);
       } else { expect(record.mcpConfig.mcpServers.xcodebuildmcp).toBeUndefined(); expect(record.env.DEVELOPER_DIR).toBeUndefined(); }
       if (state === "disabled") expect(record.env.ORCHESTRA_SIM_CONTEXT).toBeUndefined();
