@@ -43,6 +43,15 @@ export interface Config {
   playwrightMcpBin: string;
   playwrightChromeBin: string;
   browserAttemptTimeoutMs: number;
+  iosSimEnabled: boolean;
+  xcodebuildMcpBin: string;
+  iosSimDeveloperDir: string;
+  iosSimRuntime?: string;
+  iosSimDeviceType?: string;
+  iosSimMaxConcurrent: number;
+  iosSimIdleTimeoutMs: number;
+  iosSimReaperIntervalMs: number;
+  simctlArgv: string[];
   artifactMaxBodyBytes: number;
   reconcileIntervalMs: number;
   reconcileRequestTimeoutMs: number;
@@ -175,6 +184,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const claudexEnv = stringMap(env, "CLAUDEX_ENV");
   if (claudexEnv && !claudexArgv) throw new Error("CLAUDEX_ENV requires CLAUDEX_BIN");
   const fableBin = env.FABLE_BIN?.trim();
+  const iosSimEnabled = enabled(env, "IOS_SIM_ENABLED", false);
+  const iosSimRuntime = env.IOS_SIM_RUNTIME?.trim();
+  const iosSimDeviceType = env.IOS_SIM_DEVICE_TYPE?.trim();
+  if (iosSimEnabled && (!iosSimRuntime || !iosSimDeviceType)) {
+    throw new Error("IOS_SIM_RUNTIME and IOS_SIM_DEVICE_TYPE are required when IOS_SIM_ENABLED=1");
+  }
   const providerProbeIntervalMs = positiveInteger(env, "PROVIDER_PROBE_INTERVAL_MS", 60_000);
   const bashDefaultTimeoutMs = positiveInteger(env, "BASH_DEFAULT_TIMEOUT_MS", 900_000);
   const bashMaxTimeoutMs = positiveInteger(env, "BASH_MAX_TIMEOUT_MS", 900_000);
@@ -221,6 +236,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     playwrightMcpBin: env.PLAYWRIGHT_MCP_BIN?.trim() || "/usr/local/bin/playwright-mcp",
     playwrightChromeBin: env.PLAYWRIGHT_CHROME_BIN?.trim() || "/usr/bin/google-chrome",
     browserAttemptTimeoutMs: positiveInteger(env, "BROWSER_ATTEMPT_TIMEOUT_MS", 4 * 60 * 60 * 1000),
+    iosSimEnabled,
+    xcodebuildMcpBin: env.XCODEBUILD_MCP_BIN?.trim() || "/usr/local/bin/xcodebuildmcp",
+    iosSimDeveloperDir: env.IOS_SIM_DEVELOPER_DIR?.trim() || "/Applications/Xcode.app/Contents/Developer",
+    ...(iosSimRuntime ? { iosSimRuntime } : {}),
+    ...(iosSimDeviceType ? { iosSimDeviceType } : {}),
+    iosSimMaxConcurrent: positiveInteger(env, "IOS_SIM_MAX_CONCURRENT", 2),
+    iosSimIdleTimeoutMs: positiveInteger(env, "IOS_SIM_IDLE_TIMEOUT_MS", 900_000),
+    iosSimReaperIntervalMs: positiveInteger(env, "IOS_SIM_REAPER_INTERVAL_MS", 60_000),
+    simctlArgv: (env.IOS_SIM_SIMCTL_BIN?.trim() || "xcrun simctl").split(/\s+/),
     artifactMaxBodyBytes: positiveInteger(env, "ARTIFACT_MAX_BODY_BYTES", 32 * 1024 * 1024),
     reconcileIntervalMs: positiveInteger(env, "RECONCILE_INTERVAL_MS", 60_000),
     reconcileRequestTimeoutMs: positiveInteger(env, "RECONCILE_REQUEST_TIMEOUT_MS", 10_000),

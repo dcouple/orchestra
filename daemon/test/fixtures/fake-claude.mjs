@@ -16,8 +16,12 @@ if (argsFile) {
   await appendFile(argsFile,
     `${JSON.stringify({ args, cwd: process.cwd(), at: Date.now(), phase: "start", settings })}\n`);
 }
-if (process.env.CLAUDE_FAKE_ENV_FILE) await appendFile(process.env.CLAUDE_FAKE_ENV_FILE,
-  `${JSON.stringify({ args, env: process.env, at: Date.now(), phase: "env" })}\n`);
+if (process.env.CLAUDE_FAKE_ENV_FILE) {
+  const mcpAt = args.indexOf("--mcp-config");
+  const mcpConfig = mcpAt >= 0 && args[mcpAt + 1] ? JSON.parse(await readFile(args[mcpAt + 1], "utf8")) : undefined;
+  await appendFile(process.env.CLAUDE_FAKE_ENV_FILE,
+    `${JSON.stringify({ args, env: process.env, ...(mcpConfig ? { mcpConfig } : {}), at: Date.now(), phase: "env" })}\n`);
+}
 const emit = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 if (mode === "provider-fail-pre-id") {
   process.stderr.write("connection refused by provider base URL\n");

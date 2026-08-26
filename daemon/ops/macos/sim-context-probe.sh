@@ -177,7 +177,7 @@ SNAPSHOT_STATUS="MISSING"
 PRIOR_STATE=""
 CLEAN_DEVICE=0
 FINISHED=0
-BUNDLE_ID="com.dcouple.orchestra.simprobe"
+BUNDLE_ID="org.example.orchestra.simprobe"
 
 log() { echo "[probe] $*" | tee -a "$LOG"; }
 

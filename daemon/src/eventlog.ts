@@ -5,6 +5,7 @@ import type { AppName } from "./config.js";
 import type { InFlightDispatch } from "./dispatches.js";
 import { ACTIVE_OPERATION_STATES, type OperationRow, type OperationState,
   type SafeOperationStatus, type SafeRunningTurn, type ScheduleOperationInput, validateScheduleOperation } from "./operations.js";
+import { SimCapacityError, SimTurnLimitError } from "./sim.js";
 
 export interface AppendEvent {
   deliveryId?: string | undefined;
@@ -83,6 +84,13 @@ export interface TurnRow {
   receivedAt: number;
   turnSpanId: string | null;
   executionFinishedAt: number | null;
+}
+export type SimLeaseState = "creating" | "booted" | "orphan" | "released" | "reaped" | "failed";
+export interface SimLeaseRow {
+  id: number; udid: string | null; name: string; turnId: number | null;
+  linearSessionId: string | null; leaseIndex: number | null; state: SimLeaseState;
+  evidenceDir: string | null; acquiredAt: number; lastLiveAt: number;
+  releasedAt: number | null; releaseReason: string | null; reapAttempts: number;
 }
 export interface RestartIntentRow {
   policy: "interrupt";
@@ -547,6 +555,22 @@ export class EventLog {
       );
       CREATE INDEX IF NOT EXISTS idx_dispatch_waits_session
         ON dispatch_waits(linear_session_id,turn_id);
+      CREATE TABLE IF NOT EXISTS sim_leases (
+        id INTEGER PRIMARY KEY,
+        udid TEXT UNIQUE,
+        name TEXT NOT NULL,
+        turn_id INTEGER REFERENCES turns(id),
+        linear_session_id TEXT,
+        lease_index INTEGER,
+        state TEXT NOT NULL CHECK(state IN ('creating','booted','orphan','released','reaped','failed')),
+        evidence_dir TEXT,
+        acquired_at INTEGER NOT NULL,
+        last_live_at INTEGER NOT NULL,
+        released_at INTEGER,
+        release_reason TEXT,
+        reap_attempts INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_sim_leases_state ON sim_leases(state);
     `);
     this.migrateOperationsTable();
     this.migrateEventColumns();
@@ -554,6 +578,7 @@ export class EventLog {
     this.migrateTurnColumns();
     this.migrateAckColumns();
     this.migrateTurnActivityColumns();
+    this.migrateSimLeaseColumns();
     this.recoverAmbiguousOutbox();
   }
 
@@ -826,6 +851,14 @@ export class EventLog {
           "ALTER TABLE turn_activities ADD COLUMN progress_barrier INTEGER NOT NULL DEFAULT 0",
         )
         .run();
+  }
+
+  private migrateSimLeaseColumns(): void {
+    const columns = new Set(
+      (this.db.prepare("PRAGMA table_info(sim_leases)").all() as Array<{ name: string }>).map(column => column.name),
+    );
+    if (!columns.has("reap_attempts"))
+      this.db.prepare("ALTER TABLE sim_leases ADD COLUMN reap_attempts INTEGER NOT NULL DEFAULT 0").run();
   }
 
   private recoverAmbiguousOutbox(): void {
@@ -1201,7 +1234,7 @@ export class EventLog {
     };
   }
 
-  private turnById(id: number): TurnRow | undefined {
+  getTurn(id: number): TurnRow | undefined {
     return this.db
       .prepare(
         `SELECT t.id, t.event_id eventId, e.app, t.linear_session_id linearSessionId,
@@ -1211,6 +1244,7 @@ export class EventLog {
       )
       .get(id) as TurnRow | undefined;
   }
+  private turnById(id: number): TurnRow | undefined { return this.getTurn(id); }
 
   setTurnPrompt(turnId: number, prompt: string): void {
     this.db.prepare("UPDATE turns SET prompt=? WHERE id=?").run(prompt, turnId);
@@ -2643,6 +2677,72 @@ export class EventLog {
 
   invalidateToken(app: AppName): void {
     this.db.prepare("DELETE FROM tokens WHERE app=?").run(app);
+  }
+  reserveSimLease(turnId: number, sessionId: string, maxConcurrent: number, now: number):
+    { id: number; leaseIndex: number; name: string } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const open = (this.db.prepare("SELECT count(*) count FROM sim_leases WHERE state IN ('creating','booted','orphan')")
+        .get() as { count: number }).count;
+      if (open >= maxConcurrent) throw new SimCapacityError(`simulator capacity reached (${maxConcurrent})`);
+      const turnOpen = (this.db.prepare("SELECT count(*) count FROM sim_leases WHERE turn_id=? AND state IN ('creating','booted','orphan')")
+        .get(turnId) as { count: number }).count;
+      if (turnOpen >= 2) throw new SimTurnLimitError("a turn may hold at most two simulator leases");
+      const leaseIndex = 1 + (this.db.prepare("SELECT count(*) count FROM sim_leases WHERE turn_id=?")
+        .get(turnId) as { count: number }).count;
+      const name = `orchestra-${turnId}-${leaseIndex}`;
+      const result = this.db.prepare(`INSERT INTO sim_leases
+        (name,turn_id,linear_session_id,lease_index,state,acquired_at,last_live_at)
+        VALUES (?,?,?,?,'creating',?,?)`).run(name, turnId, sessionId, leaseIndex, now, now);
+      this.db.exec("COMMIT");
+      return { id: Number(result.lastInsertRowid), leaseIndex, name };
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+  attachSimDevice(id: number, udid: string): void {
+    this.db.prepare("UPDATE sim_leases SET udid=? WHERE id=? AND state='creating'").run(udid, id);
+  }
+  markSimLeaseBooted(id: number, evidenceDir: string, now: number): void {
+    this.db.prepare("UPDATE sim_leases SET state='booted',evidence_dir=?,last_live_at=? WHERE id=?").run(evidenceDir, now, id);
+  }
+  closeSimLease(id: number, state: "released" | "reaped", reason: string, now = Date.now()): void {
+    this.db.prepare("UPDATE sim_leases SET state=?,released_at=?,release_reason=? WHERE id=?").run(state, now, reason, id);
+  }
+  failSimLease(id: number, reason: string, now: number): void {
+    this.db.prepare("UPDATE sim_leases SET state='failed',released_at=?,release_reason=? WHERE id=?").run(now, reason, id);
+  }
+  openSimLeases(): SimLeaseRow[] {
+    return this.db.prepare(`SELECT id,udid,name,turn_id turnId,linear_session_id linearSessionId,
+      lease_index leaseIndex,state,evidence_dir evidenceDir,acquired_at acquiredAt,last_live_at lastLiveAt,
+      released_at releasedAt,release_reason releaseReason,reap_attempts reapAttempts FROM sim_leases
+      WHERE state IN ('creating','booted','orphan') ORDER BY id`).all() as SimLeaseRow[];
+  }
+  simLeaseByUdid(udid: string): SimLeaseRow | undefined {
+    return this.db.prepare(`SELECT id,udid,name,turn_id turnId,linear_session_id linearSessionId,
+      lease_index leaseIndex,state,evidence_dir evidenceDir,acquired_at acquiredAt,last_live_at lastLiveAt,
+      released_at releasedAt,release_reason releaseReason,reap_attempts reapAttempts FROM sim_leases WHERE udid=? ORDER BY id DESC LIMIT 1`)
+      .get(udid) as SimLeaseRow | undefined;
+  }
+  simLeaseByName(name: string): SimLeaseRow | undefined {
+    return this.db.prepare(`SELECT id,udid,name,turn_id turnId,linear_session_id linearSessionId,
+      lease_index leaseIndex,state,evidence_dir evidenceDir,acquired_at acquiredAt,last_live_at lastLiveAt,
+      released_at releasedAt,release_reason releaseReason,reap_attempts reapAttempts FROM sim_leases
+      WHERE name=? AND state IN ('creating','booted','orphan') ORDER BY id DESC LIMIT 1`).get(name) as SimLeaseRow | undefined;
+  }
+  adoptSimOrphan(udid: string, name: string, now: number): SimLeaseRow {
+    this.db.prepare(`INSERT INTO sim_leases (udid,name,state,acquired_at,last_live_at)
+      VALUES (?,?,'orphan',?,?) ON CONFLICT(udid) DO NOTHING`).run(udid, name, now, now);
+    return this.simLeaseByUdid(udid)!;
+  }
+  touchSimLeases(ids: number[], now: number): void {
+    const update = this.db.prepare("UPDATE sim_leases SET last_live_at=? WHERE id=? AND state IN ('creating','booted','orphan')");
+    this.db.transaction((values: number[]) => { for (const id of values) update.run(now, id); })(ids);
+  }
+  incrementSimReapAttempt(id: number): number {
+    return (this.db.prepare("UPDATE sim_leases SET reap_attempts=reap_attempts+1 WHERE id=? RETURNING reap_attempts reapAttempts")
+      .get(id) as { reapAttempts: number }).reapAttempts;
+  }
+  turnIsRunning(turnId: number): boolean {
+    return (this.db.prepare("SELECT status FROM turns WHERE id=?").get(turnId) as { status?: string } | undefined)?.status === "running";
   }
   count(): number {
     return (

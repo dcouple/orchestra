@@ -15,6 +15,7 @@ import { ArtifactStore } from "./artifacts.js";
 import { OtlpRelay } from "./otel-relay.js";
 import { resolveOtlpTraces } from "./otel.js";
 import { LinearMcpMonitor } from "./linear-mcp-monitor.js";
+import { detectSimCapability, SimPool, SimReaper, Simctl } from "./sim.js";
 
 const config = loadConfig();
 let log: EventLog;
@@ -28,6 +29,15 @@ const gateway = new LinearGateway(
   config.linearTokenUrl,
 );
 const worker = new AckWorker(log, gateway);
+const simctl = new Simctl(config.simctlArgv, { DEVELOPER_DIR: config.iosSimDeveloperDir });
+const simCapability = config.sessionsEnabled && config.iosSimEnabled
+  ? await detectSimCapability(config, simctl)
+  : { available: false as const, kind: "disabled" as const, message: "simulator capability is disabled" };
+console.log(JSON.stringify({ event: "sim_capability", state: simCapability.available ? "available" : "unavailable",
+  ...(simCapability.available ? { goldenUdid: simCapability.goldenUdid } : { kind: simCapability.kind }) }));
+const simPool = config.iosSimEnabled ? new SimPool(log, simctl, config, simCapability, { reconciled: false }) : undefined;
+const simReaper = simPool ? new SimReaper(log, simctl, { intervalMs: config.iosSimReaperIntervalMs,
+  idleTimeoutMs: config.iosSimIdleTimeoutMs, pool: simPool }) : undefined;
 let cleanupWorker: CleanupWorker | undefined;
 let sessionWorker: SessionWorker | undefined;
 const linearMcpMonitor = config.sessionsEnabled
@@ -71,9 +81,30 @@ const relay = upstream
     })
   : undefined;
 await relay?.start();
+const triggerWorkers = () => {
+  worker.trigger();
+  sessionWorker?.trigger();
+  void cleanupWorker?.trigger();
+};
+const onStop = (id: string) => sessionWorker?.stopSession(id);
+const artifactStore = config.artifactToken
+  ? new ArtifactStore(config.artifactsDir)
+  : undefined;
+const server = new WebhookServer({
+  config,
+  log,
+  onInserted: triggerWorkers,
+  onStop,
+  ...(artifactStore ? { artifactStore } : {}),
+  ...(simPool ? { sim: simPool } : {}),
+});
+const address = await server.listen();
+const addressHost = address.family === "IPv6" ? `[${address.address}]` : address.address;
 sessionWorker = config.sessionsEnabled
   ? new SessionWorker(log, gateway, config, {
       ...(relay ? { relay } : {}),
+      ...(simPool ? { sim: { pool: simPool, capability: simCapability,
+        baseUrl: `http://${addressHost}:${address.port}` } } : {}),
       onTurnComplete: () => void cleanupWorker?.trigger(),
     })
   : undefined;
@@ -90,28 +121,12 @@ cleanupWorker = config.sessionsEnabled
       },
     )
   : undefined;
-const triggerWorkers = () => {
-  worker.trigger();
-  sessionWorker?.trigger();
-  void cleanupWorker?.trigger();
-};
-const onStop = (id: string) => sessionWorker?.stopSession(id);
 const reconcileWorker = hasLinearApiCreds()
   ? new ReconcileWorker(log, gateway, config, {
       onInserted: triggerWorkers,
       onStop,
     })
   : undefined;
-const artifactStore = config.artifactToken
-  ? new ArtifactStore(config.artifactsDir)
-  : undefined;
-const server = new WebhookServer({
-  config,
-  log,
-  onInserted: triggerWorkers,
-  onStop,
-  ...(artifactStore ? { artifactStore } : {}),
-});
 const providerPoller = config.sessionsEnabled
   ? new ProviderReadinessPoller(log, config)
   : undefined;
@@ -131,12 +146,13 @@ if (providerPoller) {
   providerPoller.start();
 }
 
+await simReaper?.reconcileOnce();
 worker.start();
 linearMcpMonitor?.start();
 await sessionWorker?.start();
 cleanupWorker?.start();
+simReaper?.start();
 reconcileWorker?.start();
-const address = await server.listen();
 console.log(
   JSON.stringify({
     event: "listening",
@@ -165,6 +181,7 @@ async function shutdown(signal: string): Promise<void> {
   await server.close();
   await worker.stop();
   await sessionWorker?.stop(policy);
+  await simReaper?.stop();
   await cleanupWorker?.stop();
   await relay?.close();
   providerPoller?.stop();

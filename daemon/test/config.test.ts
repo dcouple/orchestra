@@ -228,6 +228,26 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...base, BROWSER_ENABLED: "yes" })).toThrow("BROWSER_ENABLED must be 0 or 1");
     expect(() => loadConfig({ ...base, BROWSER_ATTEMPT_TIMEOUT_MS: "0" })).toThrow("BROWSER_ATTEMPT_TIMEOUT_MS");
   });
+  it("loads and strictly validates iOS simulator capability settings", () => {
+    expect(loadConfig(base)).toMatchObject({ iosSimEnabled: false,
+      xcodebuildMcpBin: "/usr/local/bin/xcodebuildmcp",
+      iosSimDeveloperDir: "/Applications/Xcode.app/Contents/Developer",
+      iosSimMaxConcurrent: 2, iosSimIdleTimeoutMs: 900_000,
+      iosSimReaperIntervalMs: 60_000, simctlArgv: ["xcrun", "simctl"] });
+    expect(loadConfig({ ...base, IOS_SIM_ENABLED: "1", IOS_SIM_RUNTIME: " iOS 26.5 ",
+      IOS_SIM_DEVICE_TYPE: " iPhone 17 ", XCODEBUILD_MCP_BIN: "/mcp",
+      IOS_SIM_DEVELOPER_DIR: "/Xcode", IOS_SIM_MAX_CONCURRENT: "3",
+      IOS_SIM_IDLE_TIMEOUT_MS: "100", IOS_SIM_REAPER_INTERVAL_MS: "50",
+      IOS_SIM_SIMCTL_BIN: "node fake.mjs" })).toMatchObject({ iosSimEnabled: true,
+        iosSimRuntime: "iOS 26.5", iosSimDeviceType: "iPhone 17", xcodebuildMcpBin: "/mcp",
+        iosSimDeveloperDir: "/Xcode", iosSimMaxConcurrent: 3, iosSimIdleTimeoutMs: 100,
+        iosSimReaperIntervalMs: 50, simctlArgv: ["node", "fake.mjs"] });
+    expect(() => loadConfig({ ...base, IOS_SIM_ENABLED: "yes" })).toThrow("IOS_SIM_ENABLED must be 0 or 1");
+    expect(() => loadConfig({ ...base, IOS_SIM_ENABLED: "1" })).toThrow(
+      "IOS_SIM_RUNTIME and IOS_SIM_DEVICE_TYPE are required when IOS_SIM_ENABLED=1");
+    for (const key of ["IOS_SIM_MAX_CONCURRENT", "IOS_SIM_IDLE_TIMEOUT_MS", "IOS_SIM_REAPER_INTERVAL_MS"])
+      expect(() => loadConfig({ ...base, [key]: "0" })).toThrow(key);
+  });
   it("requires WEBHOOK_BASE_URL outside test mode", () => {
     const env = { ...base, PLANNER_LINEAR_CLIENT_ID: "p-id", PLANNER_LINEAR_CLIENT_SECRET: "p-secret",
       IMPLEMENTER_LINEAR_CLIENT_ID: "i-id", IMPLEMENTER_LINEAR_CLIENT_SECRET: "i-secret" };

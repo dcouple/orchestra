@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -34,6 +34,20 @@ const validSite = [
 ].join("\n");
 
 describe("macOS site config", () => {
+  it("passes orchestra-sim arguments through and exits 78 when site config is missing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "orchestra-sim-wrapper-"));
+    const code = join(dir, "code"), dist = join(code, "dist");
+    mkdirSync(dist, { recursive: true });
+    writeFileSync(join(dist, "sim-cli.js"), "process.stdout.write(JSON.stringify(process.argv.slice(2)))\n");
+    const site = join(dir, "site.env"); writeFileSync(site, validSite);
+    const wrapper = join(macosDir, "orchestra-sim");
+    const result = spawnSync("bash", [wrapper, "release", "UDID with spaces"], { encoding: "utf8",
+      env: { ...process.env, DAEMON_SITE_LIB: lib, DAEMON_SITE_ENV: site, NODE_BIN: process.execPath, LINEAR_AGENT_CODE_DIR: code } });
+    expect(result.status, result.stderr).toBe(0); expect(JSON.parse(result.stdout)).toEqual(["release", "UDID with spaces"]);
+    const missing = spawnSync("bash", [wrapper, "status"], { encoding: "utf8",
+      env: { ...process.env, DAEMON_SITE_LIB: lib, DAEMON_SITE_ENV: join(dir, "missing"), NODE_BIN: process.execPath, LINEAR_AGENT_CODE_DIR: code } });
+    expect(missing.status).toBe(78); expect(missing.stderr).toContain("site config missing or unreadable");
+  });
   it("renders every template from the site config with no placeholder left", () => {
     const { result, out } = renderWith(validSite);
     expect(result.status, result.stderr).toBe(0);
@@ -82,6 +96,7 @@ describe("macOS site config", () => {
   it("keeps the macOS ops directory free of deployment-specific names", () => {
     const example = readFileSync(join(macosDir, "site.env.example"), "utf8");
     for (const file of readdirSync(macosDir)) {
+      if (!statSync(join(macosDir, file)).isFile()) continue;
       const text = readFileSync(join(macosDir, file), "utf8");
       expect(text, file).not.toMatch(/blmapp|bloomapi|bloom-agents|com\.dcouple|us-central1|\bbloomi\b/);
       if (file !== "site.env.example") expect(text, file).not.toMatch(/\/Users\/linearagent/);

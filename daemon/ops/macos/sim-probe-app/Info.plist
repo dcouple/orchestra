@@ -5,7 +5,7 @@
 	<key>CFBundleExecutable</key>
 	<string>Probe</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.dcouple.orchestra.simprobe</string>
+	<string>org.example.orchestra.simprobe</string>
 	<key>CFBundleName</key>
 	<string>SimProbe</string>
 	<key>CFBundlePackageType</key>
