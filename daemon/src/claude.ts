@@ -37,6 +37,7 @@ export interface RunTurnOptions {
   maxTurns: number;
   maxBudgetUsd?: number;
   mcpConfigJson: string;
+  mcpEnvPassthrough?: readonly string[];
   toolHook?: {
     dbPath: string;
     turnId: number;
@@ -175,11 +176,25 @@ function isDeniedChildSecret(key: string): boolean {
   );
 }
 
+export function isReservedChildEnvKey(
+  key: string,
+): "denied" | "daemon-owned" | undefined {
+  if (isDeniedChildSecret(key)) return "denied";
+  if (DAEMON_OWNED_CHILD_ENV_KEYS.has(key)) return "daemon-owned";
+  return undefined;
+}
+
 function childEnv(
   extra: NodeJS.ProcessEnv | undefined,
   trusted: Record<string, string> | undefined,
+  passthrough: readonly string[] | undefined,
 ): NodeJS.ProcessEnv {
   const allowed: NodeJS.ProcessEnv = {};
+  const pass = new Set(
+    (passthrough ?? []).filter(
+      (key) => !DAEMON_OWNED_CHILD_ENV_KEYS.has(key),
+    ),
+  );
   const include = (
     key: string,
     value: string | undefined,
@@ -206,6 +221,7 @@ function childEnv(
       key === "GH_TOKEN" ||
       key === "GITHUB_TOKEN" ||
       key.startsWith("ORCHESTRA_BROWSER_") ||
+      pass.has(key) ||
       (extraOnly && OTEL_CHILD_ENV_KEYS.has(key)) ||
       (extraOnly &&
         (key === "TRACEPARENT" ||
@@ -230,6 +246,21 @@ function childEnv(
   for (const key of Object.keys(allowed))
     if (isDeniedChildSecret(key)) delete allowed[key];
   return allowed;
+}
+
+export function buildTurnSettings(
+  toolHook?: RunTurnOptions["toolHook"],
+): Record<string, unknown> {
+  return {
+    enableAllProjectMcpServers: true,
+    ...(toolHook
+      ? buildToolHookSettings(
+          toolHook.dbPath,
+          toolHook.turnId,
+          toolHook.operationsCliPath,
+        )
+      : {}),
+  };
 }
 
 function collectCapacityEvidence(
@@ -291,18 +322,11 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   const configPath = join(configDir, "mcp-config.json");
   await writeFile(configPath, options.mcpConfigJson, { mode: 0o600 });
   const settingsPath = join(configDir, "settings.json");
-  if (options.toolHook)
-    await writeFile(
-      settingsPath,
-      JSON.stringify(
-        buildToolHookSettings(
-          options.toolHook.dbPath,
-          options.toolHook.turnId,
-          options.toolHook.operationsCliPath,
-        ),
-      ),
-      { mode: 0o600 },
-    );
+  await writeFile(
+    settingsPath,
+    JSON.stringify(buildTurnSettings(options.toolHook)),
+    { mode: 0o600 },
+  );
   const args = [
     ...prefix,
     "-p",
@@ -312,7 +336,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     "--verbose",
   ];
   if (options.resumeSessionId) args.push("--resume", options.resumeSessionId);
-  if (options.toolHook) args.push("--settings", settingsPath);
+  args.push("--settings", settingsPath);
   args.push(
     "--permission-mode",
     options.permissionMode,
@@ -325,7 +349,11 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     args.push("--max-budget-usd", String(options.maxBudgetUsd));
   const child = spawn(bin, args, {
     cwd: options.cwd,
-    env: childEnv(options.env, options.trustedEnv),
+    env: childEnv(
+      options.env,
+      options.trustedEnv,
+      options.mcpEnvPassthrough,
+    ),
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });

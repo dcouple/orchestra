@@ -666,6 +666,9 @@ export class SessionWorker {
       ...(implementer && this.config.doMaxBudgetUsd !== undefined
         ? { maxBudgetUsd: this.config.doMaxBudgetUsd }
         : {}),
+      ...(this.config.mcpEnvPassthrough
+        ? { mcpEnvPassthrough: this.config.mcpEnvPassthrough }
+        : {}),
       mcpConfigJson: linearMcpConfigJson,
       toolHook: {
         dbPath: this.config.dbPath,

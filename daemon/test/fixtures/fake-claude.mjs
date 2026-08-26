@@ -1,4 +1,4 @@
-import { appendFile, writeFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 
@@ -8,8 +8,14 @@ const resumed = resumeAt >= 0 ? args[resumeAt + 1] : undefined;
 const mode = process.env.CLAUDE_FAKE_MODE || process.env.FAKE_MODE || "happy";
 const mcpTelemetry = ["mcp-telemetry", "mcp-runner-failed", "mcp-shutdown"].includes(mode);
 const argsFile = process.env.CLAUDE_FAKE_ARGS_FILE || process.env.FAKE_ARGS_FILE;
-if (argsFile) await appendFile(argsFile,
-  `${JSON.stringify({ args, cwd: process.cwd(), at: Date.now(), phase: "start" })}\n`);
+if (argsFile) {
+  const settingsAt = args.indexOf("--settings");
+  const settings = settingsAt >= 0
+    ? JSON.parse(await readFile(args[settingsAt + 1], "utf8"))
+    : undefined;
+  await appendFile(argsFile,
+    `${JSON.stringify({ args, cwd: process.cwd(), at: Date.now(), phase: "start", settings })}\n`);
+}
 if (process.env.CLAUDE_FAKE_ENV_FILE) await appendFile(process.env.CLAUDE_FAKE_ENV_FILE,
   `${JSON.stringify({ args, env: process.env, at: Date.now(), phase: "env" })}\n`);
 const emit = value => process.stdout.write(`${JSON.stringify(value)}\n`);

@@ -121,6 +121,7 @@ extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
 `PROVIDER_STATE_STALE_MS`, and `PROVIDER_INITIAL_PROBE_TIMEOUT_MS`,
 `CLAUDE_PERMISSION_MODE` (`bypassPermissions`), `CLAUDE_MAX_TURNS` (100),
 `BASH_DEFAULT_TIMEOUT_MS` (900000) and `BASH_MAX_TIMEOUT_MS` (900000),
+`MCP_ENV_PASSTHROUGH` (optional comma-separated project MCP environment names),
 `LINEAR_MCP_MONITOR_INTERVAL_MS` (60000) and
 `LINEAR_MCP_MONITOR_TIMEOUT_MS` (10000),
 `DO_PERMISSION_MODE` (`bypassPermissions`; production rejects every other value),
@@ -144,6 +145,8 @@ only `CLIPROXY_API_KEY` from the configured proxy file; an unreadable file or mi
 fails nonzero without printing a credential. Both Bash timeout values must be positive, and
 the maximum must be at least the default. The independent Codex dispatch watchdogs remain
 900 seconds for ephemeral roles and 2700 seconds for implementers.
+`MCP_ENV_PASSTHROUGH` names extend the child allow-list; the secret deny-list
+still runs last, and denied or daemon-owned names fail startup.
 
 On startup, every stale running turn with a persisted Claude session is automatically resumed
 exactly once, including turns interrupted at an unresolved tool boundary. That continuation
