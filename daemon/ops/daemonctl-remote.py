@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build one safely quoted daemonctl command and forward it through gcloud SSH."""
+"""Build one safely quoted daemonctl command and forward it through SSH."""
 
 from __future__ import annotations
 
@@ -59,17 +59,12 @@ def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] not in COMMANDS:
         fail("usage: daemonctl-remote.py status|sessions|top|restart|hard-restart|config|reload|update|subscriptions")
     command = sys.argv[1]
-    remote = shlex.join(["sudo", required_env("DAEMON_REMOTE_DAEMONCTL"), *daemon_args(command)])
+    remote = shlex.join([required_env("DAEMON_REMOTE_DAEMONCTL"), *daemon_args(command)])
     argv = [
-        required_env("DAEMON_REMOTE_GCLOUD"),
-        "compute",
-        "ssh",
-        required_env("DAEMON_REMOTE_HOST"),
-        f"--project={required_env('DAEMON_REMOTE_PROJECT')}",
-        f"--zone={required_env('DAEMON_REMOTE_ZONE')}",
-        f"--command={remote}",
-        "--",
+        required_env("DAEMON_REMOTE_SSH"),
         "-t",
+        required_env("DAEMON_REMOTE_HOST"),
+        remote,
     ]
     return subprocess.run(argv, check=False).returncode
 

@@ -1,0 +1,142 @@
+# macOS daemon provisioning
+
+This directory provisions the Linear webhook daemon and CLIProxyAPI on an
+Apple Silicon Mac mini. Both are system LaunchDaemons running as the dedicated
+`linearagent` administrator account and listening only on loopback. The Linux
+deployment remains in service only as the archive bridge.
+
+## Run from an operator checkout
+
+From the repository root, copy the setup bundle and run it with the daemon
+source directory. The allocated TTY lets the provisioner prompt for the
+operator's sudo password when no passwordless grant is present:
+
+```bash
+rsync -a daemon/ops/macos/ mini:~/daemon-macos-setup/
+ssh mini 'test -d ~/orchestra-bootstrap/.git || git clone https://github.com/dcouple/orchestra.git ~/orchestra-bootstrap'
+ssh mini 'git -C ~/orchestra-bootstrap pull --ff-only'
+ssh -t mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
+```
+
+Inventory-only mode performs no mutation:
+
+```bash
+ssh -t mini 'bash ~/daemon-macos-setup/provision.sh --dry-run ~/orchestra-bootstrap/daemon'
+```
+
+The provisioner installs a permanent, narrow sudoers rule for the fixed
+`launchctl` commands used by `daemonctl` and `deploy.sh`. It does not grant a
+passwordless operator shell. After verification, remove the temporary broad
+grant as the final privileged setup action.
+Unattended provisioning runs still require that temporary passwordless grant.
+
+## Human handoffs
+
+Copy the archive VM environment file over SSH as a one-time bridge migration
+operation, then rewrite its path-valued settings for the mini. Secrets must
+never enter this repository:
+
+```bash
+gcloud compute ssh linear-agent --project=bloom-agents --zone=us-central1-a \
+  --command='sudo cat /etc/linear-agent-daemon/env' \
+  | ssh mini 'sudo -u linearagent tee /Users/linearagent/.config/linear-agent-daemon/env >/dev/null && sudo chmod 0600 /Users/linearagent/.config/linear-agent-daemon/env'
+ssh mini 'sudo -u linearagent sed -i "" \
+  -e "s|/var/lib/linear-agent-daemon|/Users/linearagent|g" \
+  -e "s|/etc/linear-agent-daemon/cliproxyapi.env|/Users/linearagent/.config/linear-agent-daemon/cliproxyapi.env|g" \
+  /Users/linearagent/.config/linear-agent-daemon/env'
+# The VM env may omit env-overridable settings whose compiled-in defaults are
+# Linux paths outside the /var/lib compat symlink. Known cases: CLIPROXY_ENV_FILE
+# (default /etc/linear-agent-daemon/cliproxyapi.env) — without it the daemon
+# passes health checks but fails live turns with proxy_env_unreadable — and
+# FABLE_MODELS_ENV_FILE (default /etc/linear-agent-daemon/fable-models.env) —
+# without it every FABLE_BIN turn dies before launch with "missing Fable model
+# file". The Fable models file itself stays operator-authored (see the runbook's
+# "Enable and verify Fable routing"); on the mini author it at the path below.
+ssh mini 'f=/Users/linearagent/.config/linear-agent-daemon/env; sudo -u linearagent grep -q "^CLIPROXY_ENV_FILE=" "$f" || \
+  printf "CLIPROXY_ENV_FILE=/Users/linearagent/.config/linear-agent-daemon/cliproxyapi.env\n" | sudo -u linearagent tee -a "$f" >/dev/null'
+ssh mini 'f=/Users/linearagent/.config/linear-agent-daemon/env; sudo -u linearagent grep -q "^FABLE_MODELS_ENV_FILE=" "$f" || \
+  printf "FABLE_MODELS_ENV_FILE=/Users/linearagent/.config/linear-agent-daemon/fable-models.env\n" | sudo -u linearagent tee -a "$f" >/dev/null'
+```
+
+Open an interactive `linearagent` login context for credentials and identity:
+
+```bash
+ssh -t mini 'sudo -u linearagent -i'
+daemonctl subscriptions add codex
+claude
+gh auth login
+git config --global user.name 'Linear Agent'
+git config --global user.email 'bloom-agent@example.com'
+```
+
+The subscription command runs CLIProxyAPI's one-time `--codex-login
+--no-browser` flow while logged in as `linearagent`; launchd continues to own
+the server process. Re-run the provisioner after all handoffs. A fully
+converged second run reports every setting `already-correct`.
+
+The `bloomi` alias connects directly to `linearagent` with a key and is the
+normal one-shot operations path:
+
+```bash
+ssh bloomi '/usr/local/sbin/daemonctl status'
+ssh -t bloomi '/usr/local/sbin/daemonctl reload --reason "operator deploy"'
+```
+
+Operators without that alias can use the password-prompting fallback (without
+`-i`, which would re-concatenate the command):
+
+```bash
+ssh -t mini 'sudo -u linearagent /usr/local/sbin/daemonctl status'
+ssh -t mini 'sudo -u linearagent /usr/local/sbin/daemonctl reload --reason "operator deploy"'
+```
+
+## Public ingress
+
+Phase 2 exposes the loopback daemon through a locally-managed Cloudflare
+Tunnel at `linear-agent.blmapp.com`. This is the amended design recorded in
+[issue 154](https://github.com/dcouple/orchestra/issues/154#issuecomment-5272668315):
+the root `blmapp.com` zone is on Cloudflare's free plan, while `bloomapi.com`
+and the existing VM remain unchanged as the archive path for old artifact
+links.
+
+Do not create or route the tunnel until the `blmapp.com` zone shows **Active**
+and its two pre-existing Metabase records are confirmed DNS-only. Then perform
+the interactive handoff as `linearagent` so the certificate and tunnel
+credentials land in its home:
+
+```bash
+ssh -t mini 'sudo -u linearagent -i'
+/opt/homebrew/bin/cloudflared tunnel login
+/opt/homebrew/bin/cloudflared tunnel create linear-agent
+/opt/homebrew/bin/cloudflared tunnel route dns linear-agent linear-agent.blmapp.com
+exit
+ssh -t mini 'bash ~/daemon-macos-setup/provision.sh ~/orchestra-bootstrap/daemon'
+```
+
+The provisioner chooses the newest UUID-named credentials JSON, renders the
+versioned config template, and starts `com.dcouple.cloudflared`. Cloudflared is
+a floating Homebrew formula, matching the other brew-managed packages; the
+wrapper disables cloudflared's own updater. Do not use `cloudflared service
+install`, which would create an unmanaged competing plist.
+
+Follow [CUTOVER.md](CUTOVER.md) for the ordered public-health, state-copy,
+environment, webhook re-point, and archive-bridge verification sequence.
+
+## Security and deferred verification
+
+Launchd has no equivalents for the Linux unit's systemd sandbox directives;
+those controls are intentionally absent on this single-purpose machine. There
+is no codex-live service. Reboot acceptance
+(P1.AC5) is deferred until the operator is physically near the mini; `RunAtLoad`
+and `KeepAlive` provide the intended no-login startup behavior but are not
+claimed as reboot evidence until that test is performed.
+
+### Supply-chain posture
+
+The Claude, Codex, pnpm, and Homebrew installers are fetched over TLS without
+checksum pinning, matching the VM provisioner's existing production posture.
+CLIProxyAPI is sha256- and version-pinned; GitHub CLI is version-pinned.
+
+Claude Code may store macOS credentials in the login Keychain. Verification
+must include a Claude invocation from the LaunchDaemon context; if it cannot
+read the login credential, resolve that handoff before claiming session health.
