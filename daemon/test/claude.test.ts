@@ -158,67 +158,18 @@ describe("runTurn", () => {
     expect(buildTurnSettings()).toEqual({
       enableAllProjectMcpServers: true,
     });
+    const dbPath = "/tmp/events.db";
+    const turnId = 9;
+    const operationsCliPath = "/tmp/operations-cli.js";
     expect(
       buildTurnSettings({
-        dbPath: "/tmp/events.db",
-        turnId: 9,
-        operationsCliPath: "/tmp/operations-cli.js",
+        dbPath,
+        turnId,
+        operationsCliPath,
       }),
     ).toEqual({
       enableAllProjectMcpServers: true,
-      hooks: {
-        PreToolUse: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: process.execPath,
-                args: [
-                  "/tmp/operations-cli.js",
-                  "tool-hook-open",
-                  "/tmp/events.db",
-                  "9",
-                ],
-                timeout: 10,
-              },
-            ],
-          },
-        ],
-        PostToolUse: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: process.execPath,
-                args: [
-                  "/tmp/operations-cli.js",
-                  "tool-hook-complete",
-                  "/tmp/events.db",
-                  "9",
-                ],
-                timeout: 10,
-              },
-            ],
-          },
-        ],
-        PostToolUseFailure: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: process.execPath,
-                args: [
-                  "/tmp/operations-cli.js",
-                  "tool-hook-complete",
-                  "/tmp/events.db",
-                  "9",
-                ],
-                timeout: 10,
-              },
-            ],
-          },
-        ],
-      },
+      ...buildToolHookSettings(dbPath, turnId, operationsCliPath),
     });
   });
 
