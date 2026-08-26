@@ -36,7 +36,7 @@ const simCapability = config.sessionsEnabled && config.iosSimEnabled
 console.log(JSON.stringify({ event: "sim_capability", state: simCapability.available ? "available" : "unavailable",
   ...(simCapability.available ? { goldenUdid: simCapability.goldenUdid } : { kind: simCapability.kind }) }));
 const simPool = config.iosSimEnabled ? new SimPool(log, simctl, config, simCapability, { reconciled: false }) : undefined;
-const simReaper = simPool ? new SimReaper(log, simctl, { intervalMs: config.iosSimReaperIntervalMs,
+const simReaper = simPool && simCapability.available ? new SimReaper(log, simctl, { intervalMs: config.iosSimReaperIntervalMs,
   idleTimeoutMs: config.iosSimIdleTimeoutMs, pool: simPool }) : undefined;
 let cleanupWorker: CleanupWorker | undefined;
 let sessionWorker: SessionWorker | undefined;

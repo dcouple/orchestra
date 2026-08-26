@@ -200,7 +200,7 @@ describe("webhook HTTP integration", () => {
     const body = JSON.stringify({ webhookTimestamp: Date.now(), surprising: true });
     expect((await fetch(`http://127.0.0.1:${address.port}/webhook/planner`, { method: "POST", headers: signed(body), body })).status).toBe(200);
     const health = await fetch(`http://127.0.0.1:${address.port}/healthz`);
-    expect(await health.json()).toEqual({ ok: true }); expect(log.count()).toBe(1); expect(log.ackCount()).toBe(0);
+    expect(await health.json()).toEqual({ ok: true, sim: { enabled: false, available: false, kind: "disabled" } }); expect(log.count()).toBe(1); expect(log.ackCount()).toBe(0);
     await server.close(); log.close();
   });
   it("keeps provider health private and reports it only for the management key", async () => {
@@ -208,11 +208,11 @@ describe("webhook HTTP integration", () => {
     log.setProviderState("claude", "ready", "eligible_2_failed_0", 1000);
     log.setProviderCooldown("codex", 9000, "http_503", 2000);
     const address = await server.listen();
-    expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`)).json()).toEqual({ ok: true });
+    expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`)).json()).toEqual({ ok: true, sim: { enabled: false, available: false, kind: "disabled" } });
     expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`,
-      { headers: { Authorization: "Bearer wrong-key" } })).json()).toEqual({ ok: true });
+      { headers: { Authorization: "Bearer wrong-key" } })).json()).toEqual({ ok: true, sim: { enabled: false, available: false, kind: "disabled" } });
     expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`,
-      { headers: { Authorization: `Bearer ${managementKey}` } })).json()).toEqual({ ok: true, providers: {
+      { headers: { Authorization: `Bearer ${managementKey}` } })).json()).toEqual({ ok: true, sim: { enabled: false, available: false, kind: "disabled" }, providers: {
       claude: { status: "ready", reason: "eligible_2_failed_0", updatedAt: 1000 },
       codex: { status: "cooldown", cooldownUntil: 9000 },
     } });

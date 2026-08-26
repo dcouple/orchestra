@@ -11,7 +11,8 @@ import { goldenDeviceName, LEASE_NAME, type SimDevice, type SimDeviceType, type 
 const execFileAsync = promisify(execFile);
 interface Io { stdout: { write(value: string): unknown }; stderr: { write(value: string): unknown } }
 interface Settings { runtime: string; deviceType: string; developerDir: string; simctl: string[]; mcpBin: string; dbPath: string; probe: string; childEnv: NodeJS.ProcessEnv; bindAddr: string; port: number }
-interface Report { golden?: string; disposition?: "created" | "adopted"; orphansSwept: number; probe: "ok" | "FAILED" | "skipped"; dryRun: boolean }
+interface Report { golden?: string; disposition?: "created" | "adopted" | "skipped"; orphansSwept: number; probe: "ok" | "FAILED" | "skipped"; dryRun: boolean }
+interface DaemonHealth { ok?: unknown; sim?: { enabled?: unknown; available?: unknown; kind?: unknown } }
 
 function settings(env: NodeJS.ProcessEnv): Settings {
   const childEnv: NodeJS.ProcessEnv = {};
@@ -65,12 +66,15 @@ async function oldest(devices: SimDevice[]): Promise<SimDevice> {
   return dated.sort((a, b) => a.time - b.time || a.device.udid.localeCompare(b.device.udid))[0]!.device;
 }
 function line(io: Io, step: string, result: string): void { io.stdout.write(`[preflight] ${step}: ${result}\n`); }
-async function daemonHealthy(config: Settings): Promise<boolean> {
+async function daemonHealth(config: Settings): Promise<DaemonHealth | undefined> {
   const host = config.bindAddr === "0.0.0.0" || config.bindAddr === "::" ? "127.0.0.1" : config.bindAddr;
+  const urlHost = host.includes(":") ? `[${host}]` : host;
   try {
-    const response = await fetch(`http://${host}:${config.port}/healthz`, { signal: AbortSignal.timeout(1_000) });
-    return response.ok && (await response.json() as { ok?: unknown }).ok === true;
-  } catch { return false; }
+    const response = await fetch(`http://${urlHost}:${config.port}/healthz`, { signal: AbortSignal.timeout(1_000) });
+    if (!response.ok) return;
+    const body = await response.json() as DaemonHealth;
+    return body.ok === true ? body : undefined;
+  } catch { return; }
 }
 async function currentDevice(config: Settings, udid: string): Promise<SimDevice | undefined> {
   return (await lists(config)).devices.find(value => value.udid === udid);
@@ -111,23 +115,32 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
     const deviceType = listed.types.find(value => value.name === config.deviceType || value.identifier === config.deviceType);
     if (!deviceType) throw new Error(`device type unavailable: ${config.deviceType}`);
     line(io, "resolve", `runtime=${runtime.identifier} device_type=${deviceType.identifier}`);
-    const protectedSet = await protectedUdids(config.dbPath, io);
     const name = goldenDeviceName(deviceType.identifier, runtime.identifier);
     const matches = listed.devices.filter(value => value.runtimeId === runtime.identifier && value.name === name && value.isAvailable !== false);
+    const health = await daemonHealth(config);
+    const daemonSimAvailable = health?.sim?.available === true;
+    if (daemonSimAvailable) {
+      if (matches[0]) report.golden = matches[0].udid;
+      report.disposition = "skipped"; report.probe = "skipped";
+      line(io, "golden", "skipped (daemon running with the simulator capability)");
+      line(io, "orphans", "skipped (daemon running — the reaper owns sweeps)");
+      for (const candidate of listed.devices.filter(value => LEASE_NAME.test(value.name)))
+        line(io, "orphan-candidate", `${candidate.udid} ${candidate.name}`);
+      line(io, "probe", "skipped (daemon running with the simulator capability — stop it or run preflight before enabling)");
+      if (json) io.stdout.write(`${JSON.stringify(report)}\n`);
+      io.stdout.write(`RESULT golden=${report.golden ?? "none"} skipped orphans_swept=0 probe=skipped\n`);
+      return 0;
+    }
+    const protectedSet = await protectedUdids(config.dbPath, io);
     const protectedGolden = matches.filter(value => protectedSet.has(value.udid));
+    const orphanCandidates = listed.devices.filter(value => LEASE_NAME.test(value.name) && !protectedSet.has(value.udid));
     if (protectedGolden.some(value => value.state !== "Shutdown"))
       throw new Error(`protected golden device is not Shutdown: ${protectedGolden.find(value => value.state !== "Shutdown")!.udid}`);
     if (protectedGolden.length > 1) throw new Error(`multiple protected golden devices found: ${protectedGolden.map(value => value.udid).join(", ")}`);
-    const orphanCandidates = listed.devices.filter(value => LEASE_NAME.test(value.name) && !protectedSet.has(value.udid));
-    const daemonRunning = await daemonHealthy(config);
-    if (daemonRunning) {
-      line(io, "orphans", "skipped (daemon running — the reaper owns sweeps)");
-      for (const candidate of orphanCandidates) line(io, "orphan-candidate", `${candidate.udid} ${candidate.name}`);
-    }
     if (dryRun) {
       const keep = protectedGolden[0] ?? matches[0];
       line(io, "golden", keep ? `would adopt ${keep.udid}; would remove ${matches.filter(value => value.udid !== keep.udid && !protectedSet.has(value.udid)).length} duplicates` : `would create ${name}`);
-      if (!daemonRunning) line(io, "orphans", `would sweep ${orphanCandidates.length}`);
+      line(io, "orphans", `would sweep ${orphanCandidates.length}`);
     } else {
       let golden: SimDevice;
       if (!matches.length) {
@@ -140,10 +153,10 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
       }
       if (golden.state !== "Shutdown") await command(config, ["shutdown", golden.udid]);
       report.golden = golden.udid; line(io, "golden", `${report.disposition} ${golden.udid}`);
-      for (const orphan of daemonRunning ? [] : orphanCandidates) {
+      for (const orphan of orphanCandidates) {
         if (await deleteIfSafe(config, orphan.udid, device => LEASE_NAME.test(device.name), "orphan", io)) report.orphansSwept++;
       }
-      if (!daemonRunning) line(io, "orphans", `swept ${report.orphansSwept}`);
+      line(io, "orphans", `swept ${report.orphansSwept}`);
       const out = await mkdtemp(join(tmpdir(), "sim-preflight-"));
       await runProbe(config, golden.udid, out, io);
       report.probe = "ok"; line(io, "probe", "ok");

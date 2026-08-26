@@ -55,7 +55,7 @@ export class WebhookServer {
     try {
       if (request.method === "GET" && request.url === "/healthz") {
         if (!await this.managementAuthorized(request)) {
-          this.earlyJson(request, response, 200, { ok: true }); return;
+          this.earlyJson(request, response, 200, { ok: true, sim: this.simHealth() }); return;
         }
         this.earlyJson(request, response, 200, this.providerHealth()); return;
       }
@@ -148,7 +148,7 @@ export class WebhookServer {
         this.json(response, 200, await pool.acquire(turnId, this.options.log.getTurn(turnId)?.linearSessionId ?? "unknown")); return;
       }
       if (request.method === "GET" && pathname === "/sim/leases") {
-        this.json(response, 200, { leases: pool.status() }); return;
+        this.json(response, 200, { leases: await pool.status(turnId) }); return;
       }
       const match = request.method === "DELETE" ? /^\/sim\/leases\/([^/]+)$/.exec(pathname) : null;
       if (match) { const udid = decodeURIComponent(match[1]!); await pool.release(turnId, udid); this.json(response, 200, { released: true, udid }); return; }
@@ -285,11 +285,16 @@ export class WebhookServer {
   private providerHealth(): Record<string, unknown> {
     const claude = this.options.log.getProviderState("claude");
     const codex = this.options.log.getProviderState("codex");
-    return { ok: true, providers: {
+    return { ok: true, sim: this.simHealth(), providers: {
       claude: { status: claude?.status ?? "not_ready", reason: claude?.reason ?? "state_missing",
         ...(claude?.cooldownUntil != null ? { cooldownUntil: claude.cooldownUntil } : {}), updatedAt: claude?.updatedAt ?? 0 },
       codex: { status: codex?.status ?? "ready", ...(codex?.cooldownUntil != null ? { cooldownUntil: codex.cooldownUntil } : {}) },
     } };
+  }
+
+  private simHealth(): { enabled: boolean; available: boolean; kind?: string } {
+    const enabled = this.options.config.iosSimEnabled === true;
+    return this.options.sim?.health() ?? { enabled, available: false, ...(!enabled ? { kind: "disabled" } : {}) };
   }
 
   private logArtifactWrite(method: string, bundleId: string | undefined, fileCount: number | undefined, outcome: string, status: number): void {

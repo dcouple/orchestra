@@ -267,6 +267,14 @@ XCODEBUILD_MCP_BIN=/usr/local/bin/xcodebuildmcp # XcodeBuildMCP executable
 #NTFY_URL=https://ntfy.sh/<unguessable-topic>
 ```
 
+On macOS, run `daemonctl sim-preflight` before setting
+`IOS_SIM_ENABLED=1`, or stop the daemon before running it during maintenance.
+When a running daemon reports the simulator capability available, preflight is
+report-only: it skips golden-device mutations, orphan deletion, and the probe
+so it cannot race a lease cloning the golden. After `daemonctl restart`, a
+`probe=skipped` result is therefore the expected report until the daemon is
+stopped or the capability is disabled.
+
 Each harness setting accepts `claude` or `claudex` and defaults to `claude`. The settings
 apply only when a durable role session is first created. `claude` prefers Fable but retains
 readiness routing and the one-shot capacity fallback to Claudex/GPT-Sol; `claudex` starts

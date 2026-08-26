@@ -189,10 +189,12 @@ These preflight items are only checkable now that the item is loaded:
   `frontend_verifier: false`, stop with `ios_testing: required needs the
   frontend verifier; frontend_verifier: false contradicts it — fix the item
   metadata`. Otherwise run
-  `orchestra-sim status` and call `mcp__xcodebuildmcp__list_sims`; if either
-  fails, stop with `simulator prerequisite failed:` naming the missing
-  `orchestra-sim` or XcodeBuildMCP half, never “unverified.” When optional,
-  note which halves are available and continue.
+  `orchestra-sim status` and call `mcp__xcodebuildmcp__list_sims`;
+  `orchestra-sim status` is the non-mutating readiness check, so exit 0 means
+  the configured golden is present and shut down and the pool is reconciled.
+  If either check fails, stop with `simulator prerequisite failed:` naming
+  the missing `orchestra-sim` or XcodeBuildMCP half, never “unverified.” When
+  optional, note which halves are available and continue.
 
 - Read the item's **Dependencies & mechanics** section when present and
   check each listed dependency; a dependency the brief marks `assumed` gets

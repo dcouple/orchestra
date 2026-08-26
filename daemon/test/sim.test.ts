@@ -10,7 +10,7 @@ import { detectSimCapability, SimCapacityError, SimPool, SimReaper, Simctl, SimT
 const dirs: string[] = [];
 const baseEnv = { DAEMON_TEST_MODE: "1", SESSIONS_ENABLED: "0", PLANNER_WEBHOOK_SECRET: "p",
   PLANNER_LINEAR_TOKEN: "pt", IMPLEMENTER_WEBHOOK_SECRET: "i", IMPLEMENTER_LINEAR_TOKEN: "it" };
-afterEach(() => { delete process.env.FAKE_SIMCTL_STATE; delete process.env.FAKE_SIMCTL_LOG;
+afterEach(() => { delete process.env.PLANNER_WEBHOOK_SECRET;
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 function setup(max = 5) {
@@ -21,15 +21,15 @@ function setup(max = 5) {
   const deviceType = { identifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17", name: "iPhone 17" };
   const golden = { udid: "GOLDEN", name: "orchestra-golden-iphone-17-ios-26-5", state: "Shutdown",
     runtimeId: runtime.identifier, deviceTypeIdentifier: deviceType.identifier };
-  const statePath = join(dir, "state.json"), callLog = join(dir, "calls.jsonl");
+  const statePath = join(dir, "state.json"), callLog = join(dir, "calls.jsonl"), envLog = join(dir, "env.jsonl");
   writeFileSync(statePath, JSON.stringify({ runtimes: [runtime], devicetypes: [deviceType], devices: [golden], failures: {} }));
-  process.env.FAKE_SIMCTL_STATE = statePath; process.env.FAKE_SIMCTL_LOG = callLog;
   const config = loadConfig({ ...baseEnv, DB_PATH: join(dir, "events.db"), ARTIFACTS_DIR: join(dir, "artifacts"),
     IOS_SIM_ENABLED: "1", IOS_SIM_RUNTIME: runtime.name, IOS_SIM_DEVICE_TYPE: deviceType.name,
     IOS_SIM_DEVELOPER_DIR: developerDir, XCODEBUILD_MCP_BIN: process.execPath,
     IOS_SIM_MAX_CONCURRENT: String(max), IOS_SIM_SIMCTL_BIN: `${process.execPath} ${resolve("test/fixtures/fake-simctl.mjs")}` });
-  const log = new EventLog(config.dbPath); const simctl = new Simctl(config.simctlArgv, { DEVELOPER_DIR: developerDir });
-  return { dir, config, log, simctl, statePath, callLog, runtime, deviceType, golden };
+  const simctlEnv = { DEVELOPER_DIR: developerDir, FAKE_SIMCTL_STATE: statePath, FAKE_SIMCTL_LOG: callLog, FAKE_SIMCTL_ENV_LOG: envLog };
+  const log = new EventLog(config.dbPath); const simctl = new Simctl(config.simctlArgv, simctlEnv);
+  return { dir, config, log, simctl, simctlEnv, statePath, callLog, envLog, runtime, deviceType, golden };
 }
 function turn(log: EventLog, session = `session-${Math.random()}`) {
   log.append({ deliveryId: session, app: "planner", action: "created", agentSessionId: session,
@@ -39,6 +39,22 @@ function turn(log: EventLog, session = `session-${Math.random()}`) {
 const calls = (path: string) => existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line) as string[]) : [];
 
 describe.sequential("simulator capability and pool", () => {
+  it("scrubs daemon secrets from simctl children and failure logs", async () => {
+    process.env.PLANNER_WEBHOOK_SECRET = "x";
+    const value = setup(); const current = turn(value.log, "secret-test");
+    const capability = await detectSimCapability(value.config, value.simctl);
+    const state = JSON.parse(readFileSync(value.statePath, "utf8")); state.failures.boot = "boot failed";
+    writeFileSync(value.statePath, JSON.stringify(state));
+    const logger = { log: vi.fn(), error: vi.fn() };
+    const pool = new SimPool(value.log, value.simctl, value.config, capability, { logger });
+    await expect(pool.acquire(current.id, current.linearSessionId)).rejects.toMatchObject({ kind: "sim_failed" });
+    const childEnvs = readFileSync(value.envLog, "utf8").trim().split("\n").map(line => JSON.parse(line) as Record<string, string>);
+    expect(childEnvs.length).toBeGreaterThan(0);
+    expect(childEnvs.every(env => env.PLANNER_WEBHOOK_SECRET === undefined)).toBe(true);
+    expect(logger.error.mock.calls.map(call => String(call[0])).join("\n")).not.toContain("x");
+    value.log.close();
+  });
+
   it("AC2 returns every typed prerequisite failure and the HTTP route preserves its kind", async () => {
     for (const kind of ["xcode_unavailable", "runtime_unavailable", "mcp_unavailable", "golden_unavailable"] as const) {
       const value = setup(); const t = turn(value.log);
@@ -47,13 +63,18 @@ describe.sequential("simulator capability and pool", () => {
         ...(kind === "runtime_unavailable" ? { iosSimRuntime: "missing" } : {}),
         ...(kind === "mcp_unavailable" ? { xcodebuildMcpBin: join(value.dir, "missing-mcp") } : {}) };
       if (kind === "golden_unavailable") { const state = JSON.parse(readFileSync(value.statePath, "utf8")); state.devices = []; writeFileSync(value.statePath, JSON.stringify(state)); }
-      const simctl = new Simctl(config.simctlArgv, { DEVELOPER_DIR: config.iosSimDeveloperDir });
+      const simctl = new Simctl(config.simctlArgv, { ...value.simctlEnv, DEVELOPER_DIR: config.iosSimDeveloperDir });
       const capability = await detectSimCapability(config, simctl); expect(capability).toMatchObject({ available: false, kind });
       const pool = new SimPool(value.log, simctl, config, capability); const token = pool.issueTurnToken(t.id);
       const server = new WebhookServer({ config: { ...config, port: 0 }, log: value.log, sim: pool }); const address = await server.listen();
+      expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`)).json()).toMatchObject({
+        ok: true, sim: { enabled: true, available: false, kind },
+      });
       const response = await fetch(`http://127.0.0.1:${address.port}/sim/leases`, { method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ turnId: t.id }) });
       expect(response.status).toBe(503); expect(await response.json()).toMatchObject({ error: { kind } });
+      const status = await fetch(`http://127.0.0.1:${address.port}/sim/leases?turnId=${t.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      expect(status.status).toBe(503); expect(await status.json()).toMatchObject({ error: { kind } });
       if (kind === "golden_unavailable") {
         const restored = JSON.parse(readFileSync(value.statePath, "utf8")); restored.devices = [value.golden];
         writeFileSync(value.statePath, JSON.stringify(restored));
@@ -102,6 +123,8 @@ describe.sequential("simulator capability and pool", () => {
     expect(response.status).toBe(503); expect(await response.json()).toMatchObject({
       error: { kind: "sim_not_ready", message: "device pool reconciliation pending" },
     });
+    const status = await fetch(`http://127.0.0.1:${address.port}/sim/leases?turnId=${current.id}`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(status.status).toBe(503); expect(await status.json()).toMatchObject({ error: { kind: "sim_not_ready" } });
     expect(calls(value.callLog).filter(call => call[0] === "clone")).toHaveLength(0);
     await server.close(); value.log.close();
   });
@@ -229,19 +252,29 @@ describe.sequential("simulator capability and pool", () => {
     value.log.close();
   });
 
-  it("routes require tokens and expose acquire, status, release, capacity, and ownership errors", async () => {
-    const value = setup(1), first = turn(value.log, "route-one"), second = turn(value.log, "route-two");
+  it("routes require tokens, scope status by turn, recheck readiness, and expose release errors", async () => {
+    const value = setup(2), first = turn(value.log, "route-one"), second = turn(value.log, "route-two");
     const capability = await detectSimCapability(value.config, value.simctl); const pool = new SimPool(value.log, value.simctl, value.config, capability);
     const token1 = pool.issueTurnToken(first.id), token2 = pool.issueTurnToken(second.id);
     const server = new WebhookServer({ config: { ...value.config, port: 0 }, log: value.log, sim: pool }); const address = await server.listen();
     const base = `http://127.0.0.1:${address.port}/sim/leases`;
+    expect(await (await fetch(`http://127.0.0.1:${address.port}/healthz`)).json()).toMatchObject({ ok: true, sim: { enabled: true, available: true } });
     expect((await fetch(base, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ turnId: first.id }) })).status).toBe(401);
     const acquiredResponse = await fetch(base, { method: "POST", headers: { Authorization: `Bearer ${token1}`, "Content-Type": "application/json" }, body: JSON.stringify({ turnId: first.id }) });
     expect(acquiredResponse.status).toBe(200); const acquired = await acquiredResponse.json() as { udid: string };
-    expect((await fetch(`${base}?turnId=${first.id}`, { headers: { Authorization: `Bearer ${token1}` } })).status).toBe(200);
-    expect((await fetch(base, { method: "POST", headers: { Authorization: `Bearer ${token2}`, "Content-Type": "application/json" }, body: JSON.stringify({ turnId: second.id }) })).status).toBe(409);
+    const secondResponse = await fetch(base, { method: "POST", headers: { Authorization: `Bearer ${token2}`, "Content-Type": "application/json" }, body: JSON.stringify({ turnId: second.id }) });
+    expect(secondResponse.status).toBe(200); const secondLease = await secondResponse.json() as { udid: string };
+    const firstStatus = await fetch(`${base}?turnId=${first.id}`, { headers: { Authorization: `Bearer ${token1}` } });
+    const secondStatus = await fetch(`${base}?turnId=${second.id}`, { headers: { Authorization: `Bearer ${token2}` } });
+    expect((await firstStatus.json() as { leases: Array<{ udid: string }> }).leases.map(row => row.udid)).toEqual([acquired.udid]);
+    expect((await secondStatus.json() as { leases: Array<{ udid: string }> }).leases.map(row => row.udid)).toEqual([secondLease.udid]);
+    const state = JSON.parse(readFileSync(value.statePath, "utf8")); state.devices = state.devices.filter((device: { udid: string }) => device.udid !== "GOLDEN");
+    writeFileSync(value.statePath, JSON.stringify(state));
+    const notReady = await fetch(`${base}?turnId=${first.id}`, { headers: { Authorization: `Bearer ${token1}` } });
+    expect(notReady.status).toBe(503); expect(await notReady.json()).toMatchObject({ error: { kind: "golden_unavailable" } });
     expect((await fetch(`${base}/${acquired.udid}?turnId=${second.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token2}` } })).status).toBe(403);
     expect((await fetch(`${base}/${acquired.udid}?turnId=${first.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token1}` } })).status).toBe(200);
+    expect((await fetch(`${base}/${secondLease.udid}?turnId=${second.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token2}` } })).status).toBe(200);
     await server.close(); value.log.close();
   });
 });

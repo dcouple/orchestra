@@ -10,8 +10,7 @@ import { WebhookServer } from "../src/server.js";
 import { detectSimCapability, SimPool, Simctl, writeSimContext } from "../src/sim.js";
 
 const dirs: string[] = [];
-afterEach(() => { delete process.env.FAKE_SIMCTL_STATE; delete process.env.FAKE_SIMCTL_LOG;
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 const io = () => { let stdout = "", stderr = ""; return { get stdout() { return stdout; }, get stderr() { return stderr; },
   streams: { stdout: { write: (value: string) => { stdout += value; } }, stderr: { write: (value: string) => { stderr += value; } } } }; };
 
@@ -22,17 +21,18 @@ async function setup() {
   const type = { identifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17", name: "iPhone 17" };
   const statePath = join(dir, "state.json"); writeFileSync(statePath, JSON.stringify({ runtimes: [runtime], devicetypes: [type], devices: [
     { udid: "GOLDEN", name: "orchestra-golden-iphone-17-ios-26-5", state: "Shutdown", runtimeId: runtime.identifier, deviceTypeIdentifier: type.identifier }], failures: {} }));
-  process.env.FAKE_SIMCTL_STATE = statePath; process.env.FAKE_SIMCTL_LOG = join(dir, "calls");
+  const callLog = join(dir, "calls");
   const config = loadConfig({ DAEMON_TEST_MODE: "1", SESSIONS_ENABLED: "0", PLANNER_WEBHOOK_SECRET: "p", PLANNER_LINEAR_TOKEN: "p",
     IMPLEMENTER_WEBHOOK_SECRET: "i", IMPLEMENTER_LINEAR_TOKEN: "i", DB_PATH: join(dir, "db"), ARTIFACTS_DIR: join(dir, "artifacts"),
     IOS_SIM_ENABLED: "1", IOS_SIM_RUNTIME: runtime.name, IOS_SIM_DEVICE_TYPE: type.name, IOS_SIM_DEVELOPER_DIR: developerDir,
     XCODEBUILD_MCP_BIN: process.execPath, IOS_SIM_SIMCTL_BIN: `${process.execPath} ${resolve("test/fixtures/fake-simctl.mjs")}` });
   const log = new EventLog(config.dbPath); log.append({ deliveryId: "turn", app: "planner", action: "created", agentSessionId: "session",
     issueId: "issue", issueIdentifier: "SIM-1", receivedAt: 1, rawBody: Buffer.from("{}") }); const turn = log.claimNextTurn()!;
-  const simctl = new Simctl(config.simctlArgv, { DEVELOPER_DIR: developerDir }); const pool = new SimPool(log, simctl, config, await detectSimCapability(config, simctl));
+  const simctl = new Simctl(config.simctlArgv, { DEVELOPER_DIR: developerDir, FAKE_SIMCTL_STATE: statePath, FAKE_SIMCTL_LOG: callLog });
+  const pool = new SimPool(log, simctl, config, await detectSimCapability(config, simctl));
   const server = new WebhookServer({ config: { ...config, port: 0 }, log, sim: pool }); const address = await server.listen();
   const context = await writeSimContext(config, pool, turn.id, turn.linearSessionId, `http://127.0.0.1:${address.port}`);
-  return { log, pool, server, context, turn };
+  return { log, pool, server, context, turn, statePath };
 }
 
 describe.sequential("orchestra-sim CLI", () => {
@@ -55,6 +55,10 @@ describe.sequential("orchestra-sim CLI", () => {
     const value = await setup(); const parsed = JSON.parse(await import("node:fs/promises").then(fs => fs.readFile(value.context, "utf8")));
     parsed.token = "bad"; const badPath = join(dirs.at(-1)!, "bad.json"); writeFileSync(badPath, JSON.stringify(parsed)); const bad = io();
     expect(await main(["status"], { ORCHESTRA_SIM_CONTEXT: badPath }, bad.streams)).toBe(1); expect(JSON.parse(bad.stderr).error.kind).toBe("unauthorized");
+    const state = JSON.parse(await import("node:fs/promises").then(fs => fs.readFile(value.statePath, "utf8"))); state.devices = [];
+    writeFileSync(value.statePath, JSON.stringify(state)); const notReady = io();
+    expect(await main(["status"], { ORCHESTRA_SIM_CONTEXT: value.context }, notReady.streams)).toBe(1);
+    expect(JSON.parse(notReady.stderr).error.kind).toBe("golden_unavailable");
     const invalidPath = join(dirs.at(-1)!, "invalid.json"); writeFileSync(invalidPath, "{"); const invalid = io();
     expect(await main(["status"], { ORCHESTRA_SIM_CONTEXT: invalidPath }, invalid.streams)).toBe(2); expect(JSON.parse(invalid.stderr).error.kind).toBe("context_invalid");
     await value.server.close(); const down = io(); expect(await main(["status"], { ORCHESTRA_SIM_CONTEXT: value.context }, down.streams)).toBe(1);

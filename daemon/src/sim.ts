@@ -46,13 +46,21 @@ function messageOf(error: unknown): string {
 }
 
 export class Simctl {
-  constructor(private readonly argv: string[], private readonly env: { DEVELOPER_DIR: string }) {}
+  constructor(private readonly argv: string[], private readonly env: NodeJS.ProcessEnv & { DEVELOPER_DIR: string }) {}
   private async run(args: string[], timeout = 120_000): Promise<string> {
     const [command, ...prefix] = this.argv;
     if (!command) throw new Error("simctl command is empty");
+    const childEnv: NodeJS.ProcessEnv = {};
+    for (const key of ["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "LANG"] as const) {
+      if (process.env[key] !== undefined) childEnv[key] = process.env[key];
+    }
+    for (const [key, value] of Object.entries(process.env)) {
+      if (key.startsWith("LC_") && value !== undefined) childEnv[key] = value;
+    }
+    for (const [key, value] of Object.entries(this.env)) if (value !== undefined) childEnv[key] = value;
     try {
       const { stdout } = await execFileAsync(command, [...prefix, ...args], {
-        env: { ...process.env, ...this.env }, timeout, maxBuffer: 10 * 1024 * 1024,
+        env: childEnv, timeout, maxBuffer: 10 * 1024 * 1024,
       });
       return stdout.trim();
     } catch (error) { throw new Error(messageOf(error)); }
@@ -139,7 +147,11 @@ export class SimPool {
     const left = Buffer.from(expected); const right = Buffer.from(token);
     return left.length === right.length && timingSafeEqual(left, right);
   }
-  async acquire(turnId: number, sessionId: string): Promise<{ udid: string; name: string; lease: number; evidenceDir: string }> {
+  health(): { enabled: boolean; available: boolean; kind?: string } {
+    return { enabled: this.config.iosSimEnabled, available: this.capability.available,
+      ...(!this.capability.available ? { kind: this.capability.kind } : {}) };
+  }
+  private async requireReady(): Promise<{ capability: Extract<SimCapabilityResult, { available: true }>; golden: SimDevice }> {
     if (!this.capability.available)
       throw new SimPrerequisiteError(this.capability.kind, this.capability.message ?? this.capability.kind);
     if (!this.reconciled) throw new SimLeaseError("sim_not_ready", "device pool reconciliation pending");
@@ -147,6 +159,10 @@ export class SimPool {
     if (!capability.available) throw new SimPrerequisiteError(capability.kind, capability.message ?? capability.kind);
     const golden = (await this.simctl.listDevices()).find(device => device.udid === capability.goldenUdid);
     if (!golden || golden.state !== "Shutdown") throw new SimPrerequisiteError("golden_unavailable", `golden is ${golden?.state ?? "missing"}`);
+    return { capability, golden };
+  }
+  async acquire(turnId: number, sessionId: string): Promise<{ udid: string; name: string; lease: number; evidenceDir: string }> {
+    const { golden } = await this.requireReady();
     const reservation = this.log.reserveSimLease(turnId, sessionId, this.config.iosSimMaxConcurrent, this.now());
     return this.withSimctlWork(async () => {
       let udid: string | undefined;
@@ -192,7 +208,10 @@ export class SimPool {
     }
     this.log.closeSimLease(row.id, "released", "released_by_turn", this.now());
   }
-  status(): SimLeaseRow[] { return this.log.openSimLeases(); }
+  async status(turnId: number): Promise<SimLeaseRow[]> {
+    await this.requireReady();
+    return this.log.openSimLeases().filter(row => row.turnId === turnId);
+  }
 }
 
 export class SimReaper {

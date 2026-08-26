@@ -5,6 +5,7 @@ const statePath = process.env.FAKE_SIMCTL_STATE;
 if (!statePath) throw new Error("FAKE_SIMCTL_STATE is required");
 const args = process.argv.slice(2);
 if (process.env.FAKE_SIMCTL_LOG) await appendFile(process.env.FAKE_SIMCTL_LOG, `${JSON.stringify(args)}\n`);
+if (process.env.FAKE_SIMCTL_ENV_LOG) await appendFile(process.env.FAKE_SIMCTL_ENV_LOG, `${JSON.stringify(process.env)}\n`);
 const state = JSON.parse(await readFile(statePath, "utf8"));
 const save = () => writeFile(statePath, JSON.stringify(state));
 const fail = (name, fallback) => {

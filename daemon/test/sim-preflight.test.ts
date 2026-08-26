@@ -17,10 +17,10 @@ function setup(devices: Array<{ udid: string; name: string; state: string }> = [
   const state = join(dir, "state.json"), calls = join(dir, "calls");
   writeFileSync(state, JSON.stringify({ runtimes: [runtime], types: [type], devices: devices.map(value => ({ ...value, runtimeId: runtime.identifier })), hooks, deviceLists: 0 }));
   const simctl = join(dir, "simctl.mjs");
-  writeFileSync(simctl, `import fs from "node:fs"; const p=${JSON.stringify(state)}, calls=${JSON.stringify(calls)}, a=process.argv.slice(2), s=JSON.parse(fs.readFileSync(p)); fs.appendFileSync(calls,JSON.stringify(a)+"\\n");
-if(a[0]==="list"){if(a[1]==="runtimes")console.log(JSON.stringify({runtimes:s.runtimes}));else if(a[1]==="devicetypes")console.log(JSON.stringify({devicetypes:s.types}));else{s.deviceLists++;const r=s.hooks.renameAfterList;if(r&&r.list===s.deviceLists){const v=s.devices.find(v=>v.udid===r.udid);if(v)v.name=r.name;}fs.writeFileSync(p,JSON.stringify(s));const dly=s.hooks.delayAfterList;if(dly&&dly.list===s.deviceLists)await new Promise(r=>setTimeout(r,dly.ms));const d={};for(const v of s.devices)(d[v.runtimeId]??=[]).push(v);console.log(JSON.stringify({devices:d}));}}
-else if(a[0]==="create"){s.devices.push({udid:"CREATED",name:a[1],state:"Shutdown",runtimeId:a[3]});fs.writeFileSync(p,JSON.stringify(s));console.log("CREATED");}
-else {const i=s.devices.findIndex(v=>v.udid===a[1]);if(i<0)process.exit(1);if(a[0]==="delete")s.devices.splice(i,1);else if(a[0]==="shutdown")s.devices[i].state="Shutdown";fs.writeFileSync(p,JSON.stringify(s));}`);
+  writeFileSync(simctl, `import fs from "node:fs"; const p=${JSON.stringify(state)}, calls=${JSON.stringify(calls)}, a=process.argv.slice(2), s=JSON.parse(fs.readFileSync(p)); fs.appendFileSync(calls,JSON.stringify(a)+"\\n");const save=()=>{const n=p+"."+process.pid+".next";fs.writeFileSync(n,JSON.stringify(s));fs.renameSync(n,p);};
+if(a[0]==="list"){if(a[1]==="runtimes")console.log(JSON.stringify({runtimes:s.runtimes}));else if(a[1]==="devicetypes")console.log(JSON.stringify({devicetypes:s.types}));else{s.deviceLists++;const r=s.hooks.renameAfterList;if(r&&r.list===s.deviceLists){const v=s.devices.find(v=>v.udid===r.udid);if(v)v.name=r.name;}save();const dly=s.hooks.delayAfterList;if(dly&&dly.list===s.deviceLists)await new Promise(r=>setTimeout(r,dly.ms));const d={};for(const v of s.devices)(d[v.runtimeId]??=[]).push(v);console.log(JSON.stringify({devices:d}));}}
+else if(a[0]==="create"){s.devices.push({udid:"CREATED",name:a[1],state:"Shutdown",runtimeId:a[3]});save();console.log("CREATED");}
+else {const i=s.devices.findIndex(v=>v.udid===a[1]);if(i<0)process.exit(1);if(a[0]==="delete")s.devices.splice(i,1);else if(a[0]==="shutdown")s.devices[i].state="Shutdown";save();}`);
   const probe = join(dir, "probe.sh"); writeFileSync(probe, "#!/bin/sh\necho 'RESULT install=ok screenshot=ok snapshot_ui=ok'\n"); chmodSync(probe, 0o755);
   const env = { ...process.env, IOS_SIM_RUNTIME: runtime.name, IOS_SIM_DEVICE_TYPE: type.name,
     IOS_SIM_SIMCTL_BIN: `${process.execPath} ${simctl}`, SIM_PREFLIGHT_PROBE: probe, DB_PATH: join(dir, "db"), BIND_ADDR: "127.0.0.1", PORT: "1" };
@@ -29,7 +29,7 @@ else {const i=s.devices.findIndex(v=>v.udid===a[1]);if(i<0)process.exit(1);if(a[
 }
 
 describe("sim preflight", () => {
-  it("creates a missing golden and runs the probe", async () => {
+  it("creates a missing golden and runs the probe when the daemon is unreachable", async () => {
     const value = setup(); expect(await main([], value.env, value.io)).toBe(0);
     expect(value.output().stdout).toContain("golden: created CREATED");
     expect(value.output().stdout).toContain("leases: none (no database)");
@@ -87,10 +87,30 @@ describe("sim preflight", () => {
     expect(deviceType.output().stdout).toContain("[preflight] config: FAILED (IOS_SIM_DEVICE_TYPE is required)");
     expect(existsSync(deviceType.calls)).toBe(false);
   });
-  it("lists orphan candidates but leaves them to a healthy daemon", async () => {
+  it("skips all mutations and the probe when a healthy daemon reports simulator availability", async () => {
     const server = createServer((request, response) => {
       response.writeHead(request.url === "/healthz" ? 200 : 404, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ ok: request.url === "/healthz" }));
+      response.end(JSON.stringify({ ok: request.url === "/healthz", sim: { enabled: true, available: true } }));
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address(); if (!address || typeof address === "string") throw new Error("missing test server port");
+      const value = setup([{ udid: "G", name: "orchestra-golden-iphone-17-ios-26-5", state: "Booted" }, { udid: "O", name: "orchestra-2-1", state: "Shutdown" }]);
+      writeFileSync(value.env.DB_PATH!, "database intentionally unavailable to the report-only branch");
+      value.env.PORT = String(address.port);
+      expect(await main([], value.env, value.io)).toBe(0);
+      expect(value.output().stdout).toContain("[preflight] orphans: skipped (daemon running — the reaper owns sweeps)");
+      expect(value.output().stdout).toContain("[preflight] orphan-candidate: O orchestra-2-1");
+      expect(value.output().stdout).toContain("[preflight] probe: skipped (daemon running with the simulator capability — stop it or run preflight before enabling)");
+      expect(value.output().stdout).toContain("probe=skipped");
+      expect(readFileSync(value.calls, "utf8")).not.toMatch(/create|delete|shutdown/);
+      expect(value.output().stdout).not.toContain("RESULT install=ok");
+    } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
+  });
+  it("runs the golden probe and orphan sweep when a healthy daemon reports simulator unavailable", async () => {
+    const server = createServer((request, response) => {
+      response.writeHead(request.url === "/healthz" ? 200 : 404, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ ok: request.url === "/healthz", sim: { enabled: true, available: false, kind: "golden_unavailable" } }));
     });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     try {
@@ -98,9 +118,8 @@ describe("sim preflight", () => {
       const value = setup([{ udid: "G", name: "orchestra-golden-iphone-17-ios-26-5", state: "Shutdown" }, { udid: "O", name: "orchestra-2-1", state: "Shutdown" }]);
       value.env.PORT = String(address.port);
       expect(await main([], value.env, value.io)).toBe(0);
-      expect(value.output().stdout).toContain("[preflight] orphans: skipped (daemon running — the reaper owns sweeps)");
-      expect(value.output().stdout).toContain("[preflight] orphan-candidate: O orchestra-2-1");
-      expect(readFileSync(value.calls, "utf8")).not.toContain('["delete","O"]');
+      expect(value.output().stdout).toContain("[preflight] probe: ok");
+      expect(readFileSync(value.calls, "utf8")).toContain('["delete","O"]');
     } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
   });
   it("skips a duplicate renamed after the discovery snapshot", async () => {
