@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+
+. "${DAEMON_SITE_LIB:-/usr/local/sbin/daemon-site-lib.sh}"
+load_site_env || exit 78
+exec "${NODE_BIN:-/opt/homebrew/opt/node@22/bin/node}" \
+  "${LINEAR_AGENT_CODE_DIR:-$DAEMON_SERVICE_HOME/linear-agent-daemon}/dist/sim-cli.js" "$@"

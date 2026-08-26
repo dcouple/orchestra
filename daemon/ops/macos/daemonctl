@@ -10,6 +10,7 @@ usage: daemonctl config --planner claude|claudex --implementer claude|claudex [-
        daemonctl update [--reason TEXT] [--dry-run]
        daemonctl operation retry|cancel OPERATION_ID [--dry-run]
        daemonctl status [--refresh] | sessions | top [--watch SECONDS] [--count N]
+       daemonctl sim-preflight [--dry-run]
        daemonctl subscriptions list|add|remove|reauth ... [--dry-run]
        daemonctl --help
 
@@ -457,6 +458,23 @@ command_top_once() {
   echo "running_turns: $(ops_cli running | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
 }
 
+command_sim_preflight() {
+  require_user
+  [[ $# -eq 0 || ( $# -eq 1 && $1 == --dry-run ) ]] || usage_error "invalid sim-preflight arguments"
+  [[ -f $ENV_FILE ]] || die "environment file not found: $ENV_FILE"
+  local entry key value
+  local -a env_args=("PATH=${PATH:-/usr/local/bin:/usr/bin:/bin}" "HOME=$HOME_DIR" "USER=$DAEMON_SERVICE_USER" "TMPDIR=${TMPDIR:-/tmp}" "LANG=${LANG:-C}")
+  while IFS= read -r entry; do
+    key=$(printf '%s\n' "$entry" | sed -E 's/^[[:space:]]*([A-Z0-9_]+)=.*/\1/')
+    value=$(printf '%s\n' "${entry#*=}" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*(#.*)?$//')
+    if [[ ${#value} -ge 2 && ( ( ${value:0:1} == '"' && ${value: -1} == '"' ) || ( ${value:0:1} == "'" && ${value: -1} == "'" ) ) ]]; then
+      value=${value:1:${#value}-2}
+    fi
+    env_args+=("$key=$value")
+  done < <(grep -E '^[[:space:]]*(IOS_SIM_ENABLED|IOS_SIM_RUNTIME|IOS_SIM_DEVICE_TYPE|IOS_SIM_DEVELOPER_DIR|IOS_SIM_SIMCTL_BIN|IOS_SIM_MAX_CONCURRENT|XCODEBUILD_MCP_BIN|DB_PATH|BIND_ADDR|PORT)=' "$ENV_FILE" || true)
+  exec /usr/bin/env -i "${env_args[@]}" "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/sim-preflight.js" "$@"
+}
+
 case ${1:-} in
   --help|-h) [[ $# -eq 1 ]] || usage_error "unexpected arguments"; usage ;;
   config) shift; command_config "$@" ;;
@@ -464,6 +482,7 @@ case ${1:-} in
   reload|update) shift; command_reload "$@" ;;
   operation) shift; command_operation "$@" ;;
   status) shift; command_status "$@" ;;
+  sim-preflight) shift; command_sim_preflight "$@" ;;
   sessions) require_user; [[ $# -eq 1 ]] || usage_error "sessions takes no arguments"; result=$(ops_cli running); [[ $result == '[]' ]] && echo 'no running turns' || echo "$result" ;;
   top)
     require_user; shift; watch=0; count=0

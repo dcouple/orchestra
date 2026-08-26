@@ -135,7 +135,7 @@ is a free byproduct of the drive, never a second pass for the camera; one
 video per journey, named for it.
 
 Keep the driver's native recording as the published artifact — WebM from the
-browser driver; a simulator driver's own native format stands in the same
+browser driver; a simulator driver's native MP4 stands in the same
 way. Where ffmpeg is available, an H.264 mp4 with `yuv420p` may also be
 published as an optional compatibility transcode, but it never replaces the
 required native recording.
@@ -198,3 +198,18 @@ only after trace and video stop successfully, media is validated, and a final
 that same run and attempt. Missing manifests, partial manifests, paths outside
 the current evidence directory, and files from earlier attempts are diagnostic
 only and cannot prove acceptance criteria or be published as QA evidence.
+
+### Simulator attempt finalization
+
+Keep every capture beneath the acquired lease's `evidenceDir`. After stopping
+the native MP4 recording, write `evidence-manifest.json` last with
+`status: "completed"`, `kind: "ios-simulator"`, current `turnId`,
+`lease: {udid,name,index}`, and absolute artifact paths beneath that directory.
+The manifest's `lease.index` is the `lease` number printed by
+`orchestra-sim acquire`. Pass the recording's original `outputFile` path again
+when calling `record_sim_video{stop:true}`. `wait_for_ui` takes a string-enum
+`predicate` such as `"settled"` or `"exists"`, not an object. Name
+`screenshot{returnFormat:"path"}` captures with `.jpg`, because the simulator
+driver writes JPEG data regardless of the requested filename. Files from
+another lease are invalid. Release the lease before reporting and
+preserve the release output as evidence.

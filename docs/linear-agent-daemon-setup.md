@@ -148,9 +148,10 @@ The repository the agents work on must have:
 
 3. **A test/verify flow the host can run.** Whatever the repo's
    `AGENTS.md` commands need (databases, emulators, env vars) must work
-   headlessly on this host. Browser-driven and device-driven acceptance
-   criteria cannot be auto-verified here and stay with human QA on the
-   PR.
+   headlessly on this host. Browser acceptance uses the daemon Playwright
+   capability. On macOS with Xcode and an iOS runtime, simulator acceptance
+   uses the simulator capability and the item's `ios_testing` dial; the
+   consumer `AGENTS.md` supplies scheme, bundle id, and test accounts.
 
 ### Project MCP servers
 
@@ -248,12 +249,31 @@ ATTACHMENT_HOSTS=uploads.linear.app
 # Project MCP secret names; set each named variable in this file too.
 #MCP_ENV_PASSTHROUGH=POSTHOG_API_KEY,NOTION_TOKEN
 
+# Optional iOS simulator capability (macOS only).
+IOS_SIM_ENABLED=0
+IOS_SIM_RUNTIME="iOS 26.5" # runtime name or identifier
+IOS_SIM_DEVICE_TYPE="iPhone 17" # device type name or identifier
+IOS_SIM_MAX_CONCURRENT=2 # maximum simultaneous leases
+IOS_SIM_IDLE_TIMEOUT_MS=900000 # idle lease reaping threshold
+IOS_SIM_REAPER_INTERVAL_MS=60000 # reaper polling interval
+IOS_SIM_DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer # Xcode developer directory
+IOS_SIM_SIMCTL_BIN="xcrun simctl" # simctl command
+XCODEBUILD_MCP_BIN=/usr/local/bin/xcodebuildmcp # XcodeBuildMCP executable
+
 # Optional: one-way push notification (ntfy) whenever an agent posts a
 # terminal response or error. Subscribe to the topic in the ntfy app.
 # Public topics are readable by anyone who knows the name — make it
 # unguessable.
 #NTFY_URL=https://ntfy.sh/<unguessable-topic>
 ```
+
+On macOS, run `daemonctl sim-preflight` before setting
+`IOS_SIM_ENABLED=1`, or stop the daemon before running it during maintenance.
+When a running daemon reports the simulator capability available, preflight is
+report-only: it skips golden-device mutations, orphan deletion, and the probe
+so it cannot race a lease cloning the golden. After `daemonctl restart`, a
+`probe=skipped` result is therefore the expected report until the daemon is
+stopped or the capability is disabled.
 
 Each harness setting accepts `claude` or `claudex` and defaults to `claude`. The settings
 apply only when a durable role session is first created. `claude` prefers Fable but retains
@@ -304,8 +324,10 @@ have the exact SQL/GraphQL evidence queries.
 - **Implementer replies sent while the daemon is down are not replayed**
   by startup reconciliation; planner replies are. Re-send the reply after
   the daemon is back up.
-- **Verification is headless**: tests, builds, and scripts run; browser
-  and mobile acceptance criteria fall to human QA on the PR.
+- **App-driving verification is capability-based**: browser criteria use
+  Playwright; iOS criteria use leased simulators on prepared macOS hosts.
+  Consumer-specific build values and test accounts remain in that repo's
+  `AGENTS.md` mobile testing section.
 - Sessions run with `bypassPermissions` inside worktrees on this host —
   treat the machine as an untrusted-automation zone: dedicated bot
   credentials only, nothing else valuable on the box, and branch

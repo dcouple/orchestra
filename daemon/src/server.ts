@@ -8,6 +8,7 @@ import type { EventLog } from "./eventlog.js";
 import { readCliproxyManagementKey } from "./proxy-env.js";
 import { verifyWebhook } from "./verify.js";
 import { renderViewer } from "./viewer.js";
+import { SimCapacityError, SimLeaseError, SimPrerequisiteError, SimTurnLimitError, type SimPool } from "./sim.js";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -18,6 +19,7 @@ export interface WebhookServerOptions {
   onInserted?: () => void;
   onStop?: (agentSessionId: string) => void;
   logger?: Pick<Console, "log" | "error">;
+  sim?: SimPool;
 }
 
 function stringField(value: unknown): string | undefined { return typeof value === "string" ? value : undefined; }
@@ -53,11 +55,15 @@ export class WebhookServer {
     try {
       if (request.method === "GET" && request.url === "/healthz") {
         if (!await this.managementAuthorized(request)) {
-          this.earlyJson(request, response, 200, { ok: true }); return;
+          this.earlyJson(request, response, 200, { ok: true, sim: this.simHealth() }); return;
         }
         this.earlyJson(request, response, 200, this.providerHealth()); return;
       }
       const pathname = (request.url ?? "").split("?", 1)[0] ?? "";
+      if (pathname === "/sim/leases" || pathname.startsWith("/sim/leases/")) {
+        if (!this.options.sim) { this.earlyJson(request, response, 404, { error: "not_found" }); return; }
+        await this.handleSim(request, response, pathname); return;
+      }
       if (pathname === "/a" || pathname === "/a/" || pathname.startsWith("/a/")) {
         await this.handleArtifact(request, response, pathname);
         return;
@@ -118,6 +124,44 @@ export class WebhookServer {
     } catch (error) {
       this.logger.error(JSON.stringify({ level: "error", event: "request_failed", error: error instanceof Error ? error.message : String(error) }));
       if (!response.headersSent) this.json(response, 500, { error: "internal_error" }); else response.end();
+    }
+  }
+
+  private async handleSim(request: IncomingMessage, response: ServerResponse, pathname: string): Promise<void> {
+    const pool = this.options.sim!;
+    let turnId: number | undefined;
+    if (request.method === "POST" && pathname === "/sim/leases") {
+      if (this.contentLengthTooLarge(request, MAX_BODY_BYTES)) { this.earlyJson(request, response, 413, { error: { kind: "sim_failed", message: "payload too large" } }); return; }
+      const raw = await this.readBody(request, response, MAX_BODY_BYTES); if (!raw) return;
+      try { const value = JSON.parse(raw.toString("utf8")) as { turnId?: unknown }; if (typeof value.turnId === "number") turnId = value.turnId; } catch {}
+    } else {
+      const raw = new URL(request.url ?? "", "http://localhost").searchParams.get("turnId");
+      const parsed = raw === null ? NaN : Number(raw); if (Number.isSafeInteger(parsed)) turnId = parsed;
+    }
+    const authorization = request.headers.authorization;
+    const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+    if (turnId === undefined || !pool.authorize(turnId, token)) {
+      this.earlyJson(request, response, 401, { error: { kind: "unauthorized", message: "invalid simulator turn token" } }); return;
+    }
+    try {
+      if (request.method === "POST" && pathname === "/sim/leases") {
+        this.json(response, 200, await pool.acquire(turnId, this.options.log.getTurn(turnId)?.linearSessionId ?? "unknown")); return;
+      }
+      if (request.method === "GET" && pathname === "/sim/leases") {
+        this.json(response, 200, { leases: await pool.status(turnId) }); return;
+      }
+      const match = request.method === "DELETE" ? /^\/sim\/leases\/([^/]+)$/.exec(pathname) : null;
+      if (match) { const udid = decodeURIComponent(match[1]!); await pool.release(turnId, udid); this.json(response, 200, { released: true, udid }); return; }
+      this.earlyJson(request, response, 404, { error: "not_found" });
+    } catch (error) {
+      const kind = error instanceof SimCapacityError || error instanceof SimTurnLimitError ||
+        error instanceof SimPrerequisiteError || error instanceof SimLeaseError ? error.kind : "sim_failed";
+      const status = error instanceof SimCapacityError || error instanceof SimTurnLimitError ? 409
+        : error instanceof SimPrerequisiteError ? 503
+        : error instanceof SimLeaseError && error.kind === "sim_not_ready" ? 503
+        : error instanceof SimLeaseError && error.kind === "lease_not_found" ? 404
+        : error instanceof SimLeaseError && error.kind === "lease_not_owned" ? 403 : 500;
+      this.json(response, status, { error: { kind, message: error instanceof Error ? error.message : String(error) } });
     }
   }
 
@@ -241,11 +285,16 @@ export class WebhookServer {
   private providerHealth(): Record<string, unknown> {
     const claude = this.options.log.getProviderState("claude");
     const codex = this.options.log.getProviderState("codex");
-    return { ok: true, providers: {
+    return { ok: true, sim: this.simHealth(), providers: {
       claude: { status: claude?.status ?? "not_ready", reason: claude?.reason ?? "state_missing",
         ...(claude?.cooldownUntil != null ? { cooldownUntil: claude.cooldownUntil } : {}), updatedAt: claude?.updatedAt ?? 0 },
       codex: { status: codex?.status ?? "ready", ...(codex?.cooldownUntil != null ? { cooldownUntil: codex.cooldownUntil } : {}) },
     } };
+  }
+
+  private simHealth(): { enabled: boolean; available: boolean; kind?: string } {
+    const enabled = this.options.config.iosSimEnabled === true;
+    return this.options.sim?.health() ?? { enabled, available: false, ...(!enabled ? { kind: "disabled" } : {}) };
   }
 
   private logArtifactWrite(method: string, bundleId: string | undefined, fileCount: number | undefined, outcome: string, status: number): void {

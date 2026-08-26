@@ -222,6 +222,8 @@ function childEnv(
       key === "GITHUB_TOKEN" ||
       key.startsWith("ORCHESTRA_BROWSER_") ||
       pass.has(key) ||
+      key === "DEVELOPER_DIR" ||
+      key === "ORCHESTRA_SIM_CONTEXT" ||
       (extraOnly && OTEL_CHILD_ENV_KEYS.has(key)) ||
       (extraOnly &&
         (key === "TRACEPARENT" ||

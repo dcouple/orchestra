@@ -692,6 +692,19 @@ describe("runTurn", () => {
       ORCHESTRA_BROWSER_ATTEMPT_ID: "attempt", ORCHESTRA_BROWSER_EVIDENCE_DIR: "/evidence" });
     expect(row.env.UNTRUSTED_BROWSER_SECRET).toBeUndefined();
   });
+  it("passes only the named simulator environment", async () => {
+    const dir = cwd(); const envFile = join(dir, "env.jsonl");
+    await runTurn(options({ cwd: dir, env: { CLAUDE_FAKE_ENV_FILE: envFile,
+      DEVELOPER_DIR: "/Applications/Xcode.app/Contents/Developer",
+      ORCHESTRA_SIM_CONTEXT: "/context.json", ORCHESTRA_SIM_TOKEN: "token",
+      ORCHESTRA_SIM_DB_PATH: "/events.db",
+      ORCHESTRA_SIMX: "drop" } }));
+    const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { env: Record<string, string> };
+    expect(row.env).toMatchObject({ DEVELOPER_DIR: "/Applications/Xcode.app/Contents/Developer",
+      ORCHESTRA_SIM_CONTEXT: "/context.json" });
+    expect(row.env.ORCHESTRA_SIM_TOKEN).toBeUndefined(); expect(row.env.ORCHESTRA_SIM_DB_PATH).toBeUndefined();
+    expect(row.env.ORCHESTRA_SIMX).toBeUndefined();
+  });
   it("merges trusted runtime environment after the allowlist", async () => {
     const dir = cwd();
     const envFile = join(dir, "env.jsonl");

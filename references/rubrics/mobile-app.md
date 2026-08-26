@@ -1,8 +1,10 @@
 # Rubric — mobile app change
 
 1. **[blocker]** Each UI-facing `AC#` proven in the simulator/emulator by
-   driving the real flow (taps, gestures, navigation). Evidence: driven-flow
-   transcript or test report.
+   driving the real flow (taps, gestures, navigation), with captures and the
+   driven-flow transcript/report.
+   - When the iOS device was leased through `orchestra-sim`, the completed
+     `kind: "ios-simulator"` manifest is the evidence.
 2. **[blocker]** The changed journey exercised end-to-end from a fresh app
    state (cold start), not only from a convenient mid-state.
 3. **[blocker]** Unhappy path checked: offline/failed request, denied

@@ -16,6 +16,7 @@
 # zone: <0-3 — stakes + consequence radius; .references/zones.md>
 # review_lanes: dual | single        # optional human override of the zone's lane dial
 # frontend_verifier: true | false    # optional human override — run the app-driving QA agent or not
+# ios_testing: required | optional   # optional human override; default optional
 # severity: critical | high | medium | low   # bugs only
 # phases:                            # one entry = single outcome; 2+ = multi-phase
 #   - { n: 1, title: <phase title> }
@@ -337,7 +338,7 @@
     </table>
   </section> -->
 
-  <!-- RUN CONFIG — zone primary; review_lanes and frontend_verifier are the
+  <!-- RUN CONFIG — zone primary; review_lanes, frontend_verifier, and ios_testing are the
        zone-default overrides; pills reflect the metadata. The user changes
        them by telling the agent during alignment — the page can't write back.
   <section>
@@ -358,6 +359,10 @@
       <div class="dial">
         <div class="dial-label">Frontend verifier</div>
         <div class="dial-opts"><span class="pill on">run (zone default)</span><span class="pill">skip</span></div>
+      </div>
+      <div class="dial">
+        <div class="dial-label">iOS testing</div>
+        <div class="dial-opts"><span class="pill on">optional (default)</span><span class="pill">required</span></div>
       </div>
       <div class="dial">
         <div class="dial-label">Derived</div>

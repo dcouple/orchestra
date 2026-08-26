@@ -41,6 +41,8 @@ import type {
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
 import { buildTurnSpan, mintSpanId, postSpans, traceContext } from "./otel.js";
 import type { OtlpRelay, RelayCapability } from "./otel-relay.js";
+import { mergeSimMcpConfig, simMcpServer, simTurnEnv, writeSimContext,
+  type SimCapabilityResult, type SimPool } from "./sim.js";
 import {
   readCliproxyApiKey,
   readCliproxyManagementKey,
@@ -61,6 +63,7 @@ export interface SessionWorkerOptions {
   attachmentTimeoutMs?: number;
   onTurnComplete?: () => void;
   relay?: OtlpRelay;
+  sim?: { pool: SimPool; capability: SimCapabilityResult; baseUrl: string };
 }
 export type ShutdownPolicy = "recover" | "hard_restart";
 
@@ -495,6 +498,7 @@ export class SessionWorker {
             } catch {}
           })
           .finally(() => {
+            this.options.sim?.pool.revokeTurnToken(turn.id);
             this.stopRequested.delete(turn.id);
             this.active.delete(turn.id);
             void this.triggerActivityDrain();
@@ -576,6 +580,19 @@ export class SessionWorker {
         },
       },
     });
+    let baseMcpConfigJson = linearMcpConfigJson;
+    let simulatorEnv: NodeJS.ProcessEnv = {};
+    if (this.config.iosSimEnabled && this.options.sim) {
+      const contextPath = await writeSimContext(this.config, this.options.sim.pool, turn.id,
+        turn.linearSessionId, this.options.sim.baseUrl);
+      simulatorEnv = simTurnEnv(contextPath,
+        this.options.sim.capability.available ? this.config.iosSimDeveloperDir : undefined);
+      if (this.options.sim.capability.available)
+        baseMcpConfigJson = mergeSimMcpConfig(linearMcpConfigJson, simMcpServer(this.config));
+      this.logger.log(jsonLog({ event: "sim_attached", turnId: turn.id,
+        available: this.options.sim.capability.available,
+        ...(!this.options.sim.capability.available ? { kind: this.options.sim.capability.kind } : {}) }));
+    }
     const requestFile =
       implementer &&
       !resuming &&
@@ -669,7 +686,7 @@ export class SessionWorker {
       ...(this.config.mcpEnvPassthrough
         ? { mcpEnvPassthrough: this.config.mcpEnvPassthrough }
         : {}),
-      mcpConfigJson: linearMcpConfigJson,
+            mcpConfigJson: baseMcpConfigJson,
       toolHook: {
         dbPath: this.config.dbPath,
         turnId: turn.id,
@@ -688,6 +705,7 @@ export class SessionWorker {
           ? { ORCHESTRA_DISPATCH_OWNER: turn.linearSessionId }
           : {}),
         ...(requestFile ? { ORCHESTRA_BROWSER_REQUEST_FILE: requestFile } : {}),
+        ...simulatorEnv,
         ...telemetryEnv,
       },
       signal,
@@ -830,8 +848,8 @@ export class SessionWorker {
         const turnResult = await runTurn({
           ...common,
           mcpConfigJson: attempt
-            ? mergeMcpConfig(linearMcpConfigJson, attempt)
-            : linearMcpConfigJson,
+            ? mergeMcpConfig(baseMcpConfigJson, attempt)
+            : baseMcpConfigJson,
           env: attempt
             ? { ...postHandshakeEnv, ...browserAttemptEnv(attempt) }
             : common.env,

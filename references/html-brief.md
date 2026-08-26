@@ -24,8 +24,8 @@ The page's `<head>` carries the machine state in one element:
 - Required fields: `type` (`feature | bug`), `id`, `status`
   (`draft | ready`), `zone`, and `phases` (list of `{n, title}` — one entry
   means a single-outcome item; two or more make the item multi-phase).
-  Optional: `review_lanes`, `frontend_verifier` (both honored by `/do` as
-  the user's explicit overrides), `severity` (bugs), and the publish fields
+  Optional: `review_lanes`, `frontend_verifier`, `ios_testing` (`required |
+  optional`, default `optional`; all honored by `/do` as the user's explicit overrides), `severity` (bugs), and the publish fields
   `artifact_bundle`, `artifact_upload`, `linear_issues`, `github`.
 - **Authoring and publish state only.** `status` and the publish fields are
   read from and written to this block; consumers that apply tracker state
@@ -306,12 +306,14 @@ The zone panel (`.dials`), last content section:
 - **Zone** is the primary dial: the value with its stakes/consequence-radius
   reasoning and any escalator floor that raised it. Derived dials (loop caps,
   QA, research) reference `.references/zones.md` — never restate its table.
-- **Settable dials** render the current metadata values — exactly three:
-  `zone` (the primary), plus the two zone-default overrides `review_lanes`
-  and `frontend_verifier`. All are proposed by the agent and overridable by
+- **Settable dials** render the current metadata values — exactly four:
+  `zone` (the primary), plus `review_lanes`, `frontend_verifier`, and
+  `ios_testing` (`optional` by default or `required`). All are proposed by the agent and overridable by
   the user; `/do` honors the overrides in both directions. A static page can't write back — the caption says: tell the
   agent, and it updates the metadata and re-renders the pills. `review_lanes` stays
-  editable as tracker metadata until `/do` runs.
+  editable as tracker metadata until `/do` runs. `ios_testing: required`
+  requires the frontend verifier; combining it with `frontend_verifier: false`
+  is invalid metadata that must be corrected before `/do` proceeds.
 - Collapse to a single line for a trivial item.
 
 ## Disclosure

@@ -68,6 +68,20 @@ launch with "missing Fable model file". The Fable models file itself stays
 operator-authored (see the runbook's "Enable and verify Fable routing").
 Secrets never enter this repository.
 
+### Simulator capability
+
+The operator installs Xcode and an available iOS runtime, accepts the Xcode
+license, and configures the `IOS_SIM_*` and `XCODEBUILD_MCP_BIN` keys listed in
+the main setup guide. Provisioning installs the pinned XcodeBuildMCP and the
+`orchestra-sim` wrapper; it inventories Xcode/runtime availability but does
+not install either Apple component. Before setting `IOS_SIM_ENABLED=1`, run
+`daemonctl sim-preflight --dry-run`, then `daemonctl sim-preflight` to ensure
+one shut-down golden device, sweep unleased orphans, and prove the boot,
+install, launch, screenshot, accessibility snapshot, and shutdown round trip.
+For later maintenance, stop the daemon before running the mutating preflight.
+While a running daemon reports the simulator capability available, preflight
+only reports that the probe was skipped; it never touches the golden device.
+
 Open an interactive login context as the service user for credentials and
 identity:
 
@@ -155,6 +169,22 @@ is no codex-live service. Reboot acceptance is deferred until the operator is
 physically near the machine; `RunAtLoad` and `KeepAlive` provide the intended
 no-login startup behavior but are not claimed as reboot evidence until that
 test is performed.
+
+### Simulator automation
+
+The daemon enables XcodeBuildMCP's `session-management`, `simulator`, and
+`ui-automation` workflows so leased turns expose both lifecycle and UI-driving tools.
+Simulator automation runs from the system launchd domain, so the daemon remains
+a LaunchDaemon. Run the mutating `daemonctl sim-preflight` before enabling the
+capability, or while the daemon is stopped, to confirm the golden-device and
+full simulator round trip without an interactive session. After a restart with
+the capability available, the command is report-only and prints that the probe
+was skipped so it cannot race the pool cloning the golden. If the pre-enable
+probe fails with a session-binding error, log in once, re-run it, and record a
+console session as a host requirement; that result reopens the LaunchAgent
+design as a new item.
+Classic automatic login is unavailable while FileVault is enabled, so it is
+not configured.
 
 ### Supply-chain posture
 

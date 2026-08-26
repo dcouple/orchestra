@@ -84,17 +84,21 @@ an unaddressed `[NEEDS CLARIFICATION]` marker.
 downstream consequence radius, never diff size; escalator surfaces force
 zone ≤ 1 — and confirm it with the user; the user's override is always
 honored. It goes in the item metadata and tells `/do` how thorough to be
-in review. Offer the other two dials with it: `review_lanes: dual | single`
+in review. Offer the other three dials with it: `review_lanes: dual | single`
 (review defaults are dual at zone 0, single Codex at zones 1–3) and
 `frontend_verifier: true | false` (whether the app-driving QA agent runs —
-the user's call even when UI criteria exist). Both override the zone's
+the user's call even when UI criteria exist), and `ios_testing: required | optional`
+(propose `required` when mobile UI acceptance criteria must be guaranteed,
+otherwise `optional`). All override the zone's
 defaults in either direction, ride to the tracker with the item, and stay
-editable there as metadata until `/do` runs.
+editable there as metadata until `/do` runs. Apply the conflict rule in
+`.references/html-brief.md`: never propose `ios_testing: required` together
+with `frontend_verifier: false`.
 
 **Success criteria**: the user has explicitly agreed to intent, end state, each
 locked direction (including the compatibility stance when behavior is
-replaced), the three dials (zone, and any `review_lanes` /
-`frontend_verifier` override), the out-of-scope list, and every
+replaced), the four dials (zone, and any `review_lanes` /
+`frontend_verifier` / `ios_testing` override), the out-of-scope list, and every
 dependency's verified/assumed standing including the schema delta.
 
 **Bug track** — take stock of the investigation. Check what the conversation

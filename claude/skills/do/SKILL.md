@@ -184,6 +184,17 @@ These preflight items are only checkable now that the item is loaded:
   `mcp__playwright__browser_close`. Classify MCP startup/connection, Chrome
   launch, and target-application reachability as separate prerequisite
   failures. None may fall back to scripts/logs as browser evidence.
+- Read `ios_testing` (`optional` by default). When it is `required`, run
+  the metadata conflict rule from `.references/html-brief.md` first: if
+  `frontend_verifier: false`, stop with `ios_testing: required needs the
+  frontend verifier; frontend_verifier: false contradicts it — fix the item
+  metadata`. Otherwise run
+  `orchestra-sim status` and call `mcp__xcodebuildmcp__list_sims`;
+  `orchestra-sim status` is the non-mutating readiness check, so exit 0 means
+  the configured golden is present and shut down and the pool is reconciled.
+  If either check fails, stop with `simulator prerequisite failed:` naming
+  the missing `orchestra-sim` or XcodeBuildMCP half, never “unverified.” When
+  optional, note which halves are available and continue.
 
 - Read the item's **Dependencies & mechanics** section when present and
   check each listed dependency; a dependency the brief marks `assumed` gets
@@ -252,7 +263,7 @@ outranks the zone's lane dial, and an explicit
 `frontend_verifier: true | false` outranks the zone's verifier dial — both
 are the human's settings, made at capture or edited later as item metadata
 on the tracker (Step 0's pull picks up tracker edits); record
-`frontend_verifier` in `plan.md`'s frontmatter alongside the lanes. You may escalate the effective zone one notch toward 0 with the
+`frontend_verifier` and `ios_testing` (`optional` when absent) in `plan.md`'s frontmatter alongside the lanes. You may escalate the effective zone one notch toward 0 with the
 reason recorded in `plan.md`'s frontmatter; never de-escalate — that's the
 human's call at capture, or the table's via postmortem evidence. Item
 missing a zone → classify it yourself from stakes and downstream
@@ -415,6 +426,10 @@ service the verification needs alive runs detached (nohup + pidfile under
 timeout — a reaped server poisons the next boot with orphans. Tear down
 the recorded pids explicitly, and when freeing ports kill only pids
 enumerated before the next launch.
+
+An implementer touching a mobile surface may use `orchestra-sim acquire` to
+check its work and must `orchestra-sim release <udid>` when finished. Mobile
+UI acceptance criteria are deferred to the single QA drive like web UI ACs.
 
 **Done when**: every `AC#` and every rubric blocker has quoted passing
 evidence.
@@ -580,6 +595,11 @@ comment) before ending.
   wrap-up, never claimed passed. When the
   app is needed, apply Step 0's launch rule; the frontend-verifier dispatch
   carries the `AGENTS.md`-sourced launch command, flags, port/URL, and env.
+  When `ios_testing: required`, the verifier must acquire a device with
+  `orchestra-sim acquire`, drive every mobile AC, finalize the simulator
+  `evidence-manifest.json`, and release the lease before reporting. When it
+  is optional and a mobile surface changed, tell the verifier to acquire a
+  device whenever it would help.
   The dispatch also carries the QA-drive contract: map every touched surface
   and user journey to **ordered,
   step-named captures** (`01-<journey>-<state>.png`) covering meaningful
@@ -667,6 +687,11 @@ comment) before ending.
   body and evidence comment and confirm every expected asset is present.
   Compare `git status --short` afterward byte-for-byte with the saved value;
   any delta fails QA publication because evidence must never enter the repo.
+  A simulator manifest is accepted equivalently only when it has
+  `status: "completed"`, `kind: "ios-simulator"`, the current turn id from
+  `ORCHESTRA_SIM_CONTEXT`, absolute paths beneath that lease's `evidenceDir`,
+  no older-lease files, and quoted proof the lease was released before the
+  report.
 - After the loop and QA, post surviving Should Fix / Nice to Have findings
   as line-anchored inline PR comments (`gh api` reviews, event `COMMENT` —
   never `REQUEST_CHANGES`: the loop owns Must Fix, and capped survivors are

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { EventLog } from "../src/eventlog.js";
+import { SimCapacityError, SimTurnLimitError } from "../src/sim.js";
 
 const dirs: string[] = [];
 function path(): string {
@@ -32,6 +33,19 @@ function event(overrides: Record<string, unknown> = {}) {
 }
 
 describe("EventLog", () => {
+  it("persists simulator leases across reopen and atomically enforces limits", () => {
+    const db = path(); let log = new EventLog(db);
+    log.append(event()); const turn = log.claimNextTurn(1000)!;
+    const first = log.reserveSimLease(turn.id, turn.linearSessionId, 2, 1000);
+    log.attachSimDevice(first.id, "UDID-1"); log.markSimLeaseBooted(first.id, "/evidence/1", 1001);
+    const second = log.reserveSimLease(turn.id, turn.linearSessionId, 2, 1002);
+    expect(() => log.reserveSimLease(turn.id, turn.linearSessionId, 5, 1003)).toThrow(SimTurnLimitError);
+    expect(() => log.reserveSimLease(999, "other", 2, 1003)).toThrow(SimCapacityError);
+    log.attachSimDevice(second.id, "UDID-2"); log.close(); log = new EventLog(db);
+    expect(log.openSimLeases()).toHaveLength(2);
+    expect(log.simLeaseByUdid("UDID-1")).toMatchObject({ state: "booted", evidenceDir: "/evidence/1" });
+    expect(log.turnIsRunning(turn.id)).toBe(true); log.close();
+  });
   it("atomically appends an event and pending ack, then deduplicates redelivery", () => {
     const log = new EventLog(path());
     expect(log.append(event()).inserted).toBe(true);

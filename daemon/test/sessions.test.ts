@@ -38,6 +38,7 @@ import {
   readCliproxyApiKey,
   readCliproxyManagementKey,
 } from "../src/proxy-env.js";
+import { SimPool, Simctl, type SimCapabilityResult } from "../src/sim.js";
 const dirs: string[] = [];
 const oldMode = process.env.CLAUDE_FAKE_MODE;
 const oldArgs = process.env.CLAUDE_FAKE_ARGS_FILE;
@@ -158,6 +159,13 @@ function setup() {
     linearApiKey: "linear-key",
     attachmentsEnabled: false,
     attachmentHosts: ["uploads.linear.app"],
+    iosSimEnabled: false,
+    xcodebuildMcpBin: process.execPath,
+    iosSimDeveloperDir: "/Applications/Xcode.app/Contents/Developer",
+    iosSimMaxConcurrent: 2,
+    iosSimIdleTimeoutMs: 900_000,
+    iosSimReaperIntervalMs: 60_000,
+    simctlArgv: [process.execPath],
   };
   writeFileSync(
     config.cliproxyEnvFile,
@@ -444,22 +452,62 @@ describe("SessionWorker", () => {
     process.env.CLAUDE_FAKE_MODE = "browser-relaunch";
     process.env.CLAUDE_FAKE_ENV_FILE = join(dir, "browser-env.jsonl");
     Object.assign(config, { browserEnabled: true, playwrightMcpBin: process.execPath, playwrightChromeBin: process.execPath,
-      browserAttemptTimeoutMs: 5000, artifactsDir: join(dir, "artifacts") });
+      browserAttemptTimeoutMs: 5000, artifactsDir: join(dir, "artifacts"), iosSimEnabled: true });
+    const capability: SimCapabilityResult = { available: true, goldenUdid: "golden", goldenName: "golden",
+      runtimeId: "runtime", deviceTypeId: "type" };
+    const pool = new SimPool(log, new Simctl(config.simctlArgv, { DEVELOPER_DIR: config.iosSimDeveloperDir }), config, capability);
     appendImplementer(log, "browser", "browser-session");
-    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger }); await worker.start();
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger,
+      sim: { pool, capability, baseUrl: "http://127.0.0.1:8787" } }); await worker.start();
     await waitFor(() => ["done", "failed"].includes(log.turnStates()[0]?.status ?? ""));
     expect(log.turnStates()[0]?.status, JSON.stringify(logger.entries())).toBe("done");
     expect(log.getSession("browser-session")).toMatchObject({ browserRequired: 1, browserRunId: expect.any(String) });
-    const rows = readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line).env);
+    const records = readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    const rows = records.map(record => record.env);
     expect(rows).toHaveLength(2);
     expect(rows[0].ORCHESTRA_BROWSER_REQUEST_FILE).toBeTruthy();
     expect(rows[0].ORCHESTRA_BROWSER_EVIDENCE_DIR).toBeUndefined();
     expect(rows[1]).toMatchObject({ ORCHESTRA_BROWSER_RUN_ID: expect.any(String), ORCHESTRA_BROWSER_ATTEMPT_ID: expect.stringMatching(/^attempt-/) });
     expect(rows[1].ORCHESTRA_BROWSER_REQUEST_FILE).toBeUndefined();
+    expect(records[0].mcpConfig.mcpServers.xcodebuildmcp.args).toEqual(["mcp"]);
+    expect(records[0].mcpConfig.mcpServers.xcodebuildmcp.env.XCODEBUILDMCP_ENABLED_WORKFLOWS)
+      .toBe("session-management,simulator,ui-automation");
+    expect(records[1].mcpConfig.mcpServers).toMatchObject({ xcodebuildmcp: expect.any(Object), playwright: expect.any(Object) });
     expect(existsSync(rows[1].ORCHESTRA_BROWSER_STATE_DIR)).toBe(false);
     expect(existsSync(rows[1].ORCHESTRA_BROWSER_EVIDENCE_DIR)).toBe(true);
     expect(logger.entries().filter(entry => entry.event === "browser_relaunch_required")).toHaveLength(1);
     await worker.stop(); log.close();
+  });
+  it("attaches simulator MCP and context according to the start-time capability", async () => {
+    for (const state of ["available", "unavailable", "disabled"] as const) {
+      const { log, config, dir } = setup(); const poster = new Poster(); const logger = new CapturingLogger();
+      process.env.CLAUDE_FAKE_ENV_FILE = join(dir, `${state}-sim-env.jsonl`);
+      config.artifactsDir = join(dir, "artifacts"); config.iosSimEnabled = state !== "disabled";
+      const capability: SimCapabilityResult = state === "available"
+        ? { available: true, goldenUdid: "golden", goldenName: "golden", runtimeId: "runtime", deviceTypeId: "type" }
+        : { available: false, kind: state === "disabled" ? "disabled" : "golden_unavailable", message: state };
+      const pool = new SimPool(log, new Simctl(config.simctlArgv, { DEVELOPER_DIR: config.iosSimDeveloperDir }), config, capability);
+      append(log, `sim-${state}`, `sim-${state}-session`, "created");
+      const worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20, logger,
+        ...(state !== "disabled" ? { sim: { pool, capability, baseUrl: "http://127.0.0.1:8787" } } : {}) });
+      await worker.start(); await waitFor(() => log.turnStates()[0]?.status === "done"); await worker.stop();
+      const record = JSON.parse(readFileSync(process.env.CLAUDE_FAKE_ENV_FILE, "utf8").trim());
+      if (state === "available") {
+        expect(record.mcpConfig.mcpServers.xcodebuildmcp.args).toEqual(["mcp"]);
+        expect(record.mcpConfig.mcpServers.xcodebuildmcp.env.XCODEBUILDMCP_ENABLED_WORKFLOWS)
+          .toBe("session-management,simulator,ui-automation");
+        expect(record.env.DEVELOPER_DIR).toBe(config.iosSimDeveloperDir);
+      } else { expect(record.mcpConfig.mcpServers.xcodebuildmcp).toBeUndefined(); expect(record.env.DEVELOPER_DIR).toBeUndefined(); }
+      if (state === "disabled") expect(record.env.ORCHESTRA_SIM_CONTEXT).toBeUndefined();
+      else {
+        expect(record.env.ORCHESTRA_SIM_CONTEXT).toBeTruthy();
+        const context = JSON.parse(readFileSync(record.env.ORCHESTRA_SIM_CONTEXT, "utf8"));
+        expect(context).toMatchObject({ turnId: 1, linearSessionId: `sim-${state}-session`, baseUrl: "http://127.0.0.1:8787",
+          token: expect.any(String) });
+        expect(pool.authorize(1, context.token)).toBe(false);
+      }
+      log.close();
+    }
   });
   it.each([["crash", 5000], ["hang", 400]])("removes browser state but retains evidence after %s", async (mode, timeout) => {
     const { log, config, dir } = setup(); const poster = new Poster();

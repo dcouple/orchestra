@@ -114,6 +114,10 @@ check_artifact "$MACOS_DIR/run-cliproxyapi.sh" /usr/local/sbin/run-cliproxyapi.s
 check_artifact "$MACOS_DIR/run-cloudflared.sh" /usr/local/sbin/run-cloudflared.sh root:wheel 0755
 check_artifact "$MACOS_DIR/deploy.sh" /usr/local/sbin/deploy.sh root:wheel 0755
 check_artifact "$MACOS_DIR/daemonctl" /usr/local/sbin/daemonctl root:wheel 0755
+check_artifact "$MACOS_DIR/orchestra-sim" /usr/local/bin/orchestra-sim root:wheel 0755
+xcodebuildmcp_wrapper="$RENDER_DIR/xcodebuildmcp"
+printf '#!/bin/sh\nexec %s/.pnpm/bin/xcodebuildmcp "$@"\n' "$HOME_DIR" > "$xcodebuildmcp_wrapper"
+check_artifact "$xcodebuildmcp_wrapper" /usr/local/bin/xcodebuildmcp root:wheel 0755
 check_artifact "$SOURCE_DIR/ops/wait-for-daemon-health.sh" /usr/local/sbin/wait-for-daemon-health.sh root:wheel 0755
 check_artifact "$SOURCE_DIR/ops/codex-otel-wrapper.sh" /usr/local/bin/codex root:wheel 0755
 check_artifact "$SOURCE_DIR/ops/claudex" "$HOME_DIR/.local/bin/claudex" "$DAEMON_SERVICE_USER:staff" 0750
