@@ -56,7 +56,8 @@ describe("references/linear-agent-sessions.md matches the daemon", () => {
     expect(eventlog).toContain("AND NOT EXISTS (SELECT 1 FROM turns active WHERE active.issue_id=t.issue_id AND active.status='running')");
     expect(sessions).toContain("this.active.size < this.config.sessionConcurrency");
     expect(contract).toContain("two turns on the same issue never overlap");
-    expect(contract).toContain("`SESSION_CONCURRENCY` turns at once");
+    expect(contract).toContain("`SESSION_CONCURRENCY` turns at once (default 5)");
+    expect(config).toMatch(/"SESSION_CONCURRENCY",\s*5\)/);
   });
 
   it("names the restart-recovery notices' shared stem that eventlog.ts posts as durable errors", () => {

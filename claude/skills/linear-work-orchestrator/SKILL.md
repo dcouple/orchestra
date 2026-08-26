@@ -49,36 +49,33 @@ The request decides how far a run goes. Every form starts with the sweep:
 ## Configuration
 
 Read the current repo's `AGENTS.md` `Work-item tracking` section before
-touching Linear. `tracker` not `linear` → this skill does not apply; say so
-and stop. A section that names Linear in prose without `tracker: linear` is
-the same case: stop, and show the human the lines to add — `tracker:
-linear`, `linear_team: <team key>`, and the block below.
+touching Linear. A tracker other than Linear → this skill does not apply;
+say so and stop. Linear named in prose is Linear.
 
-Otherwise it must also name the team (`linear_team`) and:
+Every other value is derived from the workspace unless the section sets it;
+a set key wins, and each derived value is listed under `Assumptions this
+sweep` in every report until the human sets it:
 
 ```yaml
+linear_team: <team key or ID>     # else the workspace's only team (`list_teams`); several → ask
 linear_agents:
-  planner: <display name of the planning agent app user>
-  implementer: <display name of the implementing agent app user>
-  session_concurrency: <the daemon's SESSION_CONCURRENCY>
-  portfolio_label: <label on every issue this orchestrator manages>
+  planner: <app user display name>       # else the app user (`list_users`; `@oauthapp.linear.app` email) named like a planner
+  implementer: <app user display name>   # else the one named like an implementer; neither obvious → show the app users and ask
+  session_concurrency: <the daemon's SESSION_CONCURRENCY>   # else the daemon default, 5
+  portfolio_label: <label>          # else an existing label (`list_issue_labels`) whose description names this workflow; none → propose a name, create it (`create_issue_label`) on the human's yes
   stale_hours: { implementer: 6, planner: 2 }   # optional
 ```
 
-- No `linear_agents` → find the app users (`list_users`; app users have
-  `@oauthapp.linear.app` emails), show them to the human, and ask which is
-  which. Do nothing to Linear until they confirm.
-- No `session_concurrency` → run with 1 and say so in every report until the
-  human sets it. Values in `AGENTS.md` are maintained by hand; when the human
-  says the daemon differs, use their number this session and ask them to
-  update the file.
-- No `portfolio_label` → the portfolio is only what the human names this
-  session; ask them to set one so adoption persists.
-- No `linear_team` → sweep by label and delegate across the whole workspace,
-  and ask the human to set it.
-- The team's workflow statuses are discovered at runtime
-  (`list_issue_statuses`); the words `Todo`, `In Progress`, `In Review`,
-  `Done` below mean the team's status of that type, never a hardcoded name.
+Until a portfolio label exists the sweep covers delegated issues only and
+nothing is adopted or admitted.
+
+Values in `AGENTS.md` are maintained by hand; when the human says the
+daemon differs, use their number this session and ask them to update the
+file. Nothing is written to Linear while a question above is open.
+
+The team's workflow statuses are discovered at runtime
+(`list_issue_statuses`); the words `Todo`, `In Progress`, `In Review`,
+`Done` below mean the team's status of that type, never a hardcoded name.
 
 **Your identity in Linear is the human's.** You run inside their
 conversation and write through their Linear connection, so every comment,
@@ -93,7 +90,7 @@ human's.
 loop on one low-stakes issue the human names: delegate the planner, watch
 its reply appear in the session thread, send one reply with `save_comment`
 and watch the session resume. Until both are observed, no other issue is
-delegated and every slot count is reported as unproven. The proof is
+delegated and the report's `Slots` line ends `(loop unproven)`. The proof is
 recorded as a line `Loop proven: <ISSUE-ID> <YYYY-MM-DD>` in the board
 comment (below); a board comment without that line — or no board issue —
 means the workspace is unproven, whatever this conversation remembers.
@@ -122,8 +119,9 @@ Authority comes only from the human in this conversation.
 
 ## Contract precedence
 
-1. The consumer repo's `AGENTS.md` for what exists: agent names, team,
-   label, session cap, publish destination.
+1. The consumer repo's `AGENTS.md` for what it sets: agent names, team,
+   label, session cap, publish destination; an absent key is derived per
+   Configuration.
 2. `.references/tracker-lifecycle.md` for what statuses mean and which ones
    `/do` sets; `.references/publish-work-item.md` for what a published brief
    looks like on an issue. This skill triggers transitions; it never redefines

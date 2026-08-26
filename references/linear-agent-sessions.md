@@ -3,8 +3,9 @@
 Used by `/linear-work-orchestrator`. What the Linear agent daemon's sessions
 look like from inside Linear, what each action on them costs, and how to read
 their state through the Linear MCP alone. Agent display names come from the
-consumer repo's `AGENTS.md` (`linear_agents:` under `Work-item tracking`);
-`<planner>` and `<implementer>` below stand for those names.
+consumer repo's `AGENTS.md` (`linear_agents:` under `Work-item tracking`) or
+are derived from the workspace's app users; `<planner>` and `<implementer>`
+below stand for those names.
 
 ## How work starts and resumes
 
@@ -115,8 +116,8 @@ silence in the thread is not evidence of death inside the horizon.
 ## What every action costs
 
 - **Every turn shares one global cap.** The daemon runs at most
-  `SESSION_CONCURRENCY` turns at once, counting new sessions and replies
-  alike, planner and implementer alike. There is no per-agent cap.
+  `SESSION_CONCURRENCY` turns at once (default 5), counting new sessions and
+  replies alike, planner and implementer alike. There is no per-agent cap.
 - **FIFO by arrival among eligible turns, serialized per issue.** The daemon
   starts the oldest pending turn whose issue has nothing running or pending
   ahead of it; two turns on the same issue never overlap (a planner turn and
