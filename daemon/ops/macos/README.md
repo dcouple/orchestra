@@ -156,6 +156,21 @@ physically near the machine; `RunAtLoad` and `KeepAlive` provide the intended
 no-login startup behavior but are not claimed as reboot evidence until that
 test is performed.
 
+### Simulator automation
+
+Simulator automation was verified on 2026-08-26 from a daemon-spawned turn in
+the system launchd domain (`launchctl managername` reported `System`), with no
+GUI session for the service account and other accounts logged in at the
+console, so the daemon remains a LaunchDaemon. Restart acceptance remains a
+deferred round-trip: restart through the documented wrapper and, before anyone
+logs in at the GUI, run `sim-context-probe.sh` as the service account against
+the stock device. A pass confirms that no manual step beyond the FileVault
+credential is required. If it fails with a session-binding error, log in once
+(Screen Sharing suffices), re-run the probe, and record a console session as a
+host requirement; that result reopens the LaunchAgent design as a new item.
+Classic automatic login is unavailable while FileVault is enabled, so it is
+not configured.
+
 ### Supply-chain posture
 
 The Claude, Codex, pnpm, and Homebrew installers are fetched over TLS without

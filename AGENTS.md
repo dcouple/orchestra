@@ -26,7 +26,7 @@ pnpm typecheck
 pnpm build
 pnpm test
 bash -n ops/provision.sh ops/daemonctl ops/wait-for-daemon-health.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh ops/codex-live-setup.sh
-bash -n ops/macos/provision.sh ops/macos/deploy.sh ops/macos/daemonctl ops/macos/daemon-site-lib.sh ops/macos/run-daemon.sh ops/macos/run-cliproxyapi.sh ops/macos/run-cloudflared.sh
+bash -n ops/macos/provision.sh ops/macos/deploy.sh ops/macos/daemonctl ops/macos/daemon-site-lib.sh ops/macos/run-daemon.sh ops/macos/run-cliproxyapi.sh ops/macos/run-cloudflared.sh ops/macos/sim-context-probe.sh
 ```
 
 ## Live daemon diagnostics

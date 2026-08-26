@@ -110,6 +110,10 @@ machines/mac-mini/bin/mini-update
 Both allocate a TTY and let `fdesetup` prompt directly. They do not read or
 store the FileVault credential themselves.
 
+After a restart, run the daemon's simulator probe before any GUI login; see
+`daemon/ops/macos/README.md` under "Simulator automation" for the acceptance
+round-trip.
+
 ## Layout
 
 - `apply.sh` — idempotent Mini configuration.
