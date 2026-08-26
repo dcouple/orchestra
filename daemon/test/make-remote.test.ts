@@ -30,7 +30,7 @@ raise SystemExit(result.returncode)
 PY
 `);
     const repo = resolve("..");
-    const run = (target: string, variables: string[]) => spawnSync("make", [target, `DAEMON_SSH=${ssh}`, ...variables], {
+    const run = (target: string, variables: string[]) => spawnSync("make", [target, `DAEMON_SSH=${ssh}`, "DAEMON_SSH_HOST=example-host", ...variables], {
       cwd: repo,
       env: { ...process.env },
       encoding: "utf8",
@@ -43,7 +43,7 @@ PY
     expect(restart.status, restart.stderr).toBe(0);
     expect(daemonctlArgv()).toEqual(["/usr/local/sbin/daemonctl", "restart", "--reason", reason]);
     expect(sshArgv()).toEqual([
-      "-t", "bloomi", expect.stringContaining("/usr/local/sbin/daemonctl restart --reason"),
+      "-t", "example-host", expect.stringContaining("/usr/local/sbin/daemonctl restart --reason"),
     ]);
     expect(existsSync(localSentinel)).toBe(false);
     expect(existsSync(remoteSentinel)).toBe(false);
@@ -66,4 +66,12 @@ PY
     expect(existsSync(localSentinel)).toBe(false);
     expect(existsSync(remoteSentinel)).toBe(false);
   }, 15_000);
+
+  it("refuses to run without DAEMON_SSH_HOST", () => {
+    const result = spawnSync("make", ["daemon-status", "DAEMON_SSH=/usr/bin/false"], {
+      cwd: resolve(".."), env: { ...process.env, DAEMON_SSH_HOST: "" }, encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("DAEMON_SSH_HOST is required");
+  });
 });

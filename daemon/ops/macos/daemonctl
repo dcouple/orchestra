@@ -13,11 +13,14 @@ usage: daemonctl config --planner claude|claudex --implementer claude|claudex [-
        daemonctl subscriptions list|add|remove|reauth ... [--dry-run]
        daemonctl --help
 
-Config, restart, and reload execute synchronously as linearagent. Reload never pulls.
+Config, restart, and reload execute synchronously as the service user. Reload never pulls.
 EOF
 }
 
-HOME_DIR=${LINEAR_AGENT_HOME:-/Users/linearagent}
+# shellcheck source=daemon-site-lib.sh
+. "${DAEMON_SITE_LIB:-/usr/local/sbin/daemon-site-lib.sh}"
+load_site_env || exit 78
+HOME_DIR=${LINEAR_AGENT_HOME:-$DAEMON_SERVICE_HOME}
 STATE_DIR=${DAEMONCTL_STATE_DIR:-$HOME_DIR/.local/state/linear-agent-operations}
 ENV_FILE=${DAEMONCTL_ENV_FILE:-$HOME_DIR/.config/linear-agent-daemon/env}
 SOURCE_CHECKOUT=${DAEMONCTL_SOURCE_CHECKOUT:-$HOME_DIR/orchestra-source}
@@ -37,16 +40,16 @@ MAINTENANCE_LOCK=$STATE_DIR/maintenance.lock
 
 die() { echo "$*" >&2; exit 1; }
 usage_error() { echo "$*" >&2; usage >&2; exit 2; }
-require_user() { [[ $(id -un) == linearagent || ${DAEMONCTL_ALLOW_OTHER_USER:-0} == 1 ]] || die "run as linearagent (sudo -u linearagent -i daemonctl ...)"; }
+require_user() { [[ $(id -un) == "$DAEMON_SERVICE_USER" || ${DAEMONCTL_ALLOW_OTHER_USER:-0} == 1 ]] || die "run as $DAEMON_SERVICE_USER (sudo -u $DAEMON_SERVICE_USER -i daemonctl ...)"; }
 validate_harness() { [[ $1 == claude || $1 == claudex ]] || usage_error "harness must be claude or claudex"; }
 validate_reason() { [[ $1 != *$'\n'* && ${#1} -le 240 ]] || usage_error "reason must be one line of at most 240 characters"; }
 ops_cli() { DB_PATH="$DB_PATH" "$NODE_BIN" "$OPS_CLI" "$@"; }
 fault_after() { [[ ${DAEMONCTL_FAULT_AFTER:-} == "$1" ]] || return 0; echo "fixture crash after $1" >&2; exit 99; }
 health_accept() {
-  sudo /bin/launchctl print system/com.dcouple.linear-agent-daemon 2>/dev/null | grep -q 'state = running' || return 1
+  sudo /bin/launchctl print "system/$DAEMON_LABEL" 2>/dev/null | grep -q 'state = running' || return 1
   CURL_BIN=curl SLEEP_BIN=sleep bash "$HEALTH_WAITER" "$HEALTH_URL"
 }
-service_pid() { sudo /bin/launchctl print system/com.dcouple.linear-agent-daemon 2>/dev/null | awk '/pid =/{print $3; exit}'; }
+service_pid() { sudo /bin/launchctl print "system/$DAEMON_LABEL" 2>/dev/null | awk '/pid =/{print $3; exit}'; }
 marker_value() {
   [[ -f $1 ]] || { echo missing; return; }
   local value; value=$(<"$1")
@@ -102,7 +105,7 @@ PY
   [[ -z $pending_id ]] || print_operation_recovery "$pending_id"
 }
 transition() { ops_cli transition "$@" >/dev/null; }
-restart_service() { sudo /bin/launchctl kickstart -k system/com.dcouple.linear-agent-daemon; }
+restart_service() { sudo /bin/launchctl kickstart -k "system/$DAEMON_LABEL"; }
 release_maintenance_lock() {
   [[ ${MAINTENANCE_LOCK_OWNED:-0} == 1 ]] || return 0
   if [[ -d $MAINTENANCE_LOCK && $(cat "$MAINTENANCE_LOCK/pid" 2>/dev/null || true) == "$$" ]]; then
@@ -448,7 +451,7 @@ command_top_once() {
   echo "host_load: $(uptime | sed 's/^ *//')"
   echo "cpu_memory:"; ps -A -o pcpu,pmem,pid,ppid,comm -r | head -n 8
   echo "services:"
-  for label in com.dcouple.linear-agent-daemon com.dcouple.cliproxyapi; do sudo /bin/launchctl print "system/$label" 2>/dev/null | awk -v l="$label" '/state =|pid =/{print l ": " $0}' || echo "$label: unavailable"; done
+  for label in "$DAEMON_LABEL" "$PROXY_LABEL"; do sudo /bin/launchctl print "system/$label" 2>/dev/null | awk -v l="$label" '/state =|pid =/{print l ": " $0}' || echo "$label: unavailable"; done
   echo "logs:"; tail -n 5 "$HOME_DIR/Library/Logs/linear-agent-daemon.log" 2>/dev/null || true
   echo "disk:"; df -h "$STATE_DIR" 2>/dev/null | awk 'NR<=2'
   echo "running_turns: $(ops_cli running | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"

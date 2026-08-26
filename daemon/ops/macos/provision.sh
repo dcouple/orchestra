@@ -6,17 +6,22 @@ usage() {
   cat <<'EOF'
 Provision the Linear webhook daemon on an Apple Silicon Mac.
 
-Usage: provision.sh [--dry-run] [source-daemon-dir]
+Usage: provision.sh [--dry-run] [--site FILE] [source-daemon-dir]
 
-  --dry-run  Inspect managed state without changing files, packages, or services.
+  --dry-run    Inspect managed state without changing files, packages, or services.
+  --site FILE  Site config to install (see site.env.example). Required on the
+               first run; later runs read the installed copy at
+               /usr/local/etc/linear-agent-daemon/site.env.
 EOF
 }
 
 DRY_RUN=0
 SOURCE_ARG=
+SITE_ARG=
 while (( $# )); do
   case $1 in
     --dry-run) DRY_RUN=1 ;;
+    --site) [[ $# -ge 2 ]] || { echo "--site needs a file" >&2; exit 2; }; SITE_ARG=$2; shift ;;
     --help|-h) usage; exit 0 ;;
     -*) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
     *) [[ -z $SOURCE_ARG ]] || { echo "only one source directory is allowed" >&2; exit 2; }; SOURCE_ARG=$1 ;;
@@ -28,8 +33,24 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SOURCE_DIR=${SOURCE_ARG:-$(cd "$SCRIPT_DIR/../.." && pwd)}
 [[ -f $SOURCE_DIR/package.json && -d $SOURCE_DIR/ops ]] || { echo "invalid daemon source: $SOURCE_DIR" >&2; exit 1; }
 
-AGENT=linearagent
-AGENT_HOME=/Users/linearagent
+SITE_INSTALLED=/usr/local/etc/linear-agent-daemon/site.env
+# shellcheck source=daemon-site-lib.sh
+. "$SCRIPT_DIR/daemon-site-lib.sh"
+if [[ -n $SITE_ARG ]]; then
+  DAEMON_SITE_ENV=$(cd "$(dirname "$SITE_ARG")" && pwd)/$(basename "$SITE_ARG")
+else
+  DAEMON_SITE_ENV=$SITE_INSTALLED
+fi
+load_site_env || exit 78
+# Templates render once into RENDER_DIR; the script resets EXIT traps as it
+# goes, so cleanup is explicit (fail and the two exits).
+RENDER_DIR=$(mktemp -d)
+render_site_templates "$RENDER_DIR" || { rm -rf "$RENDER_DIR"; exit 1; }
+
+AGENT=$DAEMON_SERVICE_USER
+AGENT_HOME=$DAEMON_SERVICE_HOME
+SUDOERS_INSTALLED=/etc/sudoers.d/linear-agent-daemon-services
+PATHS_D_INSTALLED=/etc/paths.d/linear-agent-daemon
 CONFIG_DIR=$AGENT_HOME/.config/linear-agent-daemon
 OPS_STATE=$AGENT_HOME/.local/state/linear-agent-operations
 CHECKOUT=$AGENT_HOME/orchestra-source
@@ -49,7 +70,7 @@ STATUS_NAMES=()
 STATUS_VALUES=()
 
 record() { STATUS_NAMES+=("$1"); STATUS_VALUES+=("$2"); }
-fail() { echo "ERROR: $*" >&2; exit 1; }
+fail() { echo "ERROR: $*" >&2; rm -rf "${RENDER_DIR:-}"; exit 1; }
 print_summary() {
   local i
   printf '\n%-30s %s\n' SETTING STATUS
@@ -148,38 +169,39 @@ dry_inventory() {
     tunnel_id=$(basename "$tunnel_credentials" .json)
     if [[ $tunnel_id =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
       config_tmp=$(mktemp)
-      sed "s|@TUNNEL_ID@|$tunnel_id|g" "$SCRIPT_DIR/cloudflared-config.yml" > "$config_tmp"
+      sed "s|@TUNNEL_ID@|$tunnel_id|g" "$RENDER_DIR/cloudflared-config.yml" > "$config_tmp"
       file_correct "$config_tmp" "$CLOUDFLARED_CONFIG" 0600 "$AGENT" staff && status=already-correct || status=would-apply
       rm -f "$config_tmp"
       record cloudflared-config "$status"
-    else record cloudflared-config 'pending-human: create tunnel as linearagent'
+    else record cloudflared-config "pending-human: create tunnel as $AGENT"
     fi
-  else record cloudflared-config 'pending-human: create tunnel as linearagent'
+  else record cloudflared-config "pending-human: create tunnel as $AGENT"
   fi
   sudo test -d "$CHECKOUT/.git" && record source-checkout already-correct || record source-checkout would-apply
-  file_correct "$SCRIPT_DIR/sudoers-linearagent-services" /etc/sudoers.d/linearagent-services 0440 root wheel && record sudoers already-correct || record sudoers would-apply
+  file_correct "$DAEMON_SITE_ENV" "$SITE_INSTALLED" 0644 root wheel && record site-config already-correct || record site-config would-apply
+  file_correct "$RENDER_DIR/sudoers" "$SUDOERS_INSTALLED" 0440 root wheel && record sudoers already-correct || record sudoers would-apply
   paths_tmp=$(mktemp); printf '/usr/local/sbin\n' > "$paths_tmp"
-  file_correct "$paths_tmp" /etc/paths.d/dcouple 0644 root wheel && record paths-d already-correct || record paths-d would-apply
+  file_correct "$paths_tmp" "$PATHS_D_INSTALLED" 0644 root wheel && record paths-d already-correct || record paths-d would-apply
   rm -f "$paths_tmp"
-  for spec in "com.dcouple.linear-agent-daemon.plist:/Library/LaunchDaemons/com.dcouple.linear-agent-daemon.plist:0644" "com.dcouple.cliproxyapi.plist:/Library/LaunchDaemons/com.dcouple.cliproxyapi.plist:0644" "com.dcouple.cloudflared.plist:/Library/LaunchDaemons/com.dcouple.cloudflared.plist:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755"; do
-    source=$SCRIPT_DIR/${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
-    if [[ $(basename "$destination") == com.dcouple.cloudflared.plist ]] && ! cloudflared_config_credential_exists; then
-      status='pending-human: create tunnel as linearagent'
+  for spec in "$RENDER_DIR/$DAEMON_LABEL.plist:/Library/LaunchDaemons/$DAEMON_LABEL.plist:0644" "$RENDER_DIR/$PROXY_LABEL.plist:/Library/LaunchDaemons/$PROXY_LABEL.plist:0644" "$RENDER_DIR/$TUNNEL_LABEL.plist:/Library/LaunchDaemons/$TUNNEL_LABEL.plist:0644" "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755"; do
+    source=${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
+    if [[ $(basename "$destination") == "$TUNNEL_LABEL.plist" ]] && ! cloudflared_config_credential_exists; then
+      status="pending-human: create tunnel as $AGENT"
     else
       file_correct "$source" "$destination" "${spec##*:}" root wheel && status=already-correct || status=would-apply
     fi
     record "file-$(basename "$destination")" "$status"
   done
-  sudo /bin/launchctl print system/com.dcouple.cliproxyapi >/dev/null 2>&1 && record service-cliproxyapi already-correct || record service-cliproxyapi would-apply
-  sudo /bin/launchctl print system/com.dcouple.linear-agent-daemon >/dev/null 2>&1 && record service-daemon already-correct || record service-daemon would-apply
+  sudo /bin/launchctl print "system/$PROXY_LABEL" >/dev/null 2>&1 && record service-cliproxyapi already-correct || record service-cliproxyapi would-apply
+  sudo /bin/launchctl print "system/$DAEMON_LABEL" >/dev/null 2>&1 && record service-daemon already-correct || record service-daemon would-apply
   if cloudflared_config_credential_exists; then
-    sudo /bin/launchctl print system/com.dcouple.cloudflared >/dev/null 2>&1 && record service-com.dcouple.cloudflared already-correct || record service-com.dcouple.cloudflared would-apply
-  else record service-com.dcouple.cloudflared 'pending-human: create tunnel as linearagent'
+    sudo /bin/launchctl print "system/$TUNNEL_LABEL" >/dev/null 2>&1 && record service-cloudflared already-correct || record service-cloudflared would-apply
+  else record service-cloudflared "pending-human: create tunnel as $AGENT"
   fi
   sudo test -s "$CONFIG_DIR/env" && record daemon-deploy already-correct || record daemon-deploy pending-human
   print_summary
 }
-if (( DRY_RUN )); then echo "DRY RUN: inspecting state; no changes will be made."; dry_inventory; exit 0; fi
+if (( DRY_RUN )); then echo "DRY RUN: inspecting state; no changes will be made."; dry_inventory; rm -rf "$RENDER_DIR"; exit 0; fi
 
 if id "$AGENT" >/dev/null 2>&1; then
   [[ $(dscl . -read /Users/$AGENT NFSHomeDirectory | awk '{print $2}') == "$AGENT_HOME" ]] || fail "$AGENT has unexpected home"
@@ -220,7 +242,7 @@ if [[ -x /usr/local/bin/gh && $(/usr/local/bin/gh --version | head -1) == "gh ve
 fi
 
 pnpm_wrapper=$(mktemp); trap 'rm -f "$pnpm_wrapper"' EXIT
-printf '#!/bin/sh\nexec /Users/linearagent/.pnpm/bin/pnpm "$@"\n' > "$pnpm_wrapper"
+printf '#!/bin/sh\nexec %s/.pnpm/bin/pnpm "$@"\n' "$AGENT_HOME" > "$pnpm_wrapper"
 if ! sudo test -x "$AGENT_HOME/.pnpm/bin/pnpm" || [[ $(agent "$AGENT_HOME/.pnpm/bin/pnpm" --version 2>/dev/null || true) != "$PNPM_VERSION" ]]; then
   agent env PNPM_VERSION="$PNPM_VERSION" PNPM_HOME="$AGENT_HOME/.pnpm" SHELL=/bin/bash /bin/bash -c 'curl -fsSL https://get.pnpm.io/install.sh | sh -'
 fi
@@ -247,7 +269,7 @@ if sudo test -x "$AGENT_HOME/.local/bin/claude"; then record claude-cli already-
 
 codex_version=$(command_version "$AGENT_HOME/.codex-managed/bin/codex")
 if version_at_least "$codex_version" "$CODEX_MIN_VERSION"; then record managed-codex already-correct; else
-  tmp=$(mktemp -d /tmp/linearagent-codex.XXXXXX); trap 'rm -rf "$tmp"' EXIT
+  tmp=$(mktemp -d /tmp/daemon-codex.XXXXXX); trap 'rm -rf "$tmp"' EXIT
   curl -fsSL https://chatgpt.com/codex/install.sh -o "$tmp/codex-install.sh"
   chmod 0755 "$tmp" "$tmp/codex-install.sh"
   (cd "$tmp" && agent env CODEX_HOME="$AGENT_HOME/.codex" CODEX_INSTALL_DIR="$AGENT_HOME/.codex-managed/bin" CODEX_NON_INTERACTIVE=1 sh "$tmp/codex-install.sh" --release "$CODEX_MIN_VERSION")
@@ -274,7 +296,7 @@ if sudo test -x "$AGENT_HOME/.pnpm/bin/playwright-mcp" && sudo test -f "$AGENT_H
   printf '%s\n' "$MCP_VERSION" | sudo -u "$AGENT" tee "$AGENT_HOME/.pnpm/playwright-mcp-version" >/dev/null; mcp_changed=1
 fi
 mcp_wrapper=$(mktemp); trap 'rm -f "$mcp_wrapper"' EXIT
-printf '#!/bin/sh\nexec /Users/linearagent/.pnpm/bin/playwright-mcp "$@"\n' > "$mcp_wrapper"
+printf '#!/bin/sh\nexec %s/.pnpm/bin/playwright-mcp "$@"\n' "$AGENT_HOME" > "$mcp_wrapper"
 install_if_changed "$mcp_wrapper" /usr/local/bin/playwright-mcp 0755 root wheel && mcp_changed=1
 rm -f "$mcp_wrapper"; trap - EXIT
 (( mcp_changed )) && record playwright-mcp applied || record playwright-mcp already-correct
@@ -300,10 +322,10 @@ api_key=$(sudo sed -n 's/^CLIPROXY_API_KEY=//p' "$CLIPROXY_ENV"); management_key
 [[ $(sudo grep -c '^CLIPROXY_API_KEY=' "$CLIPROXY_ENV") == 1 && $api_key =~ ^[0-9a-f]{48}$ ]] || fail "invalid CLIPROXY_API_KEY"
 [[ $(sudo grep -c '^CLIPROXY_MANAGEMENT_KEY=' "$CLIPROXY_ENV") == 1 && $management_key =~ ^[0-9a-f]{48}$ ]] || fail "invalid CLIPROXY_MANAGEMENT_KEY"
 proxy_tmp=$(mktemp); trap 'rm -f "$proxy_tmp"' EXIT
-sed -e "s|@API_KEY@|$api_key|g" -e "s|@MANAGEMENT_KEY@|$management_key|g" > "$proxy_tmp" <<'EOF'
+sed -e "s|@API_KEY@|$api_key|g" -e "s|@MANAGEMENT_KEY@|$management_key|g" -e "s|@SERVICE_HOME@|$AGENT_HOME|g" > "$proxy_tmp" <<'EOF'
 host: "127.0.0.1"
 port: 8317
-auth-dir: "/Users/linearagent/.cli-proxy-api"
+auth-dir: "@SERVICE_HOME@/.cli-proxy-api"
 api-keys:
   - "@API_KEY@"
 routing:
@@ -378,7 +400,7 @@ cloudflared_config_changed=0
 if tunnel_credentials=$(newest_tunnel_credentials) && [[ $(basename "$tunnel_credentials" .json) =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
   tunnel_id=$(basename "$tunnel_credentials" .json)
   config_tmp=$(mktemp); trap 'rm -f "$config_tmp"' EXIT
-  sed "s|@TUNNEL_ID@|$tunnel_id|g" "$SCRIPT_DIR/cloudflared-config.yml" > "$config_tmp"
+  sed "s|@TUNNEL_ID@|$tunnel_id|g" "$RENDER_DIR/cloudflared-config.yml" > "$config_tmp"
   if install_if_changed "$config_tmp" "$CLOUDFLARED_CONFIG" 0600 "$AGENT" staff; then cloudflared_config_changed=1; record cloudflared-config applied; else record cloudflared-config already-correct; fi
   rm -f "$config_tmp"; trap - EXIT
   cloudflared_config_credential_exists || fail "rendered cloudflared config does not reference existing credentials"
@@ -386,33 +408,37 @@ else
   if sudo test -f "$CLOUDFLARED_CONFIG" && ! cloudflared_config_credential_exists; then
     sudo rm -f "$CLOUDFLARED_CONFIG"
   fi
-  if sudo /bin/launchctl print system/com.dcouple.cloudflared >/dev/null 2>&1; then
-    sudo /bin/launchctl bootout system/com.dcouple.cloudflared
+  if sudo /bin/launchctl print "system/$TUNNEL_LABEL" >/dev/null 2>&1; then
+    sudo /bin/launchctl bootout "system/$TUNNEL_LABEL"
   fi
-  record cloudflared-config 'pending-human: create tunnel as linearagent'
+  record cloudflared-config "pending-human: create tunnel as $AGENT"
 fi
 
 if ! sudo test -e "$CONFIG_DIR/env"; then sudo install -o "$AGENT" -g staff -m 0600 /dev/null "$CONFIG_DIR/env"; record daemon-env pending-human; elif ! sudo test -s "$CONFIG_DIR/env"; then record daemon-env pending-human; else record daemon-env already-correct; fi
 
-if ! sudo test -d "$CHECKOUT/.git"; then agent git clone https://github.com/dcouple/orchestra.git "$CHECKOUT"; record source-checkout applied
+if ! sudo test -d "$CHECKOUT/.git"; then agent git clone "$DAEMON_SOURCE_REPO_URL" "$CHECKOUT"; record source-checkout applied
 else
   [[ -z $(agent git -C "$CHECKOUT" status --porcelain) ]] || fail "persistent source checkout is dirty: $CHECKOUT"
   [[ $(agent git -C "$CHECKOUT" config --get remote.origin.url) == https://* ]] || fail "persistent checkout origin must use HTTPS"
   record source-checkout already-correct
 fi
 
-sudoers_tmp=$(mktemp); trap 'rm -f "$sudoers_tmp"' EXIT
-cp "$SCRIPT_DIR/sudoers-linearagent-services" "$sudoers_tmp"
-/usr/sbin/visudo -cf "$sudoers_tmp" >/dev/null || fail "sudoers source is invalid"
-if install_if_changed "$sudoers_tmp" /etc/sudoers.d/linearagent-services 0440 root wheel; then record sudoers applied; else record sudoers already-correct; fi
-sudo /usr/sbin/visudo -cf /etc/sudoers.d/linearagent-services >/dev/null || fail "installed sudoers did not verify"
-rm -f "$sudoers_tmp"; trap - EXIT
+# The site config is installed before anything that reads it (runners,
+# daemonctl, deploy.sh). It carries no secrets; world-readable is intended.
+sudo install -d -o root -g wheel -m 0755 /usr/local/etc/linear-agent-daemon
+if install_if_changed "$DAEMON_SITE_ENV" "$SITE_INSTALLED" 0644 root wheel; then record site-config applied; site_changed=1; else record site-config already-correct; site_changed=0; fi
+
+/usr/sbin/visudo -cf "$RENDER_DIR/sudoers" >/dev/null || fail "rendered sudoers is invalid"
+if install_if_changed "$RENDER_DIR/sudoers" "$SUDOERS_INSTALLED" 0440 root wheel; then record sudoers applied; else record sudoers already-correct; fi
+sudo /usr/sbin/visudo -cf "$SUDOERS_INSTALLED" >/dev/null || fail "installed sudoers did not verify"
 
 root_files_changed=0
-for spec in "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755"; do
+for spec in "daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755"; do
   source=$SCRIPT_DIR/${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
   install_if_changed "$source" "$destination" "${spec##*:}" root wheel && root_files_changed=1
 done
+# A changed site config re-renders into every service; restart them all.
+(( site_changed )) && root_files_changed=1
 install_if_changed "$SOURCE_DIR/ops/wait-for-daemon-health.sh" /usr/local/sbin/wait-for-daemon-health.sh 0755 root wheel && root_files_changed=1
 (( root_files_changed )) && record service-scripts applied || record service-scripts already-correct
 
@@ -420,11 +446,11 @@ install_if_changed "$SOURCE_DIR/ops/wait-for-daemon-health.sh" /usr/local/sbin/w
 # live; a path_helper drop-in adds it to every login shell.
 paths_tmp=$(mktemp); trap 'rm -f "$paths_tmp"' EXIT
 printf '/usr/local/sbin\n' > "$paths_tmp"
-if install_if_changed "$paths_tmp" /etc/paths.d/dcouple 0644 root wheel; then record paths-d applied; else record paths-d already-correct; fi
+if install_if_changed "$paths_tmp" "$PATHS_D_INSTALLED" 0644 root wheel; then record paths-d applied; else record paths-d already-correct; fi
 rm -f "$paths_tmp"; trap - EXIT
 
-for label in com.dcouple.cliproxyapi com.dcouple.linear-agent-daemon; do
-  plist=$SCRIPT_DIR/$label.plist; installed=/Library/LaunchDaemons/$label.plist; changed=0; plist_changed=0
+for label in "$PROXY_LABEL" "$DAEMON_LABEL"; do
+  plist=$RENDER_DIR/$label.plist; installed=/Library/LaunchDaemons/$label.plist; changed=0; plist_changed=0
   install_if_changed "$plist" "$installed" 0644 root wheel && plist_changed=1
   if ! sudo /bin/launchctl print "system/$label" >/dev/null 2>&1; then
     sudo /bin/launchctl bootstrap system "$installed"
@@ -436,38 +462,38 @@ for label in com.dcouple.cliproxyapi com.dcouple.linear-agent-daemon; do
   elif (( root_files_changed )); then
     sudo /bin/launchctl kickstart -k "system/$label"
     changed=1
-  elif [[ $label == com.dcouple.cliproxyapi ]] && (( proxy_changed )); then
+  elif [[ $label == "$PROXY_LABEL" ]] && (( proxy_changed )); then
     sudo /bin/launchctl kickstart -k "system/$label"
     changed=1
   fi
   sudo /bin/launchctl print "system/$label" >/dev/null 2>&1 || fail "$label did not verify"
-  if [[ $label == com.dcouple.cliproxyapi ]] && (( proxy_changed )); then
-    proxy_api_responds || fail "com.dcouple.cliproxyapi did not accept its configured API key"
+  if [[ $label == "$PROXY_LABEL" ]] && (( proxy_changed )); then
+    proxy_api_responds || fail "$PROXY_LABEL did not accept its configured API key"
   fi
   (( changed )) && record "service-$label" applied || record "service-$label" already-correct
 done
 
-cloudflared_plist=$SCRIPT_DIR/com.dcouple.cloudflared.plist
-cloudflared_installed=/Library/LaunchDaemons/com.dcouple.cloudflared.plist
+cloudflared_plist=$RENDER_DIR/$TUNNEL_LABEL.plist
+cloudflared_installed=/Library/LaunchDaemons/$TUNNEL_LABEL.plist
 if cloudflared_config_credential_exists; then
   cloudflared_plist_changed=0
   install_if_changed "$cloudflared_plist" "$cloudflared_installed" 0644 root wheel && cloudflared_plist_changed=1
   cloudflared_changed=0
-  if ! sudo /bin/launchctl print system/com.dcouple.cloudflared >/dev/null 2>&1; then
+  if ! sudo /bin/launchctl print "system/$TUNNEL_LABEL" >/dev/null 2>&1; then
     sudo /bin/launchctl bootstrap system "$cloudflared_installed"
     cloudflared_changed=1
   elif (( cloudflared_plist_changed )); then
-    sudo /bin/launchctl bootout system/com.dcouple.cloudflared
+    sudo /bin/launchctl bootout "system/$TUNNEL_LABEL"
     sudo /bin/launchctl bootstrap system "$cloudflared_installed"
     cloudflared_changed=1
   elif (( root_files_changed || cloudflared_config_changed )); then
-    sudo /bin/launchctl kickstart -k system/com.dcouple.cloudflared
+    sudo /bin/launchctl kickstart -k "system/$TUNNEL_LABEL"
     cloudflared_changed=1
   fi
-  sudo /bin/launchctl print system/com.dcouple.cloudflared >/dev/null 2>&1 || fail "com.dcouple.cloudflared did not verify"
-  (( cloudflared_changed )) && record service-com.dcouple.cloudflared applied || record service-com.dcouple.cloudflared already-correct
+  sudo /bin/launchctl print "system/$TUNNEL_LABEL" >/dev/null 2>&1 || fail "$TUNNEL_LABEL did not verify"
+  (( cloudflared_changed )) && record service-cloudflared applied || record service-cloudflared already-correct
 else
-  record service-com.dcouple.cloudflared 'pending-human: create tunnel as linearagent'
+  record service-cloudflared "pending-human: create tunnel as $AGENT"
 fi
 
 source_commit=
@@ -490,4 +516,5 @@ if (( credential_status == 0 )); then
   if agent env CLIPROXY_ENV_FILE="$CLIPROXY_ENV" CLIPROXY_VERSION_MARKER="$CLIPROXY_MARKER" EXPECTED_PROXY_VERSION="$CLIPROXY_VERSION" TARGET_CONFIG="$AGENT_HOME/.codex/config.toml" ORCHESTRA_CODEX_REAL_BIN="$AGENT_HOME/.codex-managed/bin/codex" "$AGENT_HOME/linear-agent-daemon/ops/codex-provider-gate.sh"; then record provider-gate already-correct; else record provider-gate pending-human; fi
 else record provider-gate pending-human; fi
 
+rm -rf "$RENDER_DIR"
 print_summary
