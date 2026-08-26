@@ -38,7 +38,8 @@ The request decides how far a run goes. Every form starts with the sweep:
 - `status` or any question → sweep and report; nothing is mutated.
 - `take <ISSUE-ID …>` → adopt those issues (portfolio label, `Backlog → Todo`
   if needed), then admission as usual across the whole portfolio — adoption
-  does not itself delegate.
+  does not itself delegate. A dormant issue named here returns to the
+  decision batch instead; its status and delegate are untouched.
 - `answer <ISSUE-ID> <text>` → the human's answer for that issue's waiting
   session; admission relays it first, in the human's words, then continues as
   usual.
@@ -49,7 +50,9 @@ The request decides how far a run goes. Every form starts with the sweep:
 
 Read the current repo's `AGENTS.md` `Work-item tracking` section before
 touching Linear. `tracker` not `linear` → this skill does not apply; say so
-and stop.
+and stop. A section that names Linear in prose without `tracker: linear` is
+the same case: stop, and show the human the lines to add — `tracker:
+linear`, `linear_team: <team key>`, and the block below.
 
 Otherwise it must also name the team (`linear_team`) and:
 
@@ -171,22 +174,27 @@ puts in play.
 
 1. **Portfolio** — `list_issues` for the team with `label: <portfolio_label>`,
    fields `title, status, statusType, priority, delegate, assignee, updatedAt,
-   parentId, url`, plus `list_issues` with `delegate:` set to each agent name.
+   parentId, url`, plus `list_issues` with `delegate:` set to each agent name
+   and `completedAt, canceledAt` added to the fields.
    Delegated issues without the label are not yours to steer — humans
    delegate directly, and that is allowed — but their sessions still occupy
    slots. Open issues are those whose `statusType` is not `completed` or
    `canceled` (a "Duplicate" status is of type `canceled`); only open issues
-   are candidates for anything
-   below, and the `Orchestrator board` issue is never a candidate. Closed
-   issues delegated to an agent still go through step 2 — a human closing
-   an issue does not stop a turn already running on it.
-2. **Sessions** — for every issue delegated to either agent, portfolio or
-   not, open or closed, `list_comments` and classify the newest session thread by that
-   reference's *Reading session state from thread shape* table: busy, waiting
-   on a human, idle, failed, stopped, stale. Busy threads are the occupied
-   slots, whoever delegated them; free slots = `session_concurrency` − busy,
-   floored at zero. Queued and running are indistinguishable, and that is
-   fine — both are committed.
+   are candidates for admission, and the `Orchestrator board` issue is never
+   a candidate. Closed issues delegated to an agent still go through step 2
+   while their `completedAt` or `canceledAt` is inside the implementer stale
+   horizon — a human closing an issue does not stop a running turn; past
+   the horizon nothing is running.
+2. **Sessions** — for every open issue delegated to either agent, portfolio
+   or not, plus closed ones inside the horizon, `list_comments` and classify
+   the newest session thread by that reference's *Reading session state from
+   thread shape* table: busy, waiting on a human, idle, failed, stopped,
+   interrupted, stale, stalled. `delegate` persists forever, so this set only grows;
+   the thread reads may go to a read-only sub-agent that holds the Linear
+   read tools and returns the classification table and nothing else, with
+   the reference's rules in its dispatch. Busy threads are the occupied slots, whoever delegated them;
+   free slots = `session_concurrency` − busy, floored at zero. Queued and
+   running are indistinguishable, and that is fine — both are committed.
 3. **Readiness** — for `Todo` issues, read the body once. A fenced metadata
    block with `status: ready` and an `artifact_bundle:` (a published brief, per
    `.references/publish-work-item.md`), or a full markdown brief, means
@@ -214,8 +222,10 @@ puts in play.
    step — the human's review is the authorization.
 6. **Incidents** — `turn failed` replies of the same failure class (the
    reference's *Failure classification* table) on two or more issues within
-   about ten minutes is a daemon or provider incident: admit nothing and
-   resume nothing this sweep; report it.
+   about ten minutes of each other, the newest inside the implementer stale
+   horizon, is a daemon or provider incident: admit nothing and resume
+   nothing this sweep; report it. An older cluster is single failures, and
+   one line in the report.
 
 `status` as the request, or any read-only question, ends here with the
 report. Nothing is mutated to answer a question.
@@ -356,9 +366,21 @@ report line, never a reason to stop the sweep.
   running; the notice says whether a reply resumes it or the agent must be
   delegated again — either is a spend, so it goes to the batch like a
   failure, and a hard-restart notice goes to the human for review first.
-- **Stale** → report it with the hypothesis (daemon restart, dropped reply),
-  ask the human to check the session in Linear; do not re-send a reply
-  blindly, a duplicate queues a second paid turn.
+- **Stale** or **stalled** → report it with the hypothesis (daemon restart,
+  dropped reply), ask the human to check the session in Linear; do not
+  re-send a reply blindly, a duplicate queues a second paid turn. A resume
+  is a spend decision for the batch.
+- **Superseded** → an open delegated portfolio issue whose session is
+  failed, stale, stalled or idle while the issue itself shows the work
+  landed elsewhere: a comment or an issue attachment citing a PR for this
+  issue in this repository (the link read out of surrounding prose, then
+  the same character rules, same-repo check and `gh pr view` as the sweep's
+  Merge-state step), or a status of `In Review`. This classification wins
+  over failed, stale, stalled and idle: nothing is running and nothing will
+  be asked of that session again. Clear the delegate (`delegate: null`, read
+  back) so the issue leaves the sweep, say so in your note on the issue, and
+  report it. No turn, no status change, one write to reverse. A delegated
+  issue without the portfolio label is reported only.
 - **Needs something outside the repo** → name the person or system and put
   it in the batch; the run stays where it is.
 
@@ -375,6 +397,11 @@ per sweep, grouped, with your recommendation on each:
   owed, what a neighbouring system already does. Ask about the gaps you can
   see, and write down the assumptions you are making — a person corrects
   the model they can see.
+
+A session waiting on a human for more than 14 days is **dormant**: it leaves
+the batch and becomes one collapsed `Dormant:` line in the report listing
+those issues, until the human `take`s one (which returns it to the batch) or
+closes it.
 
 Their answers go back through you into the threads (relays first, next
 sweep). Record the decision on the issue in your comment.
@@ -426,9 +453,15 @@ Waiting on you: <group/issue> — <question or approval> — recommended: <…>
 Blocked: <issue> — on <issue | person | system> — since <date>
 Idle sessions: <issue> — <agent> finished: <one-line gist> — next: <what you propose>
 Ready and waiting for a slot: <issue, issue …> (in admission order)
-Stale / failed: <issue> — <classification> — <what you propose>
+Stale / stalled / failed: <issue> — <classification> — <what you propose>
+Superseded: <issue> — <PR or status that shows the work landed> — delegate cleared: <verified | failed | not in portfolio>
+Dormant: <issue, issue …> — waiting on you since <oldest date>
 Assumptions this sweep: <…>
 ```
+
+Each issue appears once: one with a resume or spend decision pending goes
+under `Waiting on you`; otherwise its state goes under `Stale / stalled /
+failed`.
 
 The board comment is, top to bottom: the marker line `**Orchestrator
 board**`; the standing lines — `Loop proven: <ISSUE-ID> <date>` and any

@@ -78,12 +78,16 @@ attach it to the issue.
 
 | `<detail>` contains | Class | Do |
 |---|---|---|
-| `capacity failure`, `rate_limit` | provider capacity | Wait; do not resume this sweep. Several within minutes = incident. |
-| `spawn … ENOENT`, `exited with code` **on two or more issues within about ten minutes** | daemon/host incident | Halt admissions, resume nothing, escalate to the daemon operator with the issue list and timestamps. |
+| `capacity failure`, `rate_limit` | provider capacity | Wait; do not resume this sweep. Two or more within about ten minutes of each other, the newest inside the implementer stale horizon = incident; older clusters are single failures. |
+| `spawn … ENOENT`, `exited with code` **on two or more issues within about ten minutes of each other, the newest inside the implementer stale horizon** | daemon/host incident | Halt admissions, resume nothing, escalate to the daemon operator with the issue list and timestamps. Older matching failures are single failures. |
 | `exited with code <n>` on one issue | crash **or** the `/do` budget/turn ceiling — Linear cannot tell them apart | Human decides: resume (a reply gives the run a fresh ceiling and spends again) or stop. |
 | `permission`, `denied` | the session hit a harness gate | Human decides; usually a daemon config matter. |
 | `is not configured` | a launcher is missing on the host | Daemon operator; nothing on this issue will run until fixed. |
 | anything else (`exited on <signal>`, `exited without a result`, unknown text) | single failure | Human decides, as for `exited with code`. |
+
+Two or more failures of one class on two or more issues within about ten
+minutes of each other, the newest inside the implementer stale horizon, is an
+incident whatever the class; older clusters are single failures.
 
 ## Reading session state from thread shape
 
@@ -95,6 +99,8 @@ Per issue, take the newest session thread and its last message:
 | a human reply, younger than the stale horizon | busy (a turn is queued or running) | yes |
 | an agent response that asks something or reports a gate | waiting on a human | no |
 | an agent response that is a completed report (planner analysis, `/do` report) | idle | no |
+| an agent progress note — neither a question nor a completed report ("standing by on the researcher", "Phase 1 is now implementing") — younger than the stale horizon | busy (the run continues; only its durable output is visible) | yes |
+| the same progress note **older** than the stale horizon | stalled — nothing survives a daemon restart past the horizon; treat as stale | no; report it |
 | `… turn failed: …` | failed | no |
 | `Stopped at your request …` | stopped | no |
 | a `was interrupted` restart-recovery notice | interrupted — revive per the notice, with a human's yes | no |
