@@ -249,7 +249,9 @@ ATTACHMENT_HOSTS=uploads.linear.app
 # Project MCP secret names; set each named variable in this file too.
 #MCP_ENV_PASSTHROUGH=POSTHOG_API_KEY,NOTION_TOKEN
 
-# Optional iOS simulator capability (macOS only).
+# Optional iOS simulator capability (macOS only). Quote values that contain
+# spaces: the launchd/systemd runners source this file under `set -e`, and an
+# unquoted `iOS 26.5` stops the daemon at start.
 IOS_SIM_ENABLED=0
 IOS_SIM_RUNTIME="iOS 26.5" # runtime name or identifier
 IOS_SIM_DEVICE_TYPE="iPhone 17" # device type name or identifier

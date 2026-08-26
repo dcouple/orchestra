@@ -70,6 +70,10 @@ Secrets never enter this repository.
 
 ### Simulator capability
 
+Env values with spaces must be quoted (`IOS_SIM_RUNTIME="iOS 26.5"`,
+`IOS_SIM_DEVICE_TYPE="iPhone 17"`): `run-daemon.sh` sources the env file under
+`set -e`, and an unquoted value stops the daemon before it listens.
+
 The operator installs Xcode and an available iOS runtime, accepts the Xcode
 license, and configures the `IOS_SIM_*` and `XCODEBUILD_MCP_BIN` keys listed in
 the main setup guide. Provisioning installs the pinned XcodeBuildMCP and the
