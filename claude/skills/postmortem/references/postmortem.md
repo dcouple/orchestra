@@ -37,6 +37,8 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `tracker (Linear etc.) — upload the image natively to the tracker there. Close with the single`
 `change that would have removed the biggest stall. Per`
 `.references/run-operations-analysis.md.>`
+`<Also name the wasteful and marginal spend across ALL components — dispatches, steps, and`
+`the main loop, not just review passes — and the token-efficiency change(s) it supports.>`
 
 ## What we asked for
 `<the intent + desired end state, briefly>`
@@ -62,8 +64,9 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `resolve), then ONE judgment line: review effort was overdone | right-sized`
 `| underdone — naming the single dial that would have changed it. Ground the`
 `judgment in spend: tokens per review pass vs the Must Fixes that pass`
-`caught — a pass that found nothing was pure spend. This tunes zones.md's`
-`table.>`
+`caught — a no-finding pass is waste only when its assurance question did not`
+`need answering at that zone, one instance of the whole-run criterion above.`
+`This tunes zones.md's table.>`
 
 ## Acceptance
 `<the human's verdict on the PR, when known: merged as-is | merged after`
