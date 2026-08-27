@@ -651,7 +651,11 @@ comment) before ending.
   loop's cap — before the QA results line closes. The QA drive runs after
   the review loop exits, so without this pass a behavioral fix born from
   app-driving evidence (exactly the client-state bug a diff-reading
-  reviewer can't see) would ship un-reviewed. Body carries state, comment
+  reviewer can't see) would ship un-reviewed. When the fix loop's commits
+  (`<refactor-commit>..HEAD`) exceed ~150 net lines, also run one scoped
+  `refactor-simple` over that range before wrap-up — the refactor lanes
+  ran before the QA drive, so fix-loop code is otherwise the one part of
+  the PR that ships unrefactored. Body carries state, comment
   carries proof — never
   leave the results only in a comment when the body has a checklist and a QA
   results line to update. After every body update, **YOU MUST** preserve and
@@ -728,6 +732,15 @@ comment) before ending.
 - Immediately before the `awaiting-human-review` label, **YOU MUST** run the
   shared contract's current-item handoff set and report each `In Review`
   operation as `verified`, `already-correct`, `failed`, or `unavailable`.
+- Report the PR's CI status explicitly (`gh pr checks <pr>`) in the
+  wrap-up's Verification block and in the final report. A check that
+  never started — Actions budget exhausted (`gh api
+  repos/<owner>/<repo>/check-runs/<id>/annotations` says "not started
+  because an Actions budget is preventing further use"), skipped, or
+  queued — is **unverified**, never green: say so, and name the local
+  gates (lint, typecheck, test suites) as the verification of record. A
+  red checks column that hides a non-run misleads the reviewer in the
+  opposite direction of a real failure.
 - Label the PR `awaiting-human-review` (create the label if missing) —
   commits after this label's timestamp are the run's post-review rework
   metric (`.references/zones.md`, The record).
