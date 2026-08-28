@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Security Scan"
+  short_description: "Run a configured, read-only security scan"
+  default_prompt: "Use $codex-security-scan to run the configured repository security scan."
