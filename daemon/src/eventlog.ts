@@ -6,6 +6,7 @@ import type { InFlightDispatch } from "./dispatches.js";
 import { ACTIVE_OPERATION_STATES, type OperationRow, type OperationState,
   type SafeOperationStatus, type SafeRunningTurn, type ScheduleOperationInput, validateScheduleOperation } from "./operations.js";
 import { SimCapacityError, SimTurnLimitError } from "./sim.js";
+import { projectInvocation, projectResources, type ConsoleRunDetail, type ConsoleRunSummary } from "./console-projections.js";
 
 export interface AppendEvent {
   deliveryId?: string | undefined;
@@ -1231,6 +1232,53 @@ export class EventLog {
                 : null,
           }
         : null,
+    };
+  }
+
+  consoleProviders(): ProviderStateRow[] {
+    return this.db.prepare(`SELECT provider,status,reason,cooldown_until cooldownUntil,updated_at updatedAt
+      FROM provider_state ORDER BY provider`).all() as ProviderStateRow[];
+  }
+
+  consoleRuns(limit = 50, now = Date.now(), linearBase?: string): ConsoleRunSummary[] {
+    const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const sessions = this.db.prepare(`SELECT linear_session_id linearSessionId,app,issue_id issueId,
+      issue_identifier issueIdentifier,worktree_path worktreePath,branch,claude_session_id claudeSessionId,
+      runtime,fallback_cause fallbackCause,profile,profile_fallback profileFallback,
+      browser_required browserRequired,browser_run_id browserRunId,mode,status,last_seen_at lastSeenAt,
+      last_seen_activity_at lastSeenActivityAt,trace_id traceId,root_span_id rootSpanId,
+      started_at startedAt,completed_at completedAt FROM sessions ORDER BY started_at DESC LIMIT ?`)
+      .all(bounded) as SessionRow[];
+    return sessions.map(session => this.consoleRunSummary(session, now, linearBase));
+  }
+
+  consoleRun(linearSessionId: string, now = Date.now(), linearBase?: string): ConsoleRunDetail | undefined {
+    const session = this.getSession(linearSessionId);
+    if (!session) return undefined;
+    return {
+      ...this.consoleRunSummary(session, now, linearBase),
+      invocations: this.invocations(linearSessionId).map(row => projectInvocation(row, now)),
+    };
+  }
+
+  private consoleRunSummary(session: SessionRow, now: number, linearBase?: string): ConsoleRunSummary {
+    const aggregate = this.aggregateSession(session.linearSessionId);
+    const urls = this.db.prepare(`SELECT id,linear_session_id linearSessionId,app,label,url,attempts,
+      next_attempt_at nextAttemptAt,created_at createdAt FROM session_external_urls
+      WHERE linear_session_id=? ORDER BY id`).all(session.linearSessionId) as ExternalUrlRow[];
+    return {
+      id: session.linearSessionId,
+      app: session.app,
+      mode: session.mode,
+      status: session.status,
+      issueIdentifier: session.issueIdentifier,
+      runtime: session.runtime,
+      startedAt: session.startedAt,
+      completedAt: session.completedAt,
+      durationMs: Math.max(0, (session.completedAt ?? now) - session.startedAt),
+      invocationCount: this.invocations(session.linearSessionId).length,
+      totalTokens: aggregate.canonicalTokens,
+      resources: projectResources(session, urls, linearBase),
     };
   }
 

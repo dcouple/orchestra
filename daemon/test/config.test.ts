@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.js";
+import { loadConfig, loadConsoleConfig } from "../src/config.js";
 
 const base = {
   DAEMON_TEST_MODE: "1",
@@ -9,6 +9,23 @@ const base = {
 };
 
 describe("loadConfig", () => {
+  it("ignores console-only environment while the console loader validates it independently", () => {
+    const invalidConsole = { CONSOLE_PORT: "70000", CONSOLE_BIND_ADDR: "0.0.0.0",
+      CONSOLE_DAEMON_HEALTH_URL: "https://remote.example/healthz", LINEAR_WORKSPACE_BASE_URL: "not a url" };
+    const config = loadConfig({ ...base, ...invalidConsole });
+    for (const field of ["consolePort", "consoleBindAddr", "consoleAssetsDir", "consoleDaemonHealthUrl", "linearWorkspaceBaseUrl"])
+      expect(config).not.toHaveProperty(field);
+    expect(() => loadConsoleConfig({ CONSOLE_PORT: invalidConsole.CONSOLE_PORT })).toThrow("at most 65535");
+    expect(() => loadConsoleConfig({ CONSOLE_BIND_ADDR: invalidConsole.CONSOLE_BIND_ADDR })).toThrow("must be 127.0.0.1");
+    expect(() => loadConsoleConfig({ CONSOLE_DAEMON_HEALTH_URL: invalidConsole.CONSOLE_DAEMON_HEALTH_URL })).toThrow("http://127.0.0.1");
+    expect(() => loadConsoleConfig({ LINEAR_WORKSPACE_BASE_URL: invalidConsole.LINEAR_WORKSPACE_BASE_URL })).toThrow("valid HTTP URL");
+  });
+
+  it("accepts the maximum console TCP port and rejects the next value", () => {
+    expect(loadConsoleConfig({ CONSOLE_PORT: "65535" }).port).toBe(65_535);
+    expect(() => loadConsoleConfig({ CONSOLE_PORT: "65536" })).toThrow("at most 65535");
+  });
+
   it("loads test static tokens and defaults", () => {
     const config = loadConfig(base);
     expect(config.bindAddr).toBe("127.0.0.1");

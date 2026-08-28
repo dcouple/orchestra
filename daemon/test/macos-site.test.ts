@@ -120,6 +120,7 @@ describe("macOS site config", () => {
       "org.example.cliproxyapi.plist",
       "org.example.cloudflared.plist",
       "org.example.linear-agent-daemon.plist",
+      "org.example.orchestra-console.plist",
       "sudoers",
     ]);
     for (const file of files) {
@@ -130,6 +131,10 @@ describe("macOS site config", () => {
     expect(daemonPlist).toContain("<string>org.example.linear-agent-daemon</string>");
     expect(daemonPlist).toContain("<string>svcagent</string>");
     expect(daemonPlist).toContain("/Users/svcagent/linear-agent-daemon");
+    const consolePlist = readFileSync(join(out, "org.example.orchestra-console.plist"), "utf8");
+    expect(consolePlist).toContain("<string>org.example.orchestra-console</string>");
+    expect(consolePlist).toContain("<string>127.0.0.1</string>");
+    expect(consolePlist).toContain("<string>8790</string>");
     const tunnel = readFileSync(join(out, "cloudflared-config.yml"), "utf8");
     expect(tunnel).toContain("hostname: agent.example.org");
     expect(tunnel).toContain("tunnel: @TUNNEL_ID@");
@@ -145,6 +150,8 @@ describe("macOS site config", () => {
       ["DAEMON_SERVICE_USER=svc\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a|b.com\n", "invalid DAEMON_PUBLIC_HOSTNAME"],
       ["DAEMON_SERVICE_USER=Svc Name\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a.example.com\n", "invalid DAEMON_SERVICE_USER"],
       ["DAEMON_SERVICE_USER=svc\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a.example.com\nDAEMON_SOURCE_REPO_URL=git@github.com:x/y.git\n", "https://"],
+      ["DAEMON_SERVICE_USER=svc\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a.example.com\nDAEMON_CONSOLE_BIND_ADDR=0.0.0.0\n", "must be 127.0.0.1"],
+      ["DAEMON_SERVICE_USER=svc\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a.example.com\nDAEMON_CONSOLE_PORT=70000\n", "invalid DAEMON_CONSOLE_PORT"],
     ];
     for (const [site, message] of cases) {
       const { result } = renderWith(site);
@@ -162,5 +169,8 @@ describe("macOS site config", () => {
       if (file !== "site.env.example") expect(text, file).not.toMatch(/\/Users\/linearagent/);
     }
     expect(example).toMatch(/^DAEMON_PUBLIC_HOSTNAME=linear-agent\.example\.com$/m);
+    expect(example).toMatch(/^DAEMON_CONSOLE_BIND_ADDR=127\.0\.0\.1$/m);
+    expect(example).toMatch(/^DAEMON_CONSOLE_PORT=8790$/m);
+    expect(example).toContain("${DAEMON_LAUNCHD_PREFIX}.orchestra-console");
   });
 });

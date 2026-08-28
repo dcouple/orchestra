@@ -9,11 +9,13 @@
     "pnpm": ">=11 <12"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm build:backend && pnpm build:console",
+    "build:backend": "tsc",
+    "build:console": "pnpm --dir console build",
     "generate:otel-proto": "node scripts/generate-otel-proto.mjs",
     "check:otel-proto": "node scripts/generate-otel-proto.mjs --check",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run --exclude test/browser.test.ts",
+    "typecheck": "tsc --noEmit && pnpm --dir console typecheck",
+    "test": "vitest run --maxWorkers=2 --exclude test/browser.test.ts --exclude 'console/**' && pnpm --dir console test",
     "test:browser": "vitest run test/browser.test.ts",
     "test:browser-contract": "vitest run test/browser-contract.test.ts",
     "browser:smoke": "node ops/browser-smoke.mjs",

@@ -1,4 +1,5 @@
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { isReservedChildEnvKey } from "./claude.js";
 
 export type AppName = "planner" | "implementer";
@@ -84,6 +85,15 @@ export interface Config {
   ntfyUrl?: string;
 }
 
+export interface ConsoleConfig {
+  port: number;
+  bindAddr: "127.0.0.1";
+  dbPath: string;
+  assetsDir: string;
+  daemonHealthUrl: string;
+  linearWorkspaceBaseUrl?: string;
+}
+
 function required(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name]?.trim();
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
@@ -104,6 +114,37 @@ function enabled(env: NodeJS.ProcessEnv, name: string, fallback = true): boolean
   if (raw === "1") return true;
   if (raw === "0") return false;
   throw new Error(`${name} must be 0 or 1`);
+}
+
+function loopbackAddress(env: NodeJS.ProcessEnv, name: string): "127.0.0.1" {
+  const value = env[name]?.trim() || "127.0.0.1";
+  if (value !== "127.0.0.1") throw new Error(`${name} must be 127.0.0.1`);
+  return value;
+}
+
+function httpUrl(env: NodeJS.ProcessEnv, name: string, fallback: string, loopbackOnly = false): string {
+  const raw = env[name]?.trim() || fallback;
+  let url: URL;
+  try { url = new URL(raw); } catch { throw new Error(`${name} must be a valid HTTP URL`); }
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash)
+    throw new Error(`${name} must be a valid HTTP URL`);
+  if (loopbackOnly && (url.protocol !== "http:" || url.hostname !== "127.0.0.1"))
+    throw new Error(`${name} must be an http://127.0.0.1 URL`);
+  return url.toString().replace(/\/$/, "");
+}
+
+export function loadConsoleConfig(env: NodeJS.ProcessEnv = process.env): ConsoleConfig {
+  const base = env.LINEAR_WORKSPACE_BASE_URL?.trim();
+  const port = positiveInteger(env, "CONSOLE_PORT", 8790);
+  if (port > 65_535) throw new Error("CONSOLE_PORT must be at most 65535");
+  return {
+    port,
+    bindAddr: loopbackAddress(env, "CONSOLE_BIND_ADDR"),
+    dbPath: env.DB_PATH?.trim() || "/var/lib/linear-agent-daemon/events.db",
+    assetsDir: env.CONSOLE_ASSETS_DIR?.trim() || resolve(dirname(fileURLToPath(import.meta.url)), "console"),
+    daemonHealthUrl: httpUrl(env, "CONSOLE_DAEMON_HEALTH_URL", "http://127.0.0.1:8787/healthz", true),
+    ...(base ? { linearWorkspaceBaseUrl: httpUrl(env, "LINEAR_WORKSPACE_BASE_URL", base) } : {}),
+  };
 }
 
 function optionalArgv(env: NodeJS.ProcessEnv, name: string): string[] | undefined {

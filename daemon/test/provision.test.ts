@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -54,6 +55,113 @@ describe("daemon provisioning", () => {
     expect(macosProvision).toContain('pnpm add --global "xcodebuildmcp@$XCODEBUILDMCP_VERSION"');
     expect(macosProvision).toContain("/usr/local/bin/xcodebuildmcp");
     expect(macosProvision).toContain("/usr/local/bin/orchestra-sim");
+  });
+  it("provisions the console as an independent loopback LaunchDaemon", () => {
+    expect(macosProvision).toContain('"$RENDER_DIR/$CONSOLE_LABEL.plist:/Library/LaunchDaemons/$CONSOLE_LABEL.plist:0644"');
+    expect(macosProvision).toContain('"install-console-service.sh:/usr/local/sbin/install-console-service.sh:0755"');
+    expect(macosProvision).toContain('"$SCRIPT_DIR/install-console-service.sh" "$SCRIPT_DIR/run-console.sh"');
+    expect(macosProvision).toContain("service-console already-correct");
+    expect(macosProvision).not.toContain("0.0.0.0:8790");
+  });
+
+  it("converges the Phase 1 console install/service path idempotently and supports a no-write dry run", () => {
+    const dir = mkdtempSync(join(tmpdir(), "console-service-install-"));
+    const runnerSource = join(dir, "run-console.sh"), plistSource = join(dir, "console.plist");
+    const runnerDest = join(dir, "root", "usr", "local", "sbin", "run-console.sh");
+    const plistDest = join(dir, "root", "Library", "LaunchDaemons", "org.example.console.plist");
+    mkdirSync(join(dir, "root", "usr", "local", "sbin"), { recursive: true });
+    mkdirSync(join(dir, "root", "Library", "LaunchDaemons"), { recursive: true });
+    writeFileSync(runnerSource, "#!/bin/bash\necho console\n"); writeFileSync(plistSource, "<plist>console</plist>\n");
+    const fakeSudo = join(dir, "sudo"), fakeLaunchctl = join(dir, "launchctl");
+    const serviceState = join(dir, "service-state"), calls = join(dir, "launchctl-calls");
+    writeFileSync(fakeSudo, `#!/bin/bash
+set -euo pipefail
+case "$1" in
+  install) /usr/bin/install -m "$7" "$8" "$9" ;;
+  stat)
+    if [[ "$3" == %Lp ]]; then case "$4" in *.plist) echo 644 ;; *) echo 755 ;; esac
+    else echo root:wheel; fi
+    ;;
+  *) exec "$@" ;;
+esac
+`);
+    writeFileSync(fakeLaunchctl, `#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_LAUNCHCTL_CALLS"
+case "$1" in
+  print) [[ -s "$FAKE_LAUNCHCTL_STATE" ]] ;;
+  bootstrap) printf 'loaded\n' > "$FAKE_LAUNCHCTL_STATE" ;;
+  bootout) : > "$FAKE_LAUNCHCTL_STATE" ;;
+  kickstart) [[ -s "$FAKE_LAUNCHCTL_STATE" ]] ;;
+  *) exit 64 ;;
+esac
+`);
+    chmodSync(fakeSudo, 0o755); chmodSync(fakeLaunchctl, 0o755);
+    const helper = resolve("ops/macos/install-console-service.sh");
+    const env = { ...process.env, SUDO_BIN: fakeSudo, LAUNCHCTL_BIN: fakeLaunchctl,
+      FAKE_LAUNCHCTL_STATE: serviceState, FAKE_LAUNCHCTL_CALLS: calls,
+      CONSOLE_RUNNER_DEST: runnerDest, CONSOLE_PLIST_DEST: plistDest };
+    const dry = spawnSync("bash", [helper, "--dry-run", runnerSource, plistSource, "org.example.console"], { encoding: "utf8", env });
+    expect(dry.status, dry.stderr).toBe(0); expect(dry.stdout).toContain("DRY RUN: console service; no changes will be made.");
+    expect(dry.stdout).toContain(`runner would-apply: ${runnerDest}`); expect(existsSync(runnerDest)).toBe(false);
+    expect(existsSync(plistDest)).toBe(false); expect(existsSync(serviceState)).toBe(false);
+    const first = spawnSync("bash", [helper, runnerSource, plistSource, "org.example.console"], { encoding: "utf8", env });
+    const second = spawnSync("bash", [helper, runnerSource, plistSource, "org.example.console"], { encoding: "utf8", env });
+    expect(first.status, first.stderr).toBe(0); expect(first.stdout.trim()).toBe("applied");
+    expect(second.status, second.stderr).toBe(0); expect(second.stdout.trim()).toBe("already-correct");
+    expect(readFileSync(runnerDest, "utf8")).toBe(readFileSync(runnerSource, "utf8"));
+    expect(readFileSync(plistDest, "utf8")).toBe(readFileSync(plistSource, "utf8"));
+    expect(readFileSync(calls, "utf8").match(/^bootstrap /gm)).toHaveLength(1);
+    expect(readFileSync(calls, "utf8")).not.toContain("kickstart");
+    const failure = spawnSync("bash", [helper, join(dir, "missing"), plistSource, "org.example.console"], { encoding: "utf8", env });
+    expect(failure.status).toBe(1); expect(failure.stderr).toContain("console runner source is invalid");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("executes deploy dry-run and console runner success/failure contracts without mutating services", () => {
+    const dir = mkdtempSync(join(tmpdir(), "console-macos-scripts-"));
+    const home = join(dir, "service-home"), code = join(home, "linear-agent-daemon"), dist = join(code, "dist");
+    mkdirSync(dist, { recursive: true });
+    const site = join(dir, "site.env");
+    writeFileSync(site, ["DAEMON_PUBLIC_HOSTNAME=agent.example.org", "DAEMON_SERVICE_USER=svcagent",
+      `DAEMON_SERVICE_HOME=${home}`, "DAEMON_LAUNCHD_PREFIX=org.example", "DAEMON_CONSOLE_PORT=9876", ""].join("\n"));
+    const envFile = join(dir, "daemon.env");
+    writeFileSync(envFile, [`DB_PATH=${join(dir, "events.db")}`, "LINEAR_WORKSPACE_BASE_URL=https://linear.example/acme",
+      "PLANNER_WEBHOOK_SECRET=RUNNER_WEBHOOK_SECRET", "CLIPROXY_API_KEY=RUNNER_PROXY_SECRET", "LINEAR_API_KEY=RUNNER_LINEAR_SECRET", ""].join("\n"));
+    writeFileSync(join(dist, "console-index.js"), "process.stdout.write(JSON.stringify({argv:process.argv.slice(2),env:process.env}))\n");
+    const runner = resolve("ops/macos/run-console.sh"), siteLib = resolve("ops/macos/daemon-site-lib.sh");
+    const runnerResult = spawnSync("bash", [runner], { encoding: "utf8", env: { ...process.env,
+      DAEMON_SITE_LIB: siteLib, DAEMON_SITE_ENV: site, LINEAR_AGENT_ENV_FILE: envFile, CONSOLE_NODE_BIN: process.execPath } });
+    expect(runnerResult.status, runnerResult.stderr).toBe(0);
+    const recorded = JSON.parse(runnerResult.stdout) as { argv: string[]; env: Record<string, string> };
+    expect(recorded.argv).toEqual([]); expect(recorded.env).toMatchObject({ HOME: home, USER: "svcagent",
+      DB_PATH: join(dir, "events.db"), CONSOLE_BIND_ADDR: "127.0.0.1", CONSOLE_PORT: "9876",
+      CONSOLE_ASSETS_DIR: join(code, "dist", "console"), LINEAR_WORKSPACE_BASE_URL: "https://linear.example/acme" });
+    for (const forbidden of ["PLANNER_WEBHOOK_SECRET", "CLIPROXY_API_KEY", "LINEAR_API_KEY"])
+      expect(recorded.env[forbidden]).toBeUndefined();
+    const missingEnv = spawnSync("bash", [runner], { encoding: "utf8", env: { ...process.env,
+      DAEMON_SITE_LIB: siteLib, DAEMON_SITE_ENV: site, LINEAR_AGENT_ENV_FILE: join(dir, "missing.env"), CONSOLE_NODE_BIN: process.execPath } });
+    expect(missingEnv.status).toBe(78); expect(missingEnv.stderr).toContain("env file missing");
+
+    const deploy = resolve("ops/macos/deploy.sh");
+    const deployEnv = { ...process.env, DAEMON_SITE_LIB: siteLib, DAEMON_SITE_ENV: site,
+      DAEMON_DEPLOY_ALLOW_OTHER_USER: "1", PNPM_BIN: join(dir, "must-not-run-pnpm") };
+    const deployDry = spawnSync("bash", [deploy, "--dry-run", resolve(".")], { encoding: "utf8", env: deployEnv });
+    expect(deployDry.status, deployDry.stderr).toBe(0);
+    expect(deployDry.stdout).toContain("DRY RUN: deployment plan; no changes will be made.");
+    expect(deployDry.stdout).toContain("plan restart: org.example.linear-agent-daemon, org.example.orchestra-console");
+    expect(deployDry.stdout).toContain("http://127.0.0.1:9876/api/health");
+    expect(existsSync(join(home, ".local", "state", "linear-agent-operations", "maintenance.lock"))).toBe(false);
+    const deployRemoteHealth = spawnSync("bash", [deploy, "--dry-run", resolve(".")], { encoding: "utf8",
+      env: { ...deployEnv, CONSOLE_HEALTH_URL: "http://remote.example:9876/api/health" } });
+    expect(deployRemoteHealth.status).toBe(1);
+    expect(deployRemoteHealth.stderr).toContain("CONSOLE_HEALTH_URL must be a loopback");
+    const deployUsage = spawnSync("bash", [deploy, "--dry-run"], { encoding: "utf8", env: deployEnv });
+    expect(deployUsage.status).toBe(2); expect(deployUsage.stderr).toContain("usage: deploy.sh [--dry-run]");
+    const deployMissingSite = spawnSync("bash", [deploy, "--dry-run", resolve(".")], { encoding: "utf8",
+      env: { ...deployEnv, DAEMON_SITE_ENV: join(dir, "missing-site.env") } });
+    expect(deployMissingSite.status).toBe(78); expect(deployMissingSite.stderr).toContain("site config missing or unreadable");
+    rmSync(dir, { recursive: true, force: true });
   });
   it("installs a root-only operation boundary without weakening the daemon sandbox", () => {
     expect(provision).toContain("/usr/local/sbin/daemonctl");

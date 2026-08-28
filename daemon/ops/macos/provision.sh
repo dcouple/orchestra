@@ -195,7 +195,7 @@ dry_inventory() {
   paths_tmp=$(mktemp); printf '/usr/local/sbin\n' > "$paths_tmp"
   file_correct "$paths_tmp" "$PATHS_D_INSTALLED" 0644 root wheel && record paths-d already-correct || record paths-d would-apply
   rm -f "$paths_tmp"
-  for spec in "$RENDER_DIR/$DAEMON_LABEL.plist:/Library/LaunchDaemons/$DAEMON_LABEL.plist:0644" "$RENDER_DIR/$PROXY_LABEL.plist:/Library/LaunchDaemons/$PROXY_LABEL.plist:0644" "$RENDER_DIR/$TUNNEL_LABEL.plist:/Library/LaunchDaemons/$TUNNEL_LABEL.plist:0644" "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755" "$SCRIPT_DIR/orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
+  for spec in "$RENDER_DIR/$DAEMON_LABEL.plist:/Library/LaunchDaemons/$DAEMON_LABEL.plist:0644" "$RENDER_DIR/$CONSOLE_LABEL.plist:/Library/LaunchDaemons/$CONSOLE_LABEL.plist:0644" "$RENDER_DIR/$PROXY_LABEL.plist:/Library/LaunchDaemons/$PROXY_LABEL.plist:0644" "$RENDER_DIR/$TUNNEL_LABEL.plist:/Library/LaunchDaemons/$TUNNEL_LABEL.plist:0644" "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-console.sh:/usr/local/sbin/run-console.sh:0755" "$SCRIPT_DIR/install-console-service.sh:/usr/local/sbin/install-console-service.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755" "$SCRIPT_DIR/orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
     source=${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
     if [[ $(basename "$destination") == "$TUNNEL_LABEL.plist" ]] && ! cloudflared_config_credential_exists; then
       status="pending-human: create tunnel as $AGENT"
@@ -206,6 +206,7 @@ dry_inventory() {
   done
   sudo /bin/launchctl print "system/$PROXY_LABEL" >/dev/null 2>&1 && record service-cliproxyapi already-correct || record service-cliproxyapi would-apply
   sudo /bin/launchctl print "system/$DAEMON_LABEL" >/dev/null 2>&1 && record service-daemon already-correct || record service-daemon would-apply
+  sudo /bin/launchctl print "system/$CONSOLE_LABEL" >/dev/null 2>&1 && record service-console already-correct || record service-console would-apply
   if cloudflared_config_credential_exists; then
     sudo /bin/launchctl print "system/$TUNNEL_LABEL" >/dev/null 2>&1 && record service-cloudflared already-correct || record service-cloudflared would-apply
   else record service-cloudflared "pending-human: create tunnel as $AGENT"
@@ -459,7 +460,7 @@ if install_if_changed "$RENDER_DIR/sudoers" "$SUDOERS_INSTALLED" 0440 root wheel
 sudo /usr/sbin/visudo -cf "$SUDOERS_INSTALLED" >/dev/null || fail "installed sudoers did not verify"
 
 root_files_changed=0
-for spec in "daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755" "orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
+for spec in "daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "install-console-service.sh:/usr/local/sbin/install-console-service.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755" "orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
   source=$SCRIPT_DIR/${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
   install_if_changed "$source" "$destination" "${spec##*:}" root wheel && root_files_changed=1
 done
@@ -498,6 +499,14 @@ for label in "$PROXY_LABEL" "$DAEMON_LABEL"; do
   fi
   (( changed )) && record "service-$label" applied || record "service-$label" already-correct
 done
+
+console_status=
+if ! console_status=$(CONSOLE_INSTALL_FORCE_RESTART=$root_files_changed \
+  "$SCRIPT_DIR/install-console-service.sh" "$SCRIPT_DIR/run-console.sh" \
+  "$RENDER_DIR/$CONSOLE_LABEL.plist" "$CONSOLE_LABEL"); then
+  fail "$CONSOLE_LABEL did not converge"
+fi
+record "service-$CONSOLE_LABEL" "$console_status"
 
 cloudflared_plist=$RENDER_DIR/$TUNNEL_LABEL.plist
 cloudflared_installed=/Library/LaunchDaemons/$TUNNEL_LABEL.plist
