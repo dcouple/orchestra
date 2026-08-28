@@ -64,6 +64,11 @@ edits the canonical copy — that is intended.
   removed modes, editor-facing warnings, and tuning/benchmark rationale go
   in PR descriptions and commit messages — not the body. Sole exception: a
   one-line live footgun the invoking agent will hit this session.
+- Shell in skill bodies never deletes through a shell variable — no
+  `rm "$dir/$name".*`, no `rm -rf "$DIR"/`. Claude Code's critical-path
+  check prompts on that form even under `--dangerously-skip-permissions`,
+  which halts unattended runs. Write the resolved path as a literal, or
+  don't delete.
 
 ## Work-item tracking
 

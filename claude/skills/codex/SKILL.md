@@ -100,6 +100,17 @@ completed report, then delete all files with that dispatch's basename after
 consuming it. Delete-on-consume is load-bearing: markers otherwise persist and
 the daemon deliberately enqueues at most one resume per marker.
 
+Delete with **literal paths only** — resolve the owner directory and the
+dispatch name first, then write them out in full:
+
+```bash
+rm -f .codex-dispatches/local/code-researcher-1756340000-4242-1.{prompt,sh,log,md,done}
+```
+
+Never `rm` a path built from a shell variable or a glob under one
+(`rm -f "$dir/$name".*`): Claude Code's critical-path check prompts on that
+form even in bypass mode, and the prompt halts an unattended run.
+
 Launch every dispatch fully detached from the harness, from the repo root. The
 owner directory is `.codex-dispatches/$ORCHESTRA_DISPATCH_OWNER` when the daemon
 sets that variable to the Linear session UUID, and `.codex-dispatches/local`
