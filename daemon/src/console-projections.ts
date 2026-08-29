@@ -1,5 +1,6 @@
 import type { ProviderStateRow, SessionRow, AgentInvocationRow, ExternalUrlRow,
   DependencyHealth, DependencyKind, DependencyObservationRow, LoopDefinitionRow } from "./eventlog.js";
+import type { LoopDeclaration } from "./loops.js";
 import type { SafeOperationStatus } from "./operations.js";
 import type { OperationRow, OperationStageEvent } from "./operations.js";
 
@@ -49,14 +50,21 @@ export interface ConsoleOperationHistory {
   recoveryActions: Array<"retry" | "cancel">;
 }
 
-export type ConsoleLoopDefinition = Omit<LoopDefinitionRow, "task"> & {
-  task: { kind: "agent"; role: LoopDefinitionRow["task"]["role"] };
+export type ConsoleLoopProjection<T extends LoopDeclaration> = Omit<T, "task"> & {
+  task: { kind: "agent"; role: T["task"]["role"] };
 };
+export type ConsoleLoopDeclaration = ConsoleLoopProjection<LoopDeclaration>;
+export type ConsoleLoopDefinition = ConsoleLoopProjection<LoopDefinitionRow>;
+
+/** The only loop declaration shape permitted to cross an HTTP or receipt boundary. */
+export function projectConsoleLoopDeclaration<T extends LoopDeclaration>(row: T): ConsoleLoopProjection<T> {
+  const { task, ...safe } = row;
+  return { ...safe, task: { kind: "agent", role: task.role } };
+}
 
 /** The only loop definition shape permitted to cross an HTTP or receipt boundary. */
 export function projectConsoleLoop(row: LoopDefinitionRow): ConsoleLoopDefinition {
-  const { task, ...safe } = row;
-  return { ...safe, task: { kind: "agent", role: task.role } };
+  return projectConsoleLoopDeclaration(row);
 }
 
 export function projectConsoleOperation(operation: OperationRow, events: OperationStageEvent[]): ConsoleOperationHistory {

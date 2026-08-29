@@ -131,6 +131,36 @@ describe("console HTTP server", () => {
     await server.close(); log.close();
   });
 
+  it("keeps an authenticated loop draft objective private while confirmation creates the declared loop", async () => {
+    const { server, log } = setup(undefined, undefined, true);
+    const address = await server.listen(); const base = `http://127.0.0.1:${address.port}`;
+    const bootstrap = await fetch(`${base}/api/bootstrap`);
+    const { csrfToken } = await bootstrap.json() as { csrfToken: string };
+    const cookie = bootstrap.headers.get("set-cookie")!;
+    const objective = "DRAFT_OBJECTIVE_SENTINEL DRAFT_PROMPT_SENTINEL";
+    const reason = "verify private declaration confirmation";
+    const headers = { Origin: base, Cookie: cookie, "Content-Type": "application/json", "X-Orchestra-CSRF": csrfToken };
+    const draftResponse = await fetch(`${base}/api/loops/drafts`, { method: "POST", headers, body: JSON.stringify({
+      kind: "create", reason, declaration: { version: 1, name: "Private HTTP draft", description: "Safe description",
+        trigger: { kind: "fixed-interval", everyMinutes: 60, startsAt: 2_000 },
+        task: { kind: "agent", role: "implementer", objective }, harness: { runtime: "claudex", profile: "sol" },
+        maxConcurrency: 1, budgetUsd: 2, timeoutMinutes: 10, maxRetries: 1, enabled: false },
+    }) });
+    const draftText = await draftResponse.text();
+    expect(draftResponse.status).toBe(200); expect(draftText).not.toContain("DRAFT_OBJECTIVE_SENTINEL");
+    expect(draftText).not.toContain("DRAFT_PROMPT_SENTINEL"); expect(draftText).not.toContain('"objective"');
+    const draft = JSON.parse(draftText) as { id: string; digest: string; loopId: string; declaration: { task: unknown } };
+    expect(draft.declaration.task).toEqual({ kind: "agent", role: "implementer" });
+
+    const confirmResponse = await fetch(`${base}/api/loops/confirm`, { method: "POST", headers,
+      body: JSON.stringify({ draftId: draft.id, digest: draft.digest, reason }) });
+    const confirmText = await confirmResponse.text();
+    expect(confirmResponse.status).toBe(200); expect(confirmText).not.toContain("DRAFT_OBJECTIVE_SENTINEL");
+    expect(confirmText).not.toContain("DRAFT_PROMPT_SENTINEL"); expect(confirmText).not.toContain('"objective"');
+    expect(log.loopById(draft.loopId)?.task.objective).toBe(objective);
+    await server.close(); log.close();
+  });
+
   it("authorizes before strict loop parsing and rejects escaped nested duplicates without mutation",async()=>{
     const {server,log}=setup(undefined,undefined,true);const address=await server.listen();const base=`http://127.0.0.1:${address.port}`;
     const bootstrap=await fetch(`${base}/api/bootstrap`);const {csrfToken}=await bootstrap.json() as {csrfToken:string};const cookie=bootstrap.headers.get("set-cookie")!;

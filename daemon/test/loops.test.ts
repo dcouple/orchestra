@@ -70,6 +70,21 @@ describe("durable loop scheduling",()=>{
     const replay=await restarted.confirm({draftId:draft.id,digest:draft.digest,reason:draft.reason});
     expect(replay.deduplicated).toBe(true);expect(replay.loop).toEqual(first.loop);
   });
+  it("projects every public declaration-bearing draft and rejects an unsupported delete draft",async()=>{
+    log=new EventLog(":memory:");const broker=new ConsoleLoopBroker({log,globalCapacity:2,now:()=>now,draftTtlMs:60_000});
+    const objective="PRIVATE DRAFT OBJECTIVE";const create=broker.draft({kind:"create",reason:"safe create preview",
+      declaration:{...declaration(false),task:{...declaration().task,objective}}});
+    expect(JSON.stringify(create)).not.toContain(objective);expect(create.declaration?.task).toEqual({kind:"agent",role:"planner"});
+    const created=await broker.confirm({draftId:create.id,digest:create.digest,reason:create.reason});
+    const variants=[broker.draft({kind:"update",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"safe update preview",
+      declaration:{...declaration(false),name:"Updated safely",task:{...declaration().task,objective:"UPDATED PRIVATE OBJECTIVE"}}}),
+      broker.draft({kind:"enable",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"safe enable preview"}),
+      broker.draft({kind:"disable",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"safe disable preview"})];
+    for(const preview of variants){const serialized=JSON.stringify(preview);expect(serialized).not.toContain("objective");expect(serialized).not.toContain("PRIVATE OBJECTIVE");
+      expect(preview.declaration?.task).toEqual({kind:"agent",role:"planner"});}
+    expect(()=>broker.draft({kind:"delete",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"unsupported delete"}))
+      .toThrowError(expect.objectContaining({code:"unsupported_kind"}));
+  });
   it("advances the definition revision once when automatic policy exhaustion blocks a loop",async()=>{
     const dir=mkdtempSync(join(tmpdir(),"loop-policy-revision-"));const dbPath=join(dir,"state.sqlite");log=new EventLog(dbPath);
     const transitionAt=now+900_001;const broker=new ConsoleLoopBroker({log,globalCapacity:2,now:()=>transitionAt,draftTtlMs:60_000});
@@ -170,6 +185,7 @@ describe("durable loop scheduling",()=>{
     const stale=broker.draft({kind:"update",loopId:before.id,expectedRevision:before.revision,reason:"stale edit",
       declaration:{...declaration(false),name:"Stale name"}});
     const recovery=broker.draft({kind:"cleanup.retry",loopId:before.id,expectedRevision:before.revision,reason:"operator revalidation"});
+    expect(recovery.declaration).toBeUndefined();expect(JSON.stringify(recovery)).not.toContain("objective");
     const confirmed=await broker.confirm({draftId:recovery.id,digest:recovery.digest,reason:recovery.reason});
     expect(confirmed.loop).toMatchObject({revision:before.revision+1,updatedAt:now+900_010});
     expect(log.loopCleanup(job.id)?.status).toBe("pending");

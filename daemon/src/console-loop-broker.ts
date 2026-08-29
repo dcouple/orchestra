@@ -1,10 +1,11 @@
 import { randomUUID, createHash } from "node:crypto";
 import type { EventLog, LoopMutationResult } from "./eventlog.js";
 import { canonicalLoopJson, validateLoopDeclaration, type LoopDeclaration } from "./loops.js";
+import { projectConsoleLoopDeclaration, type ConsoleLoopDeclaration } from "./console-projections.js";
 
 export class ConsoleLoopBrokerError extends Error { constructor(readonly code: string, readonly status = 409) { super(code); this.name="ConsoleLoopBrokerError"; } }
 export interface LoopDraftPreview { id: string; digest: string; kind: "create"|"update"|"enable"|"disable"|"cleanup.retry"; loopId: string;
-  expectedRevision: number | null; reason: string; expiresAt: number; changedFields: string[]; declaration?: LoopDeclaration;
+  expectedRevision: number | null; reason: string; expiresAt: number; changedFields: string[]; declaration?: ConsoleLoopDeclaration;
   policy: { maxConcurrency: number; budgetUsd: number; timeoutMinutes: number; maxRetries: number } | null; }
 interface Draft { preview: LoopDraftPreview; declaration: LoopDeclaration | undefined }
 export class ConsoleLoopBroker {
@@ -24,7 +25,7 @@ export class ConsoleLoopBroker {
     const digest=createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
     const changedFields=current&&declaration ? Object.keys(declaration).filter(key=>canonicalLoopJson((strip(current) as unknown as Record<string,unknown>)[key] as never)!==canonicalLoopJson((declaration as unknown as Record<string,unknown>)[key] as never)) : declaration ? Object.keys(declaration) : ["cleanup"];
     const preview: LoopDraftPreview={id:randomUUID(),digest,kind:kind as LoopDraftPreview["kind"],loopId,expectedRevision,reason,
-      expiresAt:this.now()+this.options.draftTtlMs,changedFields,...(declaration?{declaration}:{}),
+      expiresAt:this.now()+this.options.draftTtlMs,changedFields,...(declaration?{declaration:projectConsoleLoopDeclaration(declaration)}:{}),
       policy:declaration?{maxConcurrency:declaration.maxConcurrency,budgetUsd:declaration.budgetUsd,timeoutMinutes:declaration.timeoutMinutes,maxRetries:declaration.maxRetries}:null};
     this.drafts.set(preview.id,{preview,declaration}); return preview;
   }
