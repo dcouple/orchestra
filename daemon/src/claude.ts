@@ -45,6 +45,8 @@ export interface RunTurnOptions {
   };
   env?: NodeJS.ProcessEnv;
   trustedEnv?: Record<string, string>;
+  /** Restricts ambient/trusted environment and MCP discovery for local loop work. */
+  isolation?: "loop";
   onEvent?: (event: ClaudeEvent) => void | Promise<void>;
   onSessionId?: (id: string) => void | Promise<void>;
   signal?: AbortSignal;
@@ -188,6 +190,7 @@ function childEnv(
   extra: NodeJS.ProcessEnv | undefined,
   trusted: Record<string, string> | undefined,
   passthrough: readonly string[] | undefined,
+  isolation: RunTurnOptions["isolation"],
 ): NodeJS.ProcessEnv {
   const allowed: NodeJS.ProcessEnv = {};
   const pass = new Set(
@@ -234,6 +237,25 @@ function childEnv(
       allowed[key] = value;
     }
   };
+  if (isolation === "loop") {
+    const runtimeKeys = new Set([
+      "PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "LANG",
+    ]);
+    for (const [key, value] of Object.entries(process.env))
+      if (runtimeKeys.has(key) || key.startsWith("LC_"))
+        include(key, value);
+    const loopExtraKeys = new Set([
+      "CLIPROXY_API_KEY", "BASH_DEFAULT_TIMEOUT_MS", "BASH_MAX_TIMEOUT_MS",
+      "TRACEPARENT", "ORCHESTRA_OTEL_RELAY_ENDPOINT",
+    ]);
+    for (const [key, value] of Object.entries(extra ?? {}))
+      if (loopExtraKeys.has(key) || OTEL_CHILD_ENV_KEYS.has(key))
+        include(key, value, true);
+    const loopTrustedKeys = new Set(["ANTHROPIC_BASE_URL", "ENABLE_TOOL_SEARCH"]);
+    for (const [key, value] of Object.entries(trusted ?? {}))
+      if (loopTrustedKeys.has(key)) allowed[key] = value;
+    return allowed;
+  }
   for (const [key, value] of Object.entries(process.env)) include(key, value);
   for (const [key, value] of Object.entries(extra ?? {}))
     include(key, value, true);
@@ -252,9 +274,13 @@ function childEnv(
 
 export function buildTurnSettings(
   toolHook?: RunTurnOptions["toolHook"],
+  isolation?: RunTurnOptions["isolation"],
 ): Record<string, unknown> {
   return {
-    enableAllProjectMcpServers: true,
+    enableAllProjectMcpServers: isolation !== "loop",
+    ...(isolation === "loop"
+      ? { enabledMcpjsonServers: [], disabledMcpjsonServers: ["*"] }
+      : {}),
     ...(toolHook
       ? buildToolHookSettings(
           toolHook.dbPath,
@@ -326,7 +352,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   const settingsPath = join(configDir, "settings.json");
   await writeFile(
     settingsPath,
-    JSON.stringify(buildTurnSettings(options.toolHook)),
+    JSON.stringify(buildTurnSettings(options.toolHook, options.isolation)),
     { mode: 0o600 },
   );
   const args = [
@@ -339,6 +365,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   ];
   if (options.resumeSessionId) args.push("--resume", options.resumeSessionId);
   args.push("--settings", settingsPath);
+  if (options.isolation === "loop") args.push("--strict-mcp-config");
   args.push(
     "--permission-mode",
     options.permissionMode,
@@ -355,6 +382,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
       options.env,
       options.trustedEnv,
       options.mcpEnvPassthrough,
+      options.isolation,
     ),
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],

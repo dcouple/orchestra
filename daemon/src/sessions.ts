@@ -37,6 +37,7 @@ import type {
   StopAckRow,
   TurnActivityRow,
   TurnRow,
+  LoopOccurrenceRow,
 } from "./eventlog.js";
 import type { LinearGateway, PostResult, ProgressContent } from "./linear.js";
 import { buildTurnSpan, mintSpanId, postSpans, traceContext } from "./otel.js";
@@ -48,6 +49,7 @@ import {
   readCliproxyManagementKey,
 } from "./proxy-env.js";
 import { WorktreeManager } from "./worktrees.js";
+import { classifyLoopOutcome } from "./loops.js";
 
 interface Logger {
   log(...args: unknown[]): void;
@@ -416,6 +418,8 @@ export class SessionWorker {
             : {}),
         }),
       );
+    const recoveredLoops=this.log.recoverStaleLoopOccurrences(this.now());
+    if(recoveredLoops)this.logger.log(jsonLog({event:"loop_restart_recovered",occurrences:recoveredLoops,reason:"service_restart"}));
     this.timer = setInterval(() => {
       void this.drain();
       void this.triggerActivityDrain();
@@ -454,6 +458,13 @@ export class SessionWorker {
         const controller = new AbortController();
         const promise = this.process(turn, controller.signal)
           .catch((error) => {
+            if(turn.originKind === "loop" && turn.loopOccurrenceId){
+              const occurrence=this.log.loopOccurrence(turn.loopOccurrenceId);
+              if(occurrence)this.log.finishLoopOccurrence(occurrence.id,
+                classifyLoopOutcome({shutdown:this.stopped,budgetUsd:occurrence.snapshot.budgetUsd,failed:true}),
+                error instanceof Error?error.message:String(error),this.now());
+              return;
+            }
             if (this.stopRequested.has(turn.id)) {
               this.log.markTurnStopped(turn.id, this.now());
               this.logger.log(
@@ -515,11 +526,56 @@ export class SessionWorker {
     }
   }
 
+  private async processLoop(turn:TurnRow,occurrence:LoopOccurrenceRow,signal:AbortSignal):Promise<void>{
+    const startedAt=this.now();
+    const session=this.log.getSession(turn.linearSessionId);
+    if(!session)throw new Error(`Missing loop session ${turn.linearSessionId}`);
+    const owner=`loop-${occurrence.loopId}-${occurrence.id}`;
+    const worktree=await this.worktrees.ensureWorktree(owner);
+    this.log.updateLoopOccurrenceWorktree(occurrence.id,worktree.path,worktree.branch);
+    this.log.updateSessionWorktree(occurrence.runId,worktree.path,worktree.branch,this.now());
+    const snapshot=occurrence.snapshot;
+    const argv=snapshot.harness.runtime==="claudex"?this.config.claudexArgv
+      :snapshot.harness.profile==="fable"?this.config.fableArgv:this.config.claudeArgv;
+    if(!argv){this.log.finishLoopOccurrence(occurrence.id,"retriable_failure","harness_unconfigured",this.now());return;}
+    const timeoutController=new AbortController();
+    const timer=setTimeout(()=>timeoutController.abort(),snapshot.timeoutMinutes*60_000);timer.unref();
+    let result:RunTurnResult;
+    try{
+      const cliproxyApiKey=await readCliproxyApiKey(this.config.cliproxyEnvFile);
+      const traceId=session.traceId;const spanId=randomUUID().replaceAll("-","").slice(0,16);
+      this.log.setTurnTraceContext(turn.id,traceId,spanId);
+      const relayCapability=this.options.relay?.createCapability({linearSessionId:occurrence.runId,traceId,turnSpanId:spanId});
+      const telemetryEnv:NodeJS.ProcessEnv=relayCapability?{OTEL_RESOURCE_ATTRIBUTES:[`orchestra.run_id=${encodeURIComponent(occurrence.runId)}`,"orchestra.origin=loop",`loop.id=${encodeURIComponent(occurrence.loopId)}`,`loop.occurrence_id=${encodeURIComponent(occurrence.id)}`].join(","),
+        TRACEPARENT:traceContext(traceId,spanId).traceparent,OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:relayCapability.endpoint,ORCHESTRA_OTEL_RELAY_ENDPOINT:relayCapability.endpoint,
+        OTEL_EXPORTER_OTLP_TRACES_PROTOCOL:"http/protobuf",OTEL_TRACES_EXPORTER:"otlp",OTEL_METRICS_EXPORTER:"none",OTEL_LOGS_EXPORTER:"none"}:{};
+      result=await runTurn({cwd:worktree.path,prompt:snapshot.task.objective,argv,
+        isolation:"loop",
+        permissionMode:snapshot.task.role==="implementer"?this.config.doPermissionMode:this.config.claudePermissionMode,
+        maxTurns:snapshot.task.role==="implementer"?this.config.doMaxTurns:this.config.claudeMaxTurns,
+        maxBudgetUsd:snapshot.budgetUsd,mcpConfigJson:JSON.stringify({mcpServers:{}}),
+        env:{CLIPROXY_API_KEY:cliproxyApiKey,BASH_DEFAULT_TIMEOUT_MS:String(this.config.bashDefaultTimeoutMs),BASH_MAX_TIMEOUT_MS:String(this.config.bashMaxTimeoutMs),...telemetryEnv},
+        signal:AbortSignal.any([signal,timeoutController.signal]),...(snapshot.harness.runtime==="claudex"&&this.config.claudexEnv
+          ?{trustedEnv:this.config.claudexEnv}:{})});
+    }catch(error){result={ok:false,isError:true,exitCode:null,signal:null,spawnError:error instanceof Error?error.message:String(error),permissionDenials:[],sawResult:false,capacityEvidence:[]};}
+    finally{clearTimeout(timer);}
+    const outcome=classifyLoopOutcome({shutdown:this.stopped,timedOut:timeoutController.signal.aborted&&!signal.aborted,
+      budgetStopped:result.resultSubtype==="error_max_budget_usd",...(result.usage?.costUsd!==undefined?{costUsd:result.usage.costUsd}:{}),budgetUsd:snapshot.budgetUsd,
+      permissionDenied:result.permissionDenials.length>0,failed:!result.ok});
+    this.log.recordLoopInvocation(occurrence.id,{startedAt,endedAt:this.now(),outcome,...(result.usage?{usage:result.usage}:{})});
+    if(result.usage)this.log.recordLoopUsage(occurrence.id,result.usage);
+    this.log.finishLoopOccurrence(occurrence.id,outcome,result.ok?null:outcome,this.now());
+  }
+
   private async process(turn: TurnRow, signal: AbortSignal): Promise<void> {
+    if(turn.originKind === "loop" && turn.loopOccurrenceId){const occurrence=this.log.loopOccurrence(turn.loopOccurrenceId);
+      if(!occurrence)throw new Error(`Missing loop occurrence ${turn.loopOccurrenceId}`);
+      await this.processLoop(turn,occurrence,signal);return;}
     const session = this.log.getSession(turn.linearSessionId);
     if (!session) throw new Error(`Missing session ${turn.linearSessionId}`);
     const identifier =
       session.issueIdentifier ?? session.issueId ?? turn.issueId;
+    if(!identifier)throw new Error(`Missing Linear issue identity for turn ${turn.id}`);
     const worktree = await this.worktrees.ensureWorktree(identifier);
     this.log.updateSessionWorktree(
       turn.linearSessionId,

@@ -9,6 +9,9 @@ import type { ConsoleConfig } from "./config.js";
 import { ConsoleAuthorizationError, ConsoleMutationGuard } from "./console-authorization.js";
 import { ConsoleBrokerError, type ConsoleOperationBroker } from "./console-operation-broker.js";
 import { ConsoleValidationError } from "./console-operation-schema.js";
+import { ConsoleLoopBrokerError, type ConsoleLoopBroker } from "./console-loop-broker.js";
+import { parseJsonNoDuplicateKeys, StrictJsonError } from "./strict-json.js";
+import { LoopValidationError } from "./loops.js";
 import type { EventLog } from "./eventlog.js";
 import { projectConsoleOperation, projectDependencies, type ConsoleDaemonHealth, type ConsoleOverview } from "./console-projections.js";
 import { readSkillInventory, type ConsoleSkillsPayload } from "./skill-inventory.js";
@@ -24,6 +27,7 @@ export interface ConsoleServerOptions {
   beforeAssetOpen?: (canonicalPath: string) => void | Promise<void>;
   readSkills?: () => Promise<ConsoleSkillsPayload>;
   broker?: ConsoleOperationBroker;
+  loopBroker?: ConsoleLoopBroker;
 }
 
 interface OpenAsset { path: string; handle: FileHandle }
@@ -102,11 +106,12 @@ export class ConsoleServer {
       }
       await this.staticFile(path, request.method === "HEAD", response);
     } catch (error) {
-      const known = error instanceof ConsoleAuthorizationError || error instanceof ConsoleBrokerError || error instanceof ConsoleValidationError;
+      const known = error instanceof ConsoleAuthorizationError || error instanceof ConsoleBrokerError || error instanceof ConsoleValidationError
+        || error instanceof ConsoleLoopBrokerError || error instanceof StrictJsonError || error instanceof LoopValidationError;
       if (!known) this.logger.error(JSON.stringify({ level: "error", event: "console_request_failed", error: "internal_error" }));
       if (!response.headersSent) {
-        const status = error instanceof ConsoleAuthorizationError || error instanceof ConsoleBrokerError ? error.status
-          : error instanceof ConsoleValidationError ? 400 : 500;
+        const status = error instanceof ConsoleAuthorizationError || error instanceof ConsoleBrokerError || error instanceof ConsoleLoopBrokerError ? error.status
+          : error instanceof ConsoleValidationError || error instanceof LoopValidationError || error instanceof StrictJsonError ? 400 : 500;
         const code = known ? (error as ConsoleAuthorizationError | ConsoleBrokerError | ConsoleValidationError).code : "internal_error";
         this.json(response, status, { error: { code, message: code.replaceAll("_", " ") } });
       }
@@ -158,6 +163,11 @@ export class ConsoleServer {
       this.json(response, 200, { operations: this.options.log.listOperations()
         .map(operation => projectConsoleOperation(operation, this.options.log.operationEvents(operation.id))) }); return;
     }
+    if (path === "/api/loops") { this.json(response,200,{loops:this.options.log.listLoops().map(loop=>({ ...loop, task:{kind:"agent",role:loop.task.role} }))}); return; }
+    const loopMatch=/^\/api\/loops\/([^/]+)$/.exec(path);
+    if(loopMatch){let id:string;try{id=decodeURIComponent(loopMatch[1]!);}catch{this.json(response,400,{error:{code:"bad_request",message:"invalid loop id"}});return;}
+      const loop=this.options.log.loopById(id);if(!loop){this.json(response,404,{error:{code:"not_found",message:"loop not found"}});return;}
+      this.json(response,200,{...loop,audit:this.options.log.loopAudit(id),cleanups:this.options.log.loopCleanups(id).map(({worktreePath,ownerKey,...row})=>row),occurrences:this.options.log.loopOccurrences(id).map(({snapshot,...row})=>({...row,policy:{budgetUsd:snapshot.budgetUsd,timeoutMinutes:snapshot.timeoutMinutes,maxRetries:snapshot.maxRetries}}))});return;}
     if (path === "/api/health") { this.json(response, 200, { ok: true, observedAt: this.now() }); return; }
     if (path === "/api/overview") {
       const observedAt = this.now();
@@ -199,6 +209,13 @@ export class ConsoleServer {
   }
 
   private async mutationApi(path: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if(path==="/api/loops/drafts"||path==="/api/loops/confirm"){
+      if(!this.options.loopBroker){this.json(response,503,{error:{code:"writes_unavailable",message:"writes unavailable"}});return;}
+      const raw=await this.mutationGuard.authorizeAndReadBody(request,this.boundPort??0);let body:unknown;
+      try{body=parseJsonNoDuplicateKeys(raw.toString("utf8"));}catch(error){if(error instanceof StrictJsonError)throw new ConsoleAuthorizationError(error.code,400);throw error;}
+      if(path==="/api/loops/drafts"){this.json(response,200,this.options.loopBroker.draft(body));return;}
+      this.json(response,200,await this.options.loopBroker.confirm(body));return;
+    }
     if (!this.options.broker) { this.json(response, 405, { error: { code: "method_not_allowed", message: "read-only endpoint" } }, { Allow: "GET" }); return; }
     const body = await this.mutationGuard.authorizeAndReadJson(request, this.boundPort ?? 0);
     if (path === "/api/drafts" || path === "/api/config/drafts" || path === "/api/operations/drafts") {

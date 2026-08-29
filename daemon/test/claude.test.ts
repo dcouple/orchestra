@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -171,6 +171,45 @@ describe("runTurn", () => {
       enableAllProjectMcpServers: true,
       ...buildToolHookSettings(dbPath, turnId, operationsCliPath),
     });
+  });
+
+  it("isolates loop environment and disables every ambient MCP discovery source", async () => {
+    const dir = cwd();
+    const capture = join(dir, "loop-child.json");
+    writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: {
+      linear: { command: "linear-secret" }, playwright: { command: "browser-secret" },
+      xcodebuildmcp: { command: "sim-secret" }, attachments: { command: "attachment-secret" },
+    } }));
+    const prohibited = {
+      LINEAR_API_KEY: "linear", GH_TOKEN: "gh", GITHUB_TOKEN: "github",
+      ORCHESTRA_BROWSER_REQUEST_FILE: "/secret/browser", ORCHESTRA_BROWSER_STATE_DIR: "/secret/state",
+      ORCHESTRA_SIM_CONTEXT: "sim", ORCHESTRA_DISPATCH_OWNER: "dispatch",
+      ARTIFACT_HOST_TOKEN: "artifact", ARTIFACT_TOKEN: "artifact-raw", NTFY_URL: "notification",
+      MCP_ENV_PASSTHROUGH: "mcp", ATTACHMENT_DOWNLOAD_TOKEN: "attachment",
+    };
+    const previous = Object.fromEntries(Object.keys(prohibited).map(key => [key, process.env[key]]));
+    Object.assign(process.env, prohibited);
+    const script = `const fs=require("node:fs");const a=process.argv.slice(1);const s=a.indexOf("--settings");const m=a.indexOf("--mcp-config");fs.writeFileSync(${JSON.stringify(capture)},JSON.stringify({env:process.env,args:a,settings:JSON.parse(fs.readFileSync(a[s+1])),mcp:JSON.parse(fs.readFileSync(a[m+1]))}));console.log(JSON.stringify({type:"system",subtype:"init",session_id:"loop-session"}));console.log(JSON.stringify({type:"result",subtype:"success",is_error:false,result:"ok",session_id:"loop-session",permission_denials:[]}));`;
+    try {
+      const result = await runTurn(options({ cwd: dir, argv: [process.execPath, "-e", script, "--"], isolation: "loop",
+        mcpConfigJson: JSON.stringify({ mcpServers: {} }),
+        env: { CLIPROXY_API_KEY: "runtime", BASH_DEFAULT_TIMEOUT_MS: "1000", LINEAR_API_KEY: "extra-linear" },
+        trustedEnv: { ANTHROPIC_BASE_URL: "http://proxy", ENABLE_TOOL_SEARCH: "true", LINEAR_API_KEY: "trusted-linear",
+          ORCHESTRA_BROWSER_ENABLED: "trusted-browser", GITHUB_TOKEN: "trusted-github" } }));
+      expect(result.ok).toBe(true);
+      const row = JSON.parse(readFileSync(capture, "utf8")) as { env: Record<string,string>; args:string[];
+        settings:Record<string,unknown>;mcp:Record<string,unknown> };
+      for (const key of Object.keys(prohibited)) expect(row.env[key], key).toBeUndefined();
+      expect(row.env.LINEAR_API_KEY).toBeUndefined();
+      expect(row.env.CLIPROXY_API_KEY).toBe("runtime");
+      expect(row.env.ANTHROPIC_BASE_URL).toBe("http://proxy");
+      expect(row.settings).toEqual({ enableAllProjectMcpServers: false, enabledMcpjsonServers: [], disabledMcpjsonServers: ["*"] });
+      expect(row.args).toContain("--strict-mcp-config");
+      expect(row.mcp).toEqual({ mcpServers: {} });
+      expect(JSON.stringify(row)).not.toMatch(/linear-secret|browser-secret|sim-secret|attachment-secret/);
+    } finally {
+      for (const [key, value] of Object.entries(previous)) value === undefined ? delete process.env[key] : process.env[key] = value;
+    }
   });
 
   it("parses every mixed assistant block and captures the first session id", async () => {

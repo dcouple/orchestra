@@ -9,6 +9,7 @@ export interface ConsoleRunSummary {
   issueIdentifier: string | null; runtime: "claude" | "claudex";
   startedAt: number; completedAt: number | null; durationMs: number;
   invocationCount: number; totalTokens: number; resources: ConsoleResource[];
+  origin: "linear" | "loop"; loopName: string | null; loopId: string | null; occurrenceId: string | null;
 }
 export interface ConsoleInvocation {
   id: number; role: string; runtime: string; model: string | null;

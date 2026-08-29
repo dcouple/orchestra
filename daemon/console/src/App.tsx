@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ConfigurationSnapshot, type Dependencies, type DraftPreview, type Operation, type Overview, type RunDetail, type RunSummary, type Skills } from "./api";
+import { api, type ConfigurationSnapshot, type Dependencies, type DraftPreview, type LoopDeclaration, type LoopDraft, type LoopSummary, type Operation, type Overview, type RunDetail, type RunSummary, type Skills } from "./api";
 import { DataTable } from "./components/DataTable";
 import { Layout, type Page } from "./components/Layout";
 import { RunTimeline, formatDuration } from "./components/RunTimeline";
@@ -79,10 +79,49 @@ export function App() {
     </section>}
     {loading && !overview ? <div className="loading" role="status">Loading console…</div> : page === "overview"
       ? <OverviewPage overview={overview} onRun={chooseRun} /> : page === "runs"
-        ? <RunsPage runs={runs} selected={selected} onRun={chooseRun} /> : page === "dependencies"
+        ? <RunsPage runs={runs} selected={selected} onRun={chooseRun} /> : page === "loops" ? <LoopsPage onRunId={id=>void chooseRun({id} as RunSummary)} /> : page === "dependencies"
           ? <DependenciesPage snapshot={dependencies} /> : page === "skills" ? <SkillsPage inventory={skills} />
             : page === "configuration" ? <ConfigurationPage /> : <OperationsPage />}
   </Layout>;
+}
+
+function LoopsPage({onRunId}:{onRunId:(id:string)=>void}){
+  const [loops,setLoops]=useState<LoopSummary[]>([]);const [selected,setSelected]=useState<Awaited<ReturnType<typeof api.loop>>>();
+  const [editing,setEditing]=useState<Awaited<ReturnType<typeof api.loop>>>();
+  const [preview,setPreview]=useState<LoopDraft>();const [error,setError]=useState<string>();const [busy,setBusy]=useState(false);
+  const [reasonAction,setReasonAction]=useState<{kind:"enable"|"disable"|"cleanup.retry";loop:LoopSummary}>();const [actionReason,setActionReason]=useState("");const [reasonError,setReasonError]=useState<string>();
+  const load=useCallback(()=>api.loops().then(value=>{setLoops(value.loops);setError(undefined)},value=>setError(value instanceof Error?value.message:"Loops unavailable")),[]);
+  useEffect(()=>{void load();},[load]);
+  const draft=async(event:React.FormEvent<HTMLFormElement>)=>{event.preventDefault();setBusy(true);setError(undefined);const data=new FormData(event.currentTarget);
+    const declaration:LoopDeclaration={version:1,name:String(data.get("name")),description:String(data.get("description")),trigger:{kind:"fixed-interval",everyMinutes:Number(data.get("everyMinutes")),startsAt:new Date(String(data.get("startsAt"))).getTime()},
+      task:{kind:"agent",role:String(data.get("role")) as "planner"|"implementer",objective:String(data.get("objective"))},harness:{runtime:String(data.get("runtime")) as "claude"|"claudex",profile:String(data.get("profile")) as "fable"|"sol"},
+      maxConcurrency:Number(data.get("maxConcurrency")),budgetUsd:Number(data.get("budgetUsd")),timeoutMinutes:Number(data.get("timeoutMinutes")),maxRetries:Number(data.get("maxRetries")),enabled:editing?.enabled??false};
+    try{setPreview(await api.loopDraft({kind:editing?"update":"create",...(editing?{loopId:editing.id,expectedRevision:editing.revision}:{}),reason:String(data.get("reason")),declaration}));}catch(value){setError(value instanceof Error?value.message:"Draft failed");}finally{setBusy(false)}};
+  const confirm=async()=>{if(!preview)return;setBusy(true);try{await api.loopConfirm({draftId:preview.id,digest:preview.digest,reason:preview.reason});const loopId=preview.loopId;setPreview(undefined);await load();if(selected?.id===loopId)setSelected(await api.loop(loopId));}catch(value){setError(value instanceof Error?value.message:"Confirm failed");}finally{setBusy(false)}};
+  const requestReason=(kind:"enable"|"disable"|"cleanup.retry",loop:LoopSummary)=>{setActionReason("");setReasonError(undefined);setReasonAction({kind,loop});};
+  const draftReasoned=async(event:React.FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!reasonAction)return;const reason=actionReason.trim();
+    if(!reason){setReasonError("A reason is required");return;}if(reason.length>240){setReasonError("Reason must be 240 characters or fewer");return;}
+    setBusy(true);setError(undefined);setReasonError(undefined);try{setPreview(await api.loopDraft({kind:reasonAction.kind,loopId:reasonAction.loop.id,expectedRevision:reasonAction.loop.revision,reason}));setReasonAction(undefined);setActionReason("");}
+    catch(value){setReasonError(value instanceof Error?value.message:"Draft failed");}finally{setBusy(false)}};
+  const inspect=async(loop:LoopSummary)=>{try{setSelected(await api.loop(loop.id));}catch(value){setError(value instanceof Error?value.message:"History unavailable")}};
+  return <><header className="page-head"><div><p className="eyebrow">Define → Enable → Observe</p><h1>Loops</h1><p>Bounded fixed-interval local agent work.</p></div></header>{error&&<div role="alert" className="alert">{error}</div>}
+    <div className="loops-layout"><form key={editing?.id??"new"} className="card section loop-form" onSubmit={event=>void draft(event)}><h2>{editing?"Edit loop":"Define loop"}</h2>
+      <label>Name <input name="name" required maxLength={80} defaultValue={editing?.name}/></label><label>Description <input name="description" maxLength={500} defaultValue={editing?.description}/></label>
+      <label>Every minutes <input name="everyMinutes" type="number" min="15" max="10080" defaultValue={editing?.trigger.everyMinutes??60} required/></label><label>Starts at <input name="startsAt" type="datetime-local" defaultValue={editing?new Date(editing.trigger.startsAt).toISOString().slice(0,16):undefined} required/></label>
+      <label>Task role <select name="role" defaultValue={editing?.task.role??"planner"}><option value="planner">Planner</option><option value="implementer">Implementer</option></select></label><label>Objective <textarea name="objective" required maxLength={4000} defaultValue={editing?.task.objective}/></label>
+      <label>Runtime <select name="runtime" defaultValue={editing?.harness.runtime??"claude"}><option value="claude">Claude</option><option value="claudex">Claudex</option></select></label><label>Profile <select name="profile" defaultValue={editing?.harness.profile??"sol"}><option value="sol">Sol</option><option value="fable">Fable</option></select></label>
+      <label>Concurrency <input name="maxConcurrency" type="number" min="1" max="4" defaultValue={editing?.maxConcurrency??1}/></label><label>Budget USD <input name="budgetUsd" type="number" min="0.01" max="100" step="0.01" defaultValue={editing?.budgetUsd??5}/></label>
+      <label>Timeout minutes <input name="timeoutMinutes" type="number" min="1" max="120" defaultValue={editing?.timeoutMinutes??30}/></label><label>Retries <input name="maxRetries" type="number" min="0" max="3" defaultValue={editing?.maxRetries??0}/></label><label>Reason <input name="reason" required maxLength={240}/></label>
+      <button disabled={busy}>Review definition</button>{editing&&<button type="button" onClick={()=>setEditing(undefined)}>Cancel edit</button>}</form><section className="card section"><h2>Definitions</h2><DataTable caption="Loop definitions" rows={loops} rowKey={row=>row.id} empty="No loops defined." columns={[
+        {key:"name",heading:"Loop",render:row=><button className="link-button" onClick={()=>void inspect(row)}>{row.name}</button>},{key:"schedule",heading:"Schedule",render:row=><>{row.trigger.everyMinutes} minutes<small>Next {time(row.nextDueAt)}</small></>},
+        {key:"policy",heading:"Policy",render:row=>`$${row.budgetUsd} · ${row.timeoutMinutes}m · ${row.maxRetries} retries`},{key:"state",heading:"State",render:row=><><StatusBadge status={row.blockedReason??(row.enabled?"enabled":"disabled")}/><button disabled={busy} onClick={()=>requestReason(row.enabled?"disable":"enable",row)}>{row.enabled?"Disable":"Enable"}</button></>}]}/></section></div>
+    {selected&&<section className="card section"><h2>{selected.name} occurrence history</h2><button type="button" onClick={()=>setEditing(selected)}>Edit definition</button>{selected.cleanups?.some(row=>row.status==="retained"||row.status==="failed")&&<button type="button" onClick={()=>requestReason("cleanup.retry",selected)}>Retry cleanup</button>}{selected.blockedReason&&<p role="status">Blocked: {selected.blockedReason}</p>}<DataTable caption="Loop occurrence history" rows={selected.occurrences} rowKey={row=>row.id} empty="No occurrences yet." columns={[
+      {key:"run",heading:"Run",render:row=><button className="link-button" onClick={()=>onRunId(row.runId)}>{time(row.scheduledFor)}</button>},{key:"status",heading:"Status",render:row=><StatusBadge status={row.status}/>},{key:"outcome",heading:"Outcome",render:row=>row.outcome??row.error??"Pending"}]}/></section>}
+    {reasonAction&&<div className="dialog-backdrop" role="presentation"><form className="card dialog" role="dialog" aria-modal="true" aria-labelledby="loop-reason-title" onSubmit={event=>void draftReasoned(event)}>
+      <h2 id="loop-reason-title">Reason to {reasonAction.kind==="cleanup.retry"?"retry cleanup":reasonAction.kind} {reasonAction.loop.name}</h2><p>This bounded reason is recorded in immutable loop audit history.</p>
+      {reasonError&&<div className="alert" role="alert">{reasonError}</div>}<label>Operator reason <input autoFocus value={actionReason} onChange={event=>setActionReason(event.target.value)} maxLength={240} aria-describedby="loop-reason-help"/></label><small id="loop-reason-help">Required · 240 characters maximum</small>
+      <div className="actions"><button type="button" disabled={busy} onClick={()=>{setReasonAction(undefined);setReasonError(undefined)}}>Cancel</button><button type="submit" disabled={busy}>{busy?"Reviewing…":"Review change"}</button></div></form></div>}
+    {preview&&<ConfirmDialog digest={preview.digest} reason={preview.reason} busy={busy} onCancel={()=>setPreview(undefined)} onConfirm={()=>void confirm()}/>}</>;
 }
 
 function ConfigurationPage() {
@@ -220,7 +259,7 @@ function RunsPage({ runs, selected, onRun }: { runs: RunSummary[]; selected?: Ru
 
 function RunsTable({ runs, onRun }: { runs: RunSummary[]; onRun: (run: RunSummary) => void }) {
   return <DataTable caption="Run history" rows={runs} rowKey={run => run.id} empty="No runs have been recorded yet." columns={[
-    { key: "issue", heading: "Run", render: run => <button type="button" className="link-button" onClick={() => onRun(run)}>{run.issueIdentifier ?? run.id}</button> },
+    { key: "issue", heading: "Run", render: run => <button type="button" className="link-button" onClick={() => onRun(run)}>{run.loopName ?? run.issueIdentifier ?? run.id}</button> },
     { key: "mode", heading: "Mode", render: run => <><strong>{run.mode}</strong><small>{run.app} · {run.runtime}</small></> },
     { key: "status", heading: "Status", render: run => <StatusBadge status={run.status} /> },
     { key: "duration", heading: "Duration", render: run => formatDuration(run.durationMs) },
@@ -229,7 +268,7 @@ function RunsTable({ runs, onRun }: { runs: RunSummary[]; onRun: (run: RunSummar
 }
 
 function RunDetailView({ run }: { run: RunDetail }) {
-  return <><div className="section-head"><div><p className="eyebrow">Selected run</p><h2>{run.issueIdentifier ?? run.id}</h2><p>{time(run.startedAt)} · {formatDuration(run.durationMs)}</p></div><StatusBadge status={run.status} /></div>
+  return <><div className="section-head"><div><p className="eyebrow">Selected run</p><h2>{run.loopName ?? run.issueIdentifier ?? run.id}</h2><p>{time(run.startedAt)} · {formatDuration(run.durationMs)}</p></div><StatusBadge status={run.status} /></div>
     {run.resources.length > 0 && <div className="actions" aria-label="Run resources">{run.resources.map(resource => <a key={resource.label} href={resource.url} target="_blank" rel="noreferrer">Open {resource.label}</a>)}</div>}
     <dl className="run-facts"><div><dt>Runtime</dt><dd>{run.runtime}</dd></div><div><dt>Mode</dt><dd>{run.mode}</dd></div><div><dt>Total usage</dt><dd>{run.totalTokens.toLocaleString()} tokens</dd></div></dl>
     <RunTimeline invocations={run.invocations} /></>;

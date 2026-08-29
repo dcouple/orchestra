@@ -32,7 +32,42 @@ function event(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function seedLoop(log: EventLog, now = 1_800_000_000_000) {
+  const loop = log.mutateLoop({ draftId: `schema-${now}`, digest: "d".repeat(64), id: `loop-${now}`,
+    declaration: { version: 1, name: "Schema loop", description: "", trigger: { kind: "fixed-interval", everyMinutes: 15, startsAt: now },
+      task: { kind: "agent", role: "planner", objective: "Check structural lineage." }, harness: { runtime: "claude", profile: "sol" },
+      maxConcurrency: 1, budgetUsd: 1, timeoutMinutes: 5, maxRetries: 0, enabled: true },
+    expectedRevision: null, reason: "schema test", kind: "create", now });
+  const occurrence = log.admitDueLoops(now)[0]!;
+  return { loopId: loop.loop.id, occurrenceId: occurrence.id };
+}
+
+function expectTurnOriginConstraints(db: Database.Database, eventId: number, loopId: string, occurrenceId: string): void {
+  const insert = db.prepare(`INSERT INTO turns
+    (origin_kind,origin_id,loop_occurrence_id,resource_key,event_id,linear_session_id,issue_id,source_key,kind,status)
+    VALUES (?,?,?,?,?,?,?,?,?, 'pending')`);
+  expect(() => insert.run("linear",null,null,"bad-linear-null",null,"bad-linear-null",null,"bad-linear-null","created")).toThrow();
+  expect(() => insert.run("linear",loopId,occurrenceId,"bad-linear-loop",eventId,"bad-linear-loop","issue","bad-linear-loop","created")).toThrow();
+  expect(() => insert.run("loop",null,null,"bad-loop-null",null,"bad-loop-null",null,"bad-loop-null","loop")).toThrow();
+  expect(() => insert.run("loop",loopId,occurrenceId,"bad-loop-event",eventId,"bad-loop-event",null,"bad-loop-event","loop")).toThrow();
+  expect(() => insert.run("linear",null,null,"bad-linear-kind",eventId,"bad-linear-kind","issue","bad-linear-kind","loop")).toThrow();
+  expect(() => insert.run("loop",loopId,occurrenceId,"bad-loop-kind",null,"bad-loop-kind",null,"bad-loop-kind","created")).toThrow();
+  expect(() => insert.run("linear",null,null,"bad-linear-fk",9_999_999,"bad-linear-fk","issue","bad-linear-fk","created")).toThrow();
+  expect(() => insert.run("loop",loopId,"missing-occurrence","bad-loop-fk",null,"bad-loop-fk",null,"bad-loop-fk","loop")).toThrow();
+  const foreignKeys=db.prepare("PRAGMA foreign_key_list(turns)").all() as Array<{id:number;seq:number;table:string;from:string;to:string}>;
+  expect(foreignKeys.map(row=>row.table)).toEqual(expect.arrayContaining(["events","loop_definitions","loop_occurrences"]));
+  const composite=foreignKeys.filter(row=>row.table==="loop_occurrences"&&["loop_occurrence_id","origin_id"].includes(row.from));
+  expect(new Set(composite.map(row=>row.id)).size).toBeLessThan(composite.length);
+}
+
 describe("EventLog", () => {
+  it("structurally enforces fresh linear and loop turn lineage", () => {
+    const dbPath=path();const log=new EventLog(dbPath);log.append(event());const seeded=seedLoop(log);log.close();
+    const db=new Database(dbPath);db.pragma("foreign_keys = ON");
+    const eventId=(db.prepare("SELECT id FROM events WHERE delivery_id='delivery-1'").get() as {id:number}).id;
+    expectTurnOriginConstraints(db,eventId,seeded.loopId,seeded.occurrenceId);
+    expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);db.close();
+  });
   it("atomically replaces bounded dependency observations and persists only safe capability fields", () => {
     const db = path(); let log = new EventLog(db);
     log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true, status: "healthy",
@@ -894,6 +929,18 @@ describe("EventLog", () => {
     const dbPath = path();
     const old = new Database(dbPath);
     old.exec(`
+      CREATE TABLE events (
+        id INTEGER PRIMARY KEY,
+        delivery_id TEXT NOT NULL UNIQUE,
+        webhook_id TEXT,
+        app TEXT NOT NULL CHECK(app IN ('planner','implementer')),
+        action TEXT,
+        agent_session_id TEXT,
+        source_activity_id TEXT,
+        issue_id TEXT,
+        received_at INTEGER NOT NULL,
+        raw_body BLOB NOT NULL
+      );
       CREATE TABLE turns (
         id INTEGER PRIMARY KEY,
         event_id INTEGER NOT NULL UNIQUE,
@@ -907,13 +954,15 @@ describe("EventLog", () => {
         started_at INTEGER,
         finished_at INTEGER
       );
+      INSERT INTO events (id,delivery_id,app,action,agent_session_id,issue_id,received_at,raw_body)
+      VALUES (1,'legacy-delivery','planner','created','old-session','old-issue',1,X'7B7D');
       INSERT INTO turns (id, event_id, linear_session_id, issue_id, kind, prompt, status, attempts)
       VALUES (1, 1, 'old-session', 'old-issue', 'created', 'old prompt', 'done', 1);
     `);
     old.close();
 
-    const log = new EventLog(dbPath);
-    const db = new Database(dbPath, { readonly: true });
+    const log = new EventLog(dbPath);const seeded=seedLoop(log,1_800_000_000_001);
+    const db = new Database(dbPath);db.pragma("foreign_keys = ON");
     const columns = (
       db.prepare("PRAGMA table_info(turns)").all() as Array<{ name: string }>
     ).map((column) => column.name);
@@ -939,6 +988,7 @@ describe("EventLog", () => {
       ]),
     );
     expect(indexes).toContainEqual({ name: "idx_turns_source_key", unique: 1 });
+    expectTurnOriginConstraints(db,1,seeded.loopId,seeded.occurrenceId);
     expect(
       db
         .prepare(
@@ -962,6 +1012,38 @@ describe("EventLog", () => {
     });
     db.close();
     log.close();
+  });
+
+  it.each(["turn-event","unrelated-child"] as const)("rejects %s foreign-key corruption during turn migration", (kind) => {
+    const dbPath=path();const old=new Database(dbPath);old.pragma("foreign_keys = OFF");
+    old.exec(`
+      CREATE TABLE events (
+        id INTEGER PRIMARY KEY,delivery_id TEXT NOT NULL UNIQUE,webhook_id TEXT,
+        app TEXT NOT NULL CHECK(app IN ('planner','implementer')),action TEXT,agent_session_id TEXT,
+        source_activity_id TEXT,issue_id TEXT,received_at INTEGER NOT NULL,raw_body BLOB NOT NULL
+      );
+      CREATE TABLE turns (
+        id INTEGER PRIMARY KEY,event_id INTEGER NOT NULL UNIQUE REFERENCES events(id),linear_session_id TEXT NOT NULL,
+        issue_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('created','prompted')),prompt TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending','running','awaiting_activity','done','failed','interrupted')),
+        attempts INTEGER NOT NULL DEFAULT 0,error TEXT,started_at INTEGER,finished_at INTEGER
+      );
+      INSERT INTO events (id,delivery_id,app,action,agent_session_id,issue_id,received_at,raw_body)
+        VALUES (1,'migration-event','planner','created','migration-session','migration-issue',1,X'7B7D');
+      INSERT INTO turns (id,event_id,linear_session_id,issue_id,kind,status)
+        VALUES (1,${kind === "turn-event" ? 999 : 1},'migration-session','migration-issue','created','done');
+    `);
+    if(kind === "unrelated-child")old.exec(`
+      CREATE TABLE turn_activities (
+        turn_id INTEGER PRIMARY KEY REFERENCES turns(id),kind TEXT NOT NULL CHECK(kind IN ('response','error')),
+        activity_id TEXT NOT NULL UNIQUE,body TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','posted','failed')),
+        attempts INTEGER NOT NULL DEFAULT 0,next_attempt_at INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL DEFAULT 0,
+        progress_barrier INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO turn_activities(turn_id,kind,activity_id,body,status) VALUES (999,'response','orphan-activity','done','posted');
+    `);
+    old.close();
+    expect(()=>new EventLog(dbPath)).toThrow("turn origin migration foreign-key check failed");
   });
 
   it("uses a stable body hash fallback when Linear-Delivery is absent", () => {

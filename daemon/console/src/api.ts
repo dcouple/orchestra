@@ -4,6 +4,7 @@ export interface RunSummary {
   issueIdentifier: string | null; runtime: "claude" | "claudex";
   startedAt: number; completedAt: number | null; durationMs: number;
   invocationCount: number; totalTokens: number; resources: Resource[];
+  origin: "linear" | "loop"; loopName: string | null; loopId: string | null; occurrenceId: string | null;
 }
 export interface Invocation {
   id: number; role: string; runtime: string; model: string | null;
@@ -37,6 +38,15 @@ export interface Skill {
 export type Skills = { availability: "available"; schemaVersion: 1; sourceRevision: string;
   sources: Array<{ id: "claude" | "codex"; label: "Claude Code" | "Codex"; available: boolean; skillCount: number }>;
   skills: Skill[] } | { availability: "unavailable"; reasonCode: string; sourceRevision: null; sources: []; skills: [] };
+export interface LoopDeclaration { version:1;name:string;description:string;trigger:{kind:"fixed-interval";everyMinutes:number;startsAt:number};
+  task:{kind:"agent";role:"planner"|"implementer";objective?:string};harness:{runtime:"claude"|"claudex";profile:"fable"|"sol"};
+  maxConcurrency:number;budgetUsd:number;timeoutMinutes:number;maxRetries:number;enabled:boolean }
+export interface LoopSummary extends LoopDeclaration {id:string;revision:number;digest:string;nextDueAt:number;blockedReason:string|null;createdAt:number;updatedAt:number}
+export interface LoopDetail extends LoopSummary {audit:Array<{sequence:number;kind:string;reason:string;actor:string;createdAt:number}>;
+  cleanups:Array<{id:number;occurrenceId:string;status:string;attempts:number;error:string|null;createdAt:number}>;
+  occurrences:Array<{id:string;runId:string;scheduledFor:number;status:string;retryCount:number;outcome:string|null;error:string|null;policy:{budgetUsd:number;timeoutMinutes:number;maxRetries:number}}>}
+export interface LoopDraft {id:string;digest:string;kind:string;loopId:string;expectedRevision:number|null;reason:string;expiresAt:number;changedFields:string[];
+  declaration?:LoopDeclaration;policy:{maxConcurrency:number;budgetUsd:number;timeoutMinutes:number;maxRetries:number}|null}
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { signal, headers: { Accept: "application/json" } });
@@ -70,6 +80,10 @@ export const api = {
   skills: (signal?: AbortSignal) => get<Skills>("/api/skills", signal),
   configuration: (signal?: AbortSignal) => get<ConfigurationSnapshot>("/api/configuration", signal),
   operations: (signal?: AbortSignal) => get<{ operations: Operation[] }>("/api/operations", signal),
+  loops: (signal?:AbortSignal)=>get<{loops:LoopSummary[]}>("/api/loops",signal),
+  loop: (id:string,signal?:AbortSignal)=>get<LoopDetail>(`/api/loops/${encodeURIComponent(id)}`,signal),
+  loopDraft:(body:unknown)=>post<LoopDraft>("/api/loops/drafts",body),
+  loopConfirm:(body:unknown)=>post<{loop:LoopSummary;auditSequence:number;deduplicated:boolean}>("/api/loops/confirm",body),
   draft: (body: unknown) => post<DraftPreview>("/api/drafts", body),
   confirm: (body: unknown) => post<{ operation: Operation; deduplicated: boolean }>("/api/operations/confirm", body),
   control: (operation: Operation, kind: "retry" | "cancel", reason: string) => post(`/api/operations/${encodeURIComponent(operation.id)}/${kind}`,

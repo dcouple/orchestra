@@ -16,7 +16,7 @@ export class ConsoleMutationGuard {
     return { capability: this.capabilityMode, csrfToken: this.token };
   }
 
-  async authorizeAndReadJson(request: IncomingMessage, boundPort: number): Promise<unknown> {
+  async authorizeAndReadBody(request: IncomingMessage, boundPort: number): Promise<Buffer> {
     if (request.method !== "POST") throw new ConsoleAuthorizationError("method_not_allowed", 405);
     const remote = request.socket.remoteAddress;
     const local = request.socket.localAddress;
@@ -43,7 +43,11 @@ export class ConsoleMutationGuard {
       if (length > this.maxBodyBytes) throw new ConsoleAuthorizationError("body_too_large", 413);
       chunks.push(bytes);
     }
-    try { return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown; }
+    return Buffer.concat(chunks);
+  }
+  async authorizeAndReadJson(request: IncomingMessage, boundPort: number): Promise<unknown> {
+    const body = await this.authorizeAndReadBody(request, boundPort);
+    try { return JSON.parse(body.toString("utf8")) as unknown; }
     catch { throw new ConsoleAuthorizationError("invalid_json", 400); }
   }
 }

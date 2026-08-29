@@ -2,6 +2,11 @@ form.section { display: grid; gap: 12px; max-width: 860px; }
 form.section label { display: grid; gap: 6px; color: var(--muted); }
 input, select { max-width: 520px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 input[type="checkbox"] { width: auto; }
+textarea { min-height: 110px; max-width: 520px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); resize: vertical; }
+.loops-layout { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(420px, 1.2fr); gap: 18px; align-items: start; }
+.loop-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.loop-form h2,.loop-form button { grid-column: 1/-1; }
+@media (max-width: 850px) { .loops-layout,.loop-form { grid-template-columns: 1fr; } .loop-form h2,.loop-form button { grid-column:auto; } }
 .secret-field { display: grid; gap: 6px; padding-block: 8px; border-top: 1px solid var(--border); }
 .secret-field p { margin: 0; }
 .dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / .5); }

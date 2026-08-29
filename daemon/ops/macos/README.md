@@ -215,3 +215,28 @@ console logs in `~/Library/Logs`, and the redacted database projection; never
 print request artifacts because a pre-mutation request may contain a write-only
 secret. Provisioning and deploy dry-runs validate these artifacts but never
 perform a console operation.
+
+## Declarative loops
+
+The Loops page defines local repository-agent work on a UTC epoch-based fixed
+interval. Version 1 accepts intervals from 15 minutes through seven days,
+concurrency 1–4 (also capped by daemon session capacity), budgets of USD
+0.01–100, timeouts of 1–120 minutes, and zero through three retries. It does
+not accept cron text, shell commands, paths, environment variables, model
+arguments, tool permissions, or a run-now action. A definition is inert until
+the digest-bound local-console confirmation enables it.
+
+Scheduling is part of the existing webhook daemon; no launchd service or
+stored executable is added. Missed intervals coalesce into one occurrence.
+Loop work shares the normal session capacity and creates no Linear webhook,
+issue, acknowledgement, activity, credential, MCP capability, or resource
+link. Budget exhaustion, timeout, permission denial, unsafe restart, and
+retry exhaustion disable the definition with an audit reason.
+
+Each terminal occurrence has a durable cleanup gate. A clean pushed worktree
+is removed before scheduling resumes. Dirty, unpushed, colliding, or repeatedly
+failing cleanup is retained and disables the loop. Inspect the bounded Loops
+history or `GET /api/loops/<id>`; use the guarded **Retry cleanup** transition
+only after resolving the retained worktree, then explicitly enable the loop
+after cleanup reaches `done`. The retry always revalidates through the same
+worktree manager and never marks retained work safe directly.

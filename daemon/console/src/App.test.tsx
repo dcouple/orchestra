@@ -6,6 +6,7 @@ import type { ConfigurationSnapshot, Dependencies, Operation, Overview, RunDetai
 import { RunTimeline } from "./components/RunTimeline";
 
 const run: RunDetail = { id: "session-1", app: "planner", mode: "planner", status: "active", issueIdentifier: "ENG-42",
+  origin: "linear", loopName: null, loopId: null, occurrenceId: null,
   runtime: "claude", startedAt: 1_000, completedAt: null, durationMs: 1_000, invocationCount: 1, totalTokens: 15,
   resources: [{ label: "Linear issue", url: "https://linear.example/issue/ENG-42" }, { label: "Artifact bundle", url: "https://artifacts.example/one" }],
   invocations: [{ id: 1, role: "code-researcher", runtime: "codex", model: "gpt-test", startedAt: 1_100,
@@ -55,6 +56,65 @@ function mockApi(snapshot: Overview = overview) {
 }
 
 describe("Orchestra Console", () => {
+  it("keyboard-drives a bounded loop definition and exposes no arbitrary execution control",async()=>{
+    const requests:Array<{path:string;init?:RequestInit}>=[];
+    vi.stubGlobal("fetch",vi.fn(async(input:string|URL|Request,init?:RequestInit)=>{const path=String(input);requests.push({path,...(init?{init}:{})});
+      const loop={id:"loop-1",revision:1,digest:"a".repeat(64),version:1,name:"Health",description:"Review",trigger:{kind:"fixed-interval",everyMinutes:60,startsAt:2_000},task:{kind:"agent",role:"planner"},harness:{runtime:"claude",profile:"sol"},maxConcurrency:1,budgetUsd:2,timeoutMinutes:10,maxRetries:1,enabled:false,nextDueAt:3_000,blockedReason:null,createdAt:2_000,updatedAt:2_000};
+      const body=path.includes("/api/overview")?overview:path.endsWith("/api/runs")?{runs:[run]}:path.includes("/api/dependencies")?dependencies:path.includes("/api/skills")?skills
+        :path.endsWith("/api/bootstrap")?{capability:"local-trusted",csrfToken:"csrf"}:path.endsWith("/api/loops/drafts")?{id:"draft-loop",digest:"b".repeat(64),kind:"create",loopId:"loop-1",expectedRevision:null,reason:"bounded upkeep",expiresAt:9_000,changedFields:["name"],policy:{maxConcurrency:1,budgetUsd:2,timeoutMinutes:10,maxRetries:1}}
+        :path.endsWith("/api/loops/confirm")?{loop,auditSequence:1,deduplicated:false}:path.endsWith("/api/loops")?{loops:[]}:run;
+      return jsonResponse(body);}));
+    const user=userEvent.setup();render(<App/>);await screen.findByRole("heading",{name:"Overview"});screen.getByRole("button",{name:"Loops"}).focus();await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading",{name:"Loops"})).toBeInTheDocument();await user.type(screen.getByLabelText("Name"),"Health");
+    await user.type(screen.getByLabelText("Starts at"),"2030-01-01T00:00");await user.type(screen.getByLabelText("Objective"),"Review repository health");await user.type(screen.getByLabelText("Reason"),"bounded upkeep");
+    await user.click(screen.getByRole("button",{name:"Review definition"}));expect(await screen.findByRole("dialog",{name:"Confirm local operation"})).toBeInTheDocument();
+    expect(screen.queryByLabelText(/command|shell|argv|path|cron|model|permission/i)).not.toBeInTheDocument();await user.click(screen.getByRole("button",{name:"Confirm and apply"}));
+    await waitFor(()=>expect(requests.some(row=>row.path.endsWith("/api/loops/confirm"))).toBe(true));
+  });
+  it("requires bounded operator reasons for toggles and retained-cleanup recovery",async()=>{
+    const requests:Array<{path:string;init?:RequestInit}>=[];let draftNumber=0;
+    const loop={id:"loop-1",revision:1,digest:"a".repeat(64),version:1 as const,name:"Health",description:"Review",
+      trigger:{kind:"fixed-interval" as const,everyMinutes:60,startsAt:2_000},task:{kind:"agent" as const,role:"planner" as const},
+      harness:{runtime:"claude" as const,profile:"sol" as const},maxConcurrency:1,budgetUsd:2,timeoutMinutes:10,maxRetries:1,
+      enabled:false,nextDueAt:3_000,blockedReason:"cleanup_retained",createdAt:2_000,updatedAt:2_000};
+    const detail={...loop,task:{...loop.task,objective:"Review repository health"},audit:[],occurrences:[],
+      cleanups:[{id:1,occurrenceId:"occ-1",status:"retained",attempts:1,error:"cleanup retained: dirty worktree",createdAt:2_000}]};
+    const enabledLoop={...loop,id:"loop-2",name:"Enabled health",enabled:true,blockedReason:null};
+    vi.stubGlobal("fetch",vi.fn(async(input:string|URL|Request,init?:RequestInit)=>{const path=String(input);requests.push({path,...(init?{init}:{})});
+      const submitted=init?.body?JSON.parse(String(init.body)) as {kind?:string;reason?:string}:{};
+      if(path.endsWith("/api/loops/drafts")){
+        if(submitted.reason?.startsWith("offline"))return {ok:false,status:503,json:async()=>({error:{message:"Loop service offline"}})} as Response;
+        draftNumber++;return jsonResponse({id:`draft-${draftNumber}`,digest:"b".repeat(64),kind:submitted.kind,loopId:loop.id,expectedRevision:1,reason:submitted.reason,expiresAt:9_000,changedFields:["enabled"],policy:null});
+      }
+      const body=path.includes("/api/overview")?overview:path.endsWith("/api/runs")?{runs:[run]}:path.includes("/api/dependencies")?dependencies:path.includes("/api/skills")?skills
+        :path.endsWith("/api/bootstrap")?{capability:"local-trusted",csrfToken:"csrf"}:path.endsWith("/api/loops/confirm")?{loop,auditSequence:1,deduplicated:false}
+        :path.endsWith("/api/loops/loop-1")?detail:path.endsWith("/api/loops")?{loops:[loop,enabledLoop]}:run;
+      return jsonResponse(body);
+    }));
+    const user=userEvent.setup();render(<App/>);await screen.findByRole("heading",{name:"Overview"});await user.click(screen.getByRole("button",{name:"Loops"}));
+    const enable=await screen.findByRole("button",{name:"Enable"});enable.focus();await user.keyboard("{Enter}");
+    expect(screen.getByRole("dialog",{name:/Reason to enable Health/})).toBeInTheDocument();await user.keyboard("{Enter}");
+    expect(screen.getByRole("alert")).toHaveTextContent("A reason is required");expect(requests.filter(row=>row.path.endsWith("/api/loops/drafts"))).toHaveLength(0);
+    await user.type(screen.getByLabelText("Operator reason"),"cancel this change");screen.getByRole("button",{name:"Cancel"}).focus();await user.keyboard("{Enter}");
+    expect(screen.queryByRole("dialog",{name:/Reason to enable/})).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button",{name:"Enable"}));await user.type(screen.getByLabelText("Operator reason"),"offline attempt");await user.keyboard("{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Loop service offline");expect(screen.getByRole("dialog",{name:/Reason to enable/})).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Operator reason"));await user.type(screen.getByLabelText("Operator reason"),"enable after review");await user.keyboard("{Enter}");
+    expect(await screen.findByRole("dialog",{name:"Confirm local operation"})).toHaveTextContent("enable after review");screen.getByRole("button",{name:"Back"}).focus();await user.keyboard("{Enter}");
+    expect(requests.filter(row=>row.path.endsWith("/api/loops/confirm"))).toHaveLength(0);
+    await user.click(screen.getByRole("button",{name:"Disable"}));await user.type(screen.getByLabelText("Operator reason"),"pause during maintenance");await user.keyboard("{Enter}");
+    expect(await screen.findByRole("dialog",{name:"Confirm local operation"})).toHaveTextContent("pause during maintenance");
+    const submittedBodies=requests.flatMap(row=>row.init?.body?[JSON.parse(String(row.init.body))]:[]);
+    expect(submittedBodies).toEqual(expect.arrayContaining([expect.objectContaining({kind:"disable",reason:"pause during maintenance"})]));
+    await user.click(screen.getByRole("button",{name:"Back"}));
+    await user.click(screen.getByRole("button",{name:"Health"}));expect(await screen.findByRole("button",{name:"Retry cleanup"})).toBeInTheDocument();
+    screen.getByRole("button",{name:"Retry cleanup"}).focus();await user.keyboard("{Enter}");await user.type(screen.getByLabelText("Operator reason"),"offline cleanup");await user.keyboard("{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Loop service offline");expect(screen.getByRole("button",{name:"Retry cleanup"})).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Operator reason"));await user.type(screen.getByLabelText("Operator reason"),"revalidate retained worktree");await user.keyboard("{Enter}");
+    expect(await screen.findByRole("dialog",{name:"Confirm local operation"})).toHaveTextContent("revalidate retained worktree");
+    const retryDraft=requests.filter(row=>row.path.endsWith("/api/loops/drafts")).map(row=>JSON.parse(String(row.init?.body))).find(body=>body.kind==="cleanup.retry"&&body.reason==="revalidate retained worktree");
+    expect(retryDraft).toMatchObject({kind:"cleanup.retry",reason:"revalidate retained worktree"});
+  });
   it("renders overview and opens exact run resources with a labeled invocation timeline", async () => {
     mockApi(); const user = userEvent.setup(); render(<App />);
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
@@ -69,6 +129,15 @@ describe("Orchestra Console", () => {
     expect(document.body.textContent).not.toContain("PROMPT_SECRET");
     expect(screen.getByText(window.location.host)).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("127.0.0.1:8790");
+  });
+
+  it("labels loop runs by loop name without presenting a Linear issue identity",async()=>{
+    const loopRun:RunDetail={...run,id:"loop:occ-1",issueIdentifier:null,origin:"loop",loopName:"Repository upkeep",loopId:"loop-1",occurrenceId:"occ-1",resources:[]};
+    vi.stubGlobal("fetch",vi.fn(async(input:string|URL|Request)=>{const path=String(input);const body=path.includes("/api/overview")?{...overview,recentRuns:[loopRun]}
+      :path.endsWith("/api/runs")?{runs:[loopRun]}:path.includes("/api/dependencies")?dependencies:path.includes("/api/skills")?skills:loopRun;return jsonResponse(body)}));
+    const user=userEvent.setup();render(<App/>);const label=await screen.findByRole("button",{name:"Repository upkeep"});await user.click(label);
+    expect(await screen.findByRole("heading",{name:"Repository upkeep"})).toBeInTheDocument();expect(screen.queryByRole("link",{name:"Open Linear issue"})).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("loop:occ-1");
   });
 
   it("does not count or positively style a not_ready provider", async () => {

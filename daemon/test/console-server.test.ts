@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConsoleConfig, type Config, type ConsoleConfig } from "../src/config.js";
 import { ConsoleServer, probeDaemon } from "../src/console-server.js";
 import { ConsoleOperationBroker } from "../src/console-operation-broker.js";
+import { ConsoleLoopBroker } from "../src/console-loop-broker.js";
 import { ConsoleMutationGuard } from "../src/console-authorization.js";
 import { EventLog } from "../src/eventlog.js";
 import { WebhookServer } from "../src/server.js";
@@ -48,7 +49,8 @@ function setup(probe: () => Promise<boolean> = async () => true,
     broker = new ConsoleOperationBroker({ log, spoolDir, snapshotPath, draftTtlMs: 5_000, snapshotMaxAgeMs: 5_000,
       now: () => 2_000, notify });
   }
-  const server = new ConsoleServer({ config, log, probe, now: () => 2_000, logger, beforeAssetOpen, ...(broker ? { broker } : {}) });
+  const loopBroker=writable?new ConsoleLoopBroker({log,globalCapacity:2,draftTtlMs:5_000,now:()=>2_000,notify}):undefined;
+  const server = new ConsoleServer({ config, log, probe, now: () => 2_000, logger, beforeAssetOpen, ...(broker ? { broker } : {}),...(loopBroker?{loopBroker}:{}) });
   return { server, log, config, dir, logger, broker, snapshotPath, spoolDir, protectedEnv, notify };
 }
 
@@ -108,6 +110,15 @@ function populate(log: EventLog): void {
 }
 
 describe("console HTTP server", () => {
+  it("authorizes before strict loop parsing and rejects escaped nested duplicates without mutation",async()=>{
+    const {server,log}=setup(undefined,undefined,true);const address=await server.listen();const base=`http://127.0.0.1:${address.port}`;
+    const bootstrap=await fetch(`${base}/api/bootstrap`);const {csrfToken}=await bootstrap.json() as {csrfToken:string};const cookie=bootstrap.headers.get("set-cookie")!;
+    const send=(body:string,token=csrfToken)=>fetch(`${base}/api/loops/drafts`,{method:"POST",body,headers:{Origin:base,Cookie:cookie,"Content-Type":"application/json","X-Orchestra-CSRF":token}});
+    expect((await send('{"kind":"create","k\\u0069nd":"update"}',"wrong")).status).toBe(403);expect(log.listLoops()).toEqual([]);
+    const duplicate=await send('{"kind":"create","k\\u0069nd":"update"}');expect(duplicate.status).toBe(400);
+    expect(await duplicate.json()).toMatchObject({error:{code:"duplicate_key"}});expect(log.listLoops()).toEqual([]);
+    await server.close();log.close();
+  });
   it.each([["peer", "10.0.0.7", "127.0.0.1"], ["listener", "127.0.0.1", "10.0.0.8"]])(
     "rejects a non-loopback %s before consuming the request body", async (_kind, remoteAddress, localAddress) => {
       const guard = new ConsoleMutationGuard("local-trusted", 4096); let bodyReads = 0;
