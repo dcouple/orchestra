@@ -76,6 +76,12 @@ Example — publish to Linear (replace or delete):
 tracker: linear
 linear_team: <team key or team ID>
 # artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
+# linear_agents:                         # only with a Linear agent daemon; read by /linear-work-orchestrator
+#   planner: <planning agent app user display name>
+#   implementer: <implementing agent app user display name>
+#   session_concurrency: <the daemon's SESSION_CONCURRENCY, kept in sync by hand>
+#   portfolio_label: <label marking issues the orchestrator manages>
+#   stale_hours: { implementer: 6, planner: 2 }   # optional
 ```
 
 > Publish each work item to that team per
@@ -83,7 +89,9 @@ linear_team: <team key or team ID>
 > `.references/tracker-lifecycle.md`. `/do` discovers team workflow
 > statuses at runtime. Linear specifics: with `artifact_host`, the bundle
 > rides as an attachment card (export `ARTIFACT_HOST_TOKEN`); without one,
-> document any required artifact attachment steps here.
+> document any required artifact attachment steps here. With
+> `linear_agents`, `/linear-work-orchestrator` steers the daemon's agents
+> per `.references/linear-agent-sessions.md`.
 
 Configure one tracker example, not both.
 
