@@ -40,6 +40,8 @@ const healthWaiterPath = resolve("ops/wait-for-daemon-health.sh");
 const healthWaiter = readFileSync(healthWaiterPath, "utf8");
 const sessions = readFileSync(resolve("src/sessions.ts"), "utf8");
 const macosDeploy = readFileSync(resolve("ops/macos/deploy.sh"), "utf8");
+const consoleOperationRunner = readFileSync(resolve("ops/macos/run-console-operation.sh"), "utf8");
+const consoleOperationPlist = readFileSync(resolve("ops/macos/orchestra-console-operation.plist.template"), "utf8");
 
 describe("daemon provisioning", () => {
   it("derives the pinned Playwright MCP wrapper from package.json", () => {
@@ -63,6 +65,13 @@ describe("daemon provisioning", () => {
     expect(macosProvision).toContain('"$SCRIPT_DIR/install-console-service.sh" "$SCRIPT_DIR/run-console.sh"');
     expect(macosProvision).toContain("service-console already-correct");
     expect(macosProvision).not.toContain("0.0.0.0:8790");
+    expect(macosProvision).toContain("$CONSOLE_OPERATION_LABEL.plist");
+    expect(macosProvision).toContain("run-console-operation.sh:/usr/local/sbin/run-console-operation.sh:0755");
+    expect(consoleOperationRunner).toContain("[[ $# -eq 0 ]]");
+    for (const leaf of ["staged", "ready", "executing", "control-staged", "controls", "rollback"])
+      expect(consoleOperationPlist).toContain(`/console-requests/${leaf}</string>`);
+    expect(consoleOperationPlist).not.toContain("ProgramArguments");
+    expect(macosDeploy).toContain("$CONSOLE_OPERATION_LABEL.plist");
   });
 
   it("builds the bounded inventory from the source checkout and validated deployment revision only", () => {

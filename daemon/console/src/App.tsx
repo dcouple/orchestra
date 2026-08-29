@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Dependencies, type Overview, type RunDetail, type RunSummary, type Skills } from "./api";
+import { api, type ConfigurationSnapshot, type Dependencies, type DraftPreview, type Operation, type Overview, type RunDetail, type RunSummary, type Skills } from "./api";
 import { DataTable } from "./components/DataTable";
 import { Layout, type Page } from "./components/Layout";
 import { RunTimeline, formatDuration } from "./components/RunTimeline";
 import { isReadyStatus, StatusBadge } from "./components/StatusBadge";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import "./write.css";
 
 const time = (value: number) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(value);
+const secretFields = [
+  ["LINEAR_API_KEY", "Linear API key"], ["ARTIFACT_TOKEN", "Artifact token"],
+  ["PLANNER_WEBHOOK_SECRET", "Planner webhook secret"], ["IMPLEMENTER_WEBHOOK_SECRET", "Implementer webhook secret"],
+  ["PLANNER_LINEAR_CLIENT_SECRET", "Planner Linear client secret"],
+  ["IMPLEMENTER_LINEAR_CLIENT_SECRET", "Implementer Linear client secret"],
+] as const;
 
 export function App() {
   const [page, setPage] = useState<Page>("overview");
@@ -72,8 +80,82 @@ export function App() {
     {loading && !overview ? <div className="loading" role="status">Loading console…</div> : page === "overview"
       ? <OverviewPage overview={overview} onRun={chooseRun} /> : page === "runs"
         ? <RunsPage runs={runs} selected={selected} onRun={chooseRun} /> : page === "dependencies"
-          ? <DependenciesPage snapshot={dependencies} /> : <SkillsPage inventory={skills} />}
+          ? <DependenciesPage snapshot={dependencies} /> : page === "skills" ? <SkillsPage inventory={skills} />
+            : page === "configuration" ? <ConfigurationPage /> : <OperationsPage />}
   </Layout>;
+}
+
+function ConfigurationPage() {
+  const [snapshot, setSnapshot] = useState<ConfigurationSnapshot>(); const [preview, setPreview] = useState<DraftPreview>();
+  const [reason, setReason] = useState(""); const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string>(); const [busy, setBusy] = useState(false);
+  useEffect(() => { void api.configuration().then(setSnapshot, value => setError(value instanceof Error ? value.message : "Configuration unavailable")); }, []);
+  const draft = async (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!snapshot) return; setBusy(true); setError(undefined);
+    const data = new FormData(event.currentTarget); const changes: Record<string, unknown> = {};
+    for (const key of ["plannerHarness", "implementerHarness"]) { const value = data.get(key); if (value && value !== snapshot.settings[key]) changes[key] = value; }
+    for (const key of ["sessionConcurrency", "iosSimMaxConcurrent", "claudeMaxTurns", "doMaxTurns"]) {
+      const value = Number(data.get(key)); if (value !== snapshot.settings[key]) changes[key] = value;
+    }
+    const budget = String(data.get("doMaxBudgetUsd") ?? "").trim(); const budgetValue = budget ? Number(budget) : null;
+    if (budgetValue !== snapshot.settings.doMaxBudgetUsd) changes.doMaxBudgetUsd = budgetValue;
+    const mcp = String(data.get("mcpEnvPassthrough") ?? "").split(",").map(value => value.trim()).filter(Boolean);
+    if (JSON.stringify(mcp) !== JSON.stringify(snapshot.settings.mcpEnvPassthrough)) changes.mcpEnvPassthrough = mcp;
+    for (const key of ["browserEnabled", "iosSimEnabled", "attachmentsEnabled"]) { const value = data.get(key) === "on"; if (value !== snapshot.settings[key]) changes[key] = value; }
+    const ntfyUrl = String(data.get("ntfyUrl") ?? "").trim() || null; if (ntfyUrl !== snapshot.settings.ntfyUrl) changes.ntfyUrl = ntfyUrl;
+    const submittedSecrets = Object.fromEntries(secretFields.flatMap(([name]) => secrets[name] ? [[name, secrets[name]]] : []));
+    try { const next = await api.draft({ kind: "config.apply", reason, changes,
+      secrets: submittedSecrets }); setPreview(next); setSecrets({}); }
+    catch (value) { setError(value instanceof Error ? value.message : "Preview failed"); } finally { setBusy(false); } };
+  const draftOperation = async (kind: "daemon.restart" | "daemon.reload") => { if (!reason) { setError("A reason is required"); return; }
+    setBusy(true); try { setPreview(await api.draft({ kind, reason })); } catch (value) { setError(value instanceof Error ? value.message : "Preview failed"); } finally { setBusy(false); } };
+  const confirm = async () => { if (!preview) return; setBusy(true); try { await api.confirm({ draftId: preview.id, digest: preview.digest, reason: preview.reason }); setPreview(undefined); setReason(""); setSnapshot(await api.configuration()); }
+    catch (value) { setError(value instanceof Error ? value.message : "Apply failed"); } finally { setBusy(false); } };
+  if (!snapshot) return <><header className="page-head"><div><h1>Configuration</h1></div></header>{error ? <div role="alert" className="alert">{error}</div> : <div className="loading">Loading configuration…</div>}</>;
+  return <><header className="page-head"><div><p className="eyebrow">Validated local settings</p><h1>Configuration</h1><p>Snapshot generated {time(snapshot.generatedAt)} · fresh until {time(snapshot.staleAt)}</p></div></header>
+    {error && <div className="alert" role="alert">{error}</div>}<form className="card section" onSubmit={event => void draft(event)}>
+      <h2>Harnesses</h2><label>Planner harness <select name="plannerHarness" defaultValue={String(snapshot.settings.plannerHarness)}><option value="claude">Claude</option><option value="claudex">Claudex</option></select></label>
+      <label>Implementer harness <select name="implementerHarness" defaultValue={String(snapshot.settings.implementerHarness)}><option value="claude">Claude</option><option value="claudex">Claudex</option></select></label>
+      <h2>Concurrency &amp; budgets</h2>
+      <label>Session concurrency <input name="sessionConcurrency" type="number" min="1" max="32" defaultValue={Number(snapshot.settings.sessionConcurrency)} /></label>
+      <label>Simulator concurrency <input name="iosSimMaxConcurrent" type="number" min="1" max="16" defaultValue={Number(snapshot.settings.iosSimMaxConcurrent)} /></label>
+      <label>Claude max turns <input name="claudeMaxTurns" type="number" min="1" max="1000" defaultValue={Number(snapshot.settings.claudeMaxTurns)} /></label>
+      <label>/do max turns <input name="doMaxTurns" type="number" min="1" max="1000" defaultValue={Number(snapshot.settings.doMaxTurns)} /></label>
+      <label>/do budget USD <input name="doMaxBudgetUsd" type="number" min="0.01" step="0.01" defaultValue={snapshot.settings.doMaxBudgetUsd === null ? "" : Number(snapshot.settings.doMaxBudgetUsd)} /></label>
+      <h2>MCP environment</h2><label>Allowed variable names <input name="mcpEnvPassthrough" defaultValue={(snapshot.settings.mcpEnvPassthrough as string[]).join(", ")} /></label>
+      <h2>Browser &amp; simulator</h2>
+      <label><input name="browserEnabled" type="checkbox" defaultChecked={Boolean(snapshot.settings.browserEnabled)} /> Browser enabled</label>
+      <label><input name="iosSimEnabled" type="checkbox" defaultChecked={Boolean(snapshot.settings.iosSimEnabled)} /> iOS simulator enabled</label>
+      <label><input name="attachmentsEnabled" type="checkbox" defaultChecked={Boolean(snapshot.settings.attachmentsEnabled)} /> Attachments enabled</label>
+      <h2>Notifications</h2><label>Notification URL <input name="ntfyUrl" type="url" defaultValue={String(snapshot.settings.ntfyUrl ?? "")} /></label>
+      <h2>Secrets</h2><p>Current values are never displayed. Entering a new value rotates only that secret.</p>
+      {secretFields.map(([name, label]) => <div key={name} className="secret-field">
+        <p>{label}: {snapshot.secrets[name]?.configured ? "Configured" : "Not configured"}</p>
+        <label>New {label} <input type="password" autoComplete="off" value={secrets[name] ?? ""}
+          onChange={event => setSecrets(current => ({ ...current, [name]: event.target.value }))} /></label>
+      </div>)}
+      <label>Reason <input required maxLength={240} value={reason} onChange={event => setReason(event.target.value)} /></label>
+      <button type="submit" disabled={busy}>Review changes</button>
+      <div className="actions"><button type="button" disabled={busy} onClick={() => void draftOperation("daemon.restart")}>Review restart</button>
+        <button type="button" disabled={busy} onClick={() => void draftOperation("daemon.reload")}>Review reload</button></div></form>
+    {preview && <section className="card section"><h2>Redacted preview</h2><p>{preview.changedFields.join(", ") || "Secret change"} · {preview.restartRequired ? "Restart required" : "Reload"}</p>
+      {Object.entries(preview.secrets).map(([name, state]) => <p key={name}>{name}: {state}</p>)}
+      <button type="button" onClick={() => setPreview(undefined)}>Cancel</button><button type="button" onClick={() => void confirm()}>Apply</button></section>}
+    {preview && <ConfirmDialog digest={preview.digest} reason={preview.reason} busy={busy} onCancel={() => setPreview(undefined)} onConfirm={() => void confirm()} />}</>;
+}
+
+function OperationsPage() {
+  const [operations, setOperations] = useState<Operation[]>([]); const [error, setError] = useState<string>();
+  const load = useCallback(() => api.operations().then(value => { setOperations(value.operations); setError(undefined); }, value => setError(value instanceof Error ? value.message : "Operations unavailable")), []);
+  useEffect(() => { void load(); const interval = window.setInterval(() => void load(), 3_000); return () => window.clearInterval(interval); }, [load]);
+  const control = async (operation: Operation, kind: "retry" | "cancel") => { try { await api.control(operation, kind, `${kind} requested from local console`); await load(); }
+    catch (value) { setError(value instanceof Error ? value.message : "Control failed"); } };
+  return <><header className="page-head"><div><p className="eyebrow">Durable audit</p><h1>Operations</h1><p>Progress, health acceptance, rollback, and recovery for local maintenance.</p></div></header>
+    {error && <div className="alert" role="alert">{error}</div>}<section className="card section"><DataTable caption="Operation history" rows={operations} rowKey={row => row.id} empty="No operations have been recorded." columns={[
+      { key: "kind", heading: "Operation", render: row => <><strong>{row.kind}</strong><small>{row.actor} · {row.reason}</small></> },
+      { key: "state", heading: "Progress", render: row => <><StatusBadge status={row.state} /><small>{row.stage ?? "scheduled"} · {row.events.length} stages</small></> },
+      { key: "outcome", heading: "Outcome", render: row => row.outcome ?? "In progress" },
+      { key: "actions", heading: "Recovery", render: row => <div className="actions">{row.recoveryActions.includes("retry") && <button type="button" onClick={() => void control(row, "retry")}>Retry</button>}{row.recoveryActions.includes("cancel") && <button type="button" onClick={() => void control(row, "cancel")}>Cancel</button>}</div> },
+    ]} /></section></>;
 }
 
 function OverviewPage({ overview, onRun }: { overview?: Overview; onRun: (run: RunSummary) => void }) {

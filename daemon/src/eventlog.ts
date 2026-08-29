@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import type { TurnUsage } from "./claude.js";
 import type { AppName } from "./config.js";
 import type { InFlightDispatch } from "./dispatches.js";
-import { ACTIVE_OPERATION_STATES, type OperationRow, type OperationState,
+import { ACTIVE_OPERATION_STATES, type OperationControlKind, type OperationControlRow, type OperationRow, type OperationStageEvent, type OperationState,
   type SafeOperationStatus, type SafeRunningTurn, type ScheduleOperationInput, validateScheduleOperation } from "./operations.js";
 import { SimCapacityError, SimTurnLimitError } from "./sim.js";
 import { projectInvocation, projectResources, type ConsoleRunDetail, type ConsoleRunSummary } from "./console-projections.js";
@@ -590,10 +590,39 @@ export class EventLog {
         rollback_verified INTEGER NOT NULL DEFAULT 0,
         outcome TEXT,
         error_stage TEXT,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        actor TEXT NOT NULL DEFAULT 'operator' CHECK(actor IN ('operator','local-console','system')),
+        request_kind TEXT,
+        request_summary TEXT,
+        state_version INTEGER NOT NULL DEFAULT 0,
+        cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1))
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_one_active
         ON operations((1)) WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
+      CREATE TABLE IF NOT EXISTS operation_stage_events (
+        operation_id TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+        sequence INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        stage TEXT,
+        outcome TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(operation_id,sequence)
+      );
+      CREATE TABLE IF NOT EXISTS operation_controls (
+        id TEXT PRIMARY KEY,
+        digest TEXT NOT NULL UNIQUE,
+        target_operation_id TEXT NOT NULL REFERENCES operations(id),
+        target_digest TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('retry','cancel')),
+        actor TEXT NOT NULL CHECK(actor='local-console'),
+        reason TEXT NOT NULL,
+        expected_version INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','succeeded','rejected')),
+        outcome TEXT,
+        requested_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(target_operation_id,target_digest,kind,expected_version)
+      );
       CREATE TABLE IF NOT EXISTS restart_intents (
         singleton INTEGER PRIMARY KEY CHECK(singleton=1),
         policy TEXT NOT NULL CHECK(policy='interrupt'),
@@ -639,6 +668,9 @@ export class EventLog {
       CREATE INDEX IF NOT EXISTS idx_sim_leases_state ON sim_leases(state);
     `);
     this.migrateOperationsTable();
+    this.migrateOperationControlGenerations();
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_operation_controls_nonterminal
+      ON operation_controls(state,requested_at,id) WHERE state IN ('pending','executing')`);
     this.migrateEventColumns();
     this.migrateSessionColumns();
     this.migrateTurnColumns();
@@ -653,10 +685,33 @@ export class EventLog {
     const schema = this.db
       .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='operations'")
       .get() as { sql: string } | undefined;
-    if (!schema?.sql.includes(`'${legacyState}'`)) return;
-    this.db.transaction(() => {
-      this.db.exec(`
-        DROP INDEX IF EXISTS idx_operations_one_active;
+    if (!schema?.sql) return;
+    const columns = new Set((this.db.prepare("PRAGMA table_info(operations)").all() as Array<{ name: string }>).map(row => row.name));
+    const normalized = schema.sql.replace(/\s+/g, "");
+    const auditColumns = ["actor", "request_kind", "request_summary", "state_version", "cancel_requested"];
+    const canonical = auditColumns.every(column => columns.has(column))
+      && normalized.includes("CHECK(actorIN('operator','local-console','system'))")
+      && normalized.includes("CHECK(cancel_requestedIN(0,1))")
+      && !schema.sql.includes(`'${legacyState}'`);
+    if (canonical) return;
+    if (columns.has("actor") && (this.db.prepare(`SELECT 1 FROM operations
+      WHERE actor NOT IN ('operator','local-console','system') LIMIT 1`).get())) throw new Error("invalid legacy operation actor");
+    if (columns.has("cancel_requested") && (this.db.prepare(`SELECT 1 FROM operations
+      WHERE cancel_requested NOT IN (0,1) LIMIT 1`).get())) throw new Error("invalid legacy operation cancellation state");
+    const actor = columns.has("actor") ? "actor" : "'operator'";
+    const requestKind = columns.has("request_kind") ? "request_kind" : "NULL";
+    const requestSummary = columns.has("request_summary") ? "request_summary" : "NULL";
+    const stateVersion = columns.has("state_version") ? "state_version" : "0";
+    const cancelRequested = columns.has("cancel_requested") ? "cancel_requested" : "0";
+    const state = schema.sql.includes(`'${legacyState}'`) ? `CASE state WHEN '${legacyState}' THEN 'pending' ELSE state END` : "state";
+    const stage = schema.sql.includes(`'${legacyState}'`) ? `CASE state WHEN '${legacyState}' THEN NULL ELSE stage END` : "stage";
+    const secondarySchema = this.db.prepare(`SELECT type,name,sql FROM sqlite_master
+      WHERE tbl_name='operations' AND sql IS NOT NULL AND type IN ('index','trigger')
+      AND name<>'idx_operations_one_active' ORDER BY type,name`).all() as Array<{ type: "index" | "trigger"; name: string; sql: string }>;
+    this.db.pragma("foreign_keys = OFF");
+    try {
+      this.db.transaction(() => {
+        this.db.exec(`DROP INDEX IF EXISTS idx_operations_one_active;
         CREATE TABLE operations_new (
           id TEXT PRIMARY KEY,
           request_digest TEXT NOT NULL,
@@ -673,22 +728,54 @@ export class EventLog {
           rollback_verified INTEGER NOT NULL DEFAULT 0,
           outcome TEXT,
           error_stage TEXT,
-          updated_at INTEGER NOT NULL
+          updated_at INTEGER NOT NULL,
+          actor TEXT NOT NULL DEFAULT 'operator' CHECK(actor IN ('operator','local-console','system')),
+          request_kind TEXT,
+          request_summary TEXT,
+          state_version INTEGER NOT NULL DEFAULT 0,
+          cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1))
         );
         INSERT INTO operations_new
           (id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,
-           state,stage,attempts,mutated,rollback_verified,outcome,error_stage,updated_at)
+           state,stage,attempts,mutated,rollback_verified,outcome,error_stage,updated_at,
+           actor,request_kind,request_summary,state_version,cancel_requested)
         SELECT id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,
-          CASE state WHEN '${legacyState}' THEN 'pending' ELSE state END,
-          CASE state WHEN '${legacyState}' THEN NULL ELSE stage END,
-          attempts,mutated,rollback_verified,outcome,error_stage,updated_at
+          ${state},${stage},attempts,mutated,rollback_verified,outcome,error_stage,updated_at,
+          ${actor},${requestKind},${requestSummary},${stateVersion},${cancelRequested}
         FROM operations;
         DROP TABLE operations;
         ALTER TABLE operations_new RENAME TO operations;
         CREATE UNIQUE INDEX idx_operations_one_active
           ON operations((1)) WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
-      `);
-    })();
+        `);
+        for (const object of secondarySchema) this.db.exec(object.sql);
+        const violations = this.db.pragma("foreign_key_check") as Array<Record<string, unknown>>;
+        if (violations.length > 0) throw new Error("operation migration foreign-key violation");
+      })();
+    } finally {
+      this.db.pragma("foreign_keys = ON");
+    }
+  }
+
+  private migrateOperationControlGenerations(): void {
+    const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='operation_controls'")
+      .get() as { sql: string } | undefined;
+    if (!schema?.sql || /UNIQUE\s*\(\s*target_operation_id\s*,\s*target_digest\s*,\s*kind\s*,\s*expected_version\s*\)/i.test(schema.sql)) return;
+    this.db.transaction(() => this.db.exec(`
+      CREATE TABLE operation_controls_new (
+        id TEXT PRIMARY KEY,digest TEXT NOT NULL UNIQUE,target_operation_id TEXT NOT NULL REFERENCES operations(id),
+        target_digest TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('retry','cancel')),
+        actor TEXT NOT NULL CHECK(actor='local-console'),reason TEXT NOT NULL,expected_version INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','succeeded','rejected')),outcome TEXT,
+        requested_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,
+        UNIQUE(target_operation_id,target_digest,kind,expected_version));
+      INSERT INTO operation_controls_new
+        (id,digest,target_operation_id,target_digest,kind,actor,reason,expected_version,state,outcome,requested_at,updated_at)
+      SELECT id,digest,target_operation_id,target_digest,kind,actor,reason,expected_version,state,outcome,requested_at,updated_at
+      FROM operation_controls;
+      DROP TABLE operation_controls;
+      ALTER TABLE operation_controls_new RENAME TO operation_controls;
+    `))();
   }
 
   private migrateEventColumns(): void {
@@ -1176,10 +1263,12 @@ export class EventLog {
       }
       const now = input.requestedAt ?? Date.now();
       this.db.prepare(`INSERT INTO operations
-        (id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,state,updated_at)
-        VALUES (?,?,?,?,?,?,?,?, 'pending',?)`).run(input.id, input.requestDigest, input.type,
+        (id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,state,updated_at,
+         actor,request_kind,request_summary)
+        VALUES (?,?,?,?,?,?,?,?, 'pending',?,?,?,?)`).run(input.id, input.requestDigest, input.type,
           input.reason, now, input.targetRef ?? null, input.targetCommit ?? null,
-          input.previousCommit ?? null, now);
+          input.previousCommit ?? null, now, input.actor ?? "operator", input.requestKind ?? null, input.requestSummary ?? null);
+      this.appendOperationEvent(input.id, "pending", "scheduled", null, now);
       return { operation: this.operationById(input.id)!, deduplicated: false };
     })();
   }
@@ -1187,14 +1276,16 @@ export class EventLog {
   operationById(id: string): OperationRow | undefined {
     return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
       target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
-      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt
+      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt,
+      actor,request_kind requestKind,request_summary requestSummary,state_version stateVersion,cancel_requested cancelRequested
       FROM operations WHERE id=?`).get(id) as OperationRow | undefined;
   }
 
   activeOperation(): OperationRow | undefined {
     return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
       target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
-      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt
+      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt,
+      actor,request_kind requestKind,request_summary requestSummary,state_version stateVersion,cancel_requested cancelRequested
       FROM operations WHERE state IN ('pending','executing','accepting','rolling_back','blocked')
       ORDER BY requested_at LIMIT 1`).get() as OperationRow | undefined;
   }
@@ -1205,8 +1296,9 @@ export class EventLog {
       if (!row || row.requestDigest !== digest || row.state === "blocked"
           || !ACTIVE_OPERATION_STATES.includes(row.state as never)) return undefined;
       if (row.state === "pending") {
-        this.db.prepare("UPDATE operations SET state='executing',stage='apply',attempts=attempts+1,updated_at=? WHERE id=? AND state='pending'")
+        this.db.prepare("UPDATE operations SET state='executing',stage='apply',attempts=attempts+1,state_version=state_version+1,updated_at=? WHERE id=? AND state='pending'")
           .run(now, id);
+        this.appendOperationEvent(id, "executing", "apply", null, now);
       } else {
         this.db.prepare("UPDATE operations SET attempts=attempts+1,updated_at=? WHERE id=?").run(now, id);
       }
@@ -1217,18 +1309,22 @@ export class EventLog {
   transitionOperation(id: string, state: OperationState, stage: string | null, options: {
     outcome?: string | null; errorStage?: string | null; mutated?: boolean; rollbackVerified?: boolean;
   } = {}, now = Date.now()): OperationRow {
-    const current = this.operationById(id);
-    if (!current) throw new Error(`unknown operation: ${id}`);
-    if ((state === "failed" || state === "cancelled") && current.mutated === 1
-        && !(options.rollbackVerified ?? current.rollbackVerified === 1)) {
-      throw new Error("cannot release operation gate after mutation without verified rollback");
-    }
-    this.db.prepare(`UPDATE operations SET state=?,stage=?,outcome=?,error_stage=?,
-      mutated=?,rollback_verified=?,updated_at=? WHERE id=?`).run(state, stage,
-        options.outcome ?? current.outcome, options.errorStage ?? current.errorStage,
-        options.mutated === undefined ? current.mutated : Number(options.mutated),
-        options.rollbackVerified === undefined ? current.rollbackVerified : Number(options.rollbackVerified), now, id);
-    return this.operationById(id)!;
+    return this.db.transaction(() => {
+      const current = this.operationById(id);
+      if (!current) throw new Error(`unknown operation: ${id}`);
+      if ((state === "failed" || state === "cancelled") && current.mutated === 1
+          && !(options.rollbackVerified ?? current.rollbackVerified === 1)) {
+        throw new Error("cannot release operation gate after mutation without verified rollback");
+      }
+      const outcome = options.outcome ?? current.outcome;
+      this.db.prepare(`UPDATE operations SET state=?,stage=?,outcome=?,error_stage=?,
+        mutated=?,rollback_verified=?,state_version=state_version+1,updated_at=? WHERE id=?`).run(state, stage,
+          outcome, options.errorStage ?? current.errorStage,
+          options.mutated === undefined ? current.mutated : Number(options.mutated),
+          options.rollbackVerified === undefined ? current.rollbackVerified : Number(options.rollbackVerified), now, id);
+      this.appendOperationEvent(id, state, stage, outcome, now);
+      return this.operationById(id)!;
+    })();
   }
 
   retryOperation(id: string, now = Date.now()): OperationRow {
@@ -1236,8 +1332,9 @@ export class EventLog {
     if (!row || (row.state !== "blocked" && row.state !== "failed"))
       throw new Error("only a blocked or failed operation can be retried");
     this.db.prepare(`UPDATE operations SET state='pending',stage=NULL,error_stage=NULL,
-      rollback_verified=0,updated_at=? WHERE id=?`)
+      rollback_verified=0,state_version=state_version+1,updated_at=? WHERE id=?`)
       .run(now, id);
+    this.appendOperationEvent(id, "pending", "retry", null, now);
     return this.operationById(id)!;
   }
 
@@ -1265,7 +1362,105 @@ export class EventLog {
     const row = this.operationById(id);
     if (!row || !ACTIVE_OPERATION_STATES.includes(row.state as never)) throw new Error("operation is not active");
     if (row.mutated === 1 && row.rollbackVerified !== 1) throw new Error("operation may not be cancelled after mutation without verified rollback");
-    return this.transitionOperation(id, "cancelled", "cancelled", { outcome: "cancelled by operator" }, now);
+    return this.transitionOperation(id, "cancelled", "cancelled",
+      { outcome: row.actor === "local-console" ? "cancelled by local-console" : "cancelled by operator" }, now);
+  }
+
+  private appendOperationEvent(id: string, state: OperationState, stage: string | null, outcome: string | null, now: number): void {
+    this.db.prepare(`INSERT INTO operation_stage_events(operation_id,sequence,state,stage,outcome,created_at)
+      VALUES (?,COALESCE((SELECT MAX(sequence)+1 FROM operation_stage_events WHERE operation_id=?),1),?,?,?,?)`)
+      .run(id, id, state, stage, outcome, now);
+  }
+
+  operationEvents(id: string): OperationStageEvent[] {
+    return this.db.prepare(`SELECT sequence,operation_id operationId,state,stage,outcome,created_at createdAt
+      FROM operation_stage_events WHERE operation_id=? ORDER BY sequence LIMIT 128`).all(id) as OperationStageEvent[];
+  }
+
+  listOperations(limit = 50): OperationRow[] {
+    const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
+    return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
+      target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
+      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt,
+      actor,request_kind requestKind,request_summary requestSummary,state_version stateVersion,cancel_requested cancelRequested
+      FROM operations ORDER BY requested_at DESC LIMIT ?`).all(bounded) as OperationRow[];
+  }
+
+  createOperationControl(input: { id: string; digest: string; targetOperationId: string; targetDigest: string;
+    kind: OperationControlKind; reason: string; expectedVersion: number; requestedAt?: number }): { control: OperationControlRow; deduplicated: boolean } {
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(input.id) || !/^[0-9a-f]{64}$/.test(input.digest)
+      || !/^[0-9a-f]{64}$/.test(input.targetDigest) || !Number.isSafeInteger(input.expectedVersion)
+      || !input.reason || input.reason.length > 240 || /[\x00-\x1f\x7f]/.test(input.reason)) throw new Error("invalid operation control");
+    return this.db.transaction(() => {
+      const existing = this.db.prepare(`SELECT id,digest,target_operation_id targetOperationId,target_digest targetDigest,
+        kind,actor,reason,expected_version expectedVersion,state,outcome,requested_at requestedAt,updated_at updatedAt
+        FROM operation_controls WHERE target_operation_id=? AND target_digest=? AND kind=? AND expected_version=?`)
+        .get(input.targetOperationId, input.targetDigest, input.kind, input.expectedVersion) as OperationControlRow | undefined;
+      if (existing) return { control: existing, deduplicated: true };
+      const target = this.operationById(input.targetOperationId);
+      if (!target || target.requestDigest !== input.targetDigest || target.stateVersion !== input.expectedVersion)
+        throw new Error("operation control target changed");
+      if (input.kind === "cancel" && (!ACTIVE_OPERATION_STATES.includes(target.state as never)
+        || target.mutated === 1 || target.cancelRequested === 1)) throw new Error("operation cannot be cancelled");
+      if (input.kind === "retry" && target.state !== "failed" && target.state !== "blocked") throw new Error("operation cannot be retried");
+      const now = input.requestedAt ?? Date.now();
+      this.db.prepare(`INSERT INTO operation_controls
+        (id,digest,target_operation_id,target_digest,kind,actor,reason,expected_version,state,requested_at,updated_at)
+        VALUES (?,?,?,?,?,'local-console',?,?, 'pending',?,?)`).run(input.id, input.digest,
+          input.targetOperationId, input.targetDigest, input.kind, input.reason, input.expectedVersion, now, now);
+      if (input.kind === "cancel") this.db.prepare(`UPDATE operations SET cancel_requested=1,state_version=state_version+1,
+        updated_at=? WHERE id=? AND state_version=?`).run(now, target.id, target.stateVersion);
+      return { control: this.operationControlById(input.id)!, deduplicated: false };
+    })();
+  }
+
+  operationControlById(id: string): OperationControlRow | undefined {
+    return this.db.prepare(`SELECT id,digest,target_operation_id targetOperationId,target_digest targetDigest,
+      kind,actor,reason,expected_version expectedVersion,state,outcome,requested_at requestedAt,updated_at updatedAt
+      FROM operation_controls WHERE id=?`).get(id) as OperationControlRow | undefined;
+  }
+
+  listOperationControls(): OperationControlRow[] {
+    return this.db.prepare(`SELECT id,digest,target_operation_id targetOperationId,target_digest targetDigest,
+      kind,actor,reason,expected_version expectedVersion,state,outcome,requested_at requestedAt,updated_at updatedAt
+      FROM operation_controls ORDER BY requested_at,id LIMIT 256`).all() as OperationControlRow[];
+  }
+
+  nonterminalOperationControls(): OperationControlRow[] {
+    return this.db.prepare(`SELECT id,digest,target_operation_id targetOperationId,target_digest targetDigest,
+      kind,actor,reason,expected_version expectedVersion,state,outcome,requested_at requestedAt,updated_at updatedAt
+      FROM operation_controls WHERE state IN ('pending','executing') ORDER BY requested_at,id`).all() as OperationControlRow[];
+  }
+
+  transitionOperationControl(id: string, state: OperationControlRow["state"], outcome: string | null, now = Date.now()): OperationControlRow {
+    if (outcome !== null && (outcome.length > 240 || /[\x00-\x1f\x7f]/.test(outcome))) throw new Error("invalid control outcome");
+    this.db.prepare("UPDATE operation_controls SET state=?,outcome=?,updated_at=? WHERE id=?").run(state, outcome, now, id);
+    const row = this.operationControlById(id); if (!row) throw new Error("unknown operation control"); return row;
+  }
+
+  acknowledgeRetryOperationControl(id: string, now = Date.now()): { control: OperationControlRow; operation: OperationRow } {
+    return this.db.transaction(() => {
+      const control = this.operationControlById(id);
+      if (!control || control.kind !== "retry") throw new Error("unknown retry control");
+      const current = this.operationById(control.targetOperationId);
+      if (!current || current.requestDigest !== control.targetDigest) throw new Error("operation control target changed");
+      if (control.state === "succeeded") return { control, operation: current };
+      if ((control.state !== "pending" && control.state !== "executing") || current.stateVersion !== control.expectedVersion)
+        throw new Error("operation control target changed");
+      if (current.state === "failed") {
+        this.db.prepare(`UPDATE operations SET state='pending',stage=NULL,error_stage=NULL,
+          rollback_verified=0,state_version=state_version+1,updated_at=? WHERE id=? AND state='failed' AND state_version=?`)
+          .run(now, current.id, control.expectedVersion);
+        this.appendOperationEvent(current.id, "pending", "retry", null, now);
+      } else if (current.state === "blocked" && current.mutated === 1) {
+        this.db.prepare(`UPDATE operations SET state='rolling_back',stage='rollback_retry',
+          state_version=state_version+1,updated_at=? WHERE id=? AND state='blocked' AND state_version=?`).run(now, current.id, control.expectedVersion);
+        this.appendOperationEvent(current.id, "rolling_back", "rollback_retry", current.outcome, now);
+      } else throw new Error("operation cannot be retried");
+      this.db.prepare("UPDATE operation_controls SET state='succeeded',outcome='acknowledged',updated_at=? WHERE id=?")
+        .run(now, control.id);
+      return { control: this.operationControlById(id)!, operation: this.operationById(current.id)! };
+    })();
   }
 
   runningTurns(now = Date.now()): SafeRunningTurn[] {

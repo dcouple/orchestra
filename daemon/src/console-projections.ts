@@ -1,6 +1,7 @@
 import type { ProviderStateRow, SessionRow, AgentInvocationRow, ExternalUrlRow,
   DependencyHealth, DependencyKind, DependencyObservationRow } from "./eventlog.js";
 import type { SafeOperationStatus } from "./operations.js";
+import type { OperationRow, OperationStageEvent } from "./operations.js";
 
 export interface ConsoleResource { label: "Linear issue" | "Artifact bundle"; url: string }
 export interface ConsoleRunSummary {
@@ -39,6 +40,23 @@ export interface ConsoleDependencies {
   daemon: ConsoleDaemonHealth;
   status: "healthy" | "degraded" | "unknown";
   dependencies: ConsoleDependency[];
+}
+export interface ConsoleOperationHistory {
+  id: string; digest: string; kind: string; actor: OperationRow["actor"]; summary: unknown; reason: string;
+  state: OperationRow["state"]; stage: string | null; attempts: number; stateVersion: number;
+  requestedAt: number; updatedAt: number; outcome: string | null; events: OperationStageEvent[];
+  recoveryActions: Array<"retry" | "cancel">;
+}
+
+export function projectConsoleOperation(operation: OperationRow, events: OperationStageEvent[]): ConsoleOperationHistory {
+  let summary: unknown = null;
+  if (operation.requestSummary) { try { summary = JSON.parse(operation.requestSummary) as unknown; } catch { summary = null; } }
+  const recoveryActions: ConsoleOperationHistory["recoveryActions"] = operation.state === "blocked" || operation.state === "failed" ? ["retry"]
+    : operation.cancelRequested === 0 && operation.mutated === 0 && (operation.state === "pending" || operation.state === "executing") ? ["cancel"] : [];
+  return { id: operation.id, digest: operation.requestDigest, kind: operation.requestKind ?? operation.type,
+    actor: operation.actor, summary, reason: operation.reason, state: operation.state, stage: operation.stage,
+    attempts: operation.attempts, stateVersion: operation.stateVersion, requestedAt: operation.requestedAt,
+    updatedAt: operation.updatedAt, outcome: operation.outcome, events, recoveryActions };
 }
 
 const SUPPORTED_DEPENDENCIES: Array<{ kind: DependencyKind; name: string }> = [

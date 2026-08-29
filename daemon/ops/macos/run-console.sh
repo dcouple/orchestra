@@ -19,7 +19,11 @@ CODE_DIR=$DAEMON_SERVICE_HOME/linear-agent-daemon
 NODE_BIN=${CONSOLE_NODE_BIN:-/opt/homebrew/opt/node@22/bin/node}
 args=(env -i HOME="$DAEMON_SERVICE_HOME" USER="$DAEMON_SERVICE_USER" PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin
   DB_PATH="$DB_PATH" CONSOLE_BIND_ADDR="$DAEMON_CONSOLE_BIND_ADDR" CONSOLE_PORT="$DAEMON_CONSOLE_PORT"
-  CONSOLE_ASSETS_DIR="$CODE_DIR/dist/console")
+  CONSOLE_ASSETS_DIR="$CODE_DIR/dist/console" CONSOLE_CAPABILITY_MODE="$DAEMON_CONSOLE_CAPABILITY_MODE"
+  CONSOLE_STATE_DIR="$DAEMON_SERVICE_HOME/.local/state/linear-agent-operations"
+  CONSOLE_CONFIG_SNAPSHOT_PATH="$DAEMON_SERVICE_HOME/.local/state/linear-agent-operations/console-config-snapshot.json"
+  CONSOLE_OPERATION_SPOOL_DIR="$DAEMON_SERVICE_HOME/.local/state/linear-agent-operations/console-requests"
+  CONSOLE_OPERATION_EXECUTOR_PATH=/usr/local/sbin/run-console-operation.sh)
 [[ -z $LINEAR_WORKSPACE_BASE_URL ]] || args+=(LINEAR_WORKSPACE_BASE_URL="$LINEAR_WORKSPACE_BASE_URL")
 cd "$CODE_DIR"
 exec "${args[@]}" "$NODE_BIN" dist/console-index.js

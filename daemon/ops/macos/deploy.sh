@@ -106,6 +106,7 @@ check_artifact "$DAEMON_SITE_ENV" /usr/local/etc/linear-agent-daemon/site.env ro
 check_artifact "$MACOS_DIR/daemon-site-lib.sh" /usr/local/sbin/daemon-site-lib.sh root:wheel 0644
 check_artifact "$RENDER_DIR/$DAEMON_LABEL.plist" "/Library/LaunchDaemons/$DAEMON_LABEL.plist" root:wheel 0644
 check_artifact "$RENDER_DIR/$CONSOLE_LABEL.plist" "/Library/LaunchDaemons/$CONSOLE_LABEL.plist" root:wheel 0644
+check_artifact "$RENDER_DIR/$CONSOLE_OPERATION_LABEL.plist" "/Library/LaunchDaemons/$CONSOLE_OPERATION_LABEL.plist" root:wheel 0644
 check_artifact "$RENDER_DIR/$PROXY_LABEL.plist" "/Library/LaunchDaemons/$PROXY_LABEL.plist" root:wheel 0644
 if [[ -f $HOME_DIR/.cloudflared/config.yml ]]; then
   check_artifact "$RENDER_DIR/$TUNNEL_LABEL.plist" "/Library/LaunchDaemons/$TUNNEL_LABEL.plist" root:wheel 0644
@@ -127,6 +128,7 @@ check_artifact_metadata_only() {
 check_artifact_metadata_only /etc/sudoers.d/linear-agent-daemon-services root:wheel 0440
 check_artifact "$MACOS_DIR/run-daemon.sh" /usr/local/sbin/run-daemon.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-console.sh" /usr/local/sbin/run-console.sh root:wheel 0755
+check_artifact "$MACOS_DIR/run-console-operation.sh" /usr/local/sbin/run-console-operation.sh root:wheel 0755
 check_artifact "$MACOS_DIR/install-console-service.sh" /usr/local/sbin/install-console-service.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cliproxyapi.sh" /usr/local/sbin/run-cliproxyapi.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cloudflared.sh" /usr/local/sbin/run-cloudflared.sh root:wheel 0755

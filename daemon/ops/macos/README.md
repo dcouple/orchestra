@@ -196,3 +196,22 @@ version-pinned.
 Claude Code may store macOS credentials in the login Keychain. Verification
 must include a Claude invocation from the LaunchDaemon context; if it cannot
 read the login credential, resolve that handoff before claiming session health.
+
+## Local console operations
+
+The console remains read-only unless the non-secret site setting
+`DAEMON_CONSOLE_CAPABILITY_MODE=local-trusted` is explicitly installed. In
+that mode, configuration changes, restart/reload, retry, and cancel are
+validated and previewed in the browser, then recorded as digest-bound durable
+operations attributed to `local-console`. The browser cannot select an
+executable, argument vector, path, launchd label, commit, branch, or URL.
+
+The independent `orchestra-console-operation` LaunchDaemon watches the private
+mode-0700 request spool and runs a fixed no-argument entry point. Operation
+state and redacted stage history are available in the Operations page and via
+`GET /api/operations`. A blocked configuration operation permits only the
+same-operation rollback retry. Diagnose with `daemonctl status`, the two
+console logs in `~/Library/Logs`, and the redacted database projection; never
+print request artifacts because a pre-mutation request may contain a write-only
+secret. Provisioning and deploy dry-runs validate these artifacts but never
+perform a console operation.

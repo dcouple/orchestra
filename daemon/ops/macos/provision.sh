@@ -53,6 +53,7 @@ SUDOERS_INSTALLED=/etc/sudoers.d/linear-agent-daemon-services
 PATHS_D_INSTALLED=/etc/paths.d/linear-agent-daemon
 CONFIG_DIR=$AGENT_HOME/.config/linear-agent-daemon
 OPS_STATE=$AGENT_HOME/.local/state/linear-agent-operations
+CONSOLE_REQUESTS=$OPS_STATE/console-requests
 CHECKOUT=$AGENT_HOME/orchestra-source
 CLIPROXY_ENV=$CONFIG_DIR/cliproxyapi.env
 CLIPROXY_CONFIG=$CONFIG_DIR/cliproxyapi.yaml
@@ -158,7 +159,7 @@ sudo install -d -o root -g wheel -m 0755 /usr/local/bin /usr/local/sbin /usr/loc
 dry_inventory() {
   local status source destination
   id "$AGENT" >/dev/null 2>&1 && record account already-correct || record account would-apply
-  for spec in "$AGENT_HOME/worktrees:0750" "$AGENT_HOME/repos:0750" "$AGENT_HOME/artifacts:0750" "$AGENT_HOME/.config:0750" "$CONFIG_DIR:0700" "$AGENT_HOME/.local:0755" "$AGENT_HOME/.local/bin:0750" "$AGENT_HOME/.local/state:0755" "$OPS_STATE:0700" "$AGENT_HOME/.cli-proxy-api:0700" "$AGENT_HOME/Library/Logs:0750"; do
+  for spec in "$AGENT_HOME/worktrees:0750" "$AGENT_HOME/repos:0750" "$AGENT_HOME/artifacts:0750" "$AGENT_HOME/.config:0750" "$CONFIG_DIR:0700" "$AGENT_HOME/.local:0755" "$AGENT_HOME/.local/bin:0750" "$AGENT_HOME/.local/state:0755" "$OPS_STATE:0700" "$CONSOLE_REQUESTS:0700" "$AGENT_HOME/.cli-proxy-api:0700" "$AGENT_HOME/Library/Logs:0750"; do
     dir_correct "${spec%:*}" "${spec#*:}" && status=already-correct || status=would-apply
     record "dir-$(basename "${spec%:*}")" "$status"
   done
@@ -195,7 +196,7 @@ dry_inventory() {
   paths_tmp=$(mktemp); printf '/usr/local/sbin\n' > "$paths_tmp"
   file_correct "$paths_tmp" "$PATHS_D_INSTALLED" 0644 root wheel && record paths-d already-correct || record paths-d would-apply
   rm -f "$paths_tmp"
-  for spec in "$RENDER_DIR/$DAEMON_LABEL.plist:/Library/LaunchDaemons/$DAEMON_LABEL.plist:0644" "$RENDER_DIR/$CONSOLE_LABEL.plist:/Library/LaunchDaemons/$CONSOLE_LABEL.plist:0644" "$RENDER_DIR/$PROXY_LABEL.plist:/Library/LaunchDaemons/$PROXY_LABEL.plist:0644" "$RENDER_DIR/$TUNNEL_LABEL.plist:/Library/LaunchDaemons/$TUNNEL_LABEL.plist:0644" "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-console.sh:/usr/local/sbin/run-console.sh:0755" "$SCRIPT_DIR/install-console-service.sh:/usr/local/sbin/install-console-service.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755" "$SCRIPT_DIR/orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
+  for spec in "$RENDER_DIR/$DAEMON_LABEL.plist:/Library/LaunchDaemons/$DAEMON_LABEL.plist:0644" "$RENDER_DIR/$CONSOLE_LABEL.plist:/Library/LaunchDaemons/$CONSOLE_LABEL.plist:0644" "$RENDER_DIR/$CONSOLE_OPERATION_LABEL.plist:/Library/LaunchDaemons/$CONSOLE_OPERATION_LABEL.plist:0644" "$RENDER_DIR/$PROXY_LABEL.plist:/Library/LaunchDaemons/$PROXY_LABEL.plist:0644" "$RENDER_DIR/$TUNNEL_LABEL.plist:/Library/LaunchDaemons/$TUNNEL_LABEL.plist:0644" "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-console.sh:/usr/local/sbin/run-console.sh:0755" "$SCRIPT_DIR/run-console-operation.sh:/usr/local/sbin/run-console-operation.sh:0755" "$SCRIPT_DIR/install-console-service.sh:/usr/local/sbin/install-console-service.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755" "$SCRIPT_DIR/orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
     source=${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
     if [[ $(basename "$destination") == "$TUNNEL_LABEL.plist" ]] && ! cloudflared_config_credential_exists; then
       status="pending-human: create tunnel as $AGENT"
@@ -207,6 +208,7 @@ dry_inventory() {
   sudo /bin/launchctl print "system/$PROXY_LABEL" >/dev/null 2>&1 && record service-cliproxyapi already-correct || record service-cliproxyapi would-apply
   sudo /bin/launchctl print "system/$DAEMON_LABEL" >/dev/null 2>&1 && record service-daemon already-correct || record service-daemon would-apply
   sudo /bin/launchctl print "system/$CONSOLE_LABEL" >/dev/null 2>&1 && record service-console already-correct || record service-console would-apply
+  sudo /bin/launchctl print "system/$CONSOLE_OPERATION_LABEL" >/dev/null 2>&1 && record service-console-operation already-correct || record service-console-operation would-apply
   if cloudflared_config_credential_exists; then
     sudo /bin/launchctl print "system/$TUNNEL_LABEL" >/dev/null 2>&1 && record service-cloudflared already-correct || record service-cloudflared would-apply
   else record service-cloudflared "pending-human: create tunnel as $AGENT"
@@ -228,7 +230,7 @@ else
 fi
 
 layout_changed=0
-for spec in "$AGENT_HOME/worktrees:0750" "$AGENT_HOME/repos:0750" "$AGENT_HOME/artifacts:0750" "$AGENT_HOME/.config:0750" "$CONFIG_DIR:0700" "$AGENT_HOME/.local:0755" "$AGENT_HOME/.local/bin:0750" "$AGENT_HOME/.local/state:0755" "$OPS_STATE:0700" "$OPS_STATE/worktrees:0700" "$OPS_STATE/worktree-owners:0700" "$AGENT_HOME/.cli-proxy-api:0700" "$AGENT_HOME/Library/Logs:0750"; do
+for spec in "$AGENT_HOME/worktrees:0750" "$AGENT_HOME/repos:0750" "$AGENT_HOME/artifacts:0750" "$AGENT_HOME/.config:0750" "$CONFIG_DIR:0700" "$AGENT_HOME/.local:0755" "$AGENT_HOME/.local/bin:0750" "$AGENT_HOME/.local/state:0755" "$OPS_STATE:0700" "$OPS_STATE/worktrees:0700" "$OPS_STATE/worktree-owners:0700" "$CONSOLE_REQUESTS:0700" "$CONSOLE_REQUESTS/staged:0700" "$CONSOLE_REQUESTS/ready:0700" "$CONSOLE_REQUESTS/executing:0700" "$CONSOLE_REQUESTS/control-staged:0700" "$CONSOLE_REQUESTS/controls:0700" "$CONSOLE_REQUESTS/rollback:0700" "$CONSOLE_REQUESTS/quarantine:0700" "$AGENT_HOME/.cli-proxy-api:0700" "$AGENT_HOME/Library/Logs:0750"; do
   path=${spec%:*}; mode=${spec#*:}
   if ! dir_correct "$path" "$mode"; then
     if sudo test -d "$path"; then
@@ -460,7 +462,7 @@ if install_if_changed "$RENDER_DIR/sudoers" "$SUDOERS_INSTALLED" 0440 root wheel
 sudo /usr/sbin/visudo -cf "$SUDOERS_INSTALLED" >/dev/null || fail "installed sudoers did not verify"
 
 root_files_changed=0
-for spec in "daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "install-console-service.sh:/usr/local/sbin/install-console-service.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755" "orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
+for spec in "daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-console-operation.sh:/usr/local/sbin/run-console-operation.sh:0755" "install-console-service.sh:/usr/local/sbin/install-console-service.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755" "orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
   source=$SCRIPT_DIR/${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
   install_if_changed "$source" "$destination" "${spec##*:}" root wheel && root_files_changed=1
 done
@@ -476,7 +478,7 @@ printf '/usr/local/sbin\n' > "$paths_tmp"
 if install_if_changed "$paths_tmp" "$PATHS_D_INSTALLED" 0644 root wheel; then record paths-d applied; else record paths-d already-correct; fi
 rm -f "$paths_tmp"; trap - EXIT
 
-for label in "$PROXY_LABEL" "$DAEMON_LABEL"; do
+for label in "$PROXY_LABEL" "$DAEMON_LABEL" "$CONSOLE_OPERATION_LABEL"; do
   plist=$RENDER_DIR/$label.plist; installed=/Library/LaunchDaemons/$label.plist; changed=0; plist_changed=0
   install_if_changed "$plist" "$installed" 0644 root wheel && plist_changed=1
   if ! sudo /bin/launchctl print "system/$label" >/dev/null 2>&1; then

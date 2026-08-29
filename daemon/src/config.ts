@@ -96,6 +96,13 @@ export interface ConsoleConfig {
   daemonHealthUrl: string;
   linearWorkspaceBaseUrl?: string;
   skillInventoryPath: string;
+  capabilityMode?: "read-only" | "local-trusted";
+  configSnapshotPath?: string;
+  operationSpoolDir?: string;
+  operationExecutorPath?: string;
+  draftTtlMs?: number;
+  snapshotMaxAgeMs?: number;
+  maxBodyBytes?: number;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -141,6 +148,15 @@ export function loadConsoleConfig(env: NodeJS.ProcessEnv = process.env): Console
   const base = env.LINEAR_WORKSPACE_BASE_URL?.trim();
   const port = positiveInteger(env, "CONSOLE_PORT", 8790);
   if (port > 65_535) throw new Error("CONSOLE_PORT must be at most 65535");
+  const capabilityMode = env.CONSOLE_CAPABILITY_MODE?.trim() || "read-only";
+  if (capabilityMode !== "read-only" && capabilityMode !== "local-trusted")
+    throw new Error("CONSOLE_CAPABILITY_MODE must be read-only or local-trusted");
+  const stateDir = env.CONSOLE_STATE_DIR?.trim() || dirname(env.DB_PATH?.trim() || "/var/lib/linear-agent-daemon/events.db");
+  const draftTtlMs = positiveInteger(env, "CONSOLE_DRAFT_TTL_MS", 5 * 60_000);
+  if (draftTtlMs > 30 * 60_000) throw new Error("CONSOLE_DRAFT_TTL_MS must be at most 1800000");
+  const snapshotMaxAgeMs = positiveInteger(env, "CONSOLE_SNAPSHOT_MAX_AGE_MS", 24 * 60 * 60_000);
+  const maxBodyBytes = positiveInteger(env, "CONSOLE_MAX_BODY_BYTES", 64 * 1024);
+  if (maxBodyBytes > 1024 * 1024) throw new Error("CONSOLE_MAX_BODY_BYTES must be at most 1048576");
   return {
     port,
     bindAddr: loopbackAddress(env, "CONSOLE_BIND_ADDR"),
@@ -149,6 +165,15 @@ export function loadConsoleConfig(env: NodeJS.ProcessEnv = process.env): Console
     daemonHealthUrl: httpUrl(env, "CONSOLE_DAEMON_HEALTH_URL", "http://127.0.0.1:8787/healthz", true),
     skillInventoryPath: env.CONSOLE_SKILL_INVENTORY_PATH?.trim()
       || resolve(dirname(fileURLToPath(import.meta.url)), "console-inventory.json"),
+    capabilityMode,
+    configSnapshotPath: env.CONSOLE_CONFIG_SNAPSHOT_PATH?.trim()
+      ? resolve(env.CONSOLE_CONFIG_SNAPSHOT_PATH.trim()) : resolve(stateDir, "console-config-snapshot.json"),
+    operationSpoolDir: env.CONSOLE_OPERATION_SPOOL_DIR?.trim()
+      ? resolve(env.CONSOLE_OPERATION_SPOOL_DIR.trim()) : resolve(stateDir, "console-operations"),
+    operationExecutorPath: resolve(env.CONSOLE_OPERATION_EXECUTOR_PATH?.trim() || "/usr/local/libexec/orchestra-console-operation"),
+    draftTtlMs,
+    snapshotMaxAgeMs,
+    maxBodyBytes,
     ...(base ? { linearWorkspaceBaseUrl: httpUrl(env, "LINEAR_WORKSPACE_BASE_URL", base) } : {}),
   };
 }

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>@LAUNCHD_PREFIX@.orchestra-console-operation</string>
+  <key>Program</key><string>/usr/local/sbin/run-console-operation.sh</string>
+  <key>UserName</key><string>@SERVICE_USER@</string><key>GroupName</key><string>staff</string>
+  <key>QueueDirectories</key><array>
+    <string>@SERVICE_HOME@/.local/state/linear-agent-operations/console-requests/staged</string>
+    <string>@SERVICE_HOME@/.local/state/linear-agent-operations/console-requests/ready</string>
+    <string>@SERVICE_HOME@/.local/state/linear-agent-operations/console-requests/executing</string>
+    <string>@SERVICE_HOME@/.local/state/linear-agent-operations/console-requests/control-staged</string>
+    <string>@SERVICE_HOME@/.local/state/linear-agent-operations/console-requests/controls</string>
+    <string>@SERVICE_HOME@/.local/state/linear-agent-operations/console-requests/rollback</string>
+  </array>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>@SERVICE_HOME@/Library/Logs/orchestra-console-operation.log</string>
+  <key>StandardErrorPath</key><string>@SERVICE_HOME@/Library/Logs/orchestra-console-operation.log</string>
+</dict></plist>

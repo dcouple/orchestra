@@ -1,0 +1,9 @@
+form.section { display: grid; gap: 12px; max-width: 860px; }
+form.section label { display: grid; gap: 6px; color: var(--muted); }
+input, select { max-width: 520px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+input[type="checkbox"] { width: auto; }
+.secret-field { display: grid; gap: 6px; padding-block: 8px; border-top: 1px solid var(--border); }
+.secret-field p { margin: 0; }
+.dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / .5); }
+.dialog { width: min(620px, 100%); padding: 24px; }
+.dialog dd { margin: 4px 0 14px; overflow-wrap: anywhere; }

@@ -11,4 +11,6 @@ set -a
 . "$ENV_FILE"
 set +a
 cd "$DAEMON_SERVICE_HOME/linear-agent-daemon"
+/opt/homebrew/opt/node@22/bin/node dist/managed-env-cli.js snapshot "$ENV_FILE" \
+  "$DAEMON_SERVICE_HOME/.local/state/linear-agent-operations/console-config-snapshot.json"
 exec /opt/homebrew/opt/node@22/bin/node dist/index.js

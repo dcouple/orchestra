@@ -825,6 +825,71 @@ describe("EventLog", () => {
     log.close();
   });
 
+  it("converges an upgraded operations table to fresh constraints without losing rows, indexes, or relations", () => {
+    const upgradedPath = path(); const old = new Database(upgradedPath); old.pragma("foreign_keys = ON");
+    old.exec(`
+      CREATE TABLE operations (
+        id TEXT PRIMARY KEY, request_digest TEXT NOT NULL, type TEXT NOT NULL CHECK(type IN ('restart','config','update')),
+        reason TEXT NOT NULL, requested_at INTEGER NOT NULL, target_ref TEXT, target_commit TEXT, previous_commit TEXT,
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','accepting','rolling_back','blocked','succeeded','failed','cancelled')),
+        stage TEXT, attempts INTEGER NOT NULL DEFAULT 0, mutated INTEGER NOT NULL DEFAULT 0,
+        rollback_verified INTEGER NOT NULL DEFAULT 0, outcome TEXT, error_stage TEXT, updated_at INTEGER NOT NULL,
+        actor TEXT NOT NULL DEFAULT 'operator', request_kind TEXT, request_summary TEXT,
+        state_version INTEGER NOT NULL DEFAULT 0, cancel_requested INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE UNIQUE INDEX idx_operations_one_active ON operations((1))
+        WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
+      CREATE INDEX idx_operations_requested_fixture ON operations(requested_at,id);
+      CREATE TABLE operation_stage_events (
+        operation_id TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE, sequence INTEGER NOT NULL,
+        state TEXT NOT NULL, stage TEXT, outcome TEXT, created_at INTEGER NOT NULL, PRIMARY KEY(operation_id,sequence));
+      CREATE TABLE operation_controls (
+        id TEXT PRIMARY KEY,digest TEXT NOT NULL UNIQUE,target_operation_id TEXT NOT NULL REFERENCES operations(id),
+        target_digest TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('retry','cancel')),
+        actor TEXT NOT NULL CHECK(actor='local-console'),reason TEXT NOT NULL,expected_version INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','succeeded','rejected')),outcome TEXT,
+        requested_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,
+        UNIQUE(target_operation_id,target_digest,kind,expected_version));
+      INSERT INTO operations
+        (id,request_digest,type,reason,requested_at,state,stage,attempts,updated_at,actor,request_kind,request_summary,state_version,cancel_requested)
+      VALUES ('upgraded-op','${"a".repeat(64)}','restart','preserve me',10,'succeeded','accepted',2,20,
+        'local-console','daemon.restart','{"kind":"daemon.restart"}',4,1);
+      INSERT INTO operation_stage_events(operation_id,sequence,state,stage,outcome,created_at)
+        VALUES ('upgraded-op',1,'succeeded','accepted','healthy',20);
+      INSERT INTO operation_controls
+        (id,digest,target_operation_id,target_digest,kind,actor,reason,expected_version,state,outcome,requested_at,updated_at)
+      VALUES ('upgraded-control','${"b".repeat(64)}','upgraded-op','${"a".repeat(64)}','cancel','local-console',
+        'preserve relation',3,'succeeded','acknowledged',19,20);
+    `); old.close();
+    const log = new EventLog(upgradedPath);
+    expect(log.operationById("upgraded-op")).toMatchObject({ reason: "preserve me", state: "succeeded", stage: "accepted",
+      attempts: 2, actor: "local-console", requestKind: "daemon.restart", requestSummary: '{"kind":"daemon.restart"}',
+      stateVersion: 4, cancelRequested: 1 });
+    expect(log.operationEvents("upgraded-op")).toMatchObject([{ sequence: 1, state: "succeeded", stage: "accepted", outcome: "healthy" }]);
+    expect(log.operationControlById("upgraded-control")).toMatchObject({ targetOperationId: "upgraded-op", state: "succeeded" });
+    log.transitionOperation("upgraded-op", "failed", "rechecked", { outcome: "still related" }, 30);
+    expect(log.operationEvents("upgraded-op")).toHaveLength(2); log.close();
+
+    const freshPath = path(); const fresh = new EventLog(freshPath); fresh.close();
+    for (const dbPath of [freshPath, upgradedPath]) {
+      const raw = new Database(dbPath); raw.pragma("foreign_keys = ON");
+      const schema = (raw.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='operations'").get() as { sql: string }).sql.replace(/\s+/g, "");
+      expect(schema).toContain("CHECK(actorIN('operator','local-console','system'))");
+      expect(schema).toContain("CHECK(cancel_requestedIN(0,1))");
+      if (dbPath === upgradedPath) {
+        expect((raw.prepare("PRAGMA index_list(operations)").all() as Array<{ name: string }>).map(row => row.name))
+          .toEqual(expect.arrayContaining(["idx_operations_one_active", "idx_operations_requested_fixture"]));
+        expect(raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+        expect((raw.prepare("PRAGMA foreign_key_list(operation_stage_events)").all() as Array<{ table: string }>)[0]?.table).toBe("operations");
+        expect((raw.prepare("PRAGMA foreign_key_list(operation_controls)").all() as Array<{ table: string }>)[0]?.table).toBe("operations");
+      }
+      const invalidInsert = raw.prepare(`INSERT INTO operations
+        (id,request_digest,type,reason,requested_at,state,updated_at,actor,cancel_requested) VALUES (?,?,?,?,?,'succeeded',?,?,?)`);
+      expect(() => invalidInsert.run("invalid-actor", "c".repeat(64), "restart", "constraint", 40, 40, "intruder", 0)).toThrow();
+      expect(() => invalidInsert.run("invalid-cancel", "d".repeat(64), "restart", "constraint", 40, 40, "operator", 2)).toThrow(); raw.close();
+    }
+  });
+
   it("migrates a populated pre-usage turns table with null usage", () => {
     const dbPath = path();
     const old = new Database(dbPath);
@@ -1147,5 +1212,39 @@ describe("EventLog", () => {
     ).toEqual(expect.arrayContaining(["profile", "profile_fallback"]));
     db.close();
     log.close();
+  });
+  it("records local-console actor, ordered stages, and version-bound in-place controls", () => {
+    const log = new EventLog(path());
+    const scheduled = log.scheduleOperation({ id: "console-op", requestDigest: "a".repeat(64), type: "restart",
+      reason: "maintenance", actor: "local-console", requestKind: "daemon.restart", requestSummary: '{"kind":"daemon.restart"}' });
+    expect(scheduled.operation).toMatchObject({ actor: "local-console", stateVersion: 0, cancelRequested: 0 });
+    expect(log.operationEvents("console-op")).toMatchObject([{ sequence: 1, state: "pending", stage: "scheduled" }]);
+    const control = log.createOperationControl({ id: "cancel-control", digest: "b".repeat(64),
+      targetOperationId: "console-op", targetDigest: "a".repeat(64), kind: "cancel", reason: "stop", expectedVersion: 0 });
+    expect(control.control).toMatchObject({ actor: "local-console", kind: "cancel", state: "pending" });
+    expect(log.operationById("console-op")).toMatchObject({ cancelRequested: 1, stateVersion: 1 });
+    expect(() => log.createOperationControl({ id: "raced", digest: "c".repeat(64), targetOperationId: "console-op",
+      targetDigest: "a".repeat(64), kind: "retry", reason: "race", expectedVersion: 0 })).toThrow("target changed");
+    log.close();
+  });
+  it("deduplicates controls only within one expected target generation", () => {
+    const dbPath = path(); const log = new EventLog(dbPath); const digest = "a".repeat(64);
+    log.scheduleOperation({ id: "retry-generations", requestDigest: digest, type: "restart", reason: "run",
+      actor: "local-console", requestKind: "daemon.restart" });
+    log.claimOperation("retry-generations", digest); log.transitionOperation("retry-generations", "failed", "health", { errorStage: "health" });
+    let target = log.operationById("retry-generations")!;
+    const first = log.createOperationControl({ id: "retry-one", digest: "b".repeat(64), targetOperationId: target.id,
+      targetDigest: digest, kind: "retry", reason: "again", expectedVersion: target.stateVersion });
+    expect(log.createOperationControl({ id: "retry-one-duplicate", digest: "c".repeat(64), targetOperationId: target.id,
+      targetDigest: digest, kind: "retry", reason: "same generation", expectedVersion: target.stateVersion })).toMatchObject({ deduplicated: true,
+      control: { id: first.control.id } });
+    log.acknowledgeRetryOperationControl(first.control.id); log.claimOperation(target.id, digest);
+    log.transitionOperation(target.id, "failed", "health", { errorStage: "health" }); target = log.operationById(target.id)!;
+    const second = log.createOperationControl({ id: "retry-two", digest: "d".repeat(64), targetOperationId: target.id,
+      targetDigest: digest, kind: "retry", reason: "new generation", expectedVersion: target.stateVersion });
+    expect(second).toMatchObject({ deduplicated: false, control: { id: "retry-two", expectedVersion: target.stateVersion } });
+    expect(second.control.id).not.toBe(first.control.id);
+    const raw = new Database(dbPath, { readonly: true }); const schema = raw.prepare("SELECT sql FROM sqlite_master WHERE name='operation_controls'").get() as { sql: string };
+    expect(schema.sql.replace(/\s+/g, "")).toContain("UNIQUE(target_operation_id,target_digest,kind,expected_version)"); raw.close(); log.close();
   });
 });

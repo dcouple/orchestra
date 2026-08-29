@@ -6,8 +6,11 @@ import type { AddressInfo } from "node:net";
 import { extname, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { ConsoleConfig } from "./config.js";
+import { ConsoleAuthorizationError, ConsoleMutationGuard } from "./console-authorization.js";
+import { ConsoleBrokerError, type ConsoleOperationBroker } from "./console-operation-broker.js";
+import { ConsoleValidationError } from "./console-operation-schema.js";
 import type { EventLog } from "./eventlog.js";
-import { projectDependencies, type ConsoleDaemonHealth, type ConsoleOverview } from "./console-projections.js";
+import { projectConsoleOperation, projectDependencies, type ConsoleDaemonHealth, type ConsoleOverview } from "./console-projections.js";
 import { readSkillInventory, type ConsoleSkillsPayload } from "./skill-inventory.js";
 
 export type DaemonProbe = (url: string, timeoutMs: number) => Promise<boolean>;
@@ -20,6 +23,7 @@ export interface ConsoleServerOptions {
   logger?: ConsoleLogger;
   beforeAssetOpen?: (canonicalPath: string) => void | Promise<void>;
   readSkills?: () => Promise<ConsoleSkillsPayload>;
+  broker?: ConsoleOperationBroker;
 }
 
 interface OpenAsset { path: string; handle: FileHandle }
@@ -48,6 +52,7 @@ export class ConsoleServer {
   private readonly now: () => number;
   private readonly logger: ConsoleLogger;
   private readonly readSkills: () => Promise<ConsoleSkillsPayload>;
+  private readonly mutationGuard: ConsoleMutationGuard;
   private boundPort?: number;
 
   constructor(private readonly options: ConsoleServerOptions) {
@@ -55,6 +60,7 @@ export class ConsoleServer {
     this.now = options.now ?? Date.now;
     this.logger = options.logger ?? console;
     this.readSkills = options.readSkills ?? (() => readSkillInventory(options.config.skillInventoryPath));
+    this.mutationGuard = new ConsoleMutationGuard(options.config.capabilityMode ?? "read-only", options.config.maxBodyBytes ?? 64 * 1024);
     this.server = createServer((request, response) => void this.handle(request, response));
     this.server.requestTimeout = 5_000;
     this.server.headersTimeout = 5_000;
@@ -85,7 +91,7 @@ export class ConsoleServer {
       const url = new URL(request.url ?? "/", "http://localhost");
       const path = url.pathname;
       if (path.startsWith("/api/")) {
-        if (request.method !== "GET") { this.json(response, 405, { error: { code: "method_not_allowed", message: "read-only endpoint" } }, { Allow: "GET" }); return; }
+        if (request.method !== "GET") { await this.mutationApi(path, request, response); return; }
         await this.api(path, response);
         if ((path === "/api/dependencies" || path === "/api/skills")
           && response.statusCode >= 200 && response.statusCode < 300) this.logApiRequest(request, path, response.statusCode);
@@ -96,8 +102,14 @@ export class ConsoleServer {
       }
       await this.staticFile(path, request.method === "HEAD", response);
     } catch (error) {
-      this.logger.error(JSON.stringify({ level: "error", event: "console_request_failed", error: error instanceof Error ? error.message : String(error) }));
-      if (!response.headersSent) this.json(response, 500, { error: { code: "internal_error", message: "request failed" } });
+      const known = error instanceof ConsoleAuthorizationError || error instanceof ConsoleBrokerError || error instanceof ConsoleValidationError;
+      if (!known) this.logger.error(JSON.stringify({ level: "error", event: "console_request_failed", error: "internal_error" }));
+      if (!response.headersSent) {
+        const status = error instanceof ConsoleAuthorizationError || error instanceof ConsoleBrokerError ? error.status
+          : error instanceof ConsoleValidationError ? 400 : 500;
+        const code = known ? (error as ConsoleAuthorizationError | ConsoleBrokerError | ConsoleValidationError).code : "internal_error";
+        this.json(response, status, { error: { code, message: code.replaceAll("_", " ") } });
+      }
       else response.end();
     }
   }
@@ -137,6 +149,15 @@ export class ConsoleServer {
   }
 
   private async api(path: string, response: ServerResponse): Promise<void> {
+    if (path === "/api/bootstrap") { this.json(response, 200, this.mutationGuard.bootstrap(response)); return; }
+    if (path === "/api/configuration") {
+      if (!this.options.broker) { this.json(response, 503, { error: { code: "writes_unavailable", message: "writes unavailable" } }); return; }
+      this.json(response, 200, await this.options.broker.configuration()); return;
+    }
+    if (path === "/api/operations") {
+      this.json(response, 200, { operations: this.options.log.listOperations()
+        .map(operation => projectConsoleOperation(operation, this.options.log.operationEvents(operation.id))) }); return;
+    }
     if (path === "/api/health") { this.json(response, 200, { ok: true, observedAt: this.now() }); return; }
     if (path === "/api/overview") {
       const observedAt = this.now();
@@ -173,6 +194,25 @@ export class ConsoleServer {
       const run = this.options.log.consoleRun(id, this.now(), this.options.config.linearWorkspaceBaseUrl);
       if (!run) { this.json(response, 404, { error: { code: "not_found", message: "run not found" } }); return; }
       this.json(response, 200, run); return;
+    }
+    this.json(response, 404, { error: { code: "not_found", message: "endpoint not found" } });
+  }
+
+  private async mutationApi(path: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (!this.options.broker) { this.json(response, 405, { error: { code: "method_not_allowed", message: "read-only endpoint" } }, { Allow: "GET" }); return; }
+    const body = await this.mutationGuard.authorizeAndReadJson(request, this.boundPort ?? 0);
+    if (path === "/api/drafts" || path === "/api/config/drafts" || path === "/api/operations/drafts") {
+      this.json(response, 200, await this.options.broker.draft(body)); return;
+    }
+    if (path === "/api/operations/confirm" || path === "/api/config/confirm") {
+      this.json(response, 202, await this.options.broker.confirm(body)); return;
+    }
+    const control = /^\/api\/operations\/([^/]+)\/(retry|cancel)$/.exec(path);
+    if (control) {
+      let targetOperationId: string; try { targetOperationId = decodeURIComponent(control[1]!); }
+      catch { throw new ConsoleBrokerError("invalid_target", 400); }
+      const row = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : {};
+      this.json(response, 202, await this.options.broker.control({ ...row, targetOperationId, kind: `operation.${control[2]}` })); return;
     }
     this.json(response, 404, { error: { code: "not_found", message: "endpoint not found" } });
   }

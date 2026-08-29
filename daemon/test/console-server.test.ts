@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, request } from "node:http";
@@ -7,6 +7,8 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConsoleConfig, type Config, type ConsoleConfig } from "../src/config.js";
 import { ConsoleServer, probeDaemon } from "../src/console-server.js";
+import { ConsoleOperationBroker } from "../src/console-operation-broker.js";
+import { ConsoleMutationGuard } from "../src/console-authorization.js";
 import { EventLog } from "../src/eventlog.js";
 import { WebhookServer } from "../src/server.js";
 
@@ -14,7 +16,8 @@ const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 function setup(probe: () => Promise<boolean> = async () => true,
-  beforeAssetOpen?: (canonicalPath: string) => void | Promise<void>) {
+  beforeAssetOpen?: (canonicalPath: string) => void | Promise<void>, writable = false,
+  capabilityMode: "read-only" | "local-trusted" = writable ? "local-trusted" : "read-only") {
   const dir = mkdtempSync(join(tmpdir(), "console-server-")); dirs.push(dir);
   const assets = join(dir, "assets"); mkdirSync(join(assets, "assets"), { recursive: true });
   writeFileSync(join(assets, "index.html"), "<!doctype html><title>Orchestra Console</title><div id=root></div>");
@@ -26,11 +29,27 @@ function setup(probe: () => Promise<boolean> = async () => true,
     skills: [{ name: "implementer", description: "Implements a bounded plan.", version: null, availability: "available",
       provenance: ["Claude Code", "Codex"], compatibility: ["claude", "codex"] }] }));
   const config: ConsoleConfig = { port: 0, bindAddr: "127.0.0.1", dbPath: join(dir, "events.db"), assetsDir: assets,
-    daemonHealthUrl: "http://127.0.0.1:8787/healthz", skillInventoryPath };
+    daemonHealthUrl: "http://127.0.0.1:8787/healthz", skillInventoryPath,
+    ...(writable ? { capabilityMode, maxBodyBytes: 4096 } : {}) };
   const log = new EventLog(config.dbPath);
   const logger = { log: vi.fn(), error: vi.fn() };
-  const server = new ConsoleServer({ config, log, probe, now: () => 2_000, logger, beforeAssetOpen });
-  return { server, log, config, dir, logger };
+  let broker: ConsoleOperationBroker | undefined; let snapshotPath: string | undefined; let spoolDir: string | undefined;
+  const notify = vi.fn(); const protectedEnv = join(dir, "protected.env"); writeFileSync(protectedEnv, "LINEAR_API_KEY='SERVER_CURRENT_SECRET'\n", { mode: 0o640 });
+  if (writable) {
+    snapshotPath = join(dir, "snapshot.json"); spoolDir = join(dir, "spool");
+    writeFileSync(snapshotPath, JSON.stringify({ version: 1, revision: "revision_123456789", generatedAt: 1_900,
+      settings: { plannerHarness: "claude", implementerHarness: "claude", sessionConcurrency: 2, iosSimMaxConcurrent: 2,
+        claudeMaxTurns: 30, doMaxTurns: 60, doMaxBudgetUsd: null, mcpEnvPassthrough: [], browserEnabled: true,
+        iosSimEnabled: false, attachmentsEnabled: true, ntfyUrl: null },
+      secrets: { LINEAR_API_KEY: { configured: true }, ARTIFACT_TOKEN: { configured: false },
+        PLANNER_WEBHOOK_SECRET: { configured: true }, IMPLEMENTER_WEBHOOK_SECRET: { configured: true },
+        PLANNER_LINEAR_CLIENT_SECRET: { configured: false }, IMPLEMENTER_LINEAR_CLIENT_SECRET: { configured: false } },
+      source: { digest: "a".repeat(64), size: 1, mtimeMs: 1 } }));
+    broker = new ConsoleOperationBroker({ log, spoolDir, snapshotPath, draftTtlMs: 5_000, snapshotMaxAgeMs: 5_000,
+      now: () => 2_000, notify });
+  }
+  const server = new ConsoleServer({ config, log, probe, now: () => 2_000, logger, beforeAssetOpen, ...(broker ? { broker } : {}) });
+  return { server, log, config, dir, logger, broker, snapshotPath, spoolDir, protectedEnv, notify };
 }
 
 function requestWithHost(port: number, host: string): Promise<{ status: number; body: unknown }> {
@@ -42,6 +61,16 @@ function requestWithHost(port: number, host: string): Promise<{ status: number; 
         body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown }));
     });
     req.on("error", reject); req.end();
+  });
+}
+
+function rawPost(port: number, headers: Record<string, string>, body = "{"): Promise<{ status: number; body: string }> {
+  return new Promise((resolveResponse, reject) => {
+    const req = request({ hostname: "127.0.0.1", port, path: "/api/drafts", method: "POST", headers }, response => {
+      const chunks: Buffer[] = []; response.on("data", chunk => chunks.push(chunk));
+      response.on("end", () => resolveResponse({ status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
+    });
+    req.on("error", reject); req.end(body);
   });
 }
 
@@ -79,6 +108,16 @@ function populate(log: EventLog): void {
 }
 
 describe("console HTTP server", () => {
+  it.each([["peer", "10.0.0.7", "127.0.0.1"], ["listener", "127.0.0.1", "10.0.0.8"]])(
+    "rejects a non-loopback %s before consuming the request body", async (_kind, remoteAddress, localAddress) => {
+      const guard = new ConsoleMutationGuard("local-trusted", 4096); let bodyReads = 0;
+      const fake = { method: "POST", socket: { remoteAddress, localAddress }, headers: { host: "127.0.0.1:8790",
+        origin: "http://127.0.0.1:8790", cookie: `${guard.cookieName}=${guard.token}`, "x-orchestra-csrf": guard.token,
+        "content-type": "application/json" }, async *[Symbol.asyncIterator]() { bodyReads += 1; yield Buffer.from("{"); } };
+      await expect(guard.authorizeAndReadJson(fake as never, 8790)).rejects.toMatchObject({ code: "forbidden", status: 403 });
+      expect(bodyReads).toBe(0);
+    });
+
   it("cancels every streamed response body after observing repeated daemon health statuses", async () => {
     const bodyClosed: Array<Promise<void>> = [];
     let requestCount = 0;
@@ -111,6 +150,7 @@ describe("console HTTP server", () => {
       dbPath: "/tmp/console.db", daemonHealthUrl: "http://127.0.0.1:8787/healthz" });
     expect(() => loadConsoleConfig({ CONSOLE_BIND_ADDR: "0.0.0.0" })).toThrow("must be 127.0.0.1");
     expect(() => loadConsoleConfig({ CONSOLE_DAEMON_HEALTH_URL: "http://localhost:8787/healthz" })).toThrow("http://127.0.0.1");
+    expect(() => loadConsoleConfig({ CONSOLE_CAPABILITY_MODE: "hostile" })).toThrow("read-only or local-trusted");
   });
   it("binds only IPv4 loopback and serves read APIs plus local compiled assets", async () => {
     const { server, log } = setup(); const address = await server.listen();
@@ -294,6 +334,53 @@ describe("console HTTP server", () => {
         { error: { code: "method_not_allowed", message: "read-only endpoint" } });
     expect(readFileSync(config.dbPath)).toEqual(dbBefore);
     expect(readFileSync(config.skillInventoryPath)).toEqual(skillsBefore);
+    await server.close(); log.close();
+  });
+
+  it("guards real write HTTP before parsing and publishes one redacted durable operation", async () => {
+    const { server, log, config, dir, broker, spoolDir, protectedEnv, notify } = setup(async () => true, undefined, true);
+    const address = await server.listen(); const base = `http://127.0.0.1:${address.port}`;
+    const before = readFileSync(config.dbPath); const envBefore = readFileSync(protectedEnv); const envMode = statSync(protectedEnv).mode & 0o777;
+    const draftCallback = vi.spyOn(broker!, "draft"); const confirmCallback = vi.spyOn(broker!, "confirm"); const controlCallback = vi.spyOn(broker!, "control");
+    const bootstrap = await fetch(`${base}/api/bootstrap`); const { csrfToken } = await bootstrap.json() as { csrfToken: string };
+    const cookie = bootstrap.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const post = (body: string, headers: Record<string, string> = {}) => fetch(`${base}/api/drafts`, { method: "POST", body,
+      headers: { Origin: base, Cookie: cookie, "Content-Type": "application/json", "X-Orchestra-CSRF": csrfToken, ...headers } });
+    const trusted = { Host: `127.0.0.1:${address.port}`, Origin: base, Cookie: cookie,
+      "Content-Type": "application/json", "X-Orchestra-CSRF": csrfToken };
+    const rejected = [
+      await rawPost(address.port, { ...trusted, Host: "" }), await rawPost(address.port, { ...trusted, Host: "evil.example" }),
+      await rawPost(address.port, { ...trusted, Origin: "" }), await rawPost(address.port, { ...trusted, Origin: "https://evil.example" }),
+      await rawPost(address.port, { ...trusted, Cookie: "" }), await rawPost(address.port, { ...trusted, Cookie: "orchestra_console_csrf=hostile" }),
+      await rawPost(address.port, { ...trusted, "X-Orchestra-CSRF": "" }), await rawPost(address.port, { ...trusted, "X-Orchestra-CSRF": "hostile" }),
+      await rawPost(address.port, { ...trusted, "Content-Type": "" }), await rawPost(address.port, { ...trusted, "Content-Type": "text/plain" }),
+    ];
+    // Node rejects an empty Host at its HTTP parser boundary; all remaining
+    // cases reach the centralized guard and are still rejected before JSON.
+    expect(rejected.map(value => value.status)).toEqual([400, 403, 403, 403, 403, 403, 403, 403, 415, 415]);
+    expect(rejected.every(value => !value.body.includes("Unexpected end"))).toBe(true);
+    expect(draftCallback).not.toHaveBeenCalled(); expect(confirmCallback).not.toHaveBeenCalled(); expect(controlCallback).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled(); expect(readFileSync(config.dbPath)).toEqual(before); expect(readFileSync(protectedEnv)).toEqual(envBefore);
+    expect(statSync(protectedEnv).mode & 0o777).toBe(envMode); expect(existsSync(spoolDir!)).toBe(false);
+    const draftResponse = await post(JSON.stringify({ kind: "config.apply", reason: "rotate", changes: { plannerHarness: "claudex" },
+      secrets: { LINEAR_API_KEY: "HTTP_SECRET_SENTINEL" } }));
+    expect(draftResponse.status).toBe(200); const draftText = await draftResponse.text(); expect(draftText).not.toContain("HTTP_SECRET_SENTINEL");
+    const draft = JSON.parse(draftText) as { id: string; digest: string; reason: string };
+    const confirmed = await fetch(`${base}/api/operations/confirm`, { method: "POST", headers: { Origin: base, Cookie: cookie,
+      "Content-Type": "application/json", "X-Orchestra-CSRF": csrfToken }, body: JSON.stringify({ draftId: draft.id, digest: draft.digest, reason: draft.reason }) });
+    expect(confirmed.status).toBe(202); expect(log.listOperations()).toHaveLength(1);
+    expect(JSON.stringify(log.listOperations())).not.toContain("HTTP_SECRET_SENTINEL");
+    await server.close(); log.close();
+  });
+
+  it("rejects read-only capability before parsing or broker notification", async () => {
+    const { server, log, config, broker, protectedEnv, spoolDir, notify } = setup(async () => true, undefined, true, "read-only");
+    const address = await server.listen(); const base = `http://127.0.0.1:${address.port}`; const dbBefore = readFileSync(config.dbPath);
+    const envBefore = readFileSync(protectedEnv); const draftCallback = vi.spyOn(broker!, "draft");
+    const response = await rawPost(address.port, { Host: `127.0.0.1:${address.port}`, Origin: base,
+      "Content-Type": "application/json", Cookie: "orchestra_console_csrf=hostile", "X-Orchestra-CSRF": "hostile" });
+    expect(response.status).toBe(403); expect(draftCallback).not.toHaveBeenCalled(); expect(notify).not.toHaveBeenCalled();
+    expect(readFileSync(config.dbPath)).toEqual(dbBefore); expect(readFileSync(protectedEnv)).toEqual(envBefore); expect(existsSync(spoolDir!)).toBe(false);
     await server.close(); log.close();
   });
 

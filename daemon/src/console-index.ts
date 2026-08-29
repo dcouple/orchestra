@@ -2,11 +2,16 @@ import { loadConsoleConfig } from "./config.js";
 import { ConsoleServer } from "./console-server.js";
 import { EventLog } from "./eventlog.js";
 import { readSkillInventory } from "./skill-inventory.js";
+import { ConsoleOperationBroker } from "./console-operation-broker.js";
 
 const config = loadConsoleConfig();
 const log = new EventLog(config.dbPath);
+const broker = config.operationSpoolDir && config.configSnapshotPath ? new ConsoleOperationBroker({ log,
+  spoolDir: config.operationSpoolDir, snapshotPath: config.configSnapshotPath,
+  draftTtlMs: config.draftTtlMs ?? 300_000, snapshotMaxAgeMs: config.snapshotMaxAgeMs ?? 86_400_000 }) : undefined;
+await broker?.reconcile();
 const server = new ConsoleServer({ config, log,
-  readSkills: () => readSkillInventory(config.skillInventoryPath) });
+  ...(broker ? { broker } : {}), readSkills: () => readSkillInventory(config.skillInventoryPath) });
 const address = await server.listen();
 console.log(JSON.stringify({ event: "console_listening", address: address.address, port: address.port }));
 

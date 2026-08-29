@@ -120,6 +120,7 @@ describe("macOS site config", () => {
       "org.example.cliproxyapi.plist",
       "org.example.cloudflared.plist",
       "org.example.linear-agent-daemon.plist",
+      "org.example.orchestra-console-operation.plist",
       "org.example.orchestra-console.plist",
       "sudoers",
     ]);

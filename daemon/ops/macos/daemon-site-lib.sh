@@ -15,7 +15,7 @@ load_site_env() {
     [[ $line == *=* ]] || site_die "site config: malformed line: $line" || return
     key=${line%%=*}; value=${line#*=}
     case $key in
-      DAEMON_PUBLIC_HOSTNAME|DAEMON_TUNNEL_NAME|DAEMON_SERVICE_USER|DAEMON_SERVICE_HOME|DAEMON_LAUNCHD_PREFIX|DAEMON_SOURCE_REPO_URL|DAEMON_CONSOLE_BIND_ADDR|DAEMON_CONSOLE_PORT) ;;
+      DAEMON_PUBLIC_HOSTNAME|DAEMON_TUNNEL_NAME|DAEMON_SERVICE_USER|DAEMON_SERVICE_HOME|DAEMON_LAUNCHD_PREFIX|DAEMON_SOURCE_REPO_URL|DAEMON_CONSOLE_BIND_ADDR|DAEMON_CONSOLE_PORT|DAEMON_CONSOLE_CAPABILITY_MODE) ;;
       *) site_die "site config: unknown key: $key" || return ;;
     esac
     printf -v "$key" '%s' "$value"
@@ -28,6 +28,7 @@ load_site_env() {
   DAEMON_SOURCE_REPO_URL=${DAEMON_SOURCE_REPO_URL:-https://github.com/dcouple/orchestra.git}
   DAEMON_CONSOLE_BIND_ADDR=${DAEMON_CONSOLE_BIND_ADDR:-127.0.0.1}
   DAEMON_CONSOLE_PORT=${DAEMON_CONSOLE_PORT:-8790}
+  DAEMON_CONSOLE_CAPABILITY_MODE=${DAEMON_CONSOLE_CAPABILITY_MODE:-read-only}
   # Values are substituted with sed using | as the delimiter and land in
   # plists, sudoers, and YAML — keep them to the characters those accept.
   [[ $DAEMON_SERVICE_USER =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || site_die "site config: invalid DAEMON_SERVICE_USER: $DAEMON_SERVICE_USER" || return
@@ -38,13 +39,15 @@ load_site_env() {
   [[ $DAEMON_SOURCE_REPO_URL == https://* && $DAEMON_SOURCE_REPO_URL != *'|'* ]] || site_die "site config: DAEMON_SOURCE_REPO_URL must be an https:// URL" || return
   [[ $DAEMON_CONSOLE_BIND_ADDR == 127.0.0.1 ]] || site_die "site config: DAEMON_CONSOLE_BIND_ADDR must be 127.0.0.1" || return
   [[ $DAEMON_CONSOLE_PORT =~ ^[1-9][0-9]{0,4}$ && $DAEMON_CONSOLE_PORT -le 65535 ]] || site_die "site config: invalid DAEMON_CONSOLE_PORT: $DAEMON_CONSOLE_PORT" || return
+  [[ $DAEMON_CONSOLE_CAPABILITY_MODE == read-only || $DAEMON_CONSOLE_CAPABILITY_MODE == local-trusted ]] || site_die "site config: invalid DAEMON_CONSOLE_CAPABILITY_MODE: $DAEMON_CONSOLE_CAPABILITY_MODE" || return
   DAEMON_LABEL=$DAEMON_LAUNCHD_PREFIX.linear-agent-daemon
   CONSOLE_LABEL=$DAEMON_LAUNCHD_PREFIX.orchestra-console
+  CONSOLE_OPERATION_LABEL=$DAEMON_LAUNCHD_PREFIX.orchestra-console-operation
   PROXY_LABEL=$DAEMON_LAUNCHD_PREFIX.cliproxyapi
   TUNNEL_LABEL=$DAEMON_LAUNCHD_PREFIX.cloudflared
   export DAEMON_PUBLIC_HOSTNAME DAEMON_TUNNEL_NAME DAEMON_SERVICE_USER DAEMON_SERVICE_HOME \
-    DAEMON_LAUNCHD_PREFIX DAEMON_SOURCE_REPO_URL DAEMON_CONSOLE_BIND_ADDR DAEMON_CONSOLE_PORT \
-    DAEMON_LABEL CONSOLE_LABEL PROXY_LABEL TUNNEL_LABEL
+    DAEMON_LAUNCHD_PREFIX DAEMON_SOURCE_REPO_URL DAEMON_CONSOLE_BIND_ADDR DAEMON_CONSOLE_PORT DAEMON_CONSOLE_CAPABILITY_MODE \
+    DAEMON_LABEL CONSOLE_LABEL CONSOLE_OPERATION_LABEL PROXY_LABEL TUNNEL_LABEL
 }
 
 # render_site_template TEMPLATE > OUTPUT — substitutes the site placeholders.
@@ -67,11 +70,12 @@ render_site_templates() {
   local src=${SITE_TEMPLATE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)} out=$1 rendered
   render_site_template "$src/linear-agent-daemon.plist.template" > "$out/$DAEMON_LABEL.plist"
   render_site_template "$src/orchestra-console.plist.template" > "$out/$CONSOLE_LABEL.plist"
+  render_site_template "$src/orchestra-console-operation.plist.template" > "$out/$CONSOLE_OPERATION_LABEL.plist"
   render_site_template "$src/cliproxyapi.plist.template" > "$out/$PROXY_LABEL.plist"
   render_site_template "$src/cloudflared.plist.template" > "$out/$TUNNEL_LABEL.plist"
   render_site_template "$src/sudoers-services.template" > "$out/sudoers"
   render_site_template "$src/cloudflared-config.yml.template" > "$out/cloudflared-config.yml"
-  for rendered in "$out/$DAEMON_LABEL.plist" "$out/$CONSOLE_LABEL.plist" "$out/$PROXY_LABEL.plist" "$out/$TUNNEL_LABEL.plist" "$out/sudoers" "$out/cloudflared-config.yml"; do
+  for rendered in "$out/$DAEMON_LABEL.plist" "$out/$CONSOLE_LABEL.plist" "$out/$CONSOLE_OPERATION_LABEL.plist" "$out/$PROXY_LABEL.plist" "$out/$TUNNEL_LABEL.plist" "$out/sudoers" "$out/cloudflared-config.yml"; do
     ! grep -qE '@(SERVICE_USER|SERVICE_HOME|LAUNCHD_PREFIX|PUBLIC_HOSTNAME|CONSOLE_BIND_ADDR|CONSOLE_PORT)@' "$rendered" || site_die "unrendered placeholder in $rendered" || return
   done
 }

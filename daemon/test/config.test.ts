@@ -286,4 +286,13 @@ describe("loadConfig", () => {
     delete (env as Partial<typeof base>).DAEMON_TEST_MODE;
     expect(() => loadConfig(env)).toThrow("WEBHOOK_BASE_URL");
   });
+  it("loads bounded local-trusted console operation settings", () => {
+    expect(loadConsoleConfig({ DB_PATH: "/tmp/state/events.db", CONSOLE_CAPABILITY_MODE: "local-trusted" })).toMatchObject({
+      capabilityMode: "local-trusted", configSnapshotPath: "/tmp/state/console-config-snapshot.json",
+      operationSpoolDir: "/tmp/state/console-operations", draftTtlMs: 300_000, maxBodyBytes: 65_536,
+    });
+    expect(() => loadConsoleConfig({ CONSOLE_CAPABILITY_MODE: "trusted" })).toThrow("read-only or local-trusted");
+    expect(() => loadConsoleConfig({ CONSOLE_DRAFT_TTL_MS: "1800001" })).toThrow("at most 1800000");
+    expect(() => loadConsoleConfig({ CONSOLE_MAX_BODY_BYTES: "1048577" })).toThrow("at most 1048576");
+  });
 });

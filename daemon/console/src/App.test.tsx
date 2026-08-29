@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import type { Dependencies, Overview, RunDetail, Skills } from "./api";
+import type { ConfigurationSnapshot, Dependencies, Operation, Overview, RunDetail, Skills } from "./api";
 import { RunTimeline } from "./components/RunTimeline";
 
 const run: RunDetail = { id: "session-1", app: "planner", mode: "planner", status: "active", issueIdentifier: "ENG-42",
@@ -105,6 +105,63 @@ describe("Orchestra Console", () => {
     expect(screen.getByText("1.2.3")).toBeInTheDocument();
     expect(screen.getAllByText("Claude Code, Codex")).toHaveLength(2);
     expect(document.body.textContent).not.toContain("/Users/");
+  });
+
+  it("keyboard-navigates redacted configuration confirmation and operation recovery without arbitrary controls", async () => {
+    const configuration: ConfigurationSnapshot = { version: 1, revision: "revision_123456789", generatedAt: 1_900, staleAt: 9_000,
+      settings: { plannerHarness: "claude", implementerHarness: "claude", sessionConcurrency: 2, iosSimMaxConcurrent: 2,
+        claudeMaxTurns: 30, doMaxTurns: 60, doMaxBudgetUsd: null, mcpEnvPassthrough: [], browserEnabled: true,
+        iosSimEnabled: false, attachmentsEnabled: true, ntfyUrl: null }, secrets: {
+        LINEAR_API_KEY: { configured: true }, ARTIFACT_TOKEN: { configured: false }, PLANNER_WEBHOOK_SECRET: { configured: true },
+        IMPLEMENTER_WEBHOOK_SECRET: { configured: false }, PLANNER_LINEAR_CLIENT_SECRET: { configured: true },
+        IMPLEMENTER_LINEAR_CLIENT_SECRET: { configured: false } } };
+    const operation: Operation = { id: "op-1", digest: "a".repeat(64), kind: "config.apply", actor: "local-console", reason: "rotate",
+      state: "blocked", stage: "rollback_acceptance", attempts: 1, stateVersion: 3, outcome: "health failed",
+      recoveryActions: ["retry"], events: [{ sequence: 1, state: "pending", stage: "scheduled", createdAt: 2_000 }] };
+    const requests: Array<{ path: string; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = String(input); requests.push({ path, ...(init ? { init } : {}) });
+      let body: unknown = path.includes("/api/overview") ? overview : path.endsWith("/api/runs") ? { runs: [run] }
+        : path.includes("/api/dependencies") ? dependencies : path.includes("/api/skills") ? skills
+        : path.includes("/api/configuration") ? configuration : path.endsWith("/api/bootstrap") ? { capability: "local-trusted", csrfToken: "csrf-token" }
+        : path.endsWith("/api/drafts") ? { id: "draft-1", kind: "config.apply", digest: "b".repeat(64), reason: "rotate safely",
+          expiresAt: 8_000, changedFields: ["plannerHarness"], before: { plannerHarness: "claude" }, after: { plannerHarness: "claudex" },
+          secrets: { LINEAR_API_KEY: "Will rotate", ARTIFACT_TOKEN: "Will add", PLANNER_WEBHOOK_SECRET: "Will rotate",
+            IMPLEMENTER_WEBHOOK_SECRET: "Will add", PLANNER_LINEAR_CLIENT_SECRET: "Will rotate",
+            IMPLEMENTER_LINEAR_CLIENT_SECRET: "Will add" }, restartRequired: true }
+        : path.endsWith("/api/operations/confirm") ? { operation, deduplicated: false }
+        : path.endsWith("/api/operations") ? { operations: [operation] } : {};
+      return { ok: true, status: init?.method === "POST" ? 202 : 200, json: async () => body } as Response;
+    }));
+    const user = userEvent.setup(); render(<App />); await screen.findByRole("heading", { name: "Overview" });
+    screen.getByRole("button", { name: "Configuration" }).focus(); await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { name: "Configuration" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Concurrency & budgets" })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Planner harness"), "claudex");
+    const secretInputs = [
+      ["New Linear API key", "UI_LINEAR_SECRET"], ["New Artifact token", "UI_ARTIFACT_SECRET"],
+      ["New Planner webhook secret", "UI_PLANNER_WEBHOOK"], ["New Implementer webhook secret", "UI_IMPLEMENTER_WEBHOOK"],
+      ["New Planner Linear client secret", "UI_PLANNER_CLIENT"], ["New Implementer Linear client secret", "UI_IMPLEMENTER_CLIENT"],
+    ] as const;
+    for (const [label, value] of secretInputs) await user.type(screen.getByLabelText(label), value);
+    await user.type(screen.getByLabelText("Reason"), "rotate safely"); await user.click(screen.getByRole("button", { name: "Review changes" }));
+    expect(await screen.findByRole("dialog", { name: "Confirm local operation" })).toBeInTheDocument();
+    for (const text of ["LINEAR_API_KEY: Will rotate", "ARTIFACT_TOKEN: Will add", "PLANNER_WEBHOOK_SECRET: Will rotate",
+      "IMPLEMENTER_WEBHOOK_SECRET: Will add", "PLANNER_LINEAR_CLIENT_SECRET: Will rotate", "IMPLEMENTER_LINEAR_CLIENT_SECRET: Will add"])
+      expect(screen.getByText(text)).toBeInTheDocument();
+    for (const [label, value] of secretInputs) { expect(screen.getByLabelText(label)).toHaveValue(""); expect(document.body.textContent).not.toContain(value); }
+    const draftRequest = requests.find(value => value.path.endsWith("/api/drafts") && value.init?.method === "POST");
+    expect(JSON.parse(String(draftRequest?.init?.body))).toMatchObject({ secrets: Object.fromEntries(secretInputs.map(([, value], index) => [
+      ["LINEAR_API_KEY", "ARTIFACT_TOKEN", "PLANNER_WEBHOOK_SECRET", "IMPLEMENTER_WEBHOOK_SECRET",
+        "PLANNER_LINEAR_CLIENT_SECRET", "IMPLEMENTER_LINEAR_CLIENT_SECRET"][index], value])) });
+    await user.click(screen.getByRole("button", { name: "Confirm and apply" }));
+    await waitFor(() => expect(requests.some(value => value.path.endsWith("/api/operations/confirm"))).toBe(true));
+    await user.click(screen.getByRole("button", { name: "Operations" }));
+    expect(await screen.findByRole("table", { name: "Operation history" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /command|path|argv|commit|branch/i })).not.toBeInTheDocument();
+    expect(requests.filter(value => value.path.endsWith("/api/operations/confirm")).map(value => value.init?.body).join("\n"))
+      .not.toMatch(/UI_(LINEAR|ARTIFACT|PLANNER|IMPLEMENTER)/);
   });
 
   it.each(["healthy", "unknown"] as const)("omits the global dependency warning when overview health is %s", async status => {

@@ -43,10 +43,35 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   if (!response.ok) throw new Error(response.status === 404 ? "Not found" : "Console data is unavailable");
   return response.json() as Promise<T>;
 }
+let csrfToken: string | undefined;
+async function post<T>(path: string, body: unknown): Promise<T> {
+  if (!csrfToken) await api.bootstrap();
+  const response = await fetch(path, { method: "POST", credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json", "X-Orchestra-CSRF": csrfToken ?? "" },
+    body: JSON.stringify(body) });
+  const payload = await response.json() as { error?: { message?: string } };
+  if (!response.ok) { if (response.status === 403) csrfToken = undefined; throw new Error(payload.error?.message ?? "Operation failed"); }
+  return payload as T;
+}
+export interface ConfigurationSnapshot { version: 1; revision: string; generatedAt: number; staleAt: number;
+  settings: Record<string, string | number | boolean | string[] | null>; secrets: Record<string, { configured: boolean }> }
+export interface DraftPreview { id: string; kind: string; digest: string; reason: string; expiresAt: number;
+  changedFields: string[]; before: Record<string, unknown>; after: Record<string, unknown>;
+  secrets: Record<string, string>; restartRequired: boolean }
+export interface Operation { id: string; digest: string; kind: string; actor: string; reason: string; state: string;
+  stage: string | null; attempts: number; stateVersion: number; outcome: string | null; recoveryActions: string[];
+  events: Array<{ sequence: number; state: string; stage: string | null; createdAt: number }> }
 export const api = {
+  bootstrap: async (signal?: AbortSignal) => { const value = await get<{ capability: "read-only" | "local-trusted"; csrfToken: string }>("/api/bootstrap", signal); csrfToken = value.csrfToken; return value; },
   overview: (signal?: AbortSignal) => get<Overview>("/api/overview", signal),
   runs: (signal?: AbortSignal) => get<{ runs: RunSummary[] }>("/api/runs", signal),
   run: (id: string, signal?: AbortSignal) => get<RunDetail>(`/api/runs/${encodeURIComponent(id)}`, signal),
   dependencies: (signal?: AbortSignal) => get<Dependencies>("/api/dependencies", signal),
   skills: (signal?: AbortSignal) => get<Skills>("/api/skills", signal),
+  configuration: (signal?: AbortSignal) => get<ConfigurationSnapshot>("/api/configuration", signal),
+  operations: (signal?: AbortSignal) => get<{ operations: Operation[] }>("/api/operations", signal),
+  draft: (body: unknown) => post<DraftPreview>("/api/drafts", body),
+  confirm: (body: unknown) => post<{ operation: Operation; deduplicated: boolean }>("/api/operations/confirm", body),
+  control: (operation: Operation, kind: "retry" | "cancel", reason: string) => post(`/api/operations/${encodeURIComponent(operation.id)}/${kind}`,
+    { targetDigest: operation.digest, expectedVersion: operation.stateVersion, reason }),
 };
