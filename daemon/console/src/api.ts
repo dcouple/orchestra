@@ -39,14 +39,14 @@ export type Skills = { availability: "available"; schemaVersion: 1; sourceRevisi
   sources: Array<{ id: "claude" | "codex"; label: "Claude Code" | "Codex"; available: boolean; skillCount: number }>;
   skills: Skill[] } | { availability: "unavailable"; reasonCode: string; sourceRevision: null; sources: []; skills: [] };
 export interface LoopDeclaration { version:1;name:string;description:string;trigger:{kind:"fixed-interval";everyMinutes:number;startsAt:number};
-  task:{kind:"agent";role:"planner"|"implementer";objective?:string};harness:{runtime:"claude"|"claudex";profile:"fable"|"sol"};
+  task:{kind:"agent";role:"planner"|"implementer";objective:string};harness:{runtime:"claude"|"claudex";profile:"fable"|"sol"};
   maxConcurrency:number;budgetUsd:number;timeoutMinutes:number;maxRetries:number;enabled:boolean }
-export interface LoopSummary extends LoopDeclaration {id:string;revision:number;digest:string;nextDueAt:number;blockedReason:string|null;createdAt:number;updatedAt:number}
+export interface LoopSummary extends Omit<LoopDeclaration,"task"> {task:{kind:"agent";role:"planner"|"implementer"};id:string;revision:number;digest:string;nextDueAt:number;blockedReason:string|null;createdAt:number;updatedAt:number}
 export interface LoopDetail extends LoopSummary {audit:Array<{sequence:number;kind:string;reason:string;actor:string;createdAt:number}>;
   cleanups:Array<{id:number;occurrenceId:string;status:string;attempts:number;error:string|null;createdAt:number}>;
   occurrences:Array<{id:string;runId:string;scheduledFor:number;status:string;retryCount:number;outcome:string|null;error:string|null;policy:{budgetUsd:number;timeoutMinutes:number;maxRetries:number}}>}
 export interface LoopDraft {id:string;digest:string;kind:string;loopId:string;expectedRevision:number|null;reason:string;expiresAt:number;changedFields:string[];
-  declaration?:LoopDeclaration;policy:{maxConcurrency:number;budgetUsd:number;timeoutMinutes:number;maxRetries:number}|null}
+  declaration?:Omit<LoopDeclaration,"task">&{task:{kind:"agent";role:"planner"|"implementer"}};policy:{maxConcurrency:number;budgetUsd:number;timeoutMinutes:number;maxRetries:number}|null}
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { signal, headers: { Accept: "application/json" } });

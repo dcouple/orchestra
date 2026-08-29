@@ -110,6 +110,27 @@ function populate(log: EventLog): void {
 }
 
 describe("console HTTP server", () => {
+  it("uses the same safe loop projection for real list and detail HTTP responses", async () => {
+    const { server, log } = setup();
+    log.mutateLoop({ draftId: "safe-http-draft", digest: "9".repeat(64), id: "loop-safe-http",
+      expectedRevision: null, reason: "create safe projection", kind: "create", now: 2_000,
+      declaration: { version: 1, name: "Safe HTTP loop", description: "Visible description",
+        trigger: { kind: "fixed-interval", everyMinutes: 60, startsAt: 2_000 },
+        task: { kind: "agent", role: "planner", objective: "HTTP_OBJECTIVE_SENTINEL HTTP_PROMPT_SENTINEL" },
+        harness: { runtime: "claude", profile: "sol" }, maxConcurrency: 1, budgetUsd: 2,
+        timeoutMinutes: 10, maxRetries: 1, enabled: false } });
+    const address = await server.listen(); const base = `http://127.0.0.1:${address.port}`;
+    for (const path of ["/api/loops", "/api/loops/loop-safe-http"]) {
+      const response = await fetch(`${base}${path}`); const text = await response.text();
+      expect(response.status).toBe(200); expect(text).not.toContain("HTTP_OBJECTIVE_SENTINEL");
+      expect(text).not.toContain("HTTP_PROMPT_SENTINEL"); expect(text).not.toContain('"objective"');
+      expect(JSON.parse(text)).toMatchObject(path === "/api/loops"
+        ? { loops: [{ task: { kind: "agent", role: "planner" } }] }
+        : { task: { kind: "agent", role: "planner" } });
+    }
+    await server.close(); log.close();
+  });
+
   it("authorizes before strict loop parsing and rejects escaped nested duplicates without mutation",async()=>{
     const {server,log}=setup(undefined,undefined,true);const address=await server.listen();const base=`http://127.0.0.1:${address.port}`;
     const bootstrap=await fetch(`${base}/api/bootstrap`);const {csrfToken}=await bootstrap.json() as {csrfToken:string};const cookie=bootstrap.headers.get("set-cookie")!;

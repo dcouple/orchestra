@@ -6,7 +6,8 @@ import type { InFlightDispatch } from "./dispatches.js";
 import { ACTIVE_OPERATION_STATES, type OperationControlKind, type OperationControlRow, type OperationRow, type OperationStageEvent, type OperationState,
   type SafeOperationStatus, type SafeRunningTurn, type ScheduleOperationInput, validateScheduleOperation } from "./operations.js";
 import { SimCapacityError, SimTurnLimitError } from "./sim.js";
-import { projectInvocation, projectResources, type ConsoleRunDetail, type ConsoleRunSummary } from "./console-projections.js";
+import { projectConsoleLoop, projectInvocation, projectResources, type ConsoleLoopDefinition,
+  type ConsoleRunDetail, type ConsoleRunSummary } from "./console-projections.js";
 import { nextLoopDue, type LoopDeclaration, type LoopOutcome } from "./loops.js";
 
 export interface LoopDefinitionRow extends LoopDeclaration {
@@ -23,7 +24,7 @@ export interface LoopOccurrenceRow {
 }
 export interface LoopCleanupJobRow { id: number; occurrenceId: string; loopId: string; ownerKey: string; worktreePath: string | null;
   status: "pending" | "running" | "done" | "retained" | "failed"; attempts: number; nextAttemptAt: number; error: string | null; createdAt: number }
-export type SafeLoopMutationDefinition = Omit<LoopDefinitionRow, "task"> & { task: { kind: "agent"; role: LoopDeclaration["task"]["role"] } };
+export type SafeLoopMutationDefinition = ConsoleLoopDefinition;
 export interface LoopMutationResult { loop: SafeLoopMutationDefinition; auditSequence: number; deduplicated: boolean }
 
 export interface AppendEvent {
@@ -3321,7 +3322,7 @@ export class EventLog {
       const sequence = ((this.db.prepare("SELECT COALESCE(MAX(sequence),0)+1 sequence FROM loop_audit_events WHERE loop_id=?").get(input.id) as { sequence: number }).sequence);
       this.db.prepare("INSERT INTO loop_audit_events(loop_id,sequence,kind,reason,actor,details_json,created_at) VALUES (?,?,?,?,?,?,?)")
         .run(input.id, sequence, input.kind, input.reason, "local-console", JSON.stringify({ revision, enabled: input.declaration.enabled }), now);
-      const result: LoopMutationResult = { loop: safeLoopMutationDefinition(this.loopById(input.id)!), auditSequence: sequence, deduplicated: false };
+      const result: LoopMutationResult = { loop: projectConsoleLoop(this.loopById(input.id)!), auditSequence: sequence, deduplicated: false };
       this.db.prepare("INSERT INTO loop_mutation_receipts(draft_id,digest,loop_id,revision,audit_sequence,response_json,created_at) VALUES (?,?,?,?,?,?,?)")
         .run(input.draftId, input.digest, input.id, revision, sequence, JSON.stringify(result), now);
       return result;
@@ -3497,7 +3498,7 @@ export class EventLog {
   confirmLoopCleanupRetry(input:{draftId:string;digest:string;loopId:string;expectedRevision:number;reason:string;now?:number}):LoopMutationResult{
     return this.db.transaction(()=>{const receipt=this.loopReceipt(input.draftId);if(receipt){if(receipt.digest!==input.digest)throw new Error("confirmation_mismatch");return {...receipt.result,deduplicated:true};}
       const loop=this.loopById(input.loopId);if(!loop||loop.revision!==input.expectedRevision)throw new Error("loop_revision_changed");const now=input.now??Date.now();
-      const {revision,sequence}=this.retryRetainedLoopCleanup(input.loopId,input.reason,now);const result:LoopMutationResult={loop:safeLoopMutationDefinition(this.loopById(input.loopId)!),auditSequence:sequence,deduplicated:false};
+      const {revision,sequence}=this.retryRetainedLoopCleanup(input.loopId,input.reason,now);const result:LoopMutationResult={loop:projectConsoleLoop(this.loopById(input.loopId)!),auditSequence:sequence,deduplicated:false};
       this.db.prepare("INSERT INTO loop_mutation_receipts(draft_id,digest,loop_id,revision,audit_sequence,response_json,created_at) VALUES (?,?,?,?,?,?,?)")
         .run(input.draftId,input.digest,input.loopId,revision,sequence,JSON.stringify(result),now);return result;})();
   }
@@ -3551,10 +3552,6 @@ function loopDeclaration(row: LoopDefinitionRow): LoopDeclaration {
     timeoutMinutes: row.timeoutMinutes, maxRetries: row.maxRetries, enabled: row.enabled };
 }
 
-function safeLoopMutationDefinition(row:LoopDefinitionRow):SafeLoopMutationDefinition{
-  const {task,...rest}=row;
-  return {...rest,task:{kind:"agent",role:task.role}};
-}
 function safeLoopReason(value:string|null):string|null{return value===null?null:value.replace(/[\x00-\x1f\x7f]/g," ").slice(0,500);}
 function safeLoopCleanupError(value:string|null):string|null{
   if(value===null)return null;

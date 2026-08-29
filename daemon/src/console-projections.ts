@@ -1,5 +1,5 @@
 import type { ProviderStateRow, SessionRow, AgentInvocationRow, ExternalUrlRow,
-  DependencyHealth, DependencyKind, DependencyObservationRow } from "./eventlog.js";
+  DependencyHealth, DependencyKind, DependencyObservationRow, LoopDefinitionRow } from "./eventlog.js";
 import type { SafeOperationStatus } from "./operations.js";
 import type { OperationRow, OperationStageEvent } from "./operations.js";
 
@@ -47,6 +47,16 @@ export interface ConsoleOperationHistory {
   state: OperationRow["state"]; stage: string | null; attempts: number; stateVersion: number;
   requestedAt: number; updatedAt: number; outcome: string | null; events: OperationStageEvent[];
   recoveryActions: Array<"retry" | "cancel">;
+}
+
+export type ConsoleLoopDefinition = Omit<LoopDefinitionRow, "task"> & {
+  task: { kind: "agent"; role: LoopDefinitionRow["task"]["role"] };
+};
+
+/** The only loop definition shape permitted to cross an HTTP or receipt boundary. */
+export function projectConsoleLoop(row: LoopDefinitionRow): ConsoleLoopDefinition {
+  const { task, ...safe } = row;
+  return { ...safe, task: { kind: "agent", role: task.role } };
 }
 
 export function projectConsoleOperation(operation: OperationRow, events: OperationStageEvent[]): ConsoleOperationHistory {

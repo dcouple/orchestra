@@ -49,7 +49,7 @@ function deferred<T>() {
 function mockApi(snapshot: Overview = overview) {
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
     const path = String(input);
-    const body = path.includes("/api/overview") ? snapshot : path.endsWith("/api/runs") ? { runs: snapshot.recentRuns }
+    const body = path.includes("/api/overview") ? snapshot : path.endsWith("/api/bootstrap") ? { capability: "local-trusted", csrfToken: "csrf" } : path.endsWith("/api/runs") ? { runs: snapshot.recentRuns }
       : path.includes("/api/dependencies") ? dependencies : path.includes("/api/skills") ? skills : run;
     return { ok: true, json: async () => body } as Response;
   }));
@@ -77,7 +77,7 @@ describe("Orchestra Console", () => {
       trigger:{kind:"fixed-interval" as const,everyMinutes:60,startsAt:2_000},task:{kind:"agent" as const,role:"planner" as const},
       harness:{runtime:"claude" as const,profile:"sol" as const},maxConcurrency:1,budgetUsd:2,timeoutMinutes:10,maxRetries:1,
       enabled:false,nextDueAt:3_000,blockedReason:"cleanup_retained",createdAt:2_000,updatedAt:2_000};
-    const detail={...loop,task:{...loop.task,objective:"Review repository health"},audit:[],occurrences:[],
+    const detail={...loop,audit:[],occurrences:[],
       cleanups:[{id:1,occurrenceId:"occ-1",status:"retained",attempts:1,error:"cleanup retained: dirty worktree",createdAt:2_000}]};
     const enabledLoop={...loop,id:"loop-2",name:"Enabled health",enabled:true,blockedReason:null};
     vi.stubGlobal("fetch",vi.fn(async(input:string|URL|Request,init?:RequestInit)=>{const path=String(input);requests.push({path,...(init?{init}:{})});
@@ -93,10 +93,13 @@ describe("Orchestra Console", () => {
     }));
     const user=userEvent.setup();render(<App/>);await screen.findByRole("heading",{name:"Overview"});await user.click(screen.getByRole("button",{name:"Loops"}));
     const enable=await screen.findByRole("button",{name:"Enable"});enable.focus();await user.keyboard("{Enter}");
-    expect(screen.getByRole("dialog",{name:/Reason to enable Health/})).toBeInTheDocument();await user.keyboard("{Enter}");
+    expect(screen.getByRole("dialog",{name:/Reason to enable Health/})).toBeInTheDocument();expect(screen.getByLabelText("Operator reason")).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");expect(screen.getByRole("button",{name:"Review change"})).toHaveFocus();
+    await user.keyboard("{Tab}");expect(screen.getByLabelText("Operator reason")).toHaveFocus();await user.keyboard("{Enter}");
     expect(screen.getByRole("alert")).toHaveTextContent("A reason is required");expect(requests.filter(row=>row.path.endsWith("/api/loops/drafts"))).toHaveLength(0);
-    await user.type(screen.getByLabelText("Operator reason"),"cancel this change");screen.getByRole("button",{name:"Cancel"}).focus();await user.keyboard("{Enter}");
+    await user.type(screen.getByLabelText("Operator reason"),"cancel this change");await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog",{name:/Reason to enable/})).not.toBeInTheDocument();
+    expect(enable).toHaveFocus();
     await user.click(screen.getByRole("button",{name:"Enable"}));await user.type(screen.getByLabelText("Operator reason"),"offline attempt");await user.keyboard("{Enter}");
     expect(await screen.findByRole("alert")).toHaveTextContent("Loop service offline");expect(screen.getByRole("dialog",{name:/Reason to enable/})).toBeInTheDocument();
     await user.clear(screen.getByLabelText("Operator reason"));await user.type(screen.getByLabelText("Operator reason"),"enable after review");await user.keyboard("{Enter}");
@@ -114,6 +117,91 @@ describe("Orchestra Console", () => {
     expect(await screen.findByRole("dialog",{name:"Confirm local operation"})).toHaveTextContent("revalidate retained worktree");
     const retryDraft=requests.filter(row=>row.path.endsWith("/api/loops/drafts")).map(row=>JSON.parse(String(row.init?.body))).find(body=>body.kind==="cleanup.retry"&&body.reason==="revalidate retained worktree");
     expect(retryDraft).toMatchObject({kind:"cleanup.retry",reason:"revalidate retained worktree"});
+  });
+
+  it("bootstraps read-only capability before rendering mutation affordances on every write surface", async () => {
+    const requests: Array<{ path: string; method: string }> = [];
+    const configuration: ConfigurationSnapshot = { version: 1, revision: "revision_read_only", generatedAt: 1_900, staleAt: 9_000,
+      settings: { plannerHarness: "claude", implementerHarness: "claudex", sessionConcurrency: 2 }, secrets: {} };
+    const operation: Operation = { id: "op-read", digest: "a".repeat(64), kind: "config.apply", actor: "local-console", reason: "history",
+      state: "blocked", stage: "rollback", attempts: 1, stateVersion: 2, outcome: "failed", recoveryActions: ["retry"], events: [] };
+    const loop = { id: "loop-read", revision: 1, digest: "b".repeat(64), version: 1 as const, name: "Observed loop", description: "history",
+      trigger: { kind: "fixed-interval" as const, everyMinutes: 60, startsAt: 2_000 }, task: { kind: "agent" as const, role: "planner" as const },
+      harness: { runtime: "claude" as const, profile: "sol" as const }, maxConcurrency: 1, budgetUsd: 2, timeoutMinutes: 10,
+      maxRetries: 1, enabled: false, nextDueAt: 3_000, blockedReason: "cleanup_retained", createdAt: 2_000, updatedAt: 2_000 };
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = String(input); requests.push({ path, method: init?.method ?? "GET" });
+      const body = path.endsWith("/api/bootstrap") ? { capability: "read-only", csrfToken: "csrf" }
+        : path.includes("/api/overview") ? overview : path.endsWith("/api/runs") ? { runs: [run] }
+          : path.includes("/api/dependencies") ? dependencies : path.includes("/api/skills") ? skills
+            : path.includes("/api/configuration") ? configuration : path.endsWith("/api/operations") ? { operations: [operation] }
+              : path.endsWith("/api/loops/loop-read") ? { ...loop, audit: [], occurrences: [], cleanups: [{ id: 1, occurrenceId: "occ", status: "retained", attempts: 1, error: "retained", createdAt: 2_000 }] }
+                : path.endsWith("/api/loops") ? { loops: [loop] } : run;
+      return jsonResponse(body);
+    }));
+    const user = userEvent.setup(); render(<App />); await screen.findByRole("heading", { name: "Overview" });
+    await user.click(screen.getByRole("button", { name: "Configuration" }));
+    expect(await screen.findByText(/Read-only mode/)).toBeInTheDocument(); expect(screen.getByText("revision_read_only")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /review|apply|restart|reload/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("New Linear API key")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Operations" }));
+    expect(await screen.findByRole("table", { name: "Operation history" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry|cancel/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Loops" }));
+    expect(await screen.findByRole("button", { name: "Observed loop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /enable|disable|retry cleanup|edit definition|review definition/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Objective")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Observed loop" }));
+    expect(await screen.findByRole("heading", { name: "Observed loop occurrence history" })).toBeInTheDocument();
+    expect(requests.filter(request => request.method === "POST")).toEqual([]);
+  });
+
+  it("shows capability loading and failure states without exposing guaranteed-403 controls", async () => {
+    const bootstrap = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const path = String(input); if (path.endsWith("/api/bootstrap")) return bootstrap.promise;
+      const body = path.includes("/api/overview") ? overview : path.endsWith("/api/runs") ? { runs: [run] }
+        : path.includes("/api/dependencies") ? dependencies : path.includes("/api/skills") ? skills
+          : path.endsWith("/api/loops") ? { loops: [] } : run;
+      return jsonResponse(body);
+    }));
+    const user = userEvent.setup(); render(<App />); await screen.findByRole("heading", { name: "Overview" });
+    await user.click(screen.getByRole("button", { name: "Loops" }));
+    expect(await screen.findByRole("heading", { name: "Capability loading" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Review definition" })).not.toBeInTheDocument();
+    await act(async () => { bootstrap.resolve({ ok: false, status: 503, json: async () => ({ error: {} }) } as Response); await bootstrap.promise; });
+    expect(await screen.findByText(/Capability could not be verified/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Review definition" })).not.toBeInTheDocument();
+  });
+
+  it("traps confirmation focus, ignores Escape while busy, and restores the opener", async () => {
+    const confirmation = deferred<Response>(); let confirmPending = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/api/loops/confirm") && confirmPending) return confirmation.promise;
+      const body = path.endsWith("/api/bootstrap") ? { capability: "local-trusted", csrfToken: "csrf" }
+        : path.includes("/api/overview") ? overview : path.endsWith("/api/runs") ? { runs: [run] }
+          : path.includes("/api/dependencies") ? dependencies : path.includes("/api/skills") ? skills
+            : path.endsWith("/api/loops/drafts") ? { id: "modal-draft", digest: "c".repeat(64), kind: "create", loopId: "modal-loop", expectedRevision: null, reason: "modal test", expiresAt: 9_000, changedFields: ["name"], policy: null }
+              : path.endsWith("/api/loops") ? { loops: [] } : init?.method === "POST" ? {} : run;
+      return jsonResponse(body);
+    }));
+    const user = userEvent.setup(); render(<App />); await screen.findByRole("heading", { name: "Overview" });
+    await user.click(screen.getByRole("button", { name: "Loops" })); await screen.findByLabelText("Objective");
+    await user.type(screen.getByLabelText("Name"), "Modal loop"); await user.type(screen.getByLabelText("Starts at"), "2030-01-01T00:00");
+    await user.type(screen.getByLabelText("Objective"), "bounded objective"); await user.type(screen.getByLabelText("Reason"), "modal test");
+    const opener = screen.getByRole("button", { name: "Review definition" }); await user.click(opener);
+    expect(await screen.findByRole("dialog", { name: "Confirm local operation" })).toBeInTheDocument();
+    expect(document.querySelector(".shell")?.parentElement).toHaveAttribute("inert");
+    expect(screen.getByRole("button", { name: "Confirm and apply" })).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}"); expect(screen.getByRole("button", { name: "Back" })).toHaveFocus();
+    await user.keyboard("{Tab}"); expect(screen.getByRole("button", { name: "Confirm and apply" })).toHaveFocus();
+    await user.keyboard("{Escape}"); expect(screen.queryByRole("dialog", { name: "Confirm local operation" })).not.toBeInTheDocument(); expect(document.querySelector(".shell")?.parentElement).not.toHaveAttribute("inert"); expect(opener).toHaveFocus();
+    const secondOpener=screen.getByRole("button",{name:"Review definition"});await user.click(secondOpener); await screen.findByRole("dialog", { name: "Confirm local operation" }); confirmPending = true;
+    await user.click(screen.getByRole("button", { name: "Confirm and apply" })); expect(screen.getByRole("dialog", { name: "Confirm local operation" })).toBeInTheDocument();
+    await user.keyboard("{Escape}"); expect(screen.getByRole("dialog", { name: "Confirm local operation" })).toBeInTheDocument();
+    await act(async () => { confirmation.resolve(jsonResponse({ loop: {}, auditSequence: 1, deduplicated: false })); await confirmation.promise; });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Confirm local operation" })).not.toBeInTheDocument()); expect(secondOpener).toHaveFocus();
   });
   it("renders overview and opens exact run resources with a labeled invocation timeline", async () => {
     mockApi(); const user = userEvent.setup(); render(<App />);
@@ -301,7 +389,7 @@ describe("Orchestra Console", () => {
     });
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const path = String(input);
-      const body = path.includes("/api/overview") ? overview : path.endsWith("/api/runs") ? { runs: [activeRun] }
+      const body = path.includes("/api/overview") ? overview : path.endsWith("/api/bootstrap") ? { capability: "local-trusted", csrfToken: "csrf" } : path.endsWith("/api/runs") ? { runs: [activeRun] }
         : path.includes("/api/dependencies") ? dependencies : path.includes("/api/skills") ? skills
         : detailCalls++ === 0 ? activeRun : updatedRun;
       return { ok: true, json: async () => body } as Response;

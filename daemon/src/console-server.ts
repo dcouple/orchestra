@@ -13,7 +13,7 @@ import { ConsoleLoopBrokerError, type ConsoleLoopBroker } from "./console-loop-b
 import { parseJsonNoDuplicateKeys, StrictJsonError } from "./strict-json.js";
 import { LoopValidationError } from "./loops.js";
 import type { EventLog } from "./eventlog.js";
-import { projectConsoleOperation, projectDependencies, type ConsoleDaemonHealth, type ConsoleOverview } from "./console-projections.js";
+import { projectConsoleLoop, projectConsoleOperation, projectDependencies, type ConsoleDaemonHealth, type ConsoleOverview } from "./console-projections.js";
 import { readSkillInventory, type ConsoleSkillsPayload } from "./skill-inventory.js";
 
 export type DaemonProbe = (url: string, timeoutMs: number) => Promise<boolean>;
@@ -163,11 +163,11 @@ export class ConsoleServer {
       this.json(response, 200, { operations: this.options.log.listOperations()
         .map(operation => projectConsoleOperation(operation, this.options.log.operationEvents(operation.id))) }); return;
     }
-    if (path === "/api/loops") { this.json(response,200,{loops:this.options.log.listLoops().map(loop=>({ ...loop, task:{kind:"agent",role:loop.task.role} }))}); return; }
+    if (path === "/api/loops") { this.json(response,200,{loops:this.options.log.listLoops().map(projectConsoleLoop)}); return; }
     const loopMatch=/^\/api\/loops\/([^/]+)$/.exec(path);
     if(loopMatch){let id:string;try{id=decodeURIComponent(loopMatch[1]!);}catch{this.json(response,400,{error:{code:"bad_request",message:"invalid loop id"}});return;}
       const loop=this.options.log.loopById(id);if(!loop){this.json(response,404,{error:{code:"not_found",message:"loop not found"}});return;}
-      this.json(response,200,{...loop,audit:this.options.log.loopAudit(id),cleanups:this.options.log.loopCleanups(id).map(({worktreePath,ownerKey,...row})=>row),occurrences:this.options.log.loopOccurrences(id).map(({snapshot,...row})=>({...row,policy:{budgetUsd:snapshot.budgetUsd,timeoutMinutes:snapshot.timeoutMinutes,maxRetries:snapshot.maxRetries}}))});return;}
+      this.json(response,200,{...projectConsoleLoop(loop),audit:this.options.log.loopAudit(id),cleanups:this.options.log.loopCleanups(id).map(({worktreePath,ownerKey,...row})=>row),occurrences:this.options.log.loopOccurrences(id).map(({snapshot,...row})=>({...row,policy:{budgetUsd:snapshot.budgetUsd,timeoutMinutes:snapshot.timeoutMinutes,maxRetries:snapshot.maxRetries}}))});return;}
     if (path === "/api/health") { this.json(response, 200, { ok: true, observedAt: this.now() }); return; }
     if (path === "/api/overview") {
       const observedAt = this.now();
