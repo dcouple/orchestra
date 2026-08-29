@@ -499,12 +499,11 @@ happens on the artifact, not before it exists. The turn in which a reviewer
 or verifier report arrives publishes its results (body edit, evidence
 comment) before ending.
 
-The lifecycle is fixed even if the PR opens earlier: finish every refactor and
-simplification first, then run the capped review loop, stabilize the PR body and
-QA checklist, and run QA as the last work gate on the final head. Only the
-administrative PR-readiness update follows successful QA.
+The lifecycle is linear: run the capped review loop, then QA as the last
+work gate on the final head. Only the administrative PR-readiness update
+follows successful QA.
 
-- After the Refactor phase below, run the review lanes over the PR diff (zone 0: both reviewers,
+- Run the review lanes over the PR diff (zone 0: both reviewers,
   dispatched together in one message — Agent tool + detached `codex exec`
   — never serially; zones 1–3: Codex alone; the item's explicit
   `review_lanes:` outranks the zone default in either direction, including
@@ -535,34 +534,7 @@ administrative PR-readiness update follows successful QA.
   open: apply the Should Fixes you judge worth it (or leave them to the
   inline comments below) — a Should Fix never triggers a re-review by
   itself.
-- Two phases surround that review loop because QA proves the final head and
-  executes the body's Manual tests checklist. **Refactor** runs before review,
-  on size only: when the hand-written diff (lockfiles,
-  generated, and vendored files excluded) exceeds ~10 files or ~300 lines,
-  dispatch the Codex `refactor-simple` and `refactor-deep` roles via the
-  `codex` skill — **two detached dispatches in one message**, like the
-  review lanes; each reads the branch cold and neither sees the other's
-  output. Merge their reports yourself, once: cluster by file:line and
-  issue, keep the **maximum severity, never average**, keep sole-source
-  findings, tag each `[S]`/`[D]`/`[S+D]`; never re-dispatch a role to
-  "confirm" the other. The review lanes asked "should this merge?";
-  refactor asks "should this be cleaner before it does?" — repo-derived
-  convention and structure debt plus a correctness hunt over the new
-  paths — so it is a different question, not a fourth review pass. Hand
-  the merged auto-fixable items to the `implementer` as one scoped commit
-  under Step 4's selective-commit rule; manual items go to the wrap-up as
-  a list, never applied unasked. Any applied refactor becomes input to the
-  main review loop above; do not run a separate refactor-review loop. Below
-  the size threshold, skip and record `refactor: skipped (size)`.
-  **Fresh-eyes** runs after review and before QA: run `fresh-eyes` on
-  the PR body — the zero-context Monday-morning recipient read, improved
-  with creative freedom, repeated by a fresh sub-agent until a pass changes
-  nothing — presentation only; claims, numbers, evidence, and the Manual
-  tests items themselves are read-only. **Cap 3 passes**, a ceiling like
-  the review loop's: after the third, continue with the last body and note
-  `fresh-eyes: cap reached` in the wrap-up. It runs here so the checklist
-  the QA drive executes is the one the reader will see.
-- Then — zero Must Fix, or the cap reached with
+- When the loop ends — zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up — run the **QA drive**. This is the
   run's **final accepted app-driving phase** (Step 3 defers all UI acceptance
   criteria here): the `frontend-verifier` proves the deferred UI ACs *and*
@@ -706,9 +678,7 @@ administrative PR-readiness update follows successful QA.
   `effective_lanes`, `runtime_fallback`, and `fallback_cause` into the dial
   record; effective lanes remain single/Codex-only regardless of the request.
 - Write `./tmp/<id>/wrapup.md` following this skill's
-  `references/wrap-up-report.md`; run `fresh-eyes` on it (the human reads
-  this cold, Monday morning; presentation only, every number and evidence
-  link read-only; same 3-pass cap); post
+  `references/wrap-up-report.md`; post
   it as a PR comment. `plan.md` and `wrapup.md` stay in `./tmp/<id>/` —
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
