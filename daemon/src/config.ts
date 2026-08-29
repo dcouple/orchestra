@@ -5,6 +5,22 @@ import { isReservedChildEnvKey } from "./claude.js";
 export type AppName = "planner" | "implementer";
 export type HarnessPreference = "claude" | "claudex";
 
+/** One authoritative set of defaults for runtime loading and console snapshots. */
+export const EDITABLE_RUNTIME_DEFAULTS = Object.freeze({
+  plannerHarness: "claude" as HarnessPreference,
+  implementerHarness: "claude" as HarnessPreference,
+  sessionConcurrency: 5,
+  iosSimMaxConcurrent: 2,
+  claudeMaxTurns: 100,
+  doMaxTurns: 300,
+  doMaxBudgetUsd: null as number | null,
+  mcpEnvPassthrough: Object.freeze([]) as readonly string[],
+  browserEnabled: true,
+  iosSimEnabled: false,
+  attachmentsEnabled: true,
+  ntfyUrl: null as string | null,
+});
+
 export interface AppConfig {
   name: AppName;
   harness: HarnessPreference;
@@ -15,9 +31,9 @@ export interface AppConfig {
   staticToken?: string;
 }
 
-function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPreference {
+function harnessPreference(env: NodeJS.ProcessEnv, name: string, fallback: HarnessPreference): HarnessPreference {
   const raw = env[name];
-  if (raw === undefined) return "claude";
+  if (raw === undefined) return fallback;
   const value = raw.trim();
   if (value !== "claude" && value !== "claudex") throw new Error(`${name} must be claude or claudex`);
   return value;
@@ -230,7 +246,8 @@ function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean): Ap
   const prefix = name.toUpperCase();
   const staticToken = env[`${prefix}_LINEAR_TOKEN`]?.trim();
   const appActorId = env[`${prefix}_APP_ACTOR_ID`]?.trim();
-  const base = { name, harness: harnessPreference(env, `${prefix}_HARNESS`),
+  const base = { name, harness: harnessPreference(env, `${prefix}_HARNESS`,
+    name === "planner" ? EDITABLE_RUNTIME_DEFAULTS.plannerHarness : EDITABLE_RUNTIME_DEFAULTS.implementerHarness),
     webhookSecret: required(env, `${prefix}_WEBHOOK_SECRET`), ...(appActorId ? { appActorId } : {}) };
   if (testMode && staticToken) return { ...base, staticToken };
   return {
@@ -256,7 +273,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const claudexEnv = stringMap(env, "CLAUDEX_ENV");
   if (claudexEnv && !claudexArgv) throw new Error("CLAUDEX_ENV requires CLAUDEX_BIN");
   const fableBin = env.FABLE_BIN?.trim();
-  const iosSimEnabled = enabled(env, "IOS_SIM_ENABLED", false);
+  const iosSimEnabled = enabled(env, "IOS_SIM_ENABLED", EDITABLE_RUNTIME_DEFAULTS.iosSimEnabled);
   const iosSimRuntime = env.IOS_SIM_RUNTIME?.trim();
   const iosSimDeviceType = env.IOS_SIM_DEVICE_TYPE?.trim();
   if (iosSimEnabled && (!iosSimRuntime || !iosSimDeviceType)) {
@@ -312,7 +329,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       "DISPATCH_RESUME_GRACE_MS",
       10 * 60_000,
     ),
-    browserEnabled: enabled(env, "BROWSER_ENABLED", true),
+    browserEnabled: enabled(env, "BROWSER_ENABLED", EDITABLE_RUNTIME_DEFAULTS.browserEnabled),
     playwrightMcpBin: env.PLAYWRIGHT_MCP_BIN?.trim() || "/usr/local/bin/playwright-mcp",
     playwrightChromeBin: env.PLAYWRIGHT_CHROME_BIN?.trim() || "/usr/bin/google-chrome",
     browserAttemptTimeoutMs: positiveInteger(env, "BROWSER_ATTEMPT_TIMEOUT_MS", 4 * 60 * 60 * 1000),
@@ -321,7 +338,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     iosSimDeveloperDir: env.IOS_SIM_DEVELOPER_DIR?.trim() || "/Applications/Xcode.app/Contents/Developer",
     ...(iosSimRuntime ? { iosSimRuntime } : {}),
     ...(iosSimDeviceType ? { iosSimDeviceType } : {}),
-    iosSimMaxConcurrent: positiveInteger(env, "IOS_SIM_MAX_CONCURRENT", 2),
+    iosSimMaxConcurrent: positiveInteger(env, "IOS_SIM_MAX_CONCURRENT", EDITABLE_RUNTIME_DEFAULTS.iosSimMaxConcurrent),
     iosSimIdleTimeoutMs: positiveInteger(env, "IOS_SIM_IDLE_TIMEOUT_MS", 900_000),
     iosSimReaperIntervalMs: positiveInteger(env, "IOS_SIM_REAPER_INTERVAL_MS", 60_000),
     simctlArgv: (env.IOS_SIM_SIMCTL_BIN?.trim() || "xcrun simctl").split(/\s+/),
@@ -343,17 +360,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     providerStateStaleMs: positiveInteger(env, "PROVIDER_STATE_STALE_MS", 5 * providerProbeIntervalMs),
     providerInitialProbeTimeoutMs: positiveInteger(env, "PROVIDER_INITIAL_PROBE_TIMEOUT_MS", 5_000),
     claudePermissionMode: env.CLAUDE_PERMISSION_MODE?.trim() || "bypassPermissions",
-    claudeMaxTurns: positiveInteger(env, "CLAUDE_MAX_TURNS", 100),
+    claudeMaxTurns: positiveInteger(env, "CLAUDE_MAX_TURNS", EDITABLE_RUNTIME_DEFAULTS.claudeMaxTurns),
     bashDefaultTimeoutMs,
     bashMaxTimeoutMs,
     doPermissionMode,
-    doMaxTurns: positiveInteger(env, "DO_MAX_TURNS", 300),
+    doMaxTurns: positiveInteger(env, "DO_MAX_TURNS", EDITABLE_RUNTIME_DEFAULTS.doMaxTurns),
     ...(doMaxBudgetUsd !== undefined ? { doMaxBudgetUsd } : {}),
-    sessionConcurrency: positiveInteger(env, "SESSION_CONCURRENCY", 5),
+    sessionConcurrency: positiveInteger(env, "SESSION_CONCURRENCY", EDITABLE_RUNTIME_DEFAULTS.sessionConcurrency),
     keepaliveMs: positiveInteger(env, "KEEPALIVE_MS", 900_000),
     ...(linearApiKey ? { linearApiKey } : {}),
     ...(env.NTFY_URL?.trim() ? { ntfyUrl: env.NTFY_URL.trim() } : {}),
-    attachmentsEnabled: enabled(env, "ATTACHMENTS_ENABLED"),
+    attachmentsEnabled: enabled(env, "ATTACHMENTS_ENABLED", EDITABLE_RUNTIME_DEFAULTS.attachmentsEnabled),
     attachmentHosts: (env.ATTACHMENT_HOSTS?.trim() || "uploads.linear.app").split(",").map(host => host.trim()).filter(Boolean),
   };
 }

@@ -12,7 +12,7 @@ import { canonicalJson, requestDigest, type ConsoleOperationRequest } from "../s
 import { writeConsoleConfigSnapshot } from "../src/console-config-snapshot.js";
 import { appendTurn, executable, fixture, opsFixture, readNumber, treeSnapshot, updateRepo } from "./operations-fixtures.js";
 
-async function macConsoleFixture(secret = "PHASE3_NEW_SECRET_SENTINEL", kind: "config.apply" | "daemon.restart" = "config.apply") {
+async function macConsoleFixture(secret = "PHASE3_NEW_SECRET_SENTINEL", kind: "config.apply" | "daemon.restart" | "daemon.reload" = "config.apply") {
   const dir = mkdtempSync(join(tmpdir(), "mac-console-operation-"));
   const home = join(dir, "home"); const state = join(dir, "state"); const spool = join(state, "console-requests");
   for (const path of [home, state, join(state, "backups"), ...["staged", "ready", "executing", "control-staged", "controls", "rollback", "quarantine"].map(leaf => join(spool, leaf))])
@@ -27,8 +27,9 @@ async function macConsoleFixture(secret = "PHASE3_NEW_SECRET_SENTINEL", kind: "c
     : { version: 1, kind, snapshotRevision };
   const digest = requestDigest(requestValue); const id = `console-${createHash("sha256").update(dir).digest("hex").slice(0, 16)}`;
   const db = join(dir, "events.db"); const log = new EventLog(db);
-  log.scheduleOperation({ id, requestDigest: digest, type: kind === "config.apply" ? "config" : "restart", reason: "fixture", actor: "local-console",
-    requestKind: requestValue.kind, requestSummary: '{"kind":"config.apply"}', requestedAt: 1_100 });
+  log.scheduleOperation({ id, requestDigest: digest, type: kind === "config.apply" ? "config" : kind === "daemon.reload" ? "update" : "restart",
+    reason: "fixture", actor: "local-console", requestKind: requestValue.kind,
+    requestSummary: JSON.stringify({kind:requestValue.kind}), requestedAt: 1_100 });
   log.claimOperation(id, digest, 1_101);
   const requestPath = join(spool, "executing", `${id}.json`); writeFileSync(requestPath, `${canonicalJson(requestValue)}\n`, { mode: 0o600 });
   const bin = join(dir, "bin"); mkdirSync(bin);
@@ -45,6 +46,22 @@ async function macConsoleFixture(secret = "PHASE3_NEW_SECRET_SENTINEL", kind: "c
   const run = (extra: Record<string, string> = {}) => spawnSync("bash", [resolve("ops/macos/daemonctl"), "internal-console-execute"],
     { env: { ...baseEnv, ...extra }, encoding: "utf8" });
   return { dir, state, spool, envFile, snapshot, requestPath, restartLog, healthCount, secret, id, db, log, run };
+}
+
+function consoleReloadRepo(f: Awaited<ReturnType<typeof macConsoleFixture>>, failures=0) {
+  const checkout=join(f.dir,"reload-checkout");mkdirSync(join(checkout,"daemon"),{recursive:true});
+  const git=(...args:string[])=>execFileSync("git",args,{cwd:checkout,encoding:"utf8"}).trim();
+  git("init","-b","main");git("config","user.email","fixture@example.test");git("config","user.name","Fixture");
+  writeFileSync(join(checkout,"daemon","release.txt"),"accepted\n");git("add",".");git("-c","commit.gpgSign=false","commit","-m","accepted");
+  const accepted=git("rev-parse","HEAD");writeFileSync(join(checkout,"daemon","release.txt"),"candidate\n");git("add",".");
+  git("-c","commit.gpgSign=false","commit","-m","candidate");const target=git("rev-parse","HEAD");
+  git("remote","add","origin","https://fixture.invalid/orchestra.git");
+  const acceptedFile=join(f.state,"accepted-commit"),deployedFile=join(f.state,"deployed-commit");
+  writeFileSync(acceptedFile,`${accepted}\n`);writeFileSync(deployedFile,`${accepted}\n`);
+  const deployLog=join(f.dir,"deploy.log"),failureFile=join(f.dir,"deploy.failures");writeFileSync(failureFile,`${failures}\n`);
+  const deploy=join(f.dir,"deploy.sh");writeFileSync(deploy,`#!/bin/bash\nset -euo pipefail\necho "$SOURCE_COMMIT|$1" >> '${deployLog}'\nn=$(cat '${failureFile}')\nif (( n > 0 )); then echo $((n-1)) > '${failureFile}'; exit 1; fi\necho "$SOURCE_COMMIT" > "$DEPLOYED_COMMIT_FILE"\necho "$SOURCE_COMMIT" > "$ACCEPTED_COMMIT_FILE"\n`,{mode:0o755});
+  return {accepted,target,deployLog,env:{DAEMONCTL_SOURCE_CHECKOUT:checkout,DAEMONCTL_ACCEPTED_COMMIT_FILE:acceptedFile,
+    DAEMONCTL_DEPLOYED_COMMIT_FILE:deployedFile,DAEMONCTL_DEPLOY:deploy}};
 }
 
 function filePayloads(root: string): Buffer[] {
@@ -310,6 +327,28 @@ describe("durable maintenance operations", () => {
 });
 
 describe("macOS console operation crash recovery", () => {
+  it("executes a console reload through the exact detached-worktree deploy workflow", async () => {
+    const f=await macConsoleFixture("UNUSED_RELOAD_SECRET","daemon.reload");const repo=consoleReloadRepo(f);
+    try {
+      const result=f.run(repo.env);expect(result.status,result.stderr).toBe(0);
+      expect(readFileSync(repo.deployLog,"utf8").trim().split("\n")).toEqual([expect.stringMatching(new RegExp(`^${repo.target}\\|`))]);
+      expect(f.log.operationById(f.id)).toMatchObject({state:"succeeded",stage:"accepted",type:"update",
+        targetRef:"checkout/HEAD",targetCommit:repo.target,previousCommit:repo.accepted,mutated:1});
+      expect(f.log.operationEvents(f.id).map(event=>event.stage)).toEqual(expect.arrayContaining(["provision","accepted"]));
+    } finally {f.log.close();rmSync(f.dir,{recursive:true,force:true});}
+  });
+
+  it("rolls a failed console reload back to the internally derived accepted commit", async () => {
+    const f=await macConsoleFixture("UNUSED_RELOAD_SECRET","daemon.reload");const repo=consoleReloadRepo(f,1);
+    try {
+      const result=f.run(repo.env);expect(result.status).toBe(1);
+      expect(readFileSync(repo.deployLog,"utf8").trim().split("\n").map(line=>line.split("|")[0]))
+        .toEqual([repo.target,repo.accepted]);
+      expect(f.log.operationById(f.id)).toMatchObject({state:"failed",stage:"rolled_back",targetCommit:repo.target,
+        previousCommit:repo.accepted,mutated:1,rollbackVerified:1});
+    } finally {f.log.close();rmSync(f.dir,{recursive:true,force:true});}
+  });
+
   it("replays the still-secret executing request after a pre-intent crash without duplicate restart", async () => {
     const f = await macConsoleFixture("PRE_INTENT_SECRET_SENTINEL");
     try {

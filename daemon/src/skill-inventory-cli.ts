@@ -40,8 +40,9 @@ async function main(): Promise<void> {
     throw new CliFailure("invalid_source_revision", 2);
   }
   let artifact;
+  const diagnostics={accepted:0,rejected:0};
   try {
-    artifact = await generateSkillInventory(canonicalSource, revision);
+    artifact = await generateSkillInventory(canonicalSource, revision,entry=>{diagnostics[entry.outcome]+=1;});
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     throw new CliFailure(message.includes("escapes ") ? "source_escape" : "source_rejected", 1);
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
   } catch {
     throw new CliFailure("output_unwritable", 1);
   }
+  process.stderr.write(`skill-inventory-cli: accepted=${diagnostics.accepted} rejected=${diagnostics.rejected}\n`);
 }
 
 try {

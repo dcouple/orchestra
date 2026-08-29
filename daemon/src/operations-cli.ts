@@ -5,7 +5,7 @@ import { isOperationState, isOperationType, type OperationState, type OperationT
 import { ToolBoundaryStore } from "./tool-boundary-store.js";
 
 function usage(): never {
-  process.stderr.write("usage: operations-cli <schedule|claim|transition|park|get|events|list|control-create|control-get|control-transition|status|running|retry|cancel|restart-intent-set|restart-intent-get|restart-intent-clear> ...\n");
+  process.stderr.write("usage: operations-cli <schedule|claim|reload-bind|transition|park|get|events|list|control-create|control-get|control-transition|status|running|retry|cancel|restart-intent-set|restart-intent-get|restart-intent-clear> ...\n");
   process.exit(2);
 }
 
@@ -40,6 +40,8 @@ try {
       break;
     }
     case "claim": result = log!.claimOperation(required(args[0], "id"), required(args[1], "digest")) ?? null; break;
+    case "reload-bind": result = log!.bindConsoleReload(required(args[0], "id"),
+      required(args[1], "target commit"), required(args[2], "previous commit")); break;
     case "get": result = log!.operationById(required(args[0], "id")) ?? null; break;
     case "events": result = log!.operationEvents(required(args[0], "id")); break;
     case "list": result = log!.listOperations(args[0] === undefined ? 50 : Number(args[0])); break;

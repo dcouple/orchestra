@@ -26,6 +26,7 @@ export interface SkillInventoryArtifact {
 export type ConsoleSkillsPayload =
   | ({ availability: "available" } & SkillInventoryArtifact)
   | { availability: "unavailable"; reasonCode: "missing" | "not_regular" | "too_large" | "malformed"; sourceRevision: null; sources: []; skills: [] };
+export interface SkillInventoryDiagnostic { source: SkillSourceId; outcome: "accepted" | "rejected"; reason: "valid" | "unreadable" | "invalid_metadata" }
 
 const SOURCE_DEFS = [
   { id: "claude" as const, label: "Claude Code" as const, relative: "claude/skills" },
@@ -64,12 +65,19 @@ function containsAbsolutePath(value: string): boolean {
   });
   const pathDecoded = withoutUrls.replace(/%(?:25)*(2f|5c|3a)/gi, (_, encoded: string) =>
     encoded.toLowerCase() === "2f" ? "/" : encoded.toLowerCase() === "5c" ? "\\" : ":");
+  // Workflow slash commands are a single natural-language token. Reserved host roots and
+  // anything containing another separator remain filesystem paths.
+  const withoutSlashCommands = pathDecoded.replace(
+    /(^|[\s('"`])\/(?!tmp\b|etc\b|var\b|usr\b|opt\b|home\b|Users\b|private\b|Library\b|Applications\b|Volumes\b|System\b|dev\b|proc\b)([a-z][a-z0-9-]*)(?=$|[\s.,;:!?')"`])/g,
+    "$1",
+  );
   const posix = /(?:^|[^A-Za-z0-9._~%+\/\\-])\/(?!\/)[A-Za-z0-9._~%-]+(?:\/[A-Za-z0-9._~%+-]+)*/;
+  const relative = /(?:^|[\s('"`])\.\.?\/[A-Za-z0-9._~%-]+(?:\/[A-Za-z0-9._~%+-]+)*/;
   const drive = /[A-Za-z]:[\\/][^\s'"`<>]+/;
   const unc = /(?:^|[^A-Za-z0-9._~%+\/\\-])(?:\\\\|\/\/)[^\\/\s'"`<>]+[\\/][^\s'"`<>]+/;
   const localPathUri = /\b[a-z][a-z0-9+.-]*:(?:[\\/]{3,}|[\\/](?![\\/])|[\\/]{2}[^\\/\s'"`<>]+[\\/])[^\s'"`<>]*/i;
-  return posix.test(pathDecoded) || drive.test(pathDecoded) || unc.test(pathDecoded)
-    || localPathUri.test(pathDecoded);
+  return posix.test(withoutSlashCommands) || relative.test(withoutSlashCommands) || drive.test(pathDecoded)
+    || unc.test(pathDecoded) || localPathUri.test(pathDecoded);
 }
 
 function boundedText(value: string | undefined, max: number): string | undefined {
@@ -105,7 +113,8 @@ export function resolveSourceRevision(sourceRoot: string, explicit?: string): st
   return revision.toLowerCase();
 }
 
-export async function generateSkillInventory(sourceRoot: string, sourceRevision: string): Promise<SkillInventoryArtifact> {
+export async function generateSkillInventory(sourceRoot: string, sourceRevision: string,
+  diagnostic?: (entry: SkillInventoryDiagnostic) => void): Promise<SkillInventoryArtifact> {
   const root = await realpath(resolve(sourceRoot));
   if (!/^[0-9a-f]{40}$/.test(sourceRevision)) throw new Error("skill inventory source revision is invalid");
   const grouped = new Map<string, SkillInventoryEntry>();
@@ -123,10 +132,11 @@ export async function generateSkillInventory(sourceRoot: string, sourceRevision:
       const lexicalFile = join(sourceRootReal, entry.name, "SKILL.md");
       let file: string;
       try { file = await realpath(lexicalFile); }
-      catch { continue; }
+      catch { diagnostic?.({source:source.id,outcome:"rejected",reason:"unreadable"});continue; }
       if (!contained(sourceRootReal, file) || !contained(root, file)) throw new Error("skill inventory skill escapes source root");
       const skill = await readSkill(file);
-      if (!skill) continue;
+      if (!skill) {diagnostic?.({source:source.id,outcome:"rejected",reason:"invalid_metadata"});continue;}
+      diagnostic?.({source:source.id,outcome:"accepted",reason:"valid"});
       skillCount += 1;
       const existing = grouped.get(skill.name);
       if (existing) {

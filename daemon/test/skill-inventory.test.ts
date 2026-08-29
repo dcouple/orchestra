@@ -80,15 +80,29 @@ describe("skill inventory", () => {
       "Open vscode://file/C%3A%5CUsers%5Calice%5Ckey",
       "Open https:///etc/daemon.env",
       String.raw`Open https:\etc\daemon.env`,
+      "Read ./tmp/private.json before use",
+      "Read ../private/secret before use",
     ];
     unsafe.forEach((description, index) => skill(root, "claude", `unsafe-${index}`, `unsafe-${index}`, description));
     skill(root, "claude", "unsafe-version", "unsafe-version", "Safe description", String.raw`C:\secrets\version.txt`);
-    const safeDescription = "Claude/Codex read/write guidance is at http://example.invalid/docs and https://example.invalid/%2Fdocs/C:/setup.";
+    const safeDescription = "Run /do and /create-brief; Claude/Codex guidance is at http://example.invalid/docs and https://example.invalid/%2Fdocs/C:/setup.";
     skill(root, "codex", "safe", "safe", safeDescription, "1.2.3/rc1");
     const artifact = await generateSkillInventory(root, "e".repeat(40));
     expect(artifact.skills).toEqual([{ name: "safe", description: safeDescription, version: "1.2.3/rc1",
       availability: "available", provenance: ["Codex"], compatibility: ["codex"] }]);
     expect(artifact.sources).toMatchObject([{ id: "claude", skillCount: 0 }, { id: "codex", skillCount: 1 }]);
+  });
+
+  it("reports bounded accepted/rejected diagnostics without exposing rejected metadata",async()=>{
+    const root=temp();skill(root,"claude","safe","safe","Run /do to continue.");
+    skill(root,"claude","unsafe","unsafe","Read ./tmp/SECRET_DIAGNOSTIC_SENTINEL first.");
+    mkdirSync(join(root,"codex","skills"),{recursive:true});
+    const diagnostics:Array<{source:string;outcome:string;reason:string}>=[];
+    const artifact=await generateSkillInventory(root,"9".repeat(40),entry=>diagnostics.push(entry));
+    expect(artifact.skills.map(row=>row.name)).toEqual(["safe"]);
+    expect(diagnostics).toEqual([{source:"claude",outcome:"accepted",reason:"valid"},
+      {source:"claude",outcome:"rejected",reason:"invalid_metadata"}]);
+    expect(JSON.stringify(diagnostics)).not.toContain("SECRET_DIAGNOSTIC_SENTINEL");
   });
 
   it("rejects installed absolute path metadata and accepts safe slash-containing metadata", async () => {
@@ -149,8 +163,10 @@ describe("skill inventory", () => {
     const revision = "c".repeat(40); const sourceBefore = tree(sourceRoot);
     const run = () => runInventoryCli(cli, ["--source-root", sourceRoot, "--output", output], revision);
     const first = run(); expect(first.status, first.stderr).toBe(0);
+    expect(first.stderr).toBe("skill-inventory-cli: accepted=2 rejected=0\n");
     const firstBytes = readFileSync(output); const stateAfterFirst = tree(installed);
     const second = run(); expect(second.status, second.stderr).toBe(0);
+    expect(second.stderr).toBe(first.stderr);
     expect(readFileSync(output)).toEqual(firstBytes);
     expect(tree(installed)).toEqual(stateAfterFirst);
     expect(tree(sourceRoot)).toEqual(sourceBefore);

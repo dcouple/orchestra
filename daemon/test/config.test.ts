@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig, loadConsoleConfig } from "../src/config.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { EDITABLE_RUNTIME_DEFAULTS, loadConfig, loadConsoleConfig } from "../src/config.js";
+import { createConsoleConfigSnapshot } from "../src/console-config-snapshot.js";
 
 const base = {
   DAEMON_TEST_MODE: "1",
@@ -64,6 +68,19 @@ describe("loadConfig", () => {
       providerStateStaleMs: 300_000, providerInitialProbeTimeoutMs: 5_000 });
     expect(config).toMatchObject({ bashDefaultTimeoutMs: 900_000, bashMaxTimeoutMs: 900_000 });
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
+  });
+  it("keeps every editable snapshot default identical to the runtime defaults", async () => {
+    const path=join(mkdtempSync(join(tmpdir(),"config-defaults-")),"daemon.env");writeFileSync(path,"# defaults\n");
+    const runtime=loadConfig(base);const snapshot=await createConsoleConfigSnapshot(path,1_000);
+    expect(snapshot.settings).toEqual({...EDITABLE_RUNTIME_DEFAULTS,mcpEnvPassthrough:[]});
+    expect(snapshot.settings).toEqual({
+      plannerHarness:runtime.apps.planner.harness,implementerHarness:runtime.apps.implementer.harness,
+      sessionConcurrency:runtime.sessionConcurrency,iosSimMaxConcurrent:runtime.iosSimMaxConcurrent,
+      claudeMaxTurns:runtime.claudeMaxTurns,doMaxTurns:runtime.doMaxTurns,
+      doMaxBudgetUsd:runtime.doMaxBudgetUsd??null,mcpEnvPassthrough:runtime.mcpEnvPassthrough??[],
+      browserEnabled:runtime.browserEnabled,iosSimEnabled:runtime.iosSimEnabled,
+      attachmentsEnabled:runtime.attachmentsEnabled,ntfyUrl:runtime.ntfyUrl??null,
+    });
   });
   it.each([undefined, "", "  ", " , ,"])(
     "treats an empty MCP_ENV_PASSTHROUGH value %s as unset",

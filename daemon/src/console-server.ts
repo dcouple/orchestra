@@ -213,7 +213,7 @@ export class ConsoleServer {
       if(!this.options.loopBroker){this.json(response,503,{error:{code:"writes_unavailable",message:"writes unavailable"}});return;}
       const raw=await this.mutationGuard.authorizeAndReadBody(request,this.boundPort??0);let body:unknown;
       try{body=parseJsonNoDuplicateKeys(raw.toString("utf8"));}catch(error){if(error instanceof StrictJsonError)throw new ConsoleAuthorizationError(error.code,400);throw error;}
-      if(path==="/api/loops/drafts"){this.json(response,200,this.options.loopBroker.draft(body));return;}
+      if(path==="/api/loops/drafts"){this.json(response,200,await this.options.loopBroker.draft(body));return;}
       this.json(response,200,await this.options.loopBroker.confirm(body));return;
     }
     if (!this.options.broker) { this.json(response, 405, { error: { code: "method_not_allowed", message: "read-only endpoint" } }, { Allow: "GET" }); return; }

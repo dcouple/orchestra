@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { EDITABLE_SETTING_KEYS, SECRET_NAMES, type ConsoleSecretName, type EditableSettings,
   ConsoleValidationError, validateEditableChanges } from "./console-operation-schema.js";
 import { parseManagedEnv } from "./managed-env.js";
+import { EDITABLE_RUNTIME_DEFAULTS } from "./config.js";
 
 export interface SnapshotSourceEvidence { digest: string; size: number; mtimeMs: number }
 export interface ConsoleConfigSnapshot {
@@ -26,14 +27,18 @@ function int(value: string | undefined, fallback: number): number {
 }
 function settingsFromEnv(env: Record<string, string>): EditableSettings {
   const candidate: EditableSettings = {
-    plannerHarness: (env.PLANNER_HARNESS ?? "claude") as EditableSettings["plannerHarness"],
-    implementerHarness: (env.IMPLEMENTER_HARNESS ?? "claude") as EditableSettings["implementerHarness"],
-    sessionConcurrency: int(env.SESSION_CONCURRENCY, 2), iosSimMaxConcurrent: int(env.IOS_SIM_MAX_CONCURRENT, 2),
-    claudeMaxTurns: int(env.CLAUDE_MAX_TURNS, 30), doMaxTurns: int(env.DO_MAX_TURNS, 60),
-    doMaxBudgetUsd: env.DO_MAX_BUDGET_USD ? Number(env.DO_MAX_BUDGET_USD) : null,
-    mcpEnvPassthrough: env.MCP_ENV_PASSTHROUGH ? env.MCP_ENV_PASSTHROUGH.split(",").filter(Boolean) : [],
-    browserEnabled: bool(env.BROWSER_ENABLED, true), iosSimEnabled: bool(env.IOS_SIM_ENABLED, false),
-    attachmentsEnabled: bool(env.ATTACHMENTS_ENABLED, true), ntfyUrl: env.NTFY_URL || null,
+    plannerHarness: (env.PLANNER_HARNESS ?? EDITABLE_RUNTIME_DEFAULTS.plannerHarness) as EditableSettings["plannerHarness"],
+    implementerHarness: (env.IMPLEMENTER_HARNESS ?? EDITABLE_RUNTIME_DEFAULTS.implementerHarness) as EditableSettings["implementerHarness"],
+    sessionConcurrency: int(env.SESSION_CONCURRENCY, EDITABLE_RUNTIME_DEFAULTS.sessionConcurrency),
+    iosSimMaxConcurrent: int(env.IOS_SIM_MAX_CONCURRENT, EDITABLE_RUNTIME_DEFAULTS.iosSimMaxConcurrent),
+    claudeMaxTurns: int(env.CLAUDE_MAX_TURNS, EDITABLE_RUNTIME_DEFAULTS.claudeMaxTurns),
+    doMaxTurns: int(env.DO_MAX_TURNS, EDITABLE_RUNTIME_DEFAULTS.doMaxTurns),
+    doMaxBudgetUsd: env.DO_MAX_BUDGET_USD ? Number(env.DO_MAX_BUDGET_USD) : EDITABLE_RUNTIME_DEFAULTS.doMaxBudgetUsd,
+    mcpEnvPassthrough: env.MCP_ENV_PASSTHROUGH ? env.MCP_ENV_PASSTHROUGH.split(",").filter(Boolean) : [...EDITABLE_RUNTIME_DEFAULTS.mcpEnvPassthrough],
+    browserEnabled: bool(env.BROWSER_ENABLED, EDITABLE_RUNTIME_DEFAULTS.browserEnabled),
+    iosSimEnabled: bool(env.IOS_SIM_ENABLED, EDITABLE_RUNTIME_DEFAULTS.iosSimEnabled),
+    attachmentsEnabled: bool(env.ATTACHMENTS_ENABLED, EDITABLE_RUNTIME_DEFAULTS.attachmentsEnabled),
+    ntfyUrl: env.NTFY_URL || EDITABLE_RUNTIME_DEFAULTS.ntfyUrl,
   };
   const validated = validateEditableChanges(candidate);
   if (Object.keys(validated).length !== EDITABLE_SETTING_KEYS.length) throw new ConsoleValidationError("invalid_runtime_config");

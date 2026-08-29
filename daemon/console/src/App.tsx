@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ConfigurationSnapshot, type Dependencies, type DraftPreview, type LoopDeclaration, type LoopDraft, type LoopSummary, type Operation, type Overview, type RunDetail, type RunSummary, type Skills } from "./api";
+import { api, type ConfigurationSnapshot, type Dependencies, type DraftPreview, type Operation, type Overview, type RunDetail, type RunSummary, type Skills } from "./api";
 import { DataTable } from "./components/DataTable";
 import { Layout, type Page } from "./components/Layout";
 import { RunTimeline, formatDuration } from "./components/RunTimeline";
 import { isReadyStatus, StatusBadge } from "./components/StatusBadge";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Modal } from "./components/Modal";
+import { type CapabilityState, CapabilityNotice } from "./capability";
+import { LoopsPage } from "./LoopsPage";
 import "./write.css";
 
 const time = (value: number) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(value);
@@ -15,14 +17,6 @@ const secretFields = [
   ["PLANNER_LINEAR_CLIENT_SECRET", "Planner Linear client secret"],
   ["IMPLEMENTER_LINEAR_CLIENT_SECRET", "Implementer Linear client secret"],
 ] as const;
-type CapabilityState = "loading" | "read-only" | "local-trusted" | "unavailable";
-
-function CapabilityNotice({ capability }: { capability: Exclude<CapabilityState, "local-trusted"> }) {
-  const message = capability === "loading" ? "Checking local console capability…"
-    : capability === "read-only" ? "Read-only mode. Observation and history remain available; mutation controls are hidden."
-      : "Capability could not be verified. Observation and history remain available; mutation controls are hidden.";
-  return <section className="offline" role="status"><h2>{capability === "loading" ? "Capability loading" : "Read-only access"}</h2><p>{message}</p></section>;
-}
 
 export function App() {
   const [page, setPage] = useState<Page>("overview");
@@ -75,8 +69,8 @@ export function App() {
     return () => controller.abort();
   }, []);
 
-  const chooseRun = async (run: RunSummary) => {
-    const id = run.id; const request = ++detailRequest.current;
+  const chooseRun = async (id: string) => {
+    const request = ++detailRequest.current;
     selectedId.current = id; setSelected(current => current?.id === id ? current : undefined);
     setPage("runs"); setError(undefined);
     try {
@@ -96,60 +90,27 @@ export function App() {
       <p>One or more configured dependencies is unavailable, stale, future-dated, or has not been observed.</p>
     </section>}
     {loading && !overview ? <div className="loading" role="status">Loading console…</div> : page === "overview"
-      ? <OverviewPage overview={overview} onRun={chooseRun} /> : page === "runs"
-        ? <RunsPage runs={runs} selected={selected} onRun={chooseRun} /> : page === "loops" ? <LoopsPage capability={capability} onRunId={id=>void chooseRun({id} as RunSummary)} /> : page === "dependencies"
+      ? <OverviewPage overview={overview} onRun={run=>void chooseRun(run.id)} /> : page === "runs"
+        ? <RunsPage runs={runs} selected={selected} onRun={run=>void chooseRun(run.id)} /> : page === "loops" ? <LoopsPage capability={capability} onRunId={id=>void chooseRun(id)} /> : page === "dependencies"
           ? <DependenciesPage snapshot={dependencies} /> : page === "skills" ? <SkillsPage inventory={skills} />
             : page === "configuration" ? <ConfigurationPage capability={capability} /> : <OperationsPage capability={capability} />}
   </Layout>;
-}
-
-function LoopsPage({capability,onRunId}:{capability:CapabilityState;onRunId:(id:string)=>void}){
-  const [loops,setLoops]=useState<LoopSummary[]>([]);const [selected,setSelected]=useState<Awaited<ReturnType<typeof api.loop>>>();
-  const [editing,setEditing]=useState<Awaited<ReturnType<typeof api.loop>>>();
-  const [preview,setPreview]=useState<LoopDraft>();const [error,setError]=useState<string>();const [busy,setBusy]=useState(false);
-  const confirmationOpener=useRef<HTMLElement|null>(null);
-  const definitionReviewOpener=useRef<HTMLButtonElement|null>(null);
-  const [reasonAction,setReasonAction]=useState<{kind:"enable"|"disable"|"cleanup.retry";loop:LoopSummary}>();const [actionReason,setActionReason]=useState("");const [reasonError,setReasonError]=useState<string>();
-  const load=useCallback(()=>api.loops().then(value=>{setLoops(value.loops);setError(undefined)},value=>setError(value instanceof Error?value.message:"Loops unavailable")),[]);
-  useEffect(()=>{void load();},[load]);
-  const draft=async(event:React.FormEvent<HTMLFormElement>)=>{event.preventDefault();confirmationOpener.current=((event.nativeEvent as SubmitEvent).submitter as HTMLElement|null)??(document.activeElement instanceof HTMLElement?document.activeElement:null);setBusy(true);setError(undefined);const data=new FormData(event.currentTarget);
-    const declaration:LoopDeclaration={version:1,name:String(data.get("name")),description:String(data.get("description")),trigger:{kind:"fixed-interval",everyMinutes:Number(data.get("everyMinutes")),startsAt:new Date(String(data.get("startsAt"))).getTime()},
-      task:{kind:"agent",role:String(data.get("role")) as "planner"|"implementer",objective:String(data.get("objective"))},harness:{runtime:String(data.get("runtime")) as "claude"|"claudex",profile:String(data.get("profile")) as "fable"|"sol"},
-      maxConcurrency:Number(data.get("maxConcurrency")),budgetUsd:Number(data.get("budgetUsd")),timeoutMinutes:Number(data.get("timeoutMinutes")),maxRetries:Number(data.get("maxRetries")),enabled:editing?.enabled??false};
-    try{setPreview(await api.loopDraft({kind:editing?"update":"create",...(editing?{loopId:editing.id,expectedRevision:editing.revision}:{}),reason:String(data.get("reason")),declaration}));}catch(value){setError(value instanceof Error?value.message:"Draft failed");}finally{setBusy(false)}};
-  const confirm=async()=>{if(!preview)return;setBusy(true);try{await api.loopConfirm({draftId:preview.id,digest:preview.digest,reason:preview.reason});const loopId=preview.loopId;setPreview(undefined);await load();if(selected?.id===loopId)setSelected(await api.loop(loopId));}catch(value){setError(value instanceof Error?value.message:"Confirm failed");}finally{setBusy(false)}};
-  const requestReason=(kind:"enable"|"disable"|"cleanup.retry",loop:LoopSummary)=>{confirmationOpener.current=document.activeElement instanceof HTMLElement?document.activeElement:null;setActionReason("");setReasonError(undefined);setReasonAction({kind,loop});};
-  const draftReasoned=async(event:React.FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!reasonAction)return;const reason=actionReason.trim();
-    if(!reason){setReasonError("A reason is required");return;}if(reason.length>240){setReasonError("Reason must be 240 characters or fewer");return;}
-    setBusy(true);setError(undefined);setReasonError(undefined);try{setPreview(await api.loopDraft({kind:reasonAction.kind,loopId:reasonAction.loop.id,expectedRevision:reasonAction.loop.revision,reason}));setReasonAction(undefined);setActionReason("");}
-    catch(value){setReasonError(value instanceof Error?value.message:"Draft failed");}finally{setBusy(false)}};
-  const inspect=async(loop:LoopSummary)=>{try{setSelected(await api.loop(loop.id));}catch(value){setError(value instanceof Error?value.message:"History unavailable")}};
-  return <><header className="page-head"><div><p className="eyebrow">Define → Enable → Observe</p><h1>Loops</h1><p>Bounded fixed-interval local agent work.</p></div></header>{error&&<div role="alert" className="alert">{error}</div>}
-    {capability!=="local-trusted"&&<CapabilityNotice capability={capability}/>}<div className="loops-layout">{capability==="local-trusted"&&<form key={editing?.id??"new"} className="card section loop-form" onSubmit={event=>void draft(event)}><h2>{editing?"Edit loop":"Define loop"}</h2>
-      <label>Name <input name="name" required maxLength={80} defaultValue={editing?.name}/></label><label>Description <input name="description" maxLength={500} defaultValue={editing?.description}/></label>
-      <label>Every minutes <input name="everyMinutes" type="number" min="15" max="10080" defaultValue={editing?.trigger.everyMinutes??60} required/></label><label>Starts at <input name="startsAt" type="datetime-local" defaultValue={editing?new Date(editing.trigger.startsAt).toISOString().slice(0,16):undefined} required/></label>
-      <label>Task role <select name="role" defaultValue={editing?.task.role??"planner"}><option value="planner">Planner</option><option value="implementer">Implementer</option></select></label><label>Objective <textarea aria-label="Objective" name="objective" required maxLength={4000}/><small>{editing?"Re-enter the objective to edit this definition; stored execution text is never returned by the API.":"Required execution objective; omitted from read projections."}</small></label>
-      <label>Runtime <select name="runtime" defaultValue={editing?.harness.runtime??"claude"}><option value="claude">Claude</option><option value="claudex">Claudex</option></select></label><label>Profile <select name="profile" defaultValue={editing?.harness.profile??"sol"}><option value="sol">Sol</option><option value="fable">Fable</option></select></label>
-      <label>Concurrency <input name="maxConcurrency" type="number" min="1" max="4" defaultValue={editing?.maxConcurrency??1}/></label><label>Budget USD <input name="budgetUsd" type="number" min="0.01" max="100" step="0.01" defaultValue={editing?.budgetUsd??5}/></label>
-      <label>Timeout minutes <input name="timeoutMinutes" type="number" min="1" max="120" defaultValue={editing?.timeoutMinutes??30}/></label><label>Retries <input name="maxRetries" type="number" min="0" max="3" defaultValue={editing?.maxRetries??0}/></label><label>Reason <input name="reason" required maxLength={240}/></label>
-      <button ref={definitionReviewOpener} disabled={busy}>Review definition</button>{editing&&<button type="button" onClick={()=>setEditing(undefined)}>Cancel edit</button>}</form>}<section className="card section"><h2>Definitions</h2><DataTable caption="Loop definitions" rows={loops} rowKey={row=>row.id} empty="No loops defined." columns={[
-        {key:"name",heading:"Loop",render:row=><button className="link-button" onClick={()=>void inspect(row)}>{row.name}</button>},{key:"schedule",heading:"Schedule",render:row=><>{row.trigger.everyMinutes} minutes<small>Next {time(row.nextDueAt)}</small></>},
-        {key:"policy",heading:"Policy",render:row=>`$${row.budgetUsd} · ${row.timeoutMinutes}m · ${row.maxRetries} retries`},{key:"state",heading:"State",render:row=><><StatusBadge status={row.blockedReason??(row.enabled?"enabled":"disabled")}/>{capability==="local-trusted"&&<button disabled={busy} onClick={()=>requestReason(row.enabled?"disable":"enable",row)}>{row.enabled?"Disable":"Enable"}</button>}</>}]}/></section></div>
-    {selected&&<section className="card section"><h2>{selected.name} occurrence history</h2>{capability==="local-trusted"&&<button type="button" onClick={()=>setEditing(selected)}>Edit definition</button>}{capability==="local-trusted"&&selected.cleanups?.some(row=>row.status==="retained"||row.status==="failed")&&<button type="button" onClick={()=>requestReason("cleanup.retry",selected)}>Retry cleanup</button>}{selected.blockedReason&&<p role="status">Blocked: {selected.blockedReason}</p>}<DataTable caption="Loop occurrence history" rows={selected.occurrences} rowKey={row=>row.id} empty="No occurrences yet." columns={[
-      {key:"run",heading:"Run",render:row=><button className="link-button" onClick={()=>onRunId(row.runId)}>{time(row.scheduledFor)}</button>},{key:"status",heading:"Status",render:row=><StatusBadge status={row.status}/>},{key:"outcome",heading:"Outcome",render:row=>row.outcome??row.error??"Pending"}]}/></section>}
-    {reasonAction&&capability==="local-trusted"&&<Modal titleId="loop-reason-title" busy={busy} onDismiss={()=>{setReasonAction(undefined);setReasonError(undefined)}}><form onSubmit={event=>void draftReasoned(event)}>
-      <h2 id="loop-reason-title">Reason to {reasonAction.kind==="cleanup.retry"?"retry cleanup":reasonAction.kind} {reasonAction.loop.name}</h2><p>This bounded reason is recorded in immutable loop audit history.</p>
-      {reasonError&&<div className="alert" role="alert">{reasonError}</div>}<label>Operator reason <input data-modal-initial-focus value={actionReason} onChange={event=>setActionReason(event.target.value)} maxLength={240} aria-describedby="loop-reason-help"/></label><small id="loop-reason-help">Required · 240 characters maximum</small>
-      <div className="actions"><button type="button" disabled={busy} onClick={()=>{setReasonAction(undefined);setReasonError(undefined)}}>Cancel</button><button type="submit" disabled={busy}>{busy?"Reviewing…":"Review change"}</button></div></form></Modal>}
-    {preview&&capability==="local-trusted"&&<ConfirmDialog digest={preview.digest} reason={preview.reason} busy={busy} returnFocus={()=>confirmationOpener.current?.isConnected?confirmationOpener.current:definitionReviewOpener.current} onCancel={()=>setPreview(undefined)} onConfirm={()=>void confirm()}/>}</>;
 }
 
 function ConfigurationPage({capability}:{capability:CapabilityState}) {
   const [snapshot, setSnapshot] = useState<ConfigurationSnapshot>(); const [preview, setPreview] = useState<DraftPreview>();
   const [reason, setReason] = useState(""); const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>(); const [busy, setBusy] = useState(false);
+  const [pendingOperation,setPendingOperation]=useState<Operation>();
   const confirmationOpener=useRef<HTMLElement|null>(null);
   useEffect(() => { void api.configuration().then(setSnapshot, value => setError(value instanceof Error ? value.message : "Configuration unavailable")); }, []);
+  useEffect(()=>{if(!pendingOperation)return;let generation=0;let active:AbortController|undefined;
+    const poll=async()=>{active?.abort();active=new AbortController();const request=++generation;try{const value=await api.operations(active.signal);if(request!==generation)return;
+      const operation=value.operations.find(row=>row.id===pendingOperation.id);if(!operation)return;setPendingOperation(operation);
+      if(["succeeded","failed","blocked","cancelled"].includes(operation.state)){const next=await api.configuration(active.signal);if(request===generation){setSnapshot(next);setPendingOperation(undefined);setError(undefined)}}
+    }catch(value){if((value as Error).name!=="AbortError"&&request===generation)setError(value instanceof Error?value.message:"Operation status unavailable")}};
+    void poll();const interval=window.setInterval(()=>void poll(),2_000);return()=>{generation+=1;active?.abort();window.clearInterval(interval)};
+  },[pendingOperation?.id]);
   const draft = async (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!snapshot) return; confirmationOpener.current=((event.nativeEvent as SubmitEvent).submitter as HTMLElement|null)??(document.activeElement instanceof HTMLElement?document.activeElement:null);setBusy(true); setError(undefined);
     const data = new FormData(event.currentTarget); const changes: Record<string, unknown> = {};
     for (const key of ["plannerHarness", "implementerHarness"]) { const value = data.get(key); if (value && value !== snapshot.settings[key]) changes[key] = value; }
@@ -168,12 +129,12 @@ function ConfigurationPage({capability}:{capability:CapabilityState}) {
     catch (value) { setError(value instanceof Error ? value.message : "Preview failed"); } finally { setBusy(false); } };
   const draftOperation = async (kind: "daemon.restart" | "daemon.reload") => { confirmationOpener.current=document.activeElement instanceof HTMLElement?document.activeElement:null;if (!reason) { setError("A reason is required"); return; }
     setBusy(true); try { setPreview(await api.draft({ kind, reason })); } catch (value) { setError(value instanceof Error ? value.message : "Preview failed"); } finally { setBusy(false); } };
-  const confirm = async () => { if (!preview) return; setBusy(true); try { await api.confirm({ draftId: preview.id, digest: preview.digest, reason: preview.reason }); setPreview(undefined); setReason(""); setSnapshot(await api.configuration()); }
+  const confirm = async () => { if (!preview) return; setBusy(true); try { const result=await api.confirm({ draftId: preview.id, digest: preview.digest, reason: preview.reason }); setPreview(undefined); setReason("");setPendingOperation(result.operation); }
     catch (value) { setError(value instanceof Error ? value.message : "Apply failed"); } finally { setBusy(false); } };
   if (!snapshot) return <><header className="page-head"><div><h1>Configuration</h1></div></header>
     {capability!=="local-trusted"&&<CapabilityNotice capability={capability}/>} {error ? <div role="alert" className="alert">{error}</div> : <div className="loading">Loading configuration…</div>}</>;
   return <><header className="page-head"><div><p className="eyebrow">Validated local settings</p><h1>Configuration</h1><p>Snapshot generated {time(snapshot.generatedAt)} · fresh until {time(snapshot.staleAt)}</p></div></header>
-    {error && <div className="alert" role="alert">{error}</div>}{capability!=="local-trusted"&&<CapabilityNotice capability={capability}/>} {capability!=="local-trusted"&&<section className="card section"><h2>Current configuration</h2><dl><dt>Planner harness</dt><dd>{String(snapshot.settings.plannerHarness)}</dd><dt>Implementer harness</dt><dd>{String(snapshot.settings.implementerHarness)}</dd><dt>Session concurrency</dt><dd>{String(snapshot.settings.sessionConcurrency)}</dd><dt>Snapshot revision</dt><dd><code>{snapshot.revision}</code></dd></dl></section>}{capability==="local-trusted"&&<form className="card section" onSubmit={event => void draft(event)}>
+    {error && <div className="alert" role="alert">{error}</div>}{pendingOperation&&<p role="status">Operation {pendingOperation.kind} is {pendingOperation.state.replaceAll("_"," ")}; configuration will refresh after a terminal outcome.</p>}{capability!=="local-trusted"&&<CapabilityNotice capability={capability}/>} {capability!=="local-trusted"&&<section className="card section"><h2>Current configuration</h2><dl><dt>Planner harness</dt><dd>{String(snapshot.settings.plannerHarness)}</dd><dt>Implementer harness</dt><dd>{String(snapshot.settings.implementerHarness)}</dd><dt>Session concurrency</dt><dd>{String(snapshot.settings.sessionConcurrency)}</dd><dt>Snapshot revision</dt><dd><code>{snapshot.revision}</code></dd></dl></section>}{capability==="local-trusted"&&<form key={snapshot.revision} className="card section" onSubmit={event => void draft(event)}>
       <h2>Harnesses</h2><label>Planner harness <select name="plannerHarness" defaultValue={String(snapshot.settings.plannerHarness)}><option value="claude">Claude</option><option value="claudex">Claudex</option></select></label>
       <label>Implementer harness <select name="implementerHarness" defaultValue={String(snapshot.settings.implementerHarness)}><option value="claude">Claude</option><option value="claudex">Claudex</option></select></label>
       <h2>Concurrency &amp; budgets</h2>
@@ -205,17 +166,24 @@ function ConfigurationPage({capability}:{capability:CapabilityState}) {
 
 function OperationsPage({capability}:{capability:CapabilityState}) {
   const [operations, setOperations] = useState<Operation[]>([]); const [error, setError] = useState<string>();
+  const [controlReason,setControlReason]=useState("");const [reasonError,setReasonError]=useState<string>();const [busy,setBusy]=useState(false);
+  const [reasonTarget,setReasonTarget]=useState<{operation:Operation;kind:"retry"|"cancel"}>();const [controlReview,setControlReview]=useState<{operation:Operation;kind:"retry"|"cancel";reason:string}>();
+  const controlOpener=useRef<HTMLElement|null>(null);
   const load = useCallback(() => api.operations().then(value => { setOperations(value.operations); setError(undefined); }, value => setError(value instanceof Error ? value.message : "Operations unavailable")), []);
   useEffect(() => { void load(); const interval = window.setInterval(() => void load(), 3_000); return () => window.clearInterval(interval); }, [load]);
-  const control = async (operation: Operation, kind: "retry" | "cancel") => { try { await api.control(operation, kind, `${kind} requested from local console`); await load(); }
-    catch (value) { setError(value instanceof Error ? value.message : "Control failed"); } };
+  const requestControl=(operation:Operation,kind:"retry"|"cancel")=>{controlOpener.current=document.activeElement instanceof HTMLElement?document.activeElement:null;setControlReason("");setReasonError(undefined);setReasonTarget({operation,kind})};
+  const reviewControl=(event:React.FormEvent)=>{event.preventDefault();if(!reasonTarget)return;const reason=controlReason.trim();if(!reason){setReasonError("A reason is required");return}if(reason.length>240){setReasonError("Reason must be 240 characters or fewer");return}
+    setControlReview({...reasonTarget,reason});setReasonTarget(undefined)};
+  const confirmControl=async()=>{if(!controlReview)return;setBusy(true);try{await api.control(controlReview.operation,controlReview.kind,controlReview.reason);setControlReview(undefined);setControlReason("");await load()}
+    catch(value){setError(value instanceof Error?value.message:"Control failed")}finally{setBusy(false)}};
   return <><header className="page-head"><div><p className="eyebrow">Durable audit</p><h1>Operations</h1><p>Progress, health acceptance, rollback, and recovery for local maintenance.</p></div></header>
     {error && <div className="alert" role="alert">{error}</div>}{capability!=="local-trusted"&&<CapabilityNotice capability={capability}/>}<section className="card section"><DataTable caption="Operation history" rows={operations} rowKey={row => row.id} empty="No operations have been recorded." columns={[
       { key: "kind", heading: "Operation", render: row => <><strong>{row.kind}</strong><small>{row.actor} · {row.reason}</small></> },
       { key: "state", heading: "Progress", render: row => <><StatusBadge status={row.state} /><small>{row.stage ?? "scheduled"} · {row.events.length} stages</small></> },
       { key: "outcome", heading: "Outcome", render: row => row.outcome ?? "In progress" },
-      { key: "actions", heading: "Recovery", render: row => capability==="local-trusted"?<div className="actions">{row.recoveryActions.includes("retry") && <button type="button" onClick={() => void control(row, "retry")}>Retry</button>}{row.recoveryActions.includes("cancel") && <button type="button" onClick={() => void control(row, "cancel")}>Cancel</button>}</div>:"Read-only" },
-    ]} /></section></>;
+      { key: "actions", heading: "Recovery", render: row => capability==="local-trusted"?<div className="actions">{row.recoveryActions.includes("retry") && <button type="button" onClick={() => requestControl(row, "retry")}>Retry</button>}{row.recoveryActions.includes("cancel") && <button type="button" onClick={() => requestControl(row, "cancel")}>Cancel</button>}</div>:"Read-only" },
+    ]} /></section>{reasonTarget&&capability==="local-trusted"&&<Modal titleId="operation-reason-title" busy={busy} returnFocus={controlOpener.current} onDismiss={()=>setReasonTarget(undefined)}><form onSubmit={reviewControl}><h2 id="operation-reason-title">Reason to {reasonTarget.kind} operation</h2><p>The reason is bound to operation digest and state version for review.</p>{reasonError&&<div role="alert" className="alert">{reasonError}</div>}<label>Operator reason <input data-modal-initial-focus maxLength={240} value={controlReason} onChange={event=>setControlReason(event.target.value)}/></label><div className="actions"><button type="button" disabled={busy} onClick={()=>setReasonTarget(undefined)}>Cancel</button><button type="submit" disabled={busy}>Review control</button></div></form></Modal>}
+    {controlReview&&capability==="local-trusted"&&<ConfirmDialog digest={controlReview.operation.digest} reason={controlReview.reason} busy={busy} returnFocus={controlOpener.current} onCancel={()=>setControlReview(undefined)} onConfirm={()=>void confirmControl()}/>}</>;
 }
 
 function OverviewPage({ overview, onRun }: { overview?: Overview; onRun: (run: RunSummary) => void }) {

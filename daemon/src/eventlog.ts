@@ -1472,6 +1472,25 @@ export class EventLog {
     })();
   }
 
+  bindConsoleReload(id: string, targetCommit: string, previousCommit: string, now = Date.now()): OperationRow {
+    if (!/^[0-9a-f]{40}$/.test(targetCommit) || !/^[0-9a-f]{40}$/.test(previousCommit))
+      throw new Error("invalid reload commit metadata");
+    return this.db.transaction(() => {
+      const row=this.operationById(id);
+      if (!row || row.actor!=="local-console" || row.requestKind!=="daemon.reload"
+        || row.type!=="update" || row.state!=="executing") throw new Error("operation is not an executing console reload");
+      if (row.targetRef!==null || row.targetCommit!==null || row.previousCommit!==null) {
+        if (row.targetRef!=="checkout/HEAD" || row.targetCommit!==targetCommit || row.previousCommit!==previousCommit)
+          throw new Error("reload commit metadata changed");
+        return row;
+      }
+      this.db.prepare(`UPDATE operations SET target_ref='checkout/HEAD',target_commit=?,previous_commit=?,updated_at=?
+        WHERE id=? AND target_ref IS NULL AND target_commit IS NULL AND previous_commit IS NULL`)
+        .run(targetCommit,previousCommit,now,id);
+      return this.operationById(id)!;
+    })();
+  }
+
   transitionOperation(id: string, state: OperationState, stage: string | null, options: {
     outcome?: string | null; errorStage?: string | null; mutated?: boolean; rollbackVerified?: boolean;
   } = {}, now = Date.now()): OperationRow {

@@ -119,6 +119,26 @@ describe("Orchestra Console", () => {
     expect(retryDraft).toMatchObject({kind:"cleanup.retry",reason:"revalidate retained worktree"});
   });
 
+  it("polls loop list and selected detail with abort/generation guards while retaining last-good state",async()=>{
+    const baseLoop={id:"poll-loop",revision:1,digest:"a".repeat(64),version:1 as const,name:"Initial loop",description:"Review",
+      trigger:{kind:"fixed-interval" as const,everyMinutes:60,startsAt:2_000},task:{kind:"agent" as const,role:"planner" as const},
+      harness:{runtime:"claude" as const,profile:"sol" as const},maxConcurrency:1,budgetUsd:2,timeoutMinutes:10,maxRetries:1,enabled:true,nextDueAt:3_000,blockedReason:null,createdAt:2_000,updatedAt:2_000};
+    const initialDetail={...baseLoop,audit:[],cleanups:[],occurrences:[]};const updated={...baseLoop,revision:2,name:"Updated loop",updatedAt:3_000};
+    let listCalls=0;let detailCalls=0;let poll:(()=>void)|undefined;const pending=deferred<Response>();const signals:AbortSignal[]=[];
+    vi.spyOn(window,"setInterval").mockImplementation((handler,delay)=>{if(delay===3_000)poll=()=>handler(undefined);return 1 as unknown as ReturnType<typeof setInterval>});
+    vi.stubGlobal("fetch",vi.fn(async(input:string|URL|Request,init?:RequestInit)=>{const path=String(input);if(path.endsWith("/api/loops")){if(init?.signal)signals.push(init.signal);listCalls+=1;if(listCalls===2)return pending.promise;if(listCalls>=4)throw new Error("poll offline");return jsonResponse({loops:[listCalls===1?baseLoop:updated]})}
+      if(path.endsWith("/api/loops/poll-loop")){detailCalls+=1;return jsonResponse(detailCalls===1?initialDetail:{...initialDetail,...updated,occurrences:[{id:"occ",runId:"loop:occ",scheduledFor:3_000,status:"succeeded",retryCount:0,outcome:"succeeded",error:null,policy:{budgetUsd:2,timeoutMinutes:10,maxRetries:1}}]})}
+      const body=path.endsWith("/api/bootstrap")?{capability:"local-trusted",csrfToken:"csrf"}:path.includes("/api/overview")?overview:path.endsWith("/api/runs")?{runs:[run]}:path.includes("/api/dependencies")?dependencies:path.includes("/api/skills")?skills:run;return jsonResponse(body)}));
+    const user=userEvent.setup();render(<App/>);await screen.findByRole("heading",{name:"Overview"});await user.click(screen.getByRole("button",{name:"Loops"}));
+    await user.click(await screen.findByRole("button",{name:"Initial loop"}));expect(await screen.findByRole("heading",{name:"Initial loop occurrence history"})).toBeInTheDocument();
+    await act(async()=>{poll?.();await Promise.resolve()});await waitFor(()=>expect(listCalls).toBe(2));
+    await act(async()=>{poll?.();await Promise.resolve()});expect(signals[0]?.aborted).toBe(true);
+    expect(await screen.findByRole("button",{name:"Updated loop"})).toBeInTheDocument();expect((await screen.findAllByText("succeeded")).length).toBeGreaterThan(0);
+    await act(async()=>{pending.resolve(jsonResponse({loops:[baseLoop]}));await pending.promise;await Promise.resolve()});expect(screen.queryByRole("button",{name:"Initial loop"})).not.toBeInTheDocument();
+    await act(async()=>{poll?.();await Promise.resolve()});await waitFor(()=>expect(listCalls).toBe(4));
+    expect(screen.getByRole("button",{name:"Updated loop"})).toBeInTheDocument();expect(screen.getAllByText("succeeded").length).toBeGreaterThan(0);expect(screen.getByRole("alert")).toHaveTextContent("poll offline");
+  });
+
   it("bootstraps read-only capability before rendering mutation affordances on every write surface", async () => {
     const requests: Array<{ path: string; method: string }> = [];
     const configuration: ConfigurationSnapshot = { version: 1, revision: "revision_read_only", generatedAt: 1_900, staleAt: 9_000,
@@ -274,7 +294,7 @@ describe("Orchestra Console", () => {
         IMPLEMENTER_LINEAR_CLIENT_SECRET: { configured: false } } };
     const operation: Operation = { id: "op-1", digest: "a".repeat(64), kind: "config.apply", actor: "local-console", reason: "rotate",
       state: "blocked", stage: "rollback_acceptance", attempts: 1, stateVersion: 3, outcome: "health failed",
-      recoveryActions: ["retry"], events: [{ sequence: 1, state: "pending", stage: "scheduled", createdAt: 2_000 }] };
+      recoveryActions: ["retry", "cancel"], events: [{ sequence: 1, state: "pending", stage: "scheduled", createdAt: 2_000 }] };
     const requests: Array<{ path: string; init?: RequestInit }> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const path = String(input); requests.push({ path, ...(init ? { init } : {}) });
@@ -315,10 +335,50 @@ describe("Orchestra Console", () => {
     await waitFor(() => expect(requests.some(value => value.path.endsWith("/api/operations/confirm"))).toBe(true));
     await user.click(screen.getByRole("button", { name: "Operations" }));
     expect(await screen.findByRole("table", { name: "Operation history" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    const retry=screen.getByRole("button", { name: "Retry" });expect(retry).toBeInTheDocument();await user.click(retry);
+    expect(screen.getByRole("dialog",{name:"Reason to retry operation"})).toBeInTheDocument();await user.keyboard("{Enter}");
+    expect(screen.getByRole("alert")).toHaveTextContent("A reason is required");
+    expect(requests.some(value=>value.path.endsWith("/api/operations/op-1/retry"))).toBe(false);
+    await user.type(screen.getByLabelText("Operator reason"),"retry after health review");await user.click(screen.getByRole("button",{name:"Review control"}));
+    expect(await screen.findByRole("dialog",{name:"Confirm local operation"})).toHaveTextContent("retry after health review");
+    await user.click(screen.getByRole("button",{name:"Confirm and apply"}));
+    await waitFor(()=>expect(requests.some(value=>value.path.endsWith("/api/operations/op-1/retry"))).toBe(true));
+    const controlRequest=requests.find(value=>value.path.endsWith("/api/operations/op-1/retry"));
+    expect(JSON.parse(String(controlRequest?.init?.body))).toEqual({targetDigest:operation.digest,expectedVersion:3,reason:"retry after health review"});
+    await user.click(screen.getByRole("button",{name:"Cancel"}));
+    expect(screen.getByRole("dialog",{name:"Reason to cancel operation"})).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Operator reason"),"cancel after operator review");
+    await user.click(screen.getByRole("button",{name:"Review control"}));
+    expect(await screen.findByRole("dialog",{name:"Confirm local operation"})).toHaveTextContent("cancel after operator review");
+    await user.click(screen.getByRole("button",{name:"Confirm and apply"}));
+    await waitFor(()=>expect(requests.some(value=>value.path.endsWith("/api/operations/op-1/cancel"))).toBe(true));
+    const cancelRequest=requests.find(value=>value.path.endsWith("/api/operations/op-1/cancel"));
+    expect(JSON.parse(String(cancelRequest?.init?.body))).toEqual({targetDigest:operation.digest,expectedVersion:3,reason:"cancel after operator review"});
     expect(screen.queryByRole("textbox", { name: /command|path|argv|commit|branch/i })).not.toBeInTheDocument();
     expect(requests.filter(value => value.path.endsWith("/api/operations/confirm")).map(value => value.init?.body).join("\n"))
       .not.toMatch(/UI_(LINEAR|ARTIFACT|PLANNER|IMPLEMENTER)/);
+  });
+
+  it("keeps the displayed configuration stable until the queued operation reaches a terminal state",async()=>{
+    const settings={plannerHarness:"claude",implementerHarness:"claude",sessionConcurrency:2,iosSimMaxConcurrent:2,claudeMaxTurns:30,doMaxTurns:60,doMaxBudgetUsd:null,mcpEnvPassthrough:[],browserEnabled:true,iosSimEnabled:false,attachmentsEnabled:true,ntfyUrl:null};
+    const initial:ConfigurationSnapshot={version:1,revision:"revision_initial_123",generatedAt:1_000,staleAt:9_000,settings,secrets:{}};
+    const terminal:ConfigurationSnapshot={...initial,revision:"revision_terminal_456",generatedAt:2_000,settings:{...settings,sessionConcurrency:3}};
+    const pending:Operation={id:"config-op",digest:"d".repeat(64),kind:"daemon.restart",actor:"local-console",reason:"health refresh",state:"pending",stage:"scheduled",attempts:0,stateVersion:1,outcome:null,recoveryActions:[],events:[]};
+    const succeeded:Operation={...pending,state:"succeeded",stage:"accepted",stateVersion:2,outcome:"healthy"};let configurationCalls=0;let operationCalls=0;let operationPoll:(()=>void)|undefined;
+    vi.spyOn(window,"setInterval").mockImplementation((handler,delay)=>{if(delay===2_000)operationPoll=()=>handler(undefined);return 1 as unknown as ReturnType<typeof setInterval>});
+    vi.stubGlobal("fetch",vi.fn(async(input:string|URL|Request,init?:RequestInit)=>{const path=String(input);let body:unknown;
+      if(path.endsWith("/api/configuration"))body=++configurationCalls===1?initial:terminal;
+      else if(path.endsWith("/api/drafts"))body={id:"config-draft",kind:"daemon.restart",digest:pending.digest,reason:pending.reason,expiresAt:9_000,changedFields:[],before:{},after:{},secrets:{},restartRequired:true};
+      else if(path.endsWith("/api/operations/confirm"))body={operation:pending,deduplicated:false};
+      else if(path.endsWith("/api/operations"))body={operations:[++operationCalls===1?pending:succeeded]};
+      else body=path.endsWith("/api/bootstrap")?{capability:"local-trusted",csrfToken:"csrf"}:path.includes("/api/overview")?overview:path.endsWith("/api/runs")?{runs:[run]}:path.includes("/api/dependencies")?dependencies:path.includes("/api/skills")?skills:run;
+      return {ok:true,status:init?.method==="POST"?202:200,json:async()=>body} as Response}));
+    const user=userEvent.setup();render(<App/>);await screen.findByRole("heading",{name:"Overview"});await user.click(screen.getByRole("button",{name:"Configuration"}));
+    expect(await screen.findByLabelText("Session concurrency")).toHaveValue(2);await user.type(screen.getByLabelText("Reason"),pending.reason);await user.click(screen.getByRole("button",{name:"Review restart"}));
+    await user.click(await screen.findByRole("button",{name:"Confirm and apply"}));await waitFor(()=>expect(operationCalls).toBe(1));
+    expect(configurationCalls).toBe(1);expect(screen.getByLabelText("Session concurrency")).toHaveValue(2);expect(screen.getByText(/Operation daemon\.restart is pending/)).toBeInTheDocument();
+    await act(async()=>{operationPoll?.();await Promise.resolve()});await waitFor(()=>expect(configurationCalls).toBe(2));
+    expect(await screen.findByLabelText("Session concurrency")).toHaveValue(3);expect(screen.queryByText(/Operation daemon\.restart is pending/)).not.toBeInTheDocument();
   });
 
   it.each(["healthy", "unknown"] as const)("omits the global dependency warning when overview health is %s", async status => {

@@ -353,24 +353,34 @@ execute_update_operation() {
   die "reload failed and rollback was not accepted"
 }
 
+derive_reload_metadata() {
+  [[ -d $SOURCE_CHECKOUT/.git ]] || { echo "reload validation failed: persistent checkout missing: $SOURCE_CHECKOUT" >&2; return 1; }
+  [[ -z $($GIT_BIN -C "$SOURCE_CHECKOUT" status --porcelain) ]] || { echo "reload validation failed: checkout is dirty" >&2; return 1; }
+  RELOAD_REMOTE=$($GIT_BIN -C "$SOURCE_CHECKOUT" config --get remote.origin.url)
+  [[ $RELOAD_REMOTE == https://* ]] || { echo "reload validation failed: origin must use HTTPS" >&2; return 1; }
+  RELOAD_ACCEPTED=$(marker_value "$ACCEPTED_COMMIT_FILE")
+  [[ $RELOAD_ACCEPTED =~ ^[0-9a-fA-F]{40}$ ]] || { echo "reload validation failed: accepted commit marker missing or malformed" >&2; return 1; }
+  RELOAD_ACCEPTED=$(printf '%s' "$RELOAD_ACCEPTED" | tr 'A-F' 'a-f')
+  RELOAD_DEPLOYED=$(marker_value "$DEPLOYED_COMMIT_FILE")
+  RELOAD_TARGET=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'HEAD^{commit}')
+  "$GIT_BIN" -C "$SOURCE_CHECKOUT" cat-file -e "$RELOAD_ACCEPTED^{commit}" 2>/dev/null \
+    || { echo "reload validation failed: accepted commit is absent" >&2; return 1; }
+  "$GIT_BIN" -C "$SOURCE_CHECKOUT" merge-base --is-ancestor "$RELOAD_ACCEPTED" "$RELOAD_TARGET" \
+    || { echo "reload validation failed: HEAD is not a fast-forward descendant" >&2; return 1; }
+}
+
 command_reload() {
   require_user
   local reason="operator reload" dry=0
   while (( $# )); do case $1 in --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;; --dry-run) dry=1 ;; *) usage_error "unknown reload argument: $1" ;; esac; shift; done
   validate_reason "$reason"
-  [[ -d $SOURCE_CHECKOUT/.git ]] || die "reload validation failed: persistent checkout missing: $SOURCE_CHECKOUT"
-  [[ -z $($GIT_BIN -C "$SOURCE_CHECKOUT" status --porcelain) ]] || die "reload validation failed: checkout is dirty"
-  local remote accepted deployed target id
-  remote=$($GIT_BIN -C "$SOURCE_CHECKOUT" config --get remote.origin.url); [[ $remote == https://* ]] || die "reload validation failed: origin must use HTTPS"
-  accepted=$(marker_value "$ACCEPTED_COMMIT_FILE"); [[ $accepted =~ ^[0-9a-fA-F]{40}$ ]] || die "reload validation failed: accepted commit marker missing or malformed"
-  deployed=$(marker_value "$DEPLOYED_COMMIT_FILE"); target=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'HEAD^{commit}')
-  "$GIT_BIN" -C "$SOURCE_CHECKOUT" cat-file -e "$accepted^{commit}" 2>/dev/null || die "reload validation failed: accepted commit is absent"
-  "$GIT_BIN" -C "$SOURCE_CHECKOUT" merge-base --is-ancestor "$accepted" "$target" || die "reload validation failed: HEAD is not a fast-forward descendant"
-  [[ $target != "$accepted" || $deployed != "$accepted" ]] || { echo "already deployed and accepted: $accepted"; return; }
-  if (( dry )); then echo "would deploy exact clean checkout commit $target over accepted commit $accepted via detached worktree and deploy.sh; health-gate; mark accepted; rollback on failure"; return; fi
+  local id
+  derive_reload_metadata || die "reload validation failed"
+  [[ $RELOAD_TARGET != "$RELOAD_ACCEPTED" || $RELOAD_DEPLOYED != "$RELOAD_ACCEPTED" ]] || { echo "already deployed and accepted: $RELOAD_ACCEPTED"; return; }
+  if (( dry )); then echo "would deploy exact clean checkout commit $RELOAD_TARGET over accepted commit $RELOAD_ACCEPTED via detached worktree and deploy.sh; health-gate; mark accepted; rollback on failure"; return; fi
   acquire_maintenance_lock
-  id=$(new_id); id=$(schedule_inline "$id" update "$reason" checkout/HEAD "$target" "$accepted")
-  execute_update_operation "$id" "$target" "$accepted"
+  id=$(new_id); id=$(schedule_inline "$id" update "$reason" checkout/HEAD "$RELOAD_TARGET" "$RELOAD_ACCEPTED")
+  execute_update_operation "$id" "$RELOAD_TARGET" "$RELOAD_ACCEPTED"
 }
 
 command_operation() {
@@ -583,7 +593,7 @@ PY
   ) || die "invalid console request"
   acquire_maintenance_lock
   case $kind in
-    daemon.restart|daemon.reload)
+    daemon.restart)
       if console_cancel_requested "$id"; then
         ops_cli cancel "$id" >/dev/null
         remove_console_artifacts "$request"
@@ -592,6 +602,23 @@ PY
       transition "$id" executing restart_service - - 1 -
       restart_service && health_accept || { transition "$id" blocked health - health 1 -; die "console operation failed health acceptance"; }
       transition "$id" succeeded accepted "service active and health accepted" - 1 -
+      ;;
+    daemon.reload)
+      if console_cancel_requested "$id"; then
+        ops_cli cancel "$id" >/dev/null
+        remove_console_artifacts "$request"
+        return 0
+      fi
+      if ! derive_reload_metadata; then
+        transition "$id" blocked reload_validation - reload_validation - -
+        die "console reload validation failed"
+      fi
+      ops_cli reload-bind "$id" "$RELOAD_TARGET" "$RELOAD_ACCEPTED" >/dev/null
+      if [[ $RELOAD_TARGET == "$RELOAD_ACCEPTED" && $RELOAD_DEPLOYED == "$RELOAD_ACCEPTED" ]]; then
+        transition "$id" succeeded accepted "already deployed and accepted" - - -
+      else
+        execute_update_operation "$id" "$RELOAD_TARGET" "$RELOAD_ACCEPTED"
+      fi
       ;;
     config.apply)
       install -d -m 0700 "$STATE_DIR/backups"

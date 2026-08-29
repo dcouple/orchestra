@@ -11,9 +11,12 @@ const broker = config.operationSpoolDir && config.configSnapshotPath ? new Conso
   spoolDir: config.operationSpoolDir, snapshotPath: config.configSnapshotPath,
   draftTtlMs: config.draftTtlMs ?? 300_000, snapshotMaxAgeMs: config.snapshotMaxAgeMs ?? 86_400_000 }) : undefined;
 await broker?.reconcile();
-let globalCapacity=1;
-try{globalCapacity=Number((await broker?.configuration())?.settings.sessionConcurrency??1);}catch{/* Writes remain safely capped if the snapshot is unavailable. */}
-const loopBroker = new ConsoleLoopBroker({ log, globalCapacity, draftTtlMs: config.draftTtlMs ?? 300_000 });
+const loopBroker = new ConsoleLoopBroker({ log, draftTtlMs: config.draftTtlMs ?? 300_000,
+  capacitySnapshot: async () => {
+    if (!broker) throw new Error("configuration snapshot unavailable");
+    const snapshot=await broker.configuration();
+    return { capacity:snapshot.settings.sessionConcurrency, revision:snapshot.revision };
+  } });
 const server = new ConsoleServer({ config, log,
   ...(broker ? { broker } : {}), loopBroker, readSkills: () => readSkillInventory(config.skillInventoryPath) });
 const address = await server.listen();

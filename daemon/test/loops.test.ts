@@ -40,7 +40,7 @@ describe("durable loop scheduling",()=>{
   let log:EventLog|undefined;afterEach(()=>log?.close());
   it("confirms once, coalesces missed intervals, deduplicates ticks, gates cleanup, and retries by policy",async()=>{
     log=new EventLog(":memory:");const wake=vi.fn();const broker=new ConsoleLoopBroker({log,globalCapacity:2,draftTtlMs:60_000,now:()=>now,notify:wake});
-    const draft=broker.draft({kind:"create",reason:"bounded local maintenance",declaration:declaration()});
+    const draft=await broker.draft({kind:"create",reason:"bounded local maintenance",declaration:declaration()});
     expect(log.listLoops()).toEqual([]);
     const first=await broker.confirm({draftId:draft.id,digest:draft.digest,reason:draft.reason});
     const replay=await broker.confirm({draftId:draft.id,digest:draft.digest,reason:draft.reason});
@@ -60,7 +60,7 @@ describe("durable loop scheduling",()=>{
   it("persists only a safe durable receipt and replays it without a process draft",async()=>{
     const dir=mkdtempSync(join(tmpdir(),"loop-receipt-"));const dbPath=join(dir,"state.sqlite");
     log=new EventLog(dbPath);const broker=new ConsoleLoopBroker({log,globalCapacity:2,now:()=>now,draftTtlMs:60_000});
-    const secret="SECRET OBJECTIVE SENTINEL";const draft=broker.draft({kind:"create",reason:"durable safe receipt",declaration:{...declaration(),task:{...declaration().task,objective:secret}}});
+    const secret="SECRET OBJECTIVE SENTINEL";const draft=await broker.draft({kind:"create",reason:"durable safe receipt",declaration:{...declaration(),task:{...declaration().task,objective:secret}}});
     const first=await broker.confirm({draftId:draft.id,digest:draft.digest,reason:draft.reason});
     expect(first.loop.task).toEqual({kind:"agent",role:"planner"});
     log.close();log=undefined;
@@ -72,25 +72,41 @@ describe("durable loop scheduling",()=>{
   });
   it("projects every public declaration-bearing draft and rejects an unsupported delete draft",async()=>{
     log=new EventLog(":memory:");const broker=new ConsoleLoopBroker({log,globalCapacity:2,now:()=>now,draftTtlMs:60_000});
-    const objective="PRIVATE DRAFT OBJECTIVE";const create=broker.draft({kind:"create",reason:"safe create preview",
+    const objective="PRIVATE DRAFT OBJECTIVE";const create=await broker.draft({kind:"create",reason:"safe create preview",
       declaration:{...declaration(false),task:{...declaration().task,objective}}});
     expect(JSON.stringify(create)).not.toContain(objective);expect(create.declaration?.task).toEqual({kind:"agent",role:"planner"});
     const created=await broker.confirm({draftId:create.id,digest:create.digest,reason:create.reason});
-    const variants=[broker.draft({kind:"update",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"safe update preview",
+    const variants=await Promise.all([broker.draft({kind:"update",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"safe update preview",
       declaration:{...declaration(false),name:"Updated safely",task:{...declaration().task,objective:"UPDATED PRIVATE OBJECTIVE"}}}),
       broker.draft({kind:"enable",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"safe enable preview"}),
-      broker.draft({kind:"disable",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"safe disable preview"})];
+      broker.draft({kind:"disable",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"safe disable preview"})]);
     for(const preview of variants){const serialized=JSON.stringify(preview);expect(serialized).not.toContain("objective");expect(serialized).not.toContain("PRIVATE OBJECTIVE");
       expect(preview.declaration?.task).toEqual({kind:"agent",role:"planner"});}
-    expect(()=>broker.draft({kind:"delete",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"unsupported delete"}))
-      .toThrowError(expect.objectContaining({code:"unsupported_kind"}));
+    await expect(broker.draft({kind:"delete",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"unsupported delete"}))
+      .rejects.toThrowError(expect.objectContaining({code:"unsupported_kind"}));
+  });
+  it("binds capacity-sensitive drafts to a fresh configuration revision",async()=>{
+    log=new EventLog(":memory:");let capacity=2;let revision="snapshot-a";
+    const broker=new ConsoleLoopBroker({log,draftTtlMs:60_000,now:()=>now,
+      capacitySnapshot:async()=>({capacity,revision})});
+    const stale=await broker.draft({kind:"create",reason:"capacity-bound draft",declaration:{...declaration(),maxConcurrency:2}});
+    capacity=1;revision="snapshot-b";
+    await expect(broker.confirm({draftId:stale.id,digest:stale.digest,reason:stale.reason}))
+      .rejects.toMatchObject({code:"loop_capacity_changed"});
+    expect(log.listLoops()).toEqual([]);
+    await expect(broker.draft({kind:"create",reason:"fresh capacity",declaration:{...declaration(),maxConcurrency:2}}))
+      .rejects.toThrow();
+    capacity=3;revision="snapshot-c";
+    const fresh=await broker.draft({kind:"create",reason:"fresh capacity",declaration:{...declaration(),maxConcurrency:3}});
+    await expect(broker.confirm({draftId:fresh.id,digest:fresh.digest,reason:fresh.reason}))
+      .resolves.toMatchObject({loop:{maxConcurrency:3}});
   });
   it("advances the definition revision once when automatic policy exhaustion blocks a loop",async()=>{
     const dir=mkdtempSync(join(tmpdir(),"loop-policy-revision-"));const dbPath=join(dir,"state.sqlite");log=new EventLog(dbPath);
     const transitionAt=now+900_001;const broker=new ConsoleLoopBroker({log,globalCapacity:2,now:()=>transitionAt,draftTtlMs:60_000});
     const created=log.mutateLoop({draftId:"draft-policy-revision",digest:"1".repeat(64),id:"loop-policy-revision",
       declaration:{...declaration(),maxRetries:0},expectedRevision:null,reason:"policy revision",kind:"create",now});
-    const stale=broker.draft({kind:"update",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"pre-block edit",
+    const stale=await broker.draft({kind:"update",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"pre-block edit",
       declaration:{...declaration(),maxRetries:0,name:"Edited before block"}});
     const occurrence=log.admitDueLoops(now+900_000)[0]!;log.claimNextTurn(now+900_000);
     log.finishLoopOccurrence(occurrence.id,"retriable_failure","provider unavailable",transitionAt);
@@ -107,7 +123,7 @@ describe("durable loop scheduling",()=>{
     const transitionAt=now+900_002;const broker=new ConsoleLoopBroker({log,globalCapacity:2,now:()=>transitionAt,draftTtlMs:60_000});
     const created=log.mutateLoop({draftId:`draft-cleanup-${disposition}-revision`,digest:(disposition==="retained"?"2":"3").repeat(64),id:`loop-cleanup-${disposition}-revision`,
       declaration:{...declaration(),maxRetries:0},expectedRevision:null,reason:"cleanup revision",kind:"create",now});
-    const stale=broker.draft(disposition==="retained"
+    const stale=await broker.draft(disposition==="retained"
       ?{kind:"update",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"pre-cleanup edit",declaration:{...declaration(),maxRetries:0,name:"Edited before cleanup"}}
       :{kind:"enable",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"pre-cleanup enable"});
     const occurrence=log.admitDueLoops(now+900_000)[0]!;log.claimNextTurn(now+900_000);log.finishLoopOccurrence(occurrence.id,"succeeded",null,now+900_001);
@@ -182,9 +198,9 @@ describe("durable loop scheduling",()=>{
     expect(before).toMatchObject({revision:created.loop.revision+1,enabled:false,blockedReason:"cleanup_retained",updatedAt:now+900_002});
     expect(log.loopAudit(before.id)).toEqual(expect.arrayContaining([expect.objectContaining({kind:"cleanup.retained",
       details:{jobId:job.id,occurrenceId:occurrence.id,revision:before.revision}})]));
-    const stale=broker.draft({kind:"update",loopId:before.id,expectedRevision:before.revision,reason:"stale edit",
+    const stale=await broker.draft({kind:"update",loopId:before.id,expectedRevision:before.revision,reason:"stale edit",
       declaration:{...declaration(false),name:"Stale name"}});
-    const recovery=broker.draft({kind:"cleanup.retry",loopId:before.id,expectedRevision:before.revision,reason:"operator revalidation"});
+    const recovery=await broker.draft({kind:"cleanup.retry",loopId:before.id,expectedRevision:before.revision,reason:"operator revalidation"});
     expect(recovery.declaration).toBeUndefined();expect(JSON.stringify(recovery)).not.toContain("objective");
     const confirmed=await broker.confirm({draftId:recovery.id,digest:recovery.digest,reason:recovery.reason});
     expect(confirmed.loop).toMatchObject({revision:before.revision+1,updatedAt:now+900_010});
