@@ -5,8 +5,8 @@ Apple Silicon Mac. Both are system LaunchDaemons running as a dedicated
 administrator account and listening only on loopback; a locally-managed
 Cloudflare Tunnel publishes the daemon at a hostname you own.
 
-Everything that identifies one deployment — the public hostname, the service
-account, the launchd label prefix — lives in a **site config**, not here.
+Everything that identifies one deployment - the public hostname, the service
+account, the launchd label prefix - lives in a **site config**, not here.
 Copy [`site.env.example`](site.env.example), fill it in, and keep the copy in
 the consumer repo's docs (it holds no secrets). The provisioner installs it at
 `/usr/local/etc/linear-agent-daemon/site.env`, and `daemonctl`, `deploy.sh`,

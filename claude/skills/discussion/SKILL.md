@@ -1,6 +1,6 @@
 ---
 name: discussion
-description: Interactive back-and-forth to clarify, understand, or figure something out — an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything — e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-brief.
+description: Interactive back-and-forth to clarify, understand, or figure something out - an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything - e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-brief.
 argument-hint: "[idea, question, or topic]"
 ---
 
@@ -8,18 +8,18 @@ argument-hint: "[idea, question, or topic]"
 
 ## Topic: $ARGUMENTS
 
-Have an interactive, opinionated discussion. The goal is shared clarity — understanding
-the problem, weighing the options, or pinning down what's actually happening — not a
+Have an interactive, opinionated discussion. The goal is shared clarity - understanding
+the problem, weighing the options, or pinning down what's actually happening - not a
 document. When the discussion converges on something worth building or fixing and no work
-item exists, capture starts through the `create-brief` skill — invoked by the user or
+item exists, capture starts through the `create-brief` skill - invoked by the user or
 this agent; this skill's job still ends at clarity.
 
-## Conversation and research only — unless asked
+## Conversation and research only - unless asked
 
 Don't edit source files, propose diffs to apply, or write documents, specs, tickets,
 or verification criteria unless the user explicitly asks for one mid-discussion.
 Capture belongs to the `create-brief` skill. Two exceptions: Step 3's decision
-log — a record of what was decided, not a deliverable — and Step 2's throwaway
+log - a record of what was decided, not a deliverable - and Step 2's throwaway
 probes, which are research.
 
 ## Steps
@@ -32,7 +32,7 @@ what the user is actually asking:
   `code-researcher` (returns file:line findings).
 - **What do the docs / ecosystem / other people do?** → the `web-researcher`
   sub-agent (returns a cited dossier). Reach for it whenever up-to-date
-  information or outside opinions would sharpen the discussion — library
+  information or outside opinions would sharpen the discussion - library
   versions, current best practice, how others solved this.
 - **Why is this broken? Is this a bug?** → the `codex` skill, role `investigator`
   (reproduces and root-causes, returns a finding with evidence and confidence).
@@ -40,7 +40,7 @@ what the user is actually asking:
   first to exercise the flow and capture evidence, then pass its transcript along
   with the defect report.
 
-Only research what the discussion actually needs — let questions pull research, not
+Only research what the discussion actually needs - let questions pull research, not
 the other way around. Dispatch mid-conversation as new questions arise; run
 independent dispatches in parallel.
 
@@ -48,16 +48,16 @@ independent dispatches in parallel.
 traces to a sub-agent finding, a probe result, or a user statement, not a guess.
 
 ### 2. Discuss and converge
-- Present findings and options with tradeoffs; be opinionated — recommend with
+- Present findings and options with tradeoffs; be opinionated - recommend with
   reasoning, defer to user judgment.
 - **Validate, never guess.** A checkable fact (what the code does, what a tool
-  supports, what a doc says) gets checked — Step 1's specialists or a direct
-  look — before it shapes a decision; state what was validated vs what remains
-  assumption. Where a choice hinges on an intangible — the user's risk
-  appetite, priorities, taste — ask the user; never substitute an assumption
+  supports, what a doc says) gets checked - Step 1's specialists or a direct
+  look - before it shapes a decision; state what was validated vs what remains
+  assumption. Where a choice hinges on an intangible - the user's risk
+  appetite, priorities, taste - ask the user; never substitute an assumption
   for their answer.
 - **Probe before you ask.** Classify a fork before surfacing it. When the answer
-  is observable by running something — behavior, timing, output, perf, layout —
+  is observable by running something - behavior, timing, output, perf, layout -
   build the cheapest throwaway probe under `./tmp/`, run it, and present the
   result with a recommendation. Probes run local and read-only against isolated
   state; anything that touches production or mutates real data gets the user's
@@ -74,13 +74,13 @@ or they're ready to capture a work item.
 When the discussion converges, write the decision log to
 `./tmp/discussions/YYYY-MM-DD-<slug>.md`: the decisions made and why, the
 direction chosen and over what alternatives, constraints the user stated,
-open questions. A few lines each — dated and slugged so parallel
+open questions. A few lines each - dated and slugged so parallel
 workstreams never collide. This is how intent survives past the
 conversation: `/create-brief`'s drafting step reads it, and anyone resuming
 the thread starts from it instead of from memory.
 
 When the discussion has converged on capturable work with no existing item, start capture
-yourself with `/create-brief` — single-outcome or multi-phase, the phase cut is the capture
+yourself with `/create-brief` - single-outcome or multi-phase, the phase cut is the capture
 skill's step. Publish remains gated by the capture skill's alignment pause. Otherwise, suggest
 the relevant next steps:
 
@@ -88,6 +88,6 @@ the relevant next steps:
 Decision log: ./tmp/discussions/YYYY-MM-DD-<slug>.md
 
 Suggested next steps:
-- `/create-brief [title]` — capture the work (feature or bug, single-outcome or multi-phase) as a brief
-- `/discussion [follow-up]` — keep exploring a different aspect
+- `/create-brief [title]` - capture the work (feature or bug, single-outcome or multi-phase) as a brief
+- `/discussion [follow-up]` - keep exploring a different aspect
 ```

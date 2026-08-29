@@ -35,13 +35,13 @@ Deep mode includes the normal method plus the falsifiable experiment loop below.
 
 ## Core Method
 
-1. **Frame the defect** — expected behavior, observed behavior, shortest known reproduction, environment, frequency, and constraints.
-2. **Categorize it** — compile/type, logic, race/timing, state, integration/contract, environment/config, or UI/rendering.
-3. **Rank hypotheses before deep tracing** — include one line explaining why each is plausible.
-4. **Reproduce from a known state** — if reproduction fails, record exactly what was tried and what evidence is missing.
-5. **Localize the path** — trace backward from the symptom, inspect recently changed code, compare broken and working paths, follow data across boundaries, and use blame/log to identify the introducing change.
-6. **Confirm or downgrade** — confirmed means the code path predicts the failure and explains why the expected behavior does not occur. Otherwise report `likely` or `hypothesis` and name the confirming evidence.
-7. **Sketch the resolution direction** — high level only; implementation belongs to the next workflow stage.
+1. **Frame the defect** - expected behavior, observed behavior, shortest known reproduction, environment, frequency, and constraints.
+2. **Categorize it** - compile/type, logic, race/timing, state, integration/contract, environment/config, or UI/rendering.
+3. **Rank hypotheses before deep tracing** - include one line explaining why each is plausible.
+4. **Reproduce from a known state** - if reproduction fails, record exactly what was tried and what evidence is missing.
+5. **Localize the path** - trace backward from the symptom, inspect recently changed code, compare broken and working paths, follow data across boundaries, and use blame/log to identify the introducing change.
+6. **Confirm or downgrade** - confirmed means the code path predicts the failure and explains why the expected behavior does not occur. Otherwise report `likely` or `hypothesis` and name the confirming evidence.
+7. **Sketch the resolution direction** - high level only; implementation belongs to the next workflow stage.
 
 ## Falsifiable Experiment Loop
 

@@ -1,4 +1,4 @@
-# Synced from dcouple/orchestra — do not edit here
+# Synced from dcouple/orchestra - do not edit here
 
 This directory is a one-way mirror of `claude/agents/` in
 [dcouple/orchestra](https://github.com/dcouple/orchestra). Any edit made in a

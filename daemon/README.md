@@ -113,7 +113,7 @@ enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the dat
 preferences, both default `claude`),
 `CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),
 `CLAUDEX_BIN` (optional, whitespace-split; required for a direct `claudex`
-preference and for Sol fallback — point it at the provisioned `claudex` wrapper),
+preference and for Sol fallback - point it at the provisioned `claudex` wrapper),
 `CLAUDEX_ENV` (optional JSON string map of
 extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
 `FABLE_BIN` (optional; normally the installed `ops/claudex-fable` launcher),
@@ -188,7 +188,7 @@ browser proof; missing Playwright MCP or Chrome prerequisites fail closed with
 typed errors. Non-browser, planner, reviewer, and backend paths never attach
 Playwright.
 Set `NTFY_URL` to an ntfy topic URL (e.g. `https://ntfy.sh/<topic>`) to push a one-way
-notification whenever an agent posts a terminal response or error — errors post at high
+notification whenever an agent posts a terminal response or error - errors post at high
 priority. Unset means no notifications. A public ntfy topic is readable by anyone who knows
 its name; the notification body carries the agent's reply text, so pick an unguessable topic
 and never put secrets in issues if you use one.

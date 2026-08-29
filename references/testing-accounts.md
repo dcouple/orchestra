@@ -1,4 +1,4 @@
-# Testing accounts — shared convention
+# Testing accounts - shared convention
 
 How QA-driving agents (frontend-verifier, PR test automation, any app-driving
 verification) authenticate against a consumer repo's app. This generalizes the
@@ -15,10 +15,10 @@ notification.
    creates it via the app's own signup flow, then immediately persists it under
    this convention so every later run reuses it.
 2. **Credentials live in the org's secret manager** (the same store the repo's
-   secrets tooling already uses — e.g. the GCP project named in the repo's
+   secrets tooling already uses - e.g. the GCP project named in the repo's
    secrets mapping). Naming: `TESTING_ACCOUNT_<APP>_<ROLE>` (role defaults to
    `E2E`, e.g. `TESTING_ACCOUNT_ACME_E2E` for an app named Acme). Payload is JSON:
-   `{"email", "password", "purpose", "environment"}` — `environment` is never
+   `{"email", "password", "purpose", "environment"}` - `environment` is never
    `production`.
 3. **The repo documents the pointer, never the value.** The repo
    `AGENTS.md` `## Testing accounts` section names each secret, the
@@ -28,7 +28,7 @@ notification.
 
    ```
    ## Testing accounts
-   - TESTING_ACCOUNT_<APP>_E2E — <env> webapp E2E login (<auth mechanism>).
+   - TESTING_ACCOUNT_<APP>_E2E - <env> webapp E2E login (<auth mechanism>).
      Fetch: gcloud secrets versions access latest --secret TESTING_ACCOUNT_<APP>_E2E --project <project>
    ```
 
@@ -53,7 +53,7 @@ notification.
 1. Generate credentials locally (never echo the password into chat/PRs):
    strong random password, email on a domain the org controls.
 2. Create the account through the app's real signup flow in the target
-   non-production environment (a scripted browser run — e.g. Playwright — is
+   non-production environment (a scripted browser run - e.g. Playwright - is
    the standard transport; complete onboarding to a usable state).
 3. `printf '<json>' | gcloud secrets create TESTING_ACCOUNT_<APP>_E2E
    --data-file=- --project <project>` (or the org's equivalent store).

@@ -56,7 +56,7 @@ anything:
 machines/mac-mini/gcp/setup-monitoring.sh --dry-run
 ```
 
-Then sync this directory to the Mini and run the machine setup there — the
+Then sync this directory to the Mini and run the machine setup there - the
 Mini needs no repo checkout of its own:
 
 ```bash
@@ -116,8 +116,8 @@ round-trip.
 
 ## Layout
 
-- `apply.sh` — idempotent Mini configuration.
-- `bin/` — MacBook restart/update wrappers and the installed heartbeat.
-- `launchd/` — system heartbeat LaunchDaemon.
-- `gcp/` — idempotent Cloud Logging/Monitoring provisioning.
-- `docs/click-list.md` — GUI handoffs and their read-back checks.
+- `apply.sh` - idempotent Mini configuration.
+- `bin/` - MacBook restart/update wrappers and the installed heartbeat.
+- `launchd/` - system heartbeat LaunchDaemon.
+- `gcp/` - idempotent Cloud Logging/Monitoring provisioning.
+- `docs/click-list.md` - GUI handoffs and their read-back checks.

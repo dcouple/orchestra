@@ -1,22 +1,22 @@
-# PR Body — format
+# PR Body - format
 
 > Produced by `/do` (Step 4) once the work verifies, then kept live through
 > Step 5. The PR body is the **live dashboard** the returning human reads
-> first — not a changelog. Two readers must both be served in one document:
+> first - not a changelog. Two readers must both be served in one document:
 > the **reviewer** ("is this correct and safe to merge?") and the
 > **returning human / PM** ("what does the user experience now, and what do I
 > still need to test?").
 >
-> Division of labor, load-bearing: the **body carries STATE** — the current
-> picture, checkboxes flipped as work lands; **PR comments carry PROOF** — QA
+> Division of labor, load-bearing: the **body carries STATE** - the current
+> picture, checkboxes flipped as work lands; **PR comments carry PROOF** - QA
 > evidence, screenshots, logs. Never paste raw evidence dumps into the body;
 > never let state live only in a comment. A checkbox in the body says *what is
 > true now*; the comment it points to says *how we know*.
 >
 > Pre-open check (cheap mechanical catches): the Visual overview contains at
 > least one embedded image plus, for user-visible changes,
-> `After-shots: landing with the QA drive` — or one of the explicit lines
-> `Visual overview: none — <reason>` /
+> `After-shots: landing with the QA drive` - or one of the explicit lines
+> `Visual overview: none - <reason>` /
 > `Visual overview: diagram landing with the first body update`
 > (no-user-visible-surface changes only); every capture the verify/QA
 > reports enumerated is either embedded or linked from the body (**a screenshot described in prose but embedded
@@ -35,16 +35,16 @@
 A PR body is these sections, in this order. Omit a section only where noted;
 never reorder (the reviewer scans top-down and expects this spine).
 
-1. **Title** — typed, imperative.
-2. **Summary — What / Why / How** — the change, the problem, the approach.
-3. **Visual overview** — the before → after diagram + before/after screenshots.
-4. **User journeys** — the experience (journey map) + the branches (flow map).
-5. **Verification** — evidence per acceptance criterion.
-6. **Manual tests** — risk-tiered checkboxes, the human-runnable flows.
-7. **QA results** — what the QA pass executed and found (proof in a comment).
-8. **Deploy notes** — what the human does before/at deploy (omit if none).
-9. **Residual risks** — known-and-accepted (omit if none).
-10. **Metadata & closing** — labels per the repo's convention; closing lines
+1. **Title** - typed, imperative.
+2. **Summary - What / Why / How** - the change, the problem, the approach.
+3. **Visual overview** - the before → after diagram + before/after screenshots.
+4. **User journeys** - the experience (journey map) + the branches (flow map).
+5. **Verification** - evidence per acceptance criterion.
+6. **Manual tests** - risk-tiered checkboxes, the human-runnable flows.
+7. **QA results** - what the QA pass executed and found (proof in a comment).
+8. **Deploy notes** - what the human does before/at deploy (omit if none).
+9. **Residual risks** - known-and-accepted (omit if none).
+10. **Metadata & closing** - labels per the repo's convention; closing lines
     per `.references/tracker-lifecycle.md`.
 
 Scale to the change: a one-file linear fix needs a Summary, a one-line
@@ -62,72 +62,72 @@ pad a small PR to the template, and don't starve a big one.
 `type: short imperative summary`. Type prefix per the repo's convention
 (`feat` / `fix` / `refactor` / …). Names the outcome, not the diff.
 
-### Summary — What / Why / How
+### Summary - What / Why / How
 Three moves, tight:
-- **What** — the change in one or two sentences.
-- **Why** — the problem or goal it attacks. Quantify when you can (the metric
-  it moves, the failure it removes) — this is what the PM reads.
-- **How** — the approach at a structural altitude (subsystems touched, the
+- **What** - the change in one or two sentences.
+- **Why** - the problem or goal it attacks. Quantify when you can (the metric
+  it moves, the failure it removes) - this is what the PM reads.
+- **How** - the approach at a structural altitude (subsystems touched, the
   key invariant, phase list for a multi-phase item). Not a file tour.
 
-End with a **`Done means:`** line — the concrete, checkable definition of done
+End with a **`Done means:`** line - the concrete, checkable definition of done
 for *this* PR, tied to the item's intent. It's the contract the rest of the
 body proves.
 
 ### Visual overview
-**Required in every PR body** — the only way to omit it is the explicit line
-`Visual overview: none — <why the change has no visual surface>` (a docs-only
+**Required in every PR body** - the only way to omit it is the explicit line
+`Visual overview: none - <why the change has no visual surface>` (a docs-only
 edit, a dependency bump); an absent section with no such line fails the
 pre-open check. What fills it follows the surface: a user-visible change
-leads with **before/after screenshots** — before from the item's refs or
+leads with **before/after screenshots** - before from the item's refs or
 reproduction evidence at open; after-shots land with the QA drive's first
 body update, and until then the section carries the explicit line
 `After-shots: landing with the QA drive` (a visual redesign whose *final*
 PR asks the reviewer to imagine the result is a failed handoff);
 a flow-, boundary-, or lifecycle-shaped change leads with the **rendered
-before → after diagram** per the `excalidraw-pr-diagrams` skill — it teaches
+before → after diagram** per the `excalidraw-pr-diagrams` skill - it teaches
 the change a reviewer hasn't learned yet. Both when both apply. A change
 with **no user-visible surface** may instead open with the line
-`Visual overview: diagram landing with the first body update` — the diagram
+`Visual overview: diagram landing with the first body update` - the diagram
 is authored while the post-PR review lanes run and embedded with the QA
 drive's first body update.
 
 - **When the flow branches**, the diagram contrasts the **old path against the
   new fork tree, with the after emphasized** (bolder strokes / fuller color /
   larger), so the reviewer sees the *shape change*, not just the endpoints.
-  This diagram is the visual of the User-journeys flow map below — one image
+  This diagram is the visual of the User-journeys flow map below - one image
   serves both.
 - Follow the diagram with **before/after screenshots** of the actual behavior
-  when the change is user-visible — *before* from the item's refs or the
+  when the change is user-visible - *before* from the item's refs or the
   reproduction evidence, *after* from the verify captures.
 - All images are **hosted-image URLs** on the repo's rolling assets
   prerelease or the tracker's native upload (or the repo's committed-asset
-  convention where one exists) — never a broken relative path and **never a
+  convention where one exists) - never a broken relative path and **never a
   branch-relative raw URL**, which dies when the branch is deleted. Keep the
   `.excalidraw` source in `./tmp/<id>/refs/`.
 
 ### User journeys
-Two lenses — a branching change needs **both**; a linear change needs only the
+Two lenses - a branching change needs **both**; a linear change needs only the
 first, as a sentence.
 
-- **Journey map (the experience — depth).** Narrate the 1–3 highest-value
+- **Journey map (the experience - depth).** Narrate the 1–3 highest-value
   end-to-end paths from the *user's* point of view: entry → what they see and
   do at each step → the outcome. This answers "what is it actually like to use
-  this now?" — the PM's question. Keep it experiential, not architectural.
+  this now?" - the PM's question. Keep it experiential, not architectural.
 
-  > **Primary journey — new user, paid intent:** lands on the offer → starts
+  > **Primary journey - new user, paid intent:** lands on the offer → starts
   > the trial → picks a number → accepts the agreement → sends their first
   > message from inside the product. No dead-end, no download wall.
 
-- **Flow map (the branches — breadth).** Only when the flow forks (multiple
+- **Flow map (the branches - breadth).** Only when the flow forks (multiple
   entry cohorts, decision points, routed continuations). A flat list hides the
   flow's shape and its coverage holes, so draw:
   - a **decision-tree** of the branches, each fork anchored to its routing
     `file:line`;
-  - a **journey-coverage table** — every distinct end-to-end journey (give
+  - a **journey-coverage table** - every distinct end-to-end journey (give
     each a stable `J#` id), its risk tier, and the Manual-test item that
     exercises it;
-  - **honest gap flags** — branches nothing covers, called out as gaps rather
+  - **honest gap flags** - branches nothing covers, called out as gaps rather
     than omitted.
 
   Then **cross-tag the Manual tests** with those `J#` ids so the mapping is
@@ -135,26 +135,26 @@ first, as a sentence.
   like; the flow map proves no branch was forgotten.
 
 ### Verification
-One line per acceptance criterion, each with the evidence that it holds — what
+One line per acceptance criterion, each with the evidence that it holds - what
 was run or driven and the result, quoted or pointed at. Restate the AC id
 (`AC1`, `AC2`…) so a reviewer can check them off against the item. Automated
 proof (tests, logs) lives here; live/visual proof can point to the QA comment.
-Where a criterion wasn't verified, **say so explicitly — "not verified" is
-stated, never implied by omission** — and where the run has gates (review
+Where a criterion wasn't verified, **say so explicitly - "not verified" is
+stated, never implied by omission** - and where the run has gates (review
 passes, build, a Socrates verdict), fold their outcomes in so the reviewer
 sees what cleared the change.
 
 ### Manual tests
 The human-runnable flows derived from the ACs, as **checkboxes**, risk-tiered:
-- **Must** — breaks data / auth / money if wrong.
-- **Important** — user-facing behavior.
-- **Nice** — cosmetic.
+- **Must** - breaks data / auth / money if wrong.
+- **Important** - user-facing behavior.
+- **Nice** - cosmetic.
 
 Rules: each item traces to a change that motivated it; 10–20 items total;
 tag each with its journey `J#` when the Visual overview has a flow map; end
 with an **"Areas not affected"** line so safe surfaces are skippable. This
-checklist is also the QA dashboard — Step 5 flips `[ ]` → `[x]` as items pass
-and appends `— left to human: <reason>` on the ones it can't drive.
+checklist is also the QA dashboard - Step 5 flips `[ ]` → `[x]` as items pass
+and appends `- left to human: <reason>` on the ones it can't drive.
 
 ```
 **Must (breaks money/auth/data if wrong):**
@@ -169,15 +169,15 @@ Areas not affected: <surfaces the reviewer can skip>.
 
 ### QA results
 The QA/verify pass **maintains this section and the Manual-tests checkboxes in
-the body** — the body is the system of record; a comment is never the sole
+the body** - the body is the system of record; a comment is never the sole
 place a result lands when the body has a checklist and a QA-results line to
 update. Reported at two altitudes:
-- **In the body** — a short summary line: how many Manual-test items were
+- **In the body** - a short summary line: how many Manual-test items were
   executed vs left to the human, the headline result (incl. any bug the
-  QA pass found and its fix), and the cleanup disposition — what the run
+  QA pass found and its fix), and the cleanup disposition - what the run
   created and whether it was deleted or registered for a reaper. The ticked
   checkboxes above are the live dashboard; this line narrates them.
-- **In a PR comment** — the **proof**: each executed item with its quoted
+- **In a PR comment** - the **proof**: each executed item with its quoted
   output or hosted screenshot URL. The body points at this comment; the
   evidence never bloats the body.
 
@@ -200,26 +200,26 @@ pasting it as routine.
 
 **Split every finding by environment and state what the run already did.** A
 green-tier reversible change on a non-production environment (additive/nullable
-staging DDL, a test-mode toggle) is **applied by the run** — mark it
+staging DDL, a test-mode toggle) is **applied by the run** - mark it
 `staging: ✅ applied`; its production counterpart is the human's
 `production: ⛔ run at deploy` with the exact SQL/command. Never write one
-blended "DDL — not applied to any DB" line: it hides both the green action the
+blended "DDL - not applied to any DB" line: it hides both the green action the
 run should have taken and the precise red action the human owns. And flag any
 finding that **blocks verification** (a column the tests read, a key the QA
-pass needs) as a **prerequisite**, not merely a deploy-time note — a prereq the
+pass needs) as a **prerequisite**, not merely a deploy-time note - a prereq the
 run left unmet is why a "green" PR fails the moment someone tests it.
 
-**Omit the whole section when the scan finds nothing** — an empty Deploy notes
+**Omit the whole section when the scan finds nothing** - an empty Deploy notes
 reads as "nothing to do," which is a lie if you skipped the scan.
 
 ### Residual risks
-Known limitations shipping *by choice* — narrowed-but-not-closed windows,
+Known limitations shipping *by choice* - narrowed-but-not-closed windows,
 seams tested instead of end-to-end, follow-ups deferred. One line each, honest.
-**Omit if none** — don't manufacture risk to fill the section.
+**Omit if none** - don't manufacture risk to fill the section.
 
 ### Metadata & closing
 Apply the repo's issue/PR metadata convention (type + area labels, milestone
-where the repo requires it — read the repo's issues-and-PRs doc; it is not
+where the repo requires it - read the repo's issues-and-PRs doc; it is not
 this file's job to define them). Follow `.references/tracker-lifecycle.md`:
 completing GitHub issues use `Closes #123`; completing Linear issues use
 standalone `Fixes TEAM-123`; multiple items get one line each; related-only or
@@ -234,15 +234,15 @@ Run before opening, and again after any body edit in Step 5:
 
 - [ ] Sections present in order; small-PR omissions are deliberate, not lazy.
 - [ ] `Done means:` line is concrete and checkable.
-- [ ] Every image URL resolves (open it) — no 404, no broken relative path.
-- [ ] Rendered markdown previewed — nothing collapsed into one paragraph.
+- [ ] Every image URL resolves (open it) - no 404, no broken relative path.
+- [ ] Rendered markdown previewed - nothing collapsed into one paragraph.
 - [ ] Branching flow ⇒ both journey lenses present; flow map's `J#` ids
       cross-tagged into Manual tests; gaps flagged, not hidden.
 - [ ] Every AC has a Verification line; every Manual test traces to a change.
 - [ ] Build / typecheck / lint gate passed before opening (Step 4's gate).
 - [ ] Deploy notes: scan actually run; section present iff findings exist;
       migrations pasted as concrete SQL (additive in the run block, destructive
-      flagged), not a command to run; each finding split by environment —
+      flagged), not a command to run; each finding split by environment -
       green staging half applied in-run (`✅ applied`), red production half
       handed off (`⛔ run at deploy`); verification-blocking findings marked as
       prerequisites.

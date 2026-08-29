@@ -1,4 +1,4 @@
-# Tracker lifecycle — shared contract
+# Tracker lifecycle - shared contract
 
 Used by `/do` and `/prepare-pull-request`. Tracker work is non-blocking hygiene:
 report failures accurately and continue implementation, review, verification,

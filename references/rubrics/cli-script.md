@@ -1,4 +1,4 @@
-# Rubric — CLI / script change
+# Rubric - CLI / script change
 
 1. **[blocker]** Exit-code contract proven: success exits 0, each failure
    mode exits non-zero. Evidence: both invocations with `echo $?`.
@@ -10,7 +10,7 @@
    a stack trace. Evidence: the error output.
 5. Help text (`--help`) matches actual behavior after the change.
 6. Critical assertions use explicit failure branches
-   (`if ! cmp …; then …; exit 1; fi`) — never a bare `[[ ]]`/`grep` whose
+   (`if ! cmp …; then …; exit 1; fi`) - never a bare `[[ ]]`/`grep` whose
    `set -e` behavior varies by Bash version; macOS-targeted suites also run
    under `/bin/bash` 3.2. Evidence: the assertion source + the 3.2 run.
 

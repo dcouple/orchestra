@@ -1,30 +1,30 @@
-# Review Report (Plan) — agent output format
+# Review Report (Plan) - agent output format
 
-> Returned **in-conversation** by the Plan Reviewer to the Overseer — **not a file**.
+> Returned **in-conversation** by the Plan Reviewer to the Overseer - **not a file**.
 > Runs 1+ times in the plan-review loop; the Overseer feeds Must-Fix items back into the
-> plan and re-reviews until zero Must-Fix (cap supplied by the caller — /do derives it from the zone), then implement proceeds.
+> plan and re-reviews until zero Must-Fix (cap supplied by the caller - /do derives it from the zone), then implement proceeds.
 > **Your final message IS the report: begin with the verdict.** Every line is a verdict,
-> a finding with a location, or a check you ran — no preamble, no process narration,
+> a finding with a location, or a check you ran - no preamble, no process narration,
 > no closing summary.
 
 ---
 
-**Verdict:** `<Approve | Request changes>` — `<one-line rationale>`
+**Verdict:** `<Approve | Request changes>` - `<one-line rationale>`
 **Counts:** Must Fix: `<n>` · Should Fix: `<n>` · pass `<k>`/`<cap>`
 
 ## Must Fix  *(blocks; loop back to plan)*
-- **MF-1** — `<what>` · `<where: plan section>` · `<concrete fix>` · violates `<D# / AC# | "new issue">`
-  - **Evidence:** `<concrete repo artifact, item/plan text, or command output>` — `<why it proves the finding>`
+- **MF-1** - `<what>` · `<where: plan section>` · `<concrete fix>` · violates `<D# / AC# | "new issue">`
+  - **Evidence:** `<concrete repo artifact, item/plan text, or command output>` - `<why it proves the finding>`
 
 ## Should Fix  *(important, non-blocking)*
-- **SF-1** — `<what>` · `<where>` · `<fix>`
-  - **Evidence:** `<artifact>` — `<why it supports the finding>`
+- **SF-1** - `<what>` · `<where>` · `<fix>`
+  - **Evidence:** `<artifact>` - `<why it supports the finding>`
 
 ## Nice to Have  *(omit section if empty)*
 - `<nit or thought>`
 
 ## Praise  *(omit section if empty)*
-- `<what the plan got right — specific, so it survives revision>`
+- `<what the plan got right - specific, so it survives revision>`
 
 ## ⚠️ Cannot verify  *(omit if empty)*
 - `<what you couldn't check from the plan + repo alone, and what the Overseer should confirm>`
@@ -34,7 +34,7 @@
 task `Pattern:` paths) · completeness (gaps, missing integration points, ordering) ·
 correctness of approach · simplification opportunities · fidelity to the item's intent,
 locked decisions & non-goals · altitude (no line-level detail except a ≤10-line sketch in
-a justified hot-spot task; placeholder leakage — "TBD" in a plan — is a Must Fix) ·
+a justified hot-spot task; placeholder leakage - "TBD" in a plan - is a Must Fix) ·
 dead code (a replacement plan with an empty Deprecated / removed section is a finding) ·
 self-sufficiency (Goal & invariants specific to the item; Known gotchas present; every
 AC# under exactly one of Verification's Automated / Manual subsections, Automated
@@ -44,7 +44,7 @@ verify with the evidence needed to settle them.
 
 **Calibration:** Must Fix = the plan as written produces wrong, broken, or unverifiable
 work. Should Fix = a materially better plan, but this one can proceed. Everything else
-is Nice to Have — don't inflate severity.
+is Nice to Have - don't inflate severity.
 
 **Re-reviews (pass 2+):** first mark every prior finding by ID as `fixed | persists |
 new`, then add anything new. Don't re-litigate what's fixed.

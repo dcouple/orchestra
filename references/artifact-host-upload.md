@@ -37,7 +37,7 @@ import { join, relative } from "node:path";
 const root = process.argv[2];
 const files = [];
 const add = path => files.push({ path: relative(root, path).split("\\").join("/"), contentBase64: readFileSync(path).toString("base64") });
-// trailing names are legacy — kept so milestone re-uploads of older items stay complete
+// trailing names are legacy - kept so milestone re-uploads of older items stay complete
 for (const name of ["brief.html", "plan.md", "wrapup.md", "item.md"]) {
   const path = join(root, name); try { if (statSync(path).isFile()) add(path); } catch {}
 }
@@ -63,7 +63,7 @@ curl --fail-with-body --retry 1 \
 ```
 
 The response supplies the server-generated id and stable viewer `url`. Keep
-that URL as the bundle identifier — store it in `ARTIFACT_BUNDLE_URL` for the
+that URL as the bundle identifier - store it in `ARTIFACT_BUNDLE_URL` for the
 commands below. To atomically replace the bundle, rebuild
 the complete manifest and send the same request with `-X PUT` to the viewer
 URL with its trailing slash removed:

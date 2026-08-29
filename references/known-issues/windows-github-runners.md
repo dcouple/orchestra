@@ -1,6 +1,6 @@
 # CI on Windows GitHub runners
 
-Environment facts for `windows-latest` GitHub runners — consult per this
+Environment facts for `windows-latest` GitHub runners - consult per this
 directory's README; each fact re-derived live costs a full CI round-trip.
 
 - **corepack is unusable.** The hosted toolcache shim shadows npm-prefix

@@ -1,7 +1,7 @@
-# Rubric — backend API change
+# Rubric - backend API change
 
 1. **[blocker]** Each `AC#` proven by an integration test or script through
-   the real HTTP layer against a real datastore — not mocked handlers.
+   the real HTTP layer against a real datastore - not mocked handlers.
    Evidence: test report or quoted request/response.
 2. **[blocker]** Error paths tested explicitly: at least one non-2xx case
    (invalid input) with the expected status and body shape. Evidence: the
