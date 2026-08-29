@@ -44,7 +44,7 @@ sync_dir "$ORCHESTRA_DIR/references"    "$CONSUMER/.references"
 # from consumers so a stale copy can't advertise a skill whose
 # .references/agents/* counterparts --delete already removed. Names here were
 # orchestra-owned, so this never touches consumer-local skills.
-REMOVED_CLAUDE_SKILLS=(idea-duel dialectic)
+REMOVED_CLAUDE_SKILLS=(idea-duel dialectic arena hillclimb fresh-eyes)
 for name in "${REMOVED_CLAUDE_SKILLS[@]}"; do
   rm -rf "$CONSUMER/.claude/skills/$name"
 done
