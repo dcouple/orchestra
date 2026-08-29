@@ -1,4 +1,4 @@
-# Linear agent daemon — production and legacy setup
+# Linear agent daemon - production and legacy setup
 
 ## Production setup (macOS)
 
@@ -17,7 +17,7 @@ of the original production host. A retired Linux host can keep running with
 This guide takes you from a fresh Linux host to working `bloom-planner` /
 `bloom-implementer` agents in a Linear workspace. It is the practical
 end-to-end path; `daemon/ops/runbook.md` remains the authority on host
-hardening, credential handling, and the deploy-gate evidence checklist —
+hardening, credential handling, and the deploy-gate evidence checklist -
 this document links into it rather than replacing it.
 
 The daemon receives signed Linear webhooks, runs Claude Code sessions in
@@ -33,12 +33,12 @@ either agent resume the same Claude session.
   comfortable for two concurrent sessions), 50 GB disk. Any provider
   works; nothing here is provider-specific.
 - A DNS hostname you control (e.g. `linear-agent.example.com`) pointed at
-  the host's public IP **before** provisioning — Caddy requests its TLS
+  the host's public IP **before** provisioning - Caddy requests its TLS
   certificate on first boot.
 - Admin access to the Linear workspace where the agents will live.
 - A GitHub bot identity with a fine-grained PAT scoped to the target
   repository (contents + pull-requests write).
-- Anthropic authentication for the daemon user — Claude is the normal
+- Anthropic authentication for the daemon user - Claude is the normal
   top-level harness for planner and implementer sessions.
 - An OpenAI account with Codex access (ChatGPT Plus/Pro) for the standalone
   Codex CLI lanes and the `claudex` proxy runtime, which serves as the
@@ -78,7 +78,7 @@ consequences, and the human smoke checklist.
 
 In Linear: **Settings → API → OAuth applications**, create two
 applications named `bloom-planner` and `bloom-implementer`. The creation
-form has no scopes field — scopes are requested by the daemon at token
+form has no scopes field - scopes are requested by the daemon at token
 time, not configured on the app.
 
 For **both** apps:
@@ -96,7 +96,7 @@ For **both** apps:
 - **Public**: off.
 
 For **bloom-implementer only**, additionally check **Issues** under
-**Data change events** — that webhook is how the daemon learns an issue
+**Data change events** - that webhook is how the daemon learns an issue
 was completed so it can clean up the worktree and branch.
 
 After saving each app, record three values: the **client ID**, the
@@ -105,12 +105,12 @@ After saving each app, record three values: the **client ID**, the
 Finally, create an API key (**Settings → Security & access → API keys**)
 for `LINEAR_API_KEY`. Spawned agent sessions use it for the Linear MCP
 server, so ticket edits made by agents are attributed to the key's owner
-— prefer a dedicated service/bot account over a personal key.
+- prefer a dedicated service/bot account over a personal key.
 
 **Scope note (observed live, 2026-07):** Linear rejects the `admin` scope
 on client-credentials token requests. The daemon detects this and retries
 without it. The only lost capability is automatic webhook re-enablement
-at startup — if Linear ever disables a webhook after repeated delivery
+at startup - if Linear ever disables a webhook after repeated delivery
 failures, re-enable it manually in the app's settings page.
 
 ## 3. Target repository requirements
@@ -128,7 +128,7 @@ The repository the agents work on must have:
    ## Work-item tracking
 
    The workflow skills (`/create-brief`, `/do`) create work-item artifacts
-   locally under `./tmp/<id>/`. `./tmp/` is scratch — never commit it.
+   locally under `./tmp/<id>/`. `./tmp/` is scratch - never commit it.
 
    ```yaml
    tracker: linear
@@ -182,8 +182,8 @@ daemon-owned names (`LINEAR_API_KEY`, `CLIPROXY_API_KEY`,
 The daemon still injects `linear` through `--mcp-config`. That entry has
 precedence and overrides a project `linear` entry as a whole. Headless turns
 support static tokens, not interactive OAuth. Every passthrough token is also
-visible to the agent's Bash in a prompt-injectable turn—the same trust class as
-`GH_TOKEN` and `LINEAR_API_KEY`—so apply a least-privilege scope, prefer
+visible to the agent's Bash in a prompt-injectable turn-the same trust class as
+`GH_TOKEN` and `LINEAR_API_KEY`-so apply a least-privilege scope, prefer
 read-only access where the tool allows it, and keep the token revocable.
 
 Clone the repository over HTTPS as the service user (see the **Planner
@@ -211,7 +211,7 @@ commands; the checklist is:
    GPT-5.6 Sol. No Anthropic login is installed on this host.
 4. The standalone `codex` CLI authenticated and verified with
    `codex exec --version`.
-5. The Linear API key — only ever in the env file below.
+5. The Linear API key - only ever in the env file below.
 
 The runbook's **Planner credentials and repository** section contains the
 exact OAuth, model-list, and `claudex` smoke commands.
@@ -268,7 +268,7 @@ XCODEBUILD_MCP_BIN=/usr/local/bin/xcodebuildmcp # XcodeBuildMCP executable
 
 # Optional: one-way push notification (ntfy) whenever an agent posts a
 # terminal response or error. Subscribe to the topic in the ntfy app.
-# Public topics are readable by anyone who knows the name — make it
+# Public topics are readable by anyone who knows the name - make it
 # unguessable.
 #NTFY_URL=https://ntfy.sh/<unguessable-topic>
 ```
@@ -305,7 +305,7 @@ have the exact SQL/GraphQL evidence queries.
 1. **Ingress** (`SESSIONS_ENABLED=0` if you want to isolate it):
    `curl https://<hostname>/healthz` returns `{"ok":true}` externally.
    Assign bloom-planner to a throwaway issue; the log shows a `webhook`
-   event and the issue shows the "picked up — starting work" ack within
+   event and the issue shows the "picked up - starting work" ack within
    10 seconds. `kill -9` the daemon; systemd restarts it with events
    intact.
 2. **Planner**: a full planning turn streams thoughts into the session and ends in a
@@ -313,11 +313,11 @@ have the exact SQL/GraphQL evidence queries.
    `PLANNER_HARNESS=claudex` for a new throwaway session and verify it starts through the
    provisioned Claudex/GPT-Sol wrapper without a Fable attempt; restore the desired setting
    afterward. An already established session must continue on its original harness.
-   Reply — the same harness session and worktree resume. Restart the service between turns and reply again; resume
+   Reply - the same harness session and worktree resume. Restart the service between turns and reply again; resume
    still works.
 3. **Implementer**: assign a small, plan-ready issue. `/do` runs
    unattended on branch `agents/<identifier>`, opens a PR, and the PR
-   appears on the session. Reply to an implementer question — the session
+   appears on the session. Reply to an implementer question - the session
    resumes. Move the issue to a `completed` state; the worktree and
    branch are cleaned up (dirty worktrees are retained and reported).
 4. If `NTFY_URL` is set, each terminal response/error arrives as a phone
@@ -325,7 +325,7 @@ have the exact SQL/GraphQL evidence queries.
 
 ## Known limitations
 
-- **Webhook re-enable is manual** (admin scope unavailable — see the
+- **Webhook re-enable is manual** (admin scope unavailable - see the
   scope note above).
 - **Implementer replies sent while the daemon is down are not replayed**
   by startup reconciliation; planner replies are. Re-send the reply after
@@ -334,7 +334,7 @@ have the exact SQL/GraphQL evidence queries.
   Playwright; iOS criteria use leased simulators on prepared macOS hosts.
   Consumer-specific build values and test accounts remain in that repo's
   `AGENTS.md` mobile testing section.
-- Sessions run with `bypassPermissions` inside worktrees on this host —
+- Sessions run with `bypassPermissions` inside worktrees on this host -
   treat the machine as an untrusted-automation zone: dedicated bot
   credentials only, nothing else valuable on the box, and branch
   protection on the target repo's default branch as the backstop.
@@ -346,6 +346,6 @@ run with the same env via a wrapper script, and expose the listener with
 an ngrok static domain (`ngrok http 8787 --url=<domain>`) used as
 `WEBHOOK_BASE_URL` and in the Linear webhook URLs. Claude Code on macOS
 stores credentials in the Keychain and requires `USER` in the child
-environment — the daemon passes it. Tunnel-URL changes require editing
+environment - the daemon passes it. Tunnel-URL changes require editing
 both Linear apps' webhook URLs, which is why a static domain is worth
 the free signup.

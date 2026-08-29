@@ -12,23 +12,23 @@ _Source: [docs/workflow-map.excalidraw](docs/workflow-map.excalidraw)_
 
 The flow separates *clarity*, *capture*, and *execution*:
 
-1. **`/discussion`** — clarify, understand, figure out. General-purpose: it
+1. **`/discussion`** - clarify, understand, figure out. General-purpose: it
    dispatches the code-researcher / `web-researcher` for questions and the
    investigator (with `frontend-verifier` for reproduction) when the topic is a
    defect. It produces clarity plus a dated decision log
-   (`./tmp/discussions/`) that the `/create-brief` drafting step reads — never
+   (`./tmp/discussions/`) that the `/create-brief` drafting step reads - never
    deliverables.
-2. **`/create-brief`** — the capture skill, invoked by the user or by the
+2. **`/create-brief`** - the capture skill, invoked by the user or by the
    model when a conversation converges. It turns what the conversation
    established into a work item at `./tmp/<id>/brief.html` (a feature or bug
-   brief — single-outcome or multi-phase, phases being a property of the
+   brief - single-outcome or multi-phase, phases being a property of the
    item; raw sources and research sub-reports in `./tmp/<id>/refs/`) with a
    Dependencies & mechanics inventory (verified vs assumed, explicit schema
    delta, sequencing) and verification criteria. The brief page is both the
    alignment surface the user reads in the browser and the contract `/do`
-   executes against — machine state lives in its `#orchestra-meta` head
+   executes against - machine state lives in its `#orchestra-meta` head
    block (`references/html-brief.md`). It then **publishes** wherever the
-   project's `AGENTS.md` `Work-item tracking` section says — with an
+   project's `AGENTS.md` `Work-item tracking` section says - with an
    `artifact_host`, a lean tracker body pointing at the bundle; without
    one, a markdown rendition of the brief as the issue body with the HTML
    riding as marker comments; with no destination at all, the item stays
@@ -38,13 +38,13 @@ The flow separates *clarity*, *capture*, and *execution*:
    sub-agent takes an adversarial position on the item's premise (needed at
    all? root cause or symptom? simpler path? right shape? which dependency
    is assumed rather than verified? the whole of it?) and the user's
-   answers — distilled into the brief's Justification section — travel with
+   answers - distilled into the brief's Justification section - travel with
    the published item. Intensity is socrates' own calibration
    (`claude/agents/socrates.md`).
-3. **`/do <item ref or path>`** — the autonomous pipeline: pull the work
+3. **`/do <item ref or path>`** - the autonomous pipeline: pull the work
    item's artifacts into `./tmp/<id>/` (fetched per the project
-   `AGENTS.md`'s `Work-item tracking` instructions — e.g. harvested from a
-   GitHub issue's artifact comments — or read from `./tmp/<id>/` when the
+   `AGENTS.md`'s `Work-item tracking` instructions - e.g. harvested from a
+   GitHub issue's artifact comments - or read from `./tmp/<id>/` when the
    repo configures no tracker) →
    zone-derived dials (`references/zones.md`) → plan + review loop (full lane backed by
    a research dossier, every plan under the evidence contract) → implement →
@@ -53,7 +53,7 @@ The flow separates *clarity*, *capture*, and *execution*:
    PR comment at the end. Deliberately high-level:
    the Overseer applies the item's zone (escalating one notch at most), how much research a plan needs, and when
    each review loop has converged.
-4. **`/prepare-pull-request`** — the exit ramp for ad-hoc changes made in a
+4. **`/prepare-pull-request`** - the exit ramp for ad-hoc changes made in a
    session *outside* `/do` (which handles its own PR prep). It retrofits
    the pipeline's gates before anything goes up: the Overseer materializes
    an `intent.md` + diff under `./tmp/pr-<branch>/`, Socrates challenges
@@ -61,37 +61,37 @@ The flow separates *clarity*, *capture*, and *execution*:
    fidelity joins the attack lines), both code reviewers gate correctness
    (union Must-Fix, cap 3 passes), then build gate → commit → PR in the
    repo's documented format.
-5. **`/postmortem`** — when a result falls short, root-cause it in *our
+5. **`/postmortem`** - when a result falls short, root-cause it in *our
    system* (skill/agent/template), not just the code.
 
 ## Model routing
 
-This table is the single source of truth for model routing — the guides and
+This table is the single source of truth for model routing - the guides and
 skills point here; update it first when routing changes, and update `/do`'s
 **Sub-agents** paragraph in the same commit: this file is not synced to
 consumer repos, so the skills' restatement is what actually executes.
 
 | Role | Runs on | Notes |
 | --- | --- | --- |
-| Overseer (conducts `/do`, all judgment) | main session — Fable | |
-| Web research | Claude `web-researcher` — Sonnet | |
-| App-driving QA (one run, post-PR: UI ACs + Manual tests, journey captures) | Claude `frontend-verifier` — Sonnet | also reproduces failures for /discussion & /create-brief |
+| Overseer (conducts `/do`, all judgment) | main session - Fable | |
+| Web research | Claude `web-researcher` - Sonnet | |
+| App-driving QA (one run, post-PR: UI ACs + Manual tests, journey captures) | Claude `frontend-verifier` - Sonnet | also reproduces failures for /discussion & /create-brief |
 | Verify backend (tests/scripts) | **Codex** GPT-5.6 `low` | |
 | Explore codebase | **Codex** GPT-5.6 `low` | Claude `code-researcher` (Sonnet) as backup |
 | Reproduce & root-cause | **Codex** GPT-5.6 `low` | |
-| Write the diff — all surfaces, one dispatch per vertical slice | **Codex** GPT-5.6 `medium` | fix rounds resume the same session; repo statically green after every dispatch |
-| Challenge the draft work item (Socratic gate) | Claude `socrates` — Fable | always invoked by `/create-brief`; self-calibrates — fast-passes straightforward drafts, full challenge for multi-phase/unargued items |
+| Write the diff - all surfaces, one dispatch per vertical slice | **Codex** GPT-5.6 `medium` | fix rounds resume the same session; repo statically green after every dispatch |
+| Challenge the draft work item (Socratic gate) | Claude `socrates` - Fable | always invoked by `/create-brief`; self-calibrates - fast-passes straightforward drafts, full challenge for multi-phase/unargued items |
 | Review the plan | dual at zone 0 (Codex GPT-5.6 `low` + Claude `plan-reviewer` (Opus)); zones 1–3 Codex alone | Must-Fix gate = union of the lanes run |
 | Review the diff + security | dual at zone 0 (Codex GPT-5.6 `low` + Claude `code-reviewer` (Opus)); zones 1–3 Codex alone | Must-Fix gate = union of the lanes run |
 
 Every Codex role is dispatched by the **`codex` skill**
 (`claude/skills/codex/`), the one place that knows the `codex exec`
-mechanics per role — model, effort, session mode (`--yolo` for every role;
+mechanics per role - model, effort, session mode (`--yolo` for every role;
 reviewers/researchers ephemeral and no-edit by charter; implementer
 persistent with `resume --last` across fix rounds), output capture, and
 status-line parsing.
 
-Review loops exit when **no Must Fix remains from either reviewer** — a
+Review loops exit when **no Must Fix remains from either reviewer** - a
 Codex report tiered P0–P3 maps rather than reformats (P0/P1 ≡ Must Fix,
 P2 ≡ Should Fix, P3 ≡ Nice to Have). Caps are ceilings, never quotas: a
 zero-Must-Fix pass ends the loop even with Should Fixes open (the Overseer
@@ -99,35 +99,35 @@ applies those at its discretion, no re-review), and the only other trigger
 for an extra pass is the two lanes sharply diverging. When reviewers disagree,
 the Overseer adjudicates directly, using sub-agents to understand what is true
 when needed. The Overseer flags anything left unresolved at a cap in the
-wrap-up. Codex efforts are defaults — `medium` for the
+wrap-up. Codex efforts are defaults - `medium` for the
 implementer, `low` for every other role; the dispatcher may raise a
 reviewer to `medium` or `high` rarely, when the zone warrants it (zone 0
-or a multi-phase item), with the reason stated in the dispatch — never above `high`. `/do` and
+or a multi-phase item), with the reason stated in the dispatch - never above `high`. `/do` and
 `/prepare-pull-request` are user-invoked only (`disable-model-invocation`). The
 `/create-brief` capture skill is model-invocable at convergence, with publish still gated by
 its alignment pause.
 
-## Where formats live (single copy each — no duplicates to drift)
+## Where formats live (single copy each - no duplicates to drift)
 
-- **`references/`** (synced to `.references/` in each consumer repo —
-  harness-neutral) — anything referenced by more than
+- **`references/`** (synced to `.references/` in each consumer repo -
+  harness-neutral) - anything referenced by more than
   one skill, or by any agent: the shared blocks (`verification-criteria.md`,
-  `verification-methods.md`, `rubrics/` — per-surface verification rubrics,
-  `code-quality.md` — the reviewers' house-rules rubric, `qa-verification.md`
-  — the QA pass's external-evidence discipline, `system-analysis.md`,
+  `verification-methods.md`, `rubrics/` - per-surface verification rubrics,
+  `code-quality.md` - the reviewers' house-rules rubric, `qa-verification.md`
+  - the QA pass's external-evidence discipline, `system-analysis.md`,
   `publish-work-item.md`, `html-brief.md` +
-  `brief-template.html` — the work-item page contract and skeleton,
+  `brief-template.html` - the work-item page contract and skeleton,
   `socratic-gate.md`) and every agent's output format
   (`references/agents/<agent>/…`). Agents are flat `.md` files by design
   (Claude Code has no agent-folder format), so each agent's body carries a
-  pointer — "Read `.references/agents/<name>/<format>.md`" — plus a few
+  pointer - "Read `.references/agents/<name>/<format>.md`" - plus a few
   non-negotiable lines as a safety net if the file is missing.
-- **`claude/skills/<name>/references/`** — document formats produced by
+- **`claude/skills/<name>/references/`** - document formats produced by
   exactly one skill (implementation-plan, wrap-up-report, postmortem).
 
 The five workflow skills above, plus two infrastructure skills the others
-invoke — `codex` (dispatches Codex roles) and `excalidraw-pr-diagrams` (the
-PR visual-overview standard `/do`'s PR step uses) — are the whole surface. Web research is the
+invoke - `codex` (dispatches Codex roles) and `excalidraw-pr-diagrams` (the
+PR visual-overview standard `/do`'s PR step uses) - are the whole surface. Web research is the
 `web-researcher` sub-agent, review lives inside `/do` (plan review before
 implement, code review + QA after the PR opens), and all commit/PR prep
 lives in `/do`'s PR step.

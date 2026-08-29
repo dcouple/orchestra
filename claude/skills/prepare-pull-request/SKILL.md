@@ -1,6 +1,6 @@
 ---
 name: prepare-pull-request
-description: Take ad-hoc changes made in-session (outside /do) to a pull request — gate them through Socrates (right approach?) and the PR reviewers (correct?), then commit, push, and open the PR in the repo's standard format. /do handles its own PR prep; this skill is for everything else.
+description: Take ad-hoc changes made in-session (outside /do) to a pull request - gate them through Socrates (right approach?) and the PR reviewers (correct?), then commit, push, and open the PR in the repo's standard format. /do handles its own PR prep; this skill is for everything else.
 argument-hint: "[optional: issue # to close, or extra context for the PR body]"
 ---
 
@@ -9,7 +9,7 @@ argument-hint: "[optional: issue # to close, or extra context for the PR body]"
 ## Context: $ARGUMENTS
 
 Changes made ad-hoc in a session were never planned, reviewed, or verified
-the way `/do` output is — this skill closes that gap before anything goes
+the way `/do` output is - this skill closes that gap before anything goes
 up. Two gates run before the PR: **Socrates** challenges whether the
 approach was right at all, then the **PR reviewers** check that the code is
 correct. Socrates runs first because a `rethink` verdict invalidates any
@@ -25,23 +25,23 @@ run `/do`'s readiness or status lifecycle and does not prompt for tracker auth.
 ## Step 1: Preflight
 
 - Never work on the default branch. If on it, stop and ask the user to set
-  up a branch — don't create one silently.
+  up a branch - don't create one silently.
 - Review `git status` and `git diff` so the gates and the PR describe what
   actually changed, not what you remember changing. If the working tree
   contains files you didn't produce this session, confirm with the user
   which changes belong in this PR.
 - Materialize the review artifacts under `./tmp/pr-<branch>/`:
-  - `intent.md` — the problem being solved, why this approach was chosen,
+  - `intent.md` - the problem being solved, why this approach was chosen,
     what alternatives were considered or rejected in the session, and what
     "done" means. Written for a reader who wasn't in the session; this is
     what Socrates interrogates.
-  - `diff.patch` — the full diff of the candidate changes.
+  - `diff.patch` - the full diff of the candidate changes.
 
 ## Step 2: Socrates gate (right approach?)
 
 Dispatch the `socrates` agent with the round number, the paths to
 `intent.md` and `diff.patch`, and the contents of this skill's
-`references/socratic-pr-gate.md` — it adapts his standard challenge to a
+`references/socratic-pr-gate.md` - it adapts his standard challenge to a
 completed change awaiting PR (sunk cost is not a defense; diff-vs-intent
 fidelity joins the lines of attack).
 
@@ -60,21 +60,21 @@ Must-Fix gate is the union of both reports. When the reviewers disagree,
 adjudicate it yourself. Use sub-agents to help you understand what is true when
 needed.
 
-- Fix Must-Fix findings yourself (these are your own session's changes —
+- Fix Must-Fix findings yourself (these are your own session's changes -
   there is no separate implementer), then re-run both reviewers on the
   updated diff. Cap 3 passes.
-- Must-Fix findings still open at the cap: stop and put them to the user —
+- Must-Fix findings still open at the cap: stop and put them to the user -
   don't open the PR with known critical issues.
 - Non-blocking findings you chose not to take: note them for the PR body's
   Residual risks.
 - **Build gate**: discover the project's own build/typecheck/lint workflow
   (the `Commands` section of its `AGENTS.md`, `package.json` scripts,
-  Makefile, CI config — ask the repo, don't assume) and run it over the
+  Makefile, CI config - ask the repo, don't assume) and run it over the
   touched surfaces. Failures are must-fix before the PR opens.
 
 ## Step 4: Commit and push
 
-- Stage selectively — only the files that belong to this change, never
+- Stage selectively - only the files that belong to this change, never
   `git add -A`.
 - Secret-scan the staged diff (keys, tokens, credentials) before
   committing.
@@ -97,15 +97,15 @@ names):
 ## Step 6: Open the PR
 
 - Title: same `type: short imperative summary` style as the commit.
-- Write the body following the `/do` skill's `references/pr-body.md` — the
+- Write the body following the `/do` skill's `references/pr-body.md` - the
   single source for the section spine, the body-state / comment-proof split,
   and the pre-open checklist. Right-size to an ad-hoc change:
   **Summary** (from the final `intent.md`), **Verification**, and **Residual
   risks** are usually the whole body; **Visual overview** follows
-  pr-body.md's requirement — user-visible change → before/after captures,
+  pr-body.md's requirement - user-visible change → before/after captures,
   flow-shaped change → rendered diagram (keep its `.excalidraw` source in
   `./tmp/pr-<branch>/`), neither → the explicit
-  `Visual overview: none — <reason>` line, never a silent omission;
+  `Visual overview: none - <reason>` line, never a silent omission;
   **User journeys**, **Manual tests**, **QA results**,
   and **Deploy notes** appear only when the change actually has branches,
   human-runnable flows, or deploy steps.

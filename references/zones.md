@@ -1,21 +1,21 @@
-# Zones — stakes-based review-effort profiles
+# Zones - stakes-based review-effort profiles
 
 Every work item carries a `zone:` (0–3) assigned at capture. The zone
-classifies **stakes and downstream consequence radius — never diff size**: a
+classifies **stakes and downstream consequence radius - never diff size**: a
 one-line fix in the payment path is zone 0; a large internal refactor no user
 will feel is zone 1; a UI behavior tweak with a small consequence radius can
 be zone 2. `/do` derives its dials from the zone.
 
 ## The zones
 
-- **Zone 0 — must be perfect.** Direct impact on production data, users,
-  money, or security — or the user says perfection matters.
-- **Zone 1 — substantial.** Large or system-shaping changes whose
+- **Zone 0 - must be perfect.** Direct impact on production data, users,
+  money, or security - or the user says perfection matters.
+- **Zone 1 - substantial.** Large or system-shaping changes whose
   consequences stay short of zone 0's surfaces (big features, refactors,
   changes to the workflow/skills themselves).
-- **Zone 2 — contained.** Focused fix or small change; blast radius limited
+- **Zone 2 - contained.** Focused fix or small change; blast radius limited
   to what it touches; consequences visible and cheap to reverse.
-- **Zone 3 — trivial.** Docs, copy, comments, config text; no runtime
+- **Zone 3 - trivial.** Docs, copy, comments, config text; no runtime
   behavior change.
 
 ## Dial table
@@ -23,19 +23,19 @@ be zone 2. `/do` derives its dials from the zone.
 | Zone | Review lanes | Loop caps (plan / post-PR) | Frontend verifier | End QA pass | Research |
 |---|---|---|---|---|---|
 | 0 | dual (Codex + Claude), always | 3 / 3 | yes, when UI is touched | always | full (dossier) |
-| 1 | single — Codex | 3 / 3 | when user-visible | always — full checklist when user-visible, command-shaped otherwise | full (dossier) |
-| 2 | single — Codex | 1 / 1 | only when reproduction needs the running app | command-shaped items only | direct (no dossier) |
-| 3 | **single — Codex** | 1 / 1 | no | no | direct |
+| 1 | single - Codex | 3 / 3 | when user-visible | always - full checklist when user-visible, command-shaped otherwise | full (dossier) |
+| 2 | single - Codex | 1 / 1 | only when reproduction needs the running app | command-shaped items only | direct (no dossier) |
+| 3 | **single - Codex** | 1 / 1 | no | no | direct |
 
 Wherever the table drops to one lane, **Codex is the lane that stays**.
-The verifier and QA dials govern *discretionary* verification — an AC whose
+The verifier and QA dials govern *discretionary* verification - an AC whose
 only possible proof needs the running app always gets the frontend
 verifier, at any zone: acceptance evidence is never trimmed by a **zone**
 dial. The one thing that can skip it is the item's explicit
-`frontend_verifier: false` — the user's call, honored in both directions
+`frontend_verifier: false` - the user's call, honored in both directions
 (`true` forces the verifier even where the zone wouldn't run it). When
 `false` leaves app-only ACs unproven, they are recorded as
-`unverified — frontend verifier disabled by the item` in the wrap-up,
+`unverified - frontend verifier disabled by the item` in the wrap-up,
 never claimed passed.
 
 ## Rules
@@ -47,26 +47,26 @@ never claimed passed.
   schema/migrations, money, production config, or data deletion forces
   **zone 1 at minimum**, regardless of diff size; when the impact on
   production users/data/money is direct, it is zone 0. This list is
-  canonical — other documents reference it, never restate it.
+  canonical - other documents reference it, never restate it.
 - **Floors before notches.** Apply in order: first the escalator floors
   normalize the zone (an item discovered mid-run to touch an escalator
-  surface is re-zoned to the floor outright — a correction, recorded, not
+  surface is re-zoned to the floor outright - a correction, recorded, not
   the one-notch deviation); then the Overseer may escalate one further
   notch toward 0 with a recorded reason. **Escalation never changes the
-  lane dial** — a zone-1 item escalated to zone-0 effort still runs
+  lane dial** - a zone-1 item escalated to zone-0 effort still runs
   single-lane Codex unless `review_lanes: dual` is set explicitly on the
   item. Lanes are the human's call, not a side-effect of escalation.
 - **Escalate freely, de-escalate only via this table.**
   De-escalating below the item's zone is a capture-time decision (the human
-  re-zones the item) — never an in-run one. Lowering this table's defaults
+  re-zones the item) - never an in-run one. Lowering this table's defaults
   requires postmortem evidence (yield data), one change at a time.
 - **Loop caps are ceilings, never quotas.** A review loop ends the moment a
   pass returns zero Must Fix (Codex tiers: P0/P1) from every lane and the
-  lanes roughly agree — remaining cap budget is never spent re-reviewing
+  lanes roughly agree - remaining cap budget is never spent re-reviewing
   Should Fixes.
 - **`review_lanes:` and `frontend_verifier:` are the two human-settable
   dial overrides.** An item may
-  carry `review_lanes: dual | single` in its metadata — set at capture or
+  carry `review_lanes: dual | single` in its metadata - set at capture or
   edited later as item metadata on the tracker. `/do` honors it over the
   table's lane dial in both directions (it's the human's explicit call, so
   unlike the zone it may also de-escalate); `single` keeps the Codex lane,
@@ -83,8 +83,8 @@ The wrap-up's dial record and the postmortem carry: zone, effective dials
 first-pass vs later passes (repeat-pass yield is the tuning signal), QA
 findings, wall-clock, **tokens** (total, per source, per Codex role), **PR
 size** (files changed, lines added/removed), the **spend ratio** (tokens
-per changed line — the size-normalized cost score), and the **agents
-roster** (role × model × effort × dispatches × duration × tokens) — and
+per changed line - the size-normalized cost score), and the **agents
+roster** (role × model × effort × dispatches × duration × tokens) - and
 the PR gets the `awaiting-human-review` label at wrap-up so that **commits
 after that label's timestamp** are countable as post-review rework.
 Aggregated later as zone × model × path → rework and spend, this is the

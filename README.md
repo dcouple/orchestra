@@ -3,7 +3,7 @@
 The canonical home of our agent skill system: Claude Code skills and
 sub-agents, Codex role skills, and the shared references they point to.
 Skills are edited **only here** and synced one-way into each repo that uses
-them ("consumer repos"). Never edit the synced copies in a consumer repo —
+them ("consumer repos"). Never edit the synced copies in a consumer repo -
 the next sync overwrites them.
 
 What the workflow is and how models are routed: [WORKFLOW.md](WORKFLOW.md).
@@ -14,7 +14,7 @@ The system at a glance:
 
 _Source: [docs/workflow-map.excalidraw](docs/workflow-map.excalidraw)_
 
-And the story of how it got here — conducted by hand, then Orchestra running
+And the story of how it got here - conducted by hand, then Orchestra running
 itself, next the factory that feeds itself:
 
 ![From workflow to software factory](docs/software-factory-story.png)
@@ -28,12 +28,12 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 |---|---|---|
 | `claude/skills/` | Claude Code workflow skills (`/do`, `/create-brief`, `/discussion`, `/prepare-pull-request`, `postmortem`, `codex`, `excalidraw-pr-diagrams`, `cold-read`) | `.claude/skills/` |
 | `claude/agents/` | Claude sub-agent definitions (reviewers, researchers, verifiers, socrates) | `.claude/agents/` |
-| `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator, refactor-simple/-deep) — thin pointers into `references/` | `.codex/skills/` |
+| `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator, refactor-simple/-deep) - thin pointers into `references/` | `.codex/skills/` |
 | `references/` | Shared skill-system documents: work-item formats, verification methods, rubrics, sub-agent role instructions and output formats | `.references/` |
-| `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) to copy into a new consumer repo and fill in | not synced — copied once by hand |
+| `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) to copy into a new consumer repo and fill in | not synced - copied once by hand |
 | `daemon/` | Orchestra-only Linear agent webhook service (macOS/launchd behind a Cloudflare Tunnel, or Linux/systemd); each deployment's identity comes from a site config kept in the consumer repo | not synced |
 | `machines/` | Orchestra-only, versioned physical-machine setup and operations artifacts | not synced |
-| `scripts/sync.sh` | The mirror logic (four `rsync --delete` targets) | — |
+| `scripts/sync.sh` | The mirror logic (four `rsync --delete` targets) | - |
 
 ## The rules that keep this sane
 
@@ -46,7 +46,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 2. **Repo-agnostic skills.** Nothing in the synced directories may name a
    specific codebase, database ID, or machine path. All paths are
    consumer-repo-relative (`.references/…`, `.claude/agents/…`).
-3. **Repo-specific knowledge lives in the consumer repo** — its `AGENTS.md` /
+3. **Repo-specific knowledge lives in the consumer repo** - its `AGENTS.md` /
    `CLAUDE.md` (e.g. the `Work-item tracking` section, including any
    custom artifact destination) or its docs. Skills know to look there.
    The skills themselves are platform-agnostic: they publish work items
@@ -56,7 +56,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 4. **Idempotent.** The sync is a full mirror (`rsync --delete`); running it
    twice produces zero diff. Nothing in the synced dirs is written to at
    runtime.
-5. **Postmortems** are posted as comments on the run's work item and PR —
+5. **Postmortems** are posted as comments on the run's work item and PR -
    never as separate tracker issues (local-only when no tracker/anchor
    exists); proposed system changes are applied here in orchestra.
 
@@ -65,7 +65,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 1. Copy `templates/AGENTS.md` and `templates/CLAUDE.md` into the repo root and
    fill in the sections (including `Work-item tracking`).
 2. Add an `update-skills` script to the repo that clones this repo and runs
-   `scripts/sync.sh` in a temp worktree, then opens the sync PR —
+   `scripts/sync.sh` in a temp worktree, then opens the sync PR -
    bloomapi/bloom-mono's `scripts/update-skills.sh` is the reference
    implementation.
 3. Run it and merge the first sync PR.
@@ -74,7 +74,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 
 The skills are available when working on this repo too: `.claude/skills`,
 `.claude/agents`, `.codex/skills`, and `.references` are **symlinks** to the
-canonical directories above — no sync step, never stale. The usual
+canonical directories above - no sync step, never stale. The usual
 consumer-repo warning is inverted here: editing under the dot-paths edits
 the canonical copy, which is exactly right. Root `AGENTS.md` / `CLAUDE.md`
 configure the skills for this repo (work items publish to
@@ -99,7 +99,7 @@ never touched). There is no blanket `--delete`: user-level dirs are a union
 space, so personal skills and `p-*` preserves from other sets live alongside;
 retired orchestra-owned entries are purged by exact name. To keep it fresh,
 point a LaunchAgent or cron at a wrapper that fetches `origin/main`, exports
-it (`git archive`), and runs the script from the export — invoke it with
+it (`git archive`), and runs the script from the export - invoke it with
 `bash`, and never schedule a plain one-set rsync over these dirs.
 
 ## Manual sync
@@ -109,7 +109,7 @@ scripts/sync.sh /path/to/consumer-repo
 ```
 
 The mirror primitive the consumer scripts wrap; useful for a first-time sync
-or local testing. It mutates the target working tree and prints the diff —
+or local testing. It mutates the target working tree and prints the diff -
 committing and PR-ing is the caller's job.
 
 ## History

@@ -1,4 +1,4 @@
-# Rubric — mobile app change
+# Rubric - mobile app change
 
 1. **[blocker]** Each UI-facing `AC#` proven in the simulator/emulator by
    driving the real flow (taps, gestures, navigation), with captures and the
@@ -14,7 +14,7 @@
    changed screen's state, where applicable.
 5. Deep links / notifications into the changed screen still land correctly,
    if the change touches routing.
-6. User-facing copy read in place — matches intent and product voice.
+6. User-facing copy read in place - matches intent and product voice.
 
 Known failure modes: works on simulator's default device only; navigation
 back-stack broken after the new screen; permission prompt loop; layout

@@ -1,4 +1,4 @@
-# Rubric — data / schema migration
+# Rubric - data / schema migration
 
 1. **[blocker]** Dry run executed on production-like data (in a transaction
    where the engine allows). Evidence: dry-run output.

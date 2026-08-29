@@ -25,8 +25,8 @@ Ask the user only for missing information that prevents a meaningful investigati
 
 Read `.references/investigation-method.md` and choose:
 
-- **normal** — deterministic, scoped, clear reproduction or error trail;
-- **deep** — intermittent, stateful, cross-boundary, timing-sensitive, renderer-dependent, previously misdiagnosed, or explicitly requested as thorough.
+- **normal** - deterministic, scoped, clear reproduction or error trail;
+- **deep** - intermittent, stateful, cross-boundary, timing-sensitive, renderer-dependent, previously misdiagnosed, or explicitly requested as thorough.
 
 Start normal unless the brief already meets a deep criterion. The investigator may escalate from normal to deep when evidence shows the simpler pass cannot distinguish the leading hypotheses.
 

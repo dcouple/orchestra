@@ -1,18 +1,18 @@
-# Publish a work item — shared procedure
+# Publish a work item - shared procedure
 
 Used by `/create-brief` after `brief.html` is written. The caller supplies the
 title prefix (`feat:` or `fix:`) and the summary used in the published
 tracker body. "Metadata" below always means the YAML in the brief's
-`#orchestra-meta` head element (`.references/html-brief.md` · Metadata) —
+`#orchestra-meta` head element (`.references/html-brief.md` · Metadata) -
 read and written there, never in the page body.
 
-Orchestra assumes no tracker. The skills define *what* gets published —
-`brief.html` plus every `refs/` file — and the consumer repo defines *where*:
+Orchestra assumes no tracker. The skills define *what* gets published -
+`brief.html` plus every `refs/` file - and the consumer repo defines *where*:
 the `Work-item tracking` section of the project's `AGENTS.md` (or
 `CLAUDE.md`) is the only authority on the destination.
 
 `brief.html` and its `refs/` are always authored and kept locally under
-`./tmp/<id>/` — publishing never changes what exists on disk. The
+`./tmp/<id>/` - publishing never changes what exists on disk. The
 destination decides the transport: with an `artifact_host:` key the bundle
 is the transport and the tracker gets a lean body (below); without one,
 fall back to a **markdown rendition** of the brief as the tracker body
@@ -44,17 +44,17 @@ On first publish, perform these steps in order:
    GitHub body uses an `Artifact bundle: <url>` link line. For Linear,
    create an `attachmentCreate` attachment card after the item exists. For
    a multi-phase item, also render the metadata's `phases` list as a plain
-   list in the lean tracker body — informational only; phase completion is
+   list in the lean tracker body - informational only; phase completion is
    tracked in `/do`'s implementation plan, not on the item.
 4. After tracker creation, record the canonical returned tracker
    URL/identifier in the local metadata: `github:` (or other tracker
-   fields), or a `linear_issues` always-list entry for Linear — shape,
+   fields), or a `linear_issues` always-list entry for Linear - shape,
    URL-derived identifier, and `completes | relates` rules per
    `.references/tracker-lifecycle.md`. Only `completes` entries generate
    standalone `Fixes TEAM-123` lines.
 
    Then update the tracker body's fenced metadata YAML to match the final
-   local metadata — the body was created before these link fields existed,
+   local metadata - the body was created before these link fields existed,
    and `/do`'s load replaces local metadata with the tracker's wholesale,
    so a stale tracker copy would erase them. Finally rebuild the manifest
    one more time and send an authenticated `PUT`
@@ -87,9 +87,9 @@ remove the failure field.
 
 Set `status: ready` in the metadata, then create the tracker item, titled
 `<prefix> <item title>`. The tracker body is a **markdown rendition of the
-brief** — a direct section-by-section conversion, nothing re-authored: the metadata YAML
+brief** - a direct section-by-section conversion, nothing re-authored: the metadata YAML
 as a fenced block, then the brief's content sections rendered as markdown at
-the same altitude — intent, desired end state, locked directions,
+the same altitude - intent, desired end state, locked directions,
 dependencies & mechanics (cards as bullets with their verified/assumed
 standing and the schema-delta line), approach (with the phase list when
 multi-phase), verification criteria, scope, justification, open questions.
@@ -108,11 +108,11 @@ markers so `/do`'s Step 0 can harvest them back to disk:
 
 One comment per file. A comment holds ~65K chars; split oversized files
 into `part=1/2` markers. Binary refs (images, archives) can't ride in
-comments — note them in the issue body by path and keep them in
+comments - note them in the issue body by path and keep them in
 `./tmp/<id>/refs/`. Record the tracker URL/identifier in the local metadata
 exactly as in step 4 above (`github:` or the `linear_issues` always-list).
 
 Done when: the item is published per the repo's instructions, every
 artifact is reachable from it, and the published item and `brief.html` link
-to each other — or, when the repo configures no destination at all, the
+to each other - or, when the repo configures no destination at all, the
 artifacts are in `./tmp/<id>/` and the user has been told so.

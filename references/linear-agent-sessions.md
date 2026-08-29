@@ -1,4 +1,4 @@
-# Linear agent sessions — shared contract
+# Linear agent sessions - shared contract
 
 Used by `/linear-work-orchestrator`. What the Linear agent daemon's sessions
 look like from inside Linear, what each action on them costs, and how to read
@@ -16,13 +16,13 @@ below stand for those names.
   that anything is running**.
 - **Resume / steer**: reply in the session's thread (`save_comment` with
   `parentId` = the thread's root comment id). The reply text is delivered to
-  the resumed Claude session verbatim — for an implementer session it lands
+  the resumed Claude session verbatim - for an implementer session it lands
   inside the running `/do` Overseer, so write it as an instruction to that
   agent, not as a note to a human.
 - **A fresh session on an already-delegated issue**: re-setting the same
   `delegate` is a no-op. Clear it (`delegate: null`), read back, set it again;
   or @-mention the agent in a new top-level comment. Prefer resuming the
-  existing thread whenever it exists — the daemon reuses the issue's worktree
+  existing thread whenever it exists - the daemon reuses the issue's worktree
   and branch `agents/<identifier>` either way.
 - **Stop**: only from the Linear UI (the session's Stop control). No MCP tool
   sends the stop signal. A stopped session answers
@@ -30,7 +30,7 @@ below stand for those names.
   resumed by a reply.
 - A **planner** session is a resumable discussion in the issue's worktree; it
   publishes a brief only when told to (`/create-brief`), and publishing
-  creates a **new** issue carrying the brief metadata — it does not rewrite
+  creates a **new** issue carrying the brief metadata - it does not rewrite
   the discussion issue. An **implementer** session runs `/do <identifier>`
   once, unattended, to an opened PR; every later reply resumes that same
   `/do` session.
@@ -50,13 +50,13 @@ Everything durable the agent says appears as **replies in that thread**
 (`parentId` = the root comment). Human prompts to the session are replies in
 the same thread. `list_comments` on the issue returns the flat set; group by
 `parentId`, and treat the newest root carrying that sentence as the session
-that matters; other top-level comments — a human's note, an orchestrator's
-own — are roots too, and none of them is a session.
+that matters; other top-level comments - a human's note, an orchestrator's
+own - are roots too, and none of them is a session.
 
 Only two activity kinds are durable: the agent's **response** (its reply, a
 question, the `/do` final report) and its **error**. Thoughts, tool actions,
 the pickup ack, turn-start banners, keepalives and worktree-cleanup notes are
-posted ephemeral and are not readable through the MCP — a session that has
+posted ephemeral and are not readable through the MCP - a session that has
 been running for an hour can look identical to one that is queued and has not
 started. **Both are "busy".**
 
@@ -66,12 +66,12 @@ Daemon strings that do appear as replies, exact:
 |---|---|
 | `Planner turn failed: <detail>` / `Implementer turn failed: <detail>` | The turn ended in error. `<detail>` classifies it (table below). |
 | `Stopped at your request. Send a follow-up message to continue.` | A human pressed Stop; nothing is running; a reply resumes. |
-| `Turn completed without reply text — ` (match this prefix; the rest names the turn, model, `subtype=` and token count) | The run finished but its output was lost — a daemon defect. Treat as failed; escalate to the daemon operator. `subtype=` is the one place a budget or turn ceiling is named. |
+| `Turn completed without reply text - ` (match this prefix; the rest names the turn, model, `subtype=` and token count) | The run finished but its output was lost - a daemon defect. Treat as failed; escalate to the daemon operator. `subtype=` is the one place a budget or turn ceiling is named. |
 | A reply containing `was interrupted` (three restart-recovery notices) | Nothing is running. The notice says what revives it: "prompt again" → a reply resumes; "Assign … again" → clear and re-set the delegate; "hard restart" → a human reviews the worktree state first. All three are spend decisions. |
 | Anything else from the agent | Its response: the planner's analysis or question, or the implementer's `/do` report. |
 
 An opened PR is attached to the **session** as an external URL labelled
-`Pull Request`, extracted by the daemon from the `/do` report text — a
+`Pull Request`, extracted by the daemon from the `/do` report text - a
 report with no PR link yields no external URL either; the daemon does not
 attach it to the issue.
 
@@ -81,7 +81,7 @@ attach it to the issue.
 |---|---|---|
 | `capacity failure`, `rate_limit` | provider capacity | Wait; do not resume this sweep. Two or more within about ten minutes of each other, the newest inside the implementer stale horizon = incident; older clusters are single failures. |
 | `spawn … ENOENT`, `exited with code` **on two or more issues within about ten minutes of each other, the newest inside the implementer stale horizon** | daemon/host incident | Halt admissions, resume nothing, escalate to the daemon operator with the issue list and timestamps. Older matching failures are single failures. |
-| `exited with code <n>` on one issue | crash **or** the `/do` budget/turn ceiling — Linear cannot tell them apart | Human decides: resume (a reply gives the run a fresh ceiling and spends again) or stop. |
+| `exited with code <n>` on one issue | crash **or** the `/do` budget/turn ceiling - Linear cannot tell them apart | Human decides: resume (a reply gives the run a fresh ceiling and spends again) or stop. |
 | `permission`, `denied` | the session hit a harness gate | Human decides; usually a daemon config matter. |
 | `is not configured` | a launcher is missing on the host | Daemon operator; nothing on this issue will run until fixed. |
 | anything else (`exited on <signal>`, `exited without a result`, unknown text) | single failure | Human decides, as for `exited with code`. |
@@ -100,17 +100,17 @@ Per issue, take the newest session thread and its last message:
 | a human reply, younger than the stale horizon | busy (a turn is queued or running) | yes |
 | an agent response that asks something or reports a gate | waiting on a human | no |
 | an agent response that is a completed report (planner analysis, `/do` report) | idle | no |
-| an agent progress note — neither a question nor a completed report ("standing by on the researcher", "Phase 1 is now implementing") — younger than the stale horizon | busy (the run continues; only its durable output is visible) | yes |
-| the same progress note **older** than the stale horizon | stalled — nothing survives a daemon restart past the horizon; treat as stale | no; report it |
+| an agent progress note - neither a question nor a completed report ("standing by on the researcher", "Phase 1 is now implementing") - younger than the stale horizon | busy (the run continues; only its durable output is visible) | yes |
+| the same progress note **older** than the stale horizon | stalled - nothing survives a daemon restart past the horizon; treat as stale | no; report it |
 | `… turn failed: …` | failed | no |
 | `Stopped at your request …` | stopped | no |
-| a `was interrupted` restart-recovery notice | interrupted — revive per the notice, with a human's yes | no |
-| root or human reply **older** than the stale horizon with no agent reply | stale — the daemon may have restarted or the reply was dropped | no; report it — unless an older thread on the same issue is itself busy, in which case that one holds the slot |
+| a `was interrupted` restart-recovery notice | interrupted - revive per the notice, with a human's yes | no |
+| root or human reply **older** than the stale horizon with no agent reply | stale - the daemon may have restarted or the reply was dropped | no; report it - unless an older thread on the same issue is itself busy, in which case that one holds the slot |
 
 Stale horizons come from `AGENTS.md` (`linear_agents.stale_hours`), else
 implementer 6 hours, planner 2 hours; measure from the last message's
 timestamp. The daemon emits a keepalive only when it has been silent for its
-`KEEPALIVE_MS` (default 15 minutes), and that keepalive is ephemeral — so
+`KEEPALIVE_MS` (default 15 minutes), and that keepalive is ephemeral - so
 silence in the thread is not evidence of death inside the horizon.
 
 ## What every action costs
@@ -127,7 +127,7 @@ silence in the thread is not evidence of death inside the horizon.
   turns on other issues start.
 - **A queued turn never expires and cannot be reordered** from Linear. The
   only way out of the queue is Stop from the UI, which marks every pending
-  turn of that session interrupted and aborts its running turn too — a
+  turn of that session interrupted and aborts its running turn too - a
   human's action, session-wide, never partial.
 - **A reply to a running session queues behind it** and takes a slot when it
   runs. A reply to an idle session takes a slot immediately.
@@ -150,15 +150,15 @@ silence in the thread is not evidence of death inside the horizon.
 - Moving an issue to any `completed`-type status makes the daemon delete the
   issue's worktree and `agents/<identifier>` branch **only when the worktree
   is clean and every commit is on origin**; otherwise it retains them and
-  says so ephemerally. A `canceled`-type status does nothing on the daemon —
+  says so ephemerally. A `canceled`-type status does nothing on the daemon -
   the worktree stays until an operator removes it.
 
 ## Fallback when the MCP lacks a tool
 
 The Linear MCP exposes no agent-session or activity reads and no stop. When
-a session's ephemeral activity or its external URLs are genuinely needed —
-which the orchestrator's decisions are designed not to require — query the
+a session's ephemeral activity or its external URLs are genuinely needed -
+which the orchestrator's decisions are designed not to require - query the
 Linear GraphQL API (`agentSession(id)` → `activities`, `externalUrls`) with a
-`LINEAR_API_KEY` read from the environment — never pasted into the
+`LINEAR_API_KEY` read from the environment - never pasted into the
 conversation or written to Linear; without one, say so and decide from the
 thread shape.

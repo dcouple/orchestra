@@ -542,14 +542,14 @@ live database file directly.
 Capture command output in the private deploy record after redacting account names and email
 addresses. These are human red-tier checks because they use founder subscription accounts.
 
-AC1 — aliases, two identities in each pool, and no credential-value logging:
+AC1 - aliases, two identities in each pool, and no credential-value logging:
 
 ```bash
 sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
 sudo journalctl -u cliproxyapi --since today --no-pager
 ```
 
-AC2 — record `recent_requests` before and after six independent Sol conversations; successful
+AC2 - record `recent_requests` before and after six independent Sol conversations; successful
 counters must increase for at least two enabled Codex identities:
 
 ```bash
@@ -561,14 +561,14 @@ done
 sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
 ```
 
-AC3 — the gate exercises a tool call, streaming output, detached marker pickup, and
+AC3 - the gate exercises a tool call, streaming output, detached marker pickup, and
 `resume --last` through the host-pinned Codex CLI:
 
 ```bash
 sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/codex-provider-gate.sh
 ```
 
-AC4 — verify the 168-hour config and continue both protocol conversations. Record the same
+AC4 - verify the 168-hour config and continue both protocol conversations. Record the same
 credential's counter increment on each continuation. The Codex continuation is part of the
 gate; this command makes and resumes a Claude-protocol conversation:
 
@@ -587,7 +587,7 @@ provider-side affinity/cache cost, while both harnesses retain local resume stat
 human acceptance or require the criterion to be reworded. If Claude-protocol counters do not
 expose affinity, record that evidence limitation rather than passing it silently.
 
-AC5 — choose one enabled Codex filename from the redacted list, disable it through the body
+AC5 - choose one enabled Codex filename from the redacted list, disable it through the body
 form, run a new conversation, verify only another enabled identity increments, then re-enable
 the credential:
 
@@ -624,7 +624,7 @@ sudo -u linear-daemon -H bash -c '
 unset ACCOUNT_FILE
 ```
 
-AC6 — onboarding needs no daemon code change; dry-run twice for identical output, perform the
+AC6 - onboarding needs no daemon code change; dry-run twice for identical output, perform the
 interactive login, and observe hot-loading in the list without restarting the proxy:
 
 ```bash
@@ -634,7 +634,7 @@ sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh add code
 sudo -u linear-daemon -H /opt/linear-agent-daemon/ops/proxy-accounts.sh list
 ```
 
-AC7 — the passing gate above installs the provider. A dead-port run must name the failed gate,
+AC7 - the passing gate above installs the provider. A dead-port run must name the failed gate,
 exit nonzero, and remove only a gate-marked target; use a disposable target for this proof:
 
 ```bash
@@ -643,7 +643,7 @@ sudo -u linear-daemon -H bash -c '
   gate_tmp="$(mktemp -d)"
   trap '\''rm -rf "$gate_tmp"'\'' EXIT
   target="$gate_tmp/config.toml"
-  printf "%s\n" "# managed by codex-provider-gate.sh — removed on gate failure" > "$target"
+  printf "%s\n" "# managed by codex-provider-gate.sh - removed on gate failure" > "$target"
   set +e
   PROXY_URL=http://127.0.0.1:1 TARGET_CONFIG="$target" \
     /opt/linear-agent-daemon/ops/codex-provider-gate.sh
@@ -679,7 +679,7 @@ curl -fsS https://api.linear.app/graphql \
   --data '{"query":"query AgentSessionActivities($id: String!) { agentSession(id: $id) { id activities { nodes { id createdAt ephemeral content { __typename ... on AgentActivityThoughtContent { type body } } } } } }","variables":{"id":"'"${SESSION_ID}"'"}}'
 ```
 
-Preserve the response showing exactly one ephemeral `thought` with body `picked up — starting
+Preserve the response showing exactly one ephemeral `thought` with body `picked up - starting
 work`, the same session ID, and creation within 10 seconds of the stored receipt timestamp.
 
 For **AC5**, first receive an event, then prove persistence and automatic restart:
@@ -1006,7 +1006,7 @@ the host and the `linear-daemon` user and nothing else.
 | --- | --- | --- |
 | Binary | `/usr/local/bin/codex` (otel wrapper) | `/opt/codex-live/bin/codex` |
 | | *both resolve to the one managed standalone install* ||
-| Version | *shared* — `CODEX_LIVE_MIN_VERSION` is a floor; it self-updates above this ||
+| Version | *shared* - `CODEX_LIVE_MIN_VERSION` is a floor; it self-updates above this ||
 | Codex home | `~/.codex` | `~/.codex-live` |
 | Owner of `config.toml` | `codex-provider-gate.sh` | `codex-live-setup.sh` |
 | Auth | CLIProxyAPI OAuth pool | direct ChatGPT (`auth.json`) |
@@ -1015,7 +1015,7 @@ the host and the `linear-daemon` user and nothing else.
 | Unit | `linear-agent-daemon` | `codex-live` |
 
 Two independent reasons for the split. Realtime audio needs direct ChatGPT
-credentials, which CLIProxyAPI does not front — it proxies the Responses
+credentials, which CLIProxyAPI does not front - it proxies the Responses
 protocol only. And the roles differ: subagent Codex implements inside a work
 item, live Codex is spoken to about operating the host.
 
@@ -1028,11 +1028,11 @@ home's config survives the other's rewrite, so a failed gate removes its own
 config without taking voice down.
 
 **The version is a floor, not a pin, and cannot be one.** The managed
-app-server self-updates — the same mechanism `remote-control` requires, so it
+app-server self-updates - the same mechanism `remote-control` requires, so it
 is not optional. `CODEX_LIVE_MIN_VERSION` governs only the initial install:
 provisioning installs when Codex is absent or *older* than the floor, and
 otherwise leaves a self-updated install alone. Demanding an exact match
-reinstalls on every provision — a ~100MB download that downgrades a possibly
+reinstalls on every provision - a ~100MB download that downgrades a possibly
 live session mid-call and is undone by the next self-update. Raise the floor
 when a newer release is genuinely required; expect the running version to be
 above it.
@@ -1040,7 +1040,7 @@ above it.
 > **The consequence to accept.** Because the shared install self-updates, the
 > subagent Codex behind `/do` floats too. There is no exact pin to qualify
 > against. `codex-provider-gate.sh` re-qualifies whatever version is current on
-> each provision — an after-the-fact check, not a gate on the upgrade itself, so
+> each provision - an after-the-fact check, not a gate on the upgrade itself, so
 > a bad release can reach `/do` between provisions.
 
 ### Codex version drift
@@ -1057,7 +1057,7 @@ what is running, under `codex`:
 | state | meaning |
 | --- | --- |
 | `qualified` | running version is the one the gate last passed |
-| `drifted` | it self-updated since — `/do` is on an unqualified release |
+| `drifted` | it self-updated since - `/do` is on an unqualified release |
 | `never_qualified` | no marker; the gate has not passed since this was added |
 | `unavailable` | the binary did not report a version |
 
@@ -1065,7 +1065,7 @@ what is running, under `codex`:
 self-update and clears at the next `daemonctl reload`, which re-runs the gate.
 It matters when a `/do` regression needs explaining: it names the release to
 suspect. Note drift is "the gate has not seen this version", not "newer than
-qualified" — a rollback below the qualified version is equally unqualified.
+qualified" - a rollback below the qualified version is equally unqualified.
 
 To force a known-good version, raise or lower `CODEX_LIVE_MIN_VERSION` and
 reload; the floor is the only lever, since the install cannot be pinned.
@@ -1089,7 +1089,7 @@ and runs the agent loop. Media flows client↔OpenAI directly.
 
 Provisioning installs the unit and config but will not enable the service
 until the live home holds ChatGPT credentials. Device auth prints a URL and a
-code — complete it in any browser:
+code - complete it in any browser:
 
 ```bash
 sudo runuser -u linear-daemon -- env HOME=/var/lib/linear-agent-daemon \
@@ -1138,7 +1138,7 @@ host appears as a remote target; talking to it runs tools in `~/live` on the
 VM under the role instructions described above.
 
 For a laptop TUI instead of a phone, tunnel the control socket over SSH and
-attach locally — `--remote` accepts a loopback `ws://`:
+attach locally - `--remote` accepts a loopback `ws://`:
 
 ```bash
 ssh -N -L 8765:127.0.0.1:8765 linear-agent &
@@ -1148,7 +1148,7 @@ codex --remote ws://127.0.0.1:8765
 ### Linear MCP
 
 Wired as a streamable HTTP server with a bearer token, not the `mcp-remote`
-OAuth bridge — a headless VM cannot service an OAuth callback. The token is
+OAuth bridge - a headless VM cannot service an OAuth callback. The token is
 the daemon's existing `LINEAR_API_KEY`, reaching the unit via
 `EnvironmentFile=/etc/linear-agent-daemon/env`. Rotating that key and
 restarting `codex-live` is the whole rotation story.
@@ -1170,7 +1170,7 @@ is running, stopped, or removed entirely.
 
 Two caveats worth knowing before relying on this. `realtime_conversation` is
 an under-development flag upstream, so the surface can move between Codex
-releases — `codex-live-setup.sh` sets it, and a release that renames it will
+releases - `codex-live-setup.sh` sets it, and a release that renames it will
 surface as a live session that starts but never goes into audio. And the unit
 is `Type=oneshot` with `RemainAfterExit=yes`, matching Codex's self-managing
 app-server daemon, which means systemd will not auto-restart a live session

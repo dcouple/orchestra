@@ -6,7 +6,7 @@ orchestra is the canonical home of the dcouple skill system: Claude Code
 skills, sub-agent definitions, Codex role skills, and the shared
 `references/` documents, synced one-way into consumer repos. The one thing
 an agent must not break: everything under the synced directories
-(`claude/`, `codex/`, `references/`) must stay repo-agnostic — no
+(`claude/`, `codex/`, `references/`) must stay repo-agnostic - no
 consumer-specific names, paths, or IDs.
 
 ## Commands
@@ -35,7 +35,7 @@ Use a key-only SSH alias to the daemon's service account, for example
 `ssh <service-alias> '/usr/local/sbin/daemonctl status'`, or the root
 `Makefile` targets with `DAEMON_SSH_HOST=<service-alias>`. The alias, host,
 and hostname for a given deployment are documented in that consumer repo's
-daemon docs alongside its site config — never in this repo.
+daemon docs alongside its site config - never in this repo.
 
 ## Architecture
 
@@ -51,20 +51,20 @@ This repo is also a consumer of itself: `.claude/skills`, `.claude/agents`,
 `.codex/skills`, and `.references` are **symlinks** to those canonical
 directories, so the skills are usable when working on orchestra and are
 always current. Unlike in consumer repos, editing under the dot-paths here
-edits the canonical copy — that is intended.
+edits the canonical copy - that is intended.
 
 ## Conventions
 
 - Skills and references are repo-agnostic; all paths inside them are
-  consumer-repo-relative (`.references/…`, `.claude/agents/…`) — which
+  consumer-repo-relative (`.references/…`, `.claude/agents/…`) - which
   resolve here too, via the symlinks.
 - `templates/` is scaffolding copied once into new consumer repos, never
   synced.
 - Skill, agent, and reference bodies state what exists. Rejected designs,
   removed modes, editor-facing warnings, and tuning/benchmark rationale go
-  in PR descriptions and commit messages — not the body. Sole exception: a
+  in PR descriptions and commit messages - not the body. Sole exception: a
   one-line live footgun the invoking agent will hit this session.
-- Shell in skill bodies never deletes through a shell variable — no
+- Shell in skill bodies never deletes through a shell variable - no
   `rm "$dir/$name".*`, no `rm -rf "$DIR"/`. Claude Code's critical-path
   check prompts on that form even under `--dangerously-skip-permissions`,
   which halts unattended runs. Write the resolved path as a literal, or
@@ -73,9 +73,9 @@ edits the canonical copy — that is intended.
 ## Work-item tracking
 
 The workflow skills (`/create-brief`, `/do`) create work-item artifacts
-(brief.html — the canonical HTML work item, refs/ including research
+(brief.html - the canonical HTML work item, refs/ including research
 sub-reports, plan.md, wrapup.md) locally under `./tmp/<id>/`.
-`./tmp/` is scratch — never commit it.
+`./tmp/` is scratch - never commit it.
 
 ```yaml
 tracker: github
@@ -90,6 +90,6 @@ artifact_host: https://linear-agent.blmapp.com
 
 ## Boundaries
 
-- Never run `scripts/sync.sh` pointed at a consumer repo automatically —
+- Never run `scripts/sync.sh` pointed at a consumer repo automatically -
   syncs land in consumers via their own `update-skills` PR flow.
 - Don't commit `./tmp/` or `.DS_Store`.

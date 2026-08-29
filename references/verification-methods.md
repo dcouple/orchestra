@@ -1,19 +1,19 @@
-# Verification Methods — shared reference
+# Verification Methods - shared reference
 
 The menu of ways to prove a change works. Used by the `create-brief` skill when
 mapping each `AC#` to a method, and by `/do`'s verify stage when proving them.
-Per-surface checklists live in `rubrics/` — pick the one matching the change
+Per-surface checklists live in `rubrics/` - pick the one matching the change
 type and require its evidence.
 
 ## The menu
 
 | Method | Proves | Evidence to capture |
 |---|---|---|
-| Custom lint / static rule (ESLint, Semgrep) | a structural invariant holds — including in future changes | CI pass + the rule source |
+| Custom lint / static rule (ESLint, Semgrep) | a structural invariant holds - including in future changes | CI pass + the rule source |
 | Type check | contracts at call sites (runtime shape still needs a validator at boundaries) | `tsc --noEmit` (or equiv.) output |
 | Unit tests | logic paths of one unit; keep them free of I/O and sleeps | test report |
 | Integration / API tests | routing, serialization, queries against a real HTTP layer and real DB (Testcontainers-style), not mocked handlers | test report |
-| E2E browser (Playwright-style / computer-use) | the whole user journey via real rendering — user-visible behavior, role-based locators | interaction transcript + assertion output (screenshot alone is not proof) |
+| E2E browser (Playwright-style / computer-use) | the whole user journey via real rendering - user-visible behavior, role-based locators | interaction transcript + assertion output (screenshot alone is not proof) |
 | Mobile simulator (XCUITest / Espresso / Maestro-style) | native flows, gestures, deep links | test report or driven-flow transcript |
 | Visual regression | pixels unchanged vs baseline (behavior not included) | before/after diff pair |
 | Accessibility scan (axe-style) | the automatable ~half of a11y issues | violation report, 0 critical |
@@ -39,10 +39,10 @@ type and require its evidence.
   map to a criterion prove nothing about the criterion; coverage numbers are
   not evidence.
 - **Evidence over assertion.** A pass is the command, its quoted output, and
-  its exit code — never the implementer's claim. Screenshots supplement;
+  its exit code - never the implementer's claim. Screenshots supplement;
   they don't prove the interaction path.
 - **Prefer the durable guard.** When verification (or a bug) exposes a class
-  of violation, encode it as a custom lint/static rule — it re-verifies every
+  of violation, encode it as a custom lint/static rule - it re-verifies every
   future change for free. This is the strongest "prevention criteria" for
   bug briefs.
 - **Test behavior, not implementation.** Assertions target public API and
@@ -52,6 +52,6 @@ type and require its evidence.
   go green gets reported, not retried into silence.
 - **Prove Git scope locally before any network clone.** Verify a committed
   branch with a temporary `git clone --shared --no-checkout .` detached at
-  the target SHA — never spend a network-clone timeout on a proof that
+  the target SHA - never spend a network-clone timeout on a proof that
   needs no remote objects; when remote confirmation is separately required,
   cap it at 60 seconds and fall back.

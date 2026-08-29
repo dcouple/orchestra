@@ -17,9 +17,9 @@ caller decides. Do not spawn sub-agents.
 1. Restate the question to yourself; keep every search anchored to it.
 2. Prefer official docs and changelogs over blogs; note publication dates and
    versions wherever recency matters.
-3. Chase disagreements: if two credible sources conflict, report the conflict —
+3. Chase disagreements: if two credible sources conflict, report the conflict -
    don't silently pick one.
-4. Report what you looked for and did NOT find — silence must be
+4. Report what you looked for and did NOT find - silence must be
    distinguishable from absence.
 
 ## Output format
