@@ -52,10 +52,8 @@ never claimed passed.
   normalize the zone (an item discovered mid-run to touch an escalator
   surface is re-zoned to the floor outright - a correction, recorded, not
   the one-notch deviation); then the Overseer may escalate one further
-  notch toward 0 with a recorded reason. **Escalation never changes the
-  lane dial** - a zone-1 item escalated to zone-0 effort still runs
-  single-lane Codex unless `review_lanes: dual` is set explicitly on the
-  item. Lanes are the human's call, not a side-effect of escalation.
+  notch toward 0 with a recorded reason. Escalation applies the target
+  zone's full dial row, including its lane setting.
 - **Escalate freely, de-escalate only via this table.**
   De-escalating below the item's zone is a capture-time decision (the human
   re-zones the item) - never an in-run one. Lowering this table's defaults
