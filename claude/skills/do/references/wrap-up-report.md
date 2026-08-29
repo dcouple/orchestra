@@ -27,7 +27,7 @@ pr: <url or #>
 `QA pass: manual tests executed vs left to the human. Note any`
 `Should Fix / Nice to Have items intentionally deferred, and why — the same`
 `survivors live as inline PR comments; this is the summary, not a second list.`
-`Refactor and fresh-eyes are manual skills, not part of the pipeline.>`
+`Refactor and cold-read are manual skills, not part of the pipeline.>`
 
 ## Human action required
 `<This is what the user-facing report leads with. Split by owner, ordered`

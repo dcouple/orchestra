@@ -315,7 +315,7 @@ still writes the code. Candidates go under `./tmp/<id>/refs/arena/`, the
 winner and its grafts into the plan's Key decisions, and the action tiers
 govern rather than a wait for the user.
 
-Before dispatching reviewers, run one **fresh-eyes pass** over
+Before dispatching reviewers, run one **cold-read pass** over
 the finished plan yourself — reread it as a stranger hunting blunders,
 mistakes, oversights, omissions, and misconceptions, and fix what you find.
 Then run the review
