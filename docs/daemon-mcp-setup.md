@@ -152,7 +152,7 @@ MCP_ENV_PASSTHROUGH=POSTHOG_API_KEY,SENTRY_TOKEN,NOTION_TOKEN
   in an interactive session as the service account. Never `echo` a value into
   a shell history that is not the service account's.
 - Restart with the repo's wrappers (`daemonctl restart` on the host; for a
-  host restart on macOS use the FileVault-aware `mini-restart`-style wrapper,
+  host restart on macOS use the `mini-restart`-style wrapper,
   never plain `reboot`).
 
 ## 4. What the daemon refuses (reserved names)

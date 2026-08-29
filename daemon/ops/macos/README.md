@@ -183,8 +183,9 @@ was skipped so it cannot race the pool cloning the golden. If the pre-enable
 probe fails with a session-binding error, log in once, re-run it, and record a
 console session as a host requirement; that result reopens the LaunchAgent
 design as a new item.
-Classic automatic login is unavailable while FileVault is enabled, so it is
-not configured.
+Classic automatic login is deliberately not configured: the daemon needs no
+console session, and one would interfere with system-domain simulator
+automation.
 
 ### Supply-chain posture
 

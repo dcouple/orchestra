@@ -3,14 +3,15 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Safely restart the FileVault-enabled Mac Mini with interactive authrestart.
+Cleanly restart the Mac Mini and wait for it to return over SSH.
 
 Usage: mini-restart [--help]
 
-MINI_HOST selects the SSH host (default: mini). Test-only environment flags
-MINI_RESTART_FORCE_UNSUPPORTED=1 and MINI_RESTART_FORCE_ARM_FAIL=1 exercise
-the two no-restart failure paths. MINI_OFFLINE_TIMEOUT_SECONDS (default: 120)
-and MINI_ONLINE_TIMEOUT_SECONDS (default: 600) bound the two SSH polling
+MINI_HOST selects the SSH host (default: mini). The Mini boots unattended
+(FileVault off, pmset autorestart 1), so no credential prompt is involved.
+The test-only flag MINI_RESTART_FORCE_ARM_FAIL=1 exercises the no-restart
+failure path. MINI_OFFLINE_TIMEOUT_SECONDS (default: 120) and
+MINI_ONLINE_TIMEOUT_SECONDS (default: 600) bound the two SSH polling
 transitions.
 USAGE
 }
@@ -32,34 +33,22 @@ started=$(date +%s)
 # This script body is intentionally expanded only by bash on the Mini.
 # shellcheck disable=SC2016
 remote='set -euo pipefail
-if [[ ${MINI_RESTART_FORCE_UNSUPPORTED:-0} == 1 ]]; then
-  echo "authrestart unsupported (forced)" >&2
-  exit 20
-fi
-supported=$(sudo fdesetup supportsauthrestart 2>&1) || {
-  echo "supportsauthrestart check failed: $supported" >&2
+fv=$(sudo fdesetup status 2>&1) || {
+  echo "fdesetup status failed: $fv" >&2
   exit 21
 }
-if [[ $supported != true ]]; then
-  echo "authrestart unsupported: $supported" >&2
+if [[ $fv != *"FileVault is Off"* ]]; then
+  echo "refusing to restart: $fv (an unattended boot would strand at the FileVault prompt)" >&2
   exit 22
 fi
-echo "FileVault will prompt interactively to arm authrestart."
 if [[ ${MINI_RESTART_FORCE_ARM_FAIL:-0} == 1 ]]; then
-  echo "authrestart arming failed (forced)" >&2
-  arm_status=24
-elif sudo fdesetup authrestart; then
-  arm_status=0
-else
-  arm_status=$?
+  echo "restart request failed (forced); no restart was initiated" >&2
+  exit 24
 fi
-if (( arm_status != 0 )); then
-  echo "authrestart arming failed (exit $arm_status); no restart was initiated" >&2
-  exit "$arm_status"
-fi'
+echo "Requesting clean restart."
+sudo shutdown -r now'
 
 remote_env=''
-[[ ${MINI_RESTART_FORCE_UNSUPPORTED:-0} == 1 ]] && remote_env+='MINI_RESTART_FORCE_UNSUPPORTED=1 '
 [[ ${MINI_RESTART_FORCE_ARM_FAIL:-0} == 1 ]] && remote_env+='MINI_RESTART_FORCE_ARM_FAIL=1 '
 ssh -t "$host" "${remote_env}bash -c $(printf %q "$remote")"
 

@@ -113,6 +113,12 @@ dry_run_inventory() {
     record sshd-hardening would-apply
   fi
 
+  if [[ $(sudo fdesetup status 2>/dev/null || true) == *"FileVault is Off"* ]]; then
+    record filevault-off already-correct
+  else
+    record filevault-off manual-action-required
+  fi
+
   power_correct=1
   for setting in sleep:0 disksleep:0 displaysleep:0 standby:0 powernap:0 autorestart:1 womp:1 tcpkeepalive:1; do
     key=${setting%%:*}; value=${setting#*:}
@@ -268,6 +274,14 @@ fi
 rm -f "$sshd_source"
 trap - EXIT
 [[ $(sudo sshd -T | awk 'tolower($1)=="passwordauthentication" {print $2; exit}') == no ]] || fail "effective PasswordAuthentication is not no"
+
+# FileVault is deliberately off so power-loss and smart-plug boots come all the
+# way up unattended (Tailscale, SSH, and the LaunchDaemons need no console
+# unlock). apply.sh never toggles it; disable it once via an SSH TTY:
+#   ssh -t <host> 'sudo fdesetup disable'
+fv_status=$(sudo fdesetup status 2>&1) || fail "fdesetup status failed: $fv_status"
+[[ $fv_status == *"FileVault is Off"* ]] || fail "FileVault is enabled; disable it first (sudo fdesetup disable) so unattended boots do not strand at the unlock prompt"
+record filevault-off already-correct
 
 pmset_changed=0
 for setting in sleep:0 disksleep:0 displaysleep:0 standby:0 powernap:0 autorestart:1 womp:1 tcpkeepalive:1; do
