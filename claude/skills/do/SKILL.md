@@ -499,7 +499,12 @@ happens on the artifact, not before it exists. The turn in which a reviewer
 or verifier report arrives publishes its results (body edit, evidence
 comment) before ending.
 
-- Run the review lanes over the PR diff (zone 0: both reviewers,
+The lifecycle is fixed even if the PR opens earlier: finish every refactor and
+simplification first, then run the capped review loop, stabilize the PR body and
+QA checklist, and run QA as the last work gate on the final head. Only the
+administrative PR-readiness update follows successful QA.
+
+- After the Refactor phase below, run the review lanes over the PR diff (zone 0: both reviewers,
   dispatched together in one message — Agent tool + detached `codex exec`
   — never serially; zones 1–3: Codex alone; the item's explicit
   `review_lanes:` outranks the zone default in either direction, including
@@ -514,6 +519,9 @@ comment) before ending.
   quotas** (cap 3 passes; zones 2–3: 1; multi-phase items always 3 passes,
   with lanes derived from zone unless the item's own `review_lanes:` says
   otherwise).
+  **The three-pass cap is absolute even when a prompt says “repeat until
+  clean”; at the cap, carry survivors to wrap-up rather than starting a
+  fourth pass.**
   Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** — loop those findings back to the matching
   implementer, stage the fix commit against `git status --short` (the
@@ -527,10 +535,9 @@ comment) before ending.
   open: apply the Should Fixes you judge worth it (or leave them to the
   inline comments below) — a Should Fix never triggers a re-review by
   itself.
-- When the loop ends, two passes run **before the QA drive**, in this
-  order, because QA proves the final head and executes the body's Manual
-  tests checklist — anything that changes head or body goes first.
-  **Refactor**, on size only: when the hand-written diff (lockfiles,
+- Two phases surround that review loop because QA proves the final head and
+  executes the body's Manual tests checklist. **Refactor** runs before review,
+  on size only: when the hand-written diff (lockfiles,
   generated, and vendored files excluded) exceeds ~10 files or ~300 lines,
   dispatch the Codex `refactor-simple` and `refactor-deep` roles via the
   `codex` skill — **two detached dispatches in one message**, like the
@@ -544,31 +551,10 @@ comment) before ending.
   paths — so it is a different question, not a fourth review pass. Hand
   the merged auto-fixable items to the `implementer` as one scoped commit
   under Step 4's selective-commit rule; manual items go to the wrap-up as
-  a list, never applied unasked. A refactor commit changes the head, so
-  an **adversarial scoped review of its diff alone** follows: dispatch the
-  `code-reviewer` role over `git diff <sha>~1..<sha>` with the apply
-  report's claims as the list to falsify, as a **persistent** session
-  (like the implementer) so it can be resumed. A new test that claims to
-  fix a defect runs on the parent (must fail) and head (must pass); a
-  refactor's own tests have passed trivially while the bug remained;
-  characterization tests for behaviour-preserving changes may pass on
-  both. Three adversary passes is the cap. Pass 1 reviews the apply
-  commit. A Must Fix loops to the implementer (resumed, it knows the code)
-  as a repair, committed; then two reviewers look, dispatched in one
-  message: **resume the reviewer that found the finding** with the repair
-  commit, to re-run its own repro and say whether that finding is closed;
-  and **dispatch a fresh `code-reviewer`** over the repair commit's diff
-  alone, briefed to break the repair itself, since a repair that changed
-  code can break an adjacent case the first reviewer was primed to look
-  past. The resume settles the finding; the fresh dispatch is the numbered
-  pass and counts toward the cap. The repair before pass 3 is spec-driven: the implementer
-  writes the input class as a test table or replaces the mechanism with a
-  pure derivation, and stops rather than widens scope. Run the loop as one
-  chain within the run. A clean pass advances to fresh-eyes and QA; at the
-  cap the run advances anyway, carrying pass 3's survivors into the
-  wrap-up as open Must Fix items. The cap is a ceiling on repair; the run
-  completes either way. Below the size threshold, skip and record
-  `refactor: skipped (size)`. **Fresh-eyes**, always: run `fresh-eyes` on
+  a list, never applied unasked. Any applied refactor becomes input to the
+  main review loop above; do not run a separate refactor-review loop. Below
+  the size threshold, skip and record `refactor: skipped (size)`.
+  **Fresh-eyes** runs after review and before QA: run `fresh-eyes` on
   the PR body — the zero-context Monday-morning recipient read, improved
   with creative freedom, repeated by a fresh sub-agent until a pass changes
   nothing — presentation only; claims, numbers, evidence, and the Manual
@@ -578,7 +564,7 @@ comment) before ending.
   the QA drive executes is the one the reader will see.
 - Then — zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up — run the **QA drive**. This is the
-  run's **single app-driving pass** (Step 3 defers all UI acceptance
+  run's **final accepted app-driving phase** (Step 3 defers all UI acceptance
   criteria here): the `frontend-verifier` proves the deferred UI ACs *and*
   executes the PR body's Manual tests checklist in one session, highest
   risk tier first; the `codex` skill role `backend-verifier` runs the
@@ -645,10 +631,12 @@ comment) before ending.
   returning human's manual pass starts from the unchecked boxes and the
   remainder list. The QA drive's after-shots also complete the body's
   Visual overview (replacing its `After-shots: landing with the QA drive`
-  note). **A bug the QA drive surfaces is never report-and-ship:** loop
-  its fix to the implementer, then run one **scoped review pass over the
-  fix's diff alone** — the zone's review lanes, additional to the review
-  loop's cap — before the QA results line closes. The QA drive runs after
+  note). **A bug the QA drive surfaces is never report-and-ship:** when the
+  original review budget has a pass left, loop its fix to the implementer,
+  then run one **scoped review pass over the fix's diff alone** — the zone's
+  review lanes, using that remaining pass — before the QA results line
+  closes. When no pass remains, stop with the bug as a blocker; do not change
+  code or accept QA. The QA drive runs after
   the review loop exits, so without this pass a behavioral fix born from
   app-driving evidence (exactly the client-state bug a diff-reading
   reviewer can't see) would ship un-reviewed. Body carries state, comment
@@ -656,6 +644,9 @@ comment) before ending.
   leave the results only in a comment when the body has a checklist and a QA
   results line to update. After every body update, **YOU MUST** preserve and
   verify the persisted closing-line set per `.references/tracker-lifecycle.md`.
+  Any code fix after QA begins invalidates that QA evidence: return to the
+  review phase using only the original cap's remaining passes, then rerun QA
+  from the start so the final accepted phase is QA.
 - **Hosting evidence media**: when the consumer config sets
   `artifact_host:`, evidence media MAY be hosted as an artifact bundle per
   `.references/artifact-host-upload.md`; its stable viewer URLs are
