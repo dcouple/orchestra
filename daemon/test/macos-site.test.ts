@@ -25,6 +25,20 @@ function renderWith(siteEnv: string) {
   return { result, out };
 }
 
+function sudoersServiceCommands(sudoers: string): string[] {
+  const lines = sudoers.split("\n");
+  const first = lines.findIndex(line => line.startsWith("Cmnd_Alias DAEMON_SERVICES = "));
+  expect(first).toBeGreaterThanOrEqual(0);
+  const commands: string[] = [];
+  for (let index = first; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    const continued = line.endsWith("\\");
+    commands.push(line.replace(/^Cmnd_Alias DAEMON_SERVICES = /, "").replace(/\\$/, "").trim());
+    if (!continued) break;
+  }
+  return commands.join(" ").split(",").map(command => command.trim());
+}
+
 const validSite = [
   "# comment",
   "DAEMON_PUBLIC_HOSTNAME=agent.example.org",
@@ -142,6 +156,24 @@ describe("macOS site config", () => {
     const sudoers = readFileSync(join(out, "sudoers"), "utf8");
     expect(sudoers).toContain("system/org.example.linear-agent-daemon");
     expect(sudoers).toMatch(/^svcagent ALL=\(root\) NOPASSWD: DAEMON_SERVICES$/m);
+    const policyCommands = sudoersServiceCommands(sudoers);
+    const labels: Record<string, string> = {
+      DAEMON_LABEL: "org.example.linear-agent-daemon",
+      CONSOLE_LABEL: "org.example.orchestra-console",
+    };
+    const deployCommands = [...deploy.matchAll(/^sudo (\/bin\/launchctl [^\n]+)$/gm)].map(([, command]) =>
+      command!.replace(/"system\/\$(\w+)"/g, (_match, variable: string) => {
+        expect(labels[variable], `unmapped fixed deploy label ${variable}`).toBeDefined();
+        return `system/${labels[variable]}`;
+      }));
+    expect(deployCommands).toEqual([
+      "/bin/launchctl kickstart -k system/org.example.linear-agent-daemon",
+      "/bin/launchctl kickstart -k system/org.example.orchestra-console",
+    ]);
+    for (const command of deployCommands) expect(policyCommands, command).toContain(command);
+    expect(policyCommands).toContain("/bin/launchctl kickstart -k system/org.example.orchestra-console");
+    expect(policyCommands.filter(command => command.endsWith(".orchestra-console") || command.endsWith(".orchestra-console.plist")))
+      .toEqual(["/bin/launchctl kickstart -k system/org.example.orchestra-console"]);
   });
 
   it("rejects unknown keys, missing keys, and values unsafe for the rendered files", () => {

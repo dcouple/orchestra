@@ -1,5 +1,6 @@
 Cmnd_Alias DAEMON_SERVICES = /bin/launchctl kickstart -k system/@LAUNCHD_PREFIX@.linear-agent-daemon, \
     /bin/launchctl kickstart -k system/@LAUNCHD_PREFIX@.cliproxyapi, \
+    /bin/launchctl kickstart -k system/@LAUNCHD_PREFIX@.orchestra-console, \
     /bin/launchctl kickstart -k system/@LAUNCHD_PREFIX@.orchestra-console-operation, \
     /bin/launchctl bootstrap system /Library/LaunchDaemons/@LAUNCHD_PREFIX@.linear-agent-daemon.plist, \
     /bin/launchctl bootstrap system /Library/LaunchDaemons/@LAUNCHD_PREFIX@.cliproxyapi.plist, \
