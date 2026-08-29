@@ -132,7 +132,13 @@ The repository the agents work on must have:
 
    ```yaml
    tracker: linear
+   linear_team: <team key>
    artifact_host: https://<daemon-host>
+   linear_agents:                    # read by /linear-work-orchestrator
+     planner: bloom-planner
+     implementer: bloom-implementer
+     session_concurrency: 2          # mirror the daemon's SESSION_CONCURRENCY by hand
+     portfolio_label: <label marking issues the orchestrator manages>
    ```
 
    > Work items live in Linear; identifiers look like `ENG-123`. Pull the

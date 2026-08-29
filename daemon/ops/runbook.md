@@ -382,7 +382,7 @@ umask 077
 printf "https://x-access-token:%s@github.com\n" "$GITHUB_PAT" > "$HOME/.git-credentials"
 unset GITHUB_PAT
 exit
-sudo -u linear-daemon -H git clone https://github.com/dcouple/bloom-mono.git /var/lib/linear-agent-daemon/repos/bloom-mono
+sudo -u linear-daemon -H git clone https://github.com/bloomapi/bloom-mono.git /var/lib/linear-agent-daemon/repos/bloom-mono
 sudo chmod 600 /var/lib/linear-agent-daemon/.git-credentials
 ```
 
@@ -453,7 +453,7 @@ sudo -u linear-daemon -H gh auth status
 sudo -u linear-daemon -H codex exec --version
 sudo -u linear-daemon -H git -C /var/lib/linear-agent-daemon/repos/bloom-mono push --dry-run origin HEAD
 # Human red-tier gate: push a disposable branch, create a draft PR with gh, then close it.
-sudo -u linear-daemon -H gh pr create --repo dcouple/bloom-mono --draft --fill --head <disposable-branch>
+sudo -u linear-daemon -H gh pr create --repo bloomapi/bloom-mono --draft --fill --head <disposable-branch>
 ```
 
 ## Host checks
