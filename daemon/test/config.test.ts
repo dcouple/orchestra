@@ -48,6 +48,9 @@ describe("loadConfig", () => {
       linearMcpUrl: "https://mcp.linear.app/mcp",
       linearMcpMonitorIntervalMs: 60_000,
       linearMcpMonitorTimeoutMs: 10_000,
+      dependencyMonitorIntervalMs: 60_000,
+      dependencyMonitorTimeoutMs: 10_000,
+      dependencyStateStaleMs: 300_000,
     });
     expect(config.apps.planner.staticToken).toBe("pt");
     expect(config.apps.planner.harness).toBe("claude");
@@ -166,6 +169,18 @@ describe("loadConfig", () => {
       ...base,
       LINEAR_MCP_MONITOR_TIMEOUT_MS: "nope",
     })).toThrow("LINEAR_MCP_MONITOR_TIMEOUT_MS");
+  });
+  it("loads bounded dependency monitor settings and the console inventory path independently", () => {
+    expect(loadConfig({ ...base, DEPENDENCY_MONITOR_INTERVAL_MS: "2000", DEPENDENCY_MONITOR_TIMEOUT_MS: "1500",
+      DEPENDENCY_STATE_STALE_MS: "9000" }))
+      .toMatchObject({ dependencyMonitorIntervalMs: 2_000, dependencyMonitorTimeoutMs: 1_500, dependencyStateStaleMs: 9_000 });
+    expect(() => loadConfig({ ...base, DEPENDENCY_MONITOR_INTERVAL_MS: "0" })).toThrow("DEPENDENCY_MONITOR_INTERVAL_MS");
+    expect(() => loadConfig({ ...base, DEPENDENCY_MONITOR_TIMEOUT_MS: "0" })).toThrow("DEPENDENCY_MONITOR_TIMEOUT_MS");
+    expect(() => loadConfig({ ...base, DEPENDENCY_MONITOR_TIMEOUT_MS: "60001" })).toThrow("at most 60000");
+    expect(() => loadConfig({ ...base, DEPENDENCY_STATE_STALE_MS: "nope" })).toThrow("DEPENDENCY_STATE_STALE_MS");
+    expect(() => loadConfig({ ...base, DEPENDENCY_STATE_STALE_MS: "86400001" })).toThrow("at most 86400000");
+    expect(loadConsoleConfig({ CONSOLE_SKILL_INVENTORY_PATH: "/tmp/safe-inventory.json" }).skillInventoryPath)
+      .toBe("/tmp/safe-inventory.json");
   });
   it("forces production do-mode autonomy and parses its budget",()=>{
     expect(()=>loadConfig({...base,DAEMON_TEST_MODE:undefined,WEBHOOK_BASE_URL:"https://agent.example.com",DO_PERMISSION_MODE:"plan"})).toThrow("DO_PERMISSION_MODE");

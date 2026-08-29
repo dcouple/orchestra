@@ -54,6 +54,21 @@ export interface ProviderStateRow {
   cooldownUntil: number | null;
   updatedAt: number;
 }
+export type DependencyKind = "mcp" | "harness";
+export type DependencyHealth = "healthy" | "unavailable" | "unknown" | "disabled";
+export interface DependencyObservationInput {
+  kind: DependencyKind;
+  name: string;
+  configured: boolean;
+  status: DependencyHealth;
+  reasonCode: string | null;
+  capabilities?: Record<string, string | number | boolean | null>;
+  observedAt: number;
+  staleAfterMs: number;
+}
+export interface DependencyObservationRow extends Omit<DependencyObservationInput, "capabilities"> {
+  capabilities: Record<string, string | number | boolean | null>;
+}
 export interface AppendResult {
   inserted: boolean;
   deliveryId: string;
@@ -275,6 +290,45 @@ export interface StopAckRow {
 const STOP_ACK_BODY =
   "Stopped at your request. Send a follow-up message to continue.";
 
+function validateCapabilities(value: unknown): Record<string, string | number | boolean | null> {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error("dependency capabilities must be an object");
+  const entries = Object.entries(value);
+  if (entries.length > 16) throw new Error("dependency capabilities are too large");
+  const result: Record<string, string | number | boolean | null> = {};
+  for (const [key, capability] of entries) {
+    if (!/^[a-z][a-zA-Z0-9]{0,31}$/.test(key))
+      throw new Error("dependency capability key is invalid");
+    if (capability !== null && typeof capability !== "string" && typeof capability !== "number"
+      && typeof capability !== "boolean") throw new Error("dependency capability value is invalid");
+    if (typeof capability === "string" && (capability.length > 128 || /[^\x20-\x7e]/.test(capability)))
+      throw new Error("dependency capability value is invalid");
+    if (typeof capability === "number" && (!Number.isSafeInteger(capability) || capability < 0))
+      throw new Error("dependency capability value is invalid");
+    result[key] = capability;
+  }
+  if (JSON.stringify(result).length > 2048) throw new Error("dependency capabilities are too large");
+  return result;
+}
+
+function validateDependencyObservation(input: DependencyObservationInput): Record<string, string | number | boolean | null> {
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(input.name)) throw new Error("dependency name is invalid");
+  if (!/^(?:[a-z][a-z0-9_]{0,63})$/.test(input.reasonCode ?? "healthy"))
+    throw new Error("dependency reason code is invalid");
+  if (!Number.isSafeInteger(input.observedAt) || input.observedAt < 0)
+    throw new Error("dependency observed time is invalid");
+  if (!Number.isSafeInteger(input.staleAfterMs) || input.staleAfterMs < 1 || input.staleAfterMs > 86_400_000)
+    throw new Error("dependency stale interval is invalid");
+  const capabilities = validateCapabilities(input.capabilities ?? {});
+  if (input.kind === "mcp" && input.name === "linear") {
+    if (Object.keys(capabilities).some(key => key !== "toolCount" && key !== "truncated")
+      || (capabilities.toolCount !== undefined && (typeof capabilities.toolCount !== "number" || capabilities.toolCount > 256))
+      || (capabilities.truncated !== undefined && typeof capabilities.truncated !== "boolean"))
+      throw new Error("linear dependency capabilities are invalid");
+  } else if (Object.keys(capabilities).length > 0) throw new Error("dependency does not support capabilities");
+  return capabilities;
+}
+
 function randomHex(bytes: number): string {
   let value = randomBytes(bytes).toString("hex");
   while (/^0+$/.test(value)) value = randomBytes(bytes).toString("hex");
@@ -452,6 +506,17 @@ export class EventLog {
         reason TEXT,
         cooldown_until INTEGER,
         updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS dependency_observations (
+        kind TEXT NOT NULL CHECK(kind IN ('mcp','harness')),
+        name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 64),
+        configured INTEGER NOT NULL CHECK(configured IN (0,1)),
+        status TEXT NOT NULL CHECK(status IN ('healthy','unavailable','unknown','disabled')),
+        reason_code TEXT CHECK(reason_code IS NULL OR length(reason_code) BETWEEN 1 AND 64),
+        capabilities_json TEXT NOT NULL CHECK(length(capabilities_json) <= 2048),
+        observed_at INTEGER NOT NULL,
+        stale_after_ms INTEGER NOT NULL CHECK(stale_after_ms BETWEEN 1 AND 86400000),
+        PRIMARY KEY(kind,name)
       );
       CREATE TABLE IF NOT EXISTS agent_invocations (
         id INTEGER PRIMARY KEY,
@@ -1238,6 +1303,29 @@ export class EventLog {
   consoleProviders(): ProviderStateRow[] {
     return this.db.prepare(`SELECT provider,status,reason,cooldown_until cooldownUntil,updated_at updatedAt
       FROM provider_state ORDER BY provider`).all() as ProviderStateRow[];
+  }
+
+  upsertDependencyObservation(input: DependencyObservationInput): void {
+    const capabilities = validateDependencyObservation(input);
+    this.db.prepare(`INSERT INTO dependency_observations
+      (kind,name,configured,status,reason_code,capabilities_json,observed_at,stale_after_ms)
+      VALUES (?,?,?,?,?,?,?,?)
+      ON CONFLICT(kind,name) DO UPDATE SET configured=excluded.configured,status=excluded.status,
+        reason_code=excluded.reason_code,capabilities_json=excluded.capabilities_json,
+        observed_at=excluded.observed_at,stale_after_ms=excluded.stale_after_ms`)
+      .run(input.kind, input.name, input.configured ? 1 : 0, input.status, input.reasonCode,
+        JSON.stringify(capabilities), input.observedAt, input.staleAfterMs);
+  }
+
+  dependencyObservations(): DependencyObservationRow[] {
+    const rows = this.db.prepare(`SELECT kind,name,configured,status,reason_code reasonCode,
+      capabilities_json capabilitiesJson,observed_at observedAt,stale_after_ms staleAfterMs
+      FROM dependency_observations ORDER BY kind,name`).all() as Array<{
+        kind: DependencyKind; name: string; configured: number; status: DependencyHealth;
+        reasonCode: string | null; capabilitiesJson: string; observedAt: number; staleAfterMs: number;
+      }>;
+    return rows.map(({ capabilitiesJson, ...row }) => ({ ...row, configured: row.configured === 1,
+      capabilities: validateCapabilities(JSON.parse(capabilitiesJson) as unknown) }));
   }
 
   consoleRuns(limit = 50, now = Date.now(), linearBase?: string): ConsoleRunSummary[] {

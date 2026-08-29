@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Overview, type RunDetail, type RunSummary } from "./api";
+import { api, type Dependencies, type Overview, type RunDetail, type RunSummary, type Skills } from "./api";
 import { DataTable } from "./components/DataTable";
 import { Layout, type Page } from "./components/Layout";
 import { RunTimeline, formatDuration } from "./components/RunTimeline";
@@ -12,6 +12,8 @@ export function App() {
   const [overview, setOverview] = useState<Overview>();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selected, setSelected] = useState<RunDetail>();
+  const [dependencies, setDependencies] = useState<Dependencies>();
+  const [skills, setSkills] = useState<Skills>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const selectedId = useRef<string | undefined>(undefined);
@@ -25,10 +27,10 @@ export function App() {
       reason => ({ ok: false as const, reason }),
     ) : Promise.resolve(undefined);
     try {
-      const [nextOverview, nextRuns, nextDetail] = await Promise.all([
-        api.overview(signal), api.runs(signal), detail,
+      const [nextOverview, nextRuns, nextDependencies, nextSkills, nextDetail] = await Promise.all([
+        api.overview(signal), api.runs(signal), api.dependencies(signal), api.skills(signal), detail,
       ]);
-      setOverview(nextOverview); setRuns(nextRuns.runs); setError(undefined);
+      setOverview(nextOverview); setRuns(nextRuns.runs); setDependencies(nextDependencies); setSkills(nextSkills); setError(undefined);
       if (id && nextDetail && selectedId.current === id && detailRequest.current === request) {
         if (nextDetail.ok) {
           if (nextDetail.value.id === id) setSelected(nextDetail.value);
@@ -63,9 +65,14 @@ export function App() {
 
   return <Layout page={page} onPage={setPage}>
     {error && <div className="alert" role="alert"><strong>Console data unavailable.</strong> {error} <button type="button" onClick={() => void refresh()}>Retry</button></div>}
+    {overview?.dependencies.status === "degraded" && <section className="offline" role="status" aria-labelledby="dependency-warning-title">
+      <h2 id="dependency-warning-title">Dependency health degraded</h2>
+      <p>One or more configured dependencies is unavailable, stale, future-dated, or has not been observed.</p>
+    </section>}
     {loading && !overview ? <div className="loading" role="status">Loading console…</div> : page === "overview"
-      ? <OverviewPage overview={overview} onRun={chooseRun} />
-      : <RunsPage runs={runs} selected={selected} onRun={chooseRun} />}
+      ? <OverviewPage overview={overview} onRun={chooseRun} /> : page === "runs"
+        ? <RunsPage runs={runs} selected={selected} onRun={chooseRun} /> : page === "dependencies"
+          ? <DependenciesPage snapshot={dependencies} /> : <SkillsPage inventory={skills} />}
   </Layout>;
 }
 
@@ -79,12 +86,48 @@ function OverviewPage({ overview, onRun }: { overview?: Overview; onRun: (run: R
       <article className="card metric"><span>Active runs</span><strong>{overview.activeRuns}</strong><small>{overview.operations.runningTurns} running turns</small></article>
       <article className="card metric"><span>Providers</span><strong>{overview.providers.filter(provider => isReadyStatus(provider.status)).length}/{overview.providers.length}</strong><small>Ready now</small></article>
       <article className="card metric"><span>Operation</span><strong>{overview.operations.pending?.type ?? "Idle"}</strong><small>{overview.operations.pending?.stage ?? "No active mutation"}</small></article>
+      <article className="card metric"><span>Dependencies</span><strong>{overview.dependencies.status}</strong><small>{overview.dependencies.configured} configured · {overview.dependencies.total} known</small></article>
     </section>
     <div className="overview-grid">
       <section className="card section"><div className="section-head"><div><p className="eyebrow">Activity</p><h2>Recent runs</h2></div></div><RunsTable runs={overview.recentRuns} onRun={onRun} /></section>
-      <section className="card section"><p className="eyebrow">Dependencies</p><h2>Provider readiness</h2>{overview.providers.length ? <ul className="provider-list">{overview.providers.map(provider => <li key={provider.provider}><div><strong>{provider.provider}</strong><small>{provider.reason ?? `Updated ${time(provider.updatedAt)}`}</small></div><StatusBadge status={provider.status} /></li>)}</ul> : <div className="empty">No provider probes have been recorded.</div>}</section>
+      <section className="card section"><p className="eyebrow">Providers</p><h2>Provider readiness</h2>{overview.providers.length ? <ul className="provider-list">{overview.providers.map(provider => <li key={provider.provider}><div><strong>{provider.provider}</strong><small>{provider.reason ?? `Updated ${time(provider.updatedAt)}`}</small></div><StatusBadge status={provider.status} /></li>)}</ul> : <div className="empty">No provider probes have been recorded.</div>}</section>
     </div>
   </>;
+}
+
+function DependenciesPage({ snapshot }: { snapshot?: Dependencies }) {
+  if (!snapshot) return <div className="empty">No dependency snapshot is available.</div>;
+  return <><header className="page-head"><div><p className="eyebrow">Read-only health</p><h1>MCP &amp; Harnesses</h1><p>Observed {time(snapshot.observedAt)}. Configuration and execution are unavailable here.</p></div><StatusBadge status={snapshot.status} /></header>
+    {snapshot.daemon.status === "offline" && <section className="offline"><h2>Daemon offline</h2><p>Saved observations remain visible, but current dependency health is degraded.</p></section>}
+    <section className="card section"><h2>MCP and harness readiness</h2><DataTable caption="Dependency readiness" rows={snapshot.dependencies}
+      rowKey={row => `${row.kind}:${row.name}`} empty="No dependency observations are available." columns={[
+        { key: "name", heading: "Dependency", render: row => <><strong>{row.name}</strong><small>{row.kind.toUpperCase()}</small></> },
+        { key: "status", heading: "Current status", render: row => <><StatusBadge status={row.status} /><small>Last probe: {row.lastStatus.replaceAll("_", " ")}{row.reasonCode ? ` · ${row.reasonCode.replaceAll("_", " ")}` : ""}</small></> },
+        { key: "configured", heading: "Configured", render: row => row.configured === null ? "Unknown" : row.configured ? "Yes" : "No" },
+        { key: "capabilities", heading: "Capabilities", render: row => capabilitySummary(row.capabilities) },
+        { key: "observed", heading: "Freshness", render: row => row.observedAt === null ? "Never observed" : <>{time(row.observedAt)}<small>{row.staleAt === null ? "No deadline" : `Stale after ${time(row.staleAt)}`}</small></> },
+      ]} /></section></>;
+}
+
+function capabilitySummary(capabilities: Record<string, string | number | boolean | null>) {
+  const values = Object.entries(capabilities);
+  return values.length ? values.map(([key, value]) => `${key}: ${String(value)}`).join(" · ") : "—";
+}
+
+function SkillsPage({ inventory }: { inventory?: Skills }) {
+  if (!inventory) return <div className="empty">No skills inventory is available.</div>;
+  if (inventory.availability === "unavailable") return <><header className="page-head"><div><p className="eyebrow">Installed metadata</p><h1>Skills</h1></div><StatusBadge status="unavailable" /></header>
+    <section className="offline"><h2>Inventory unavailable</h2><p>The bounded installed manifest could not be read ({inventory.reasonCode.replaceAll("_", " ")}).</p></section></>;
+  return <><header className="page-head"><div><p className="eyebrow">Installed metadata</p><h1>Skills</h1><p>Read-only inventory at source revision <code>{inventory.sourceRevision}</code></p></div><StatusBadge status="available" /></header>
+    <section className="metric-grid" aria-label="Inventory sources">{inventory.sources.map(source => <article className="card metric" key={source.id}><span>{source.label}</span><strong>{source.skillCount}</strong><small>{source.available ? "Inventory available" : "Source unavailable"}</small></article>)}</section>
+    <section className="card section"><h2>Available skills</h2><DataTable caption="Installed skill inventory" rows={inventory.skills}
+      rowKey={skill => skill.name} empty="No installed skills were found." columns={[
+        { key: "name", heading: "Skill", render: skill => <><strong>{skill.name}</strong><small>{skill.description}</small></> },
+        { key: "version", heading: "Version", render: skill => skill.version ?? "Not versioned" },
+        { key: "compatibility", heading: "Compatibility", render: skill => skill.compatibility.map(value => value === "claude" ? "Claude Code" : "Codex").join(", ") },
+        { key: "provenance", heading: "Provenance", render: skill => skill.provenance.join(", ") },
+        { key: "availability", heading: "Availability", render: skill => <StatusBadge status={skill.availability} /> },
+      ]} /></section></>;
 }
 
 function RunsPage({ runs, selected, onRun }: { runs: RunSummary[]; selected?: RunDetail; onRun: (run: RunSummary) => void }) {

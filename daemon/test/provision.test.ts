@@ -39,6 +39,7 @@ const daemonctl = readFileSync(resolve("ops/daemonctl"), "utf8");
 const healthWaiterPath = resolve("ops/wait-for-daemon-health.sh");
 const healthWaiter = readFileSync(healthWaiterPath, "utf8");
 const sessions = readFileSync(resolve("src/sessions.ts"), "utf8");
+const macosDeploy = readFileSync(resolve("ops/macos/deploy.sh"), "utf8");
 
 describe("daemon provisioning", () => {
   it("derives the pinned Playwright MCP wrapper from package.json", () => {
@@ -62,6 +63,16 @@ describe("daemon provisioning", () => {
     expect(macosProvision).toContain('"$SCRIPT_DIR/install-console-service.sh" "$SCRIPT_DIR/run-console.sh"');
     expect(macosProvision).toContain("service-console already-correct");
     expect(macosProvision).not.toContain("0.0.0.0:8790");
+  });
+
+  it("builds the bounded inventory from the source checkout and validated deployment revision only", () => {
+    expect(macosDeploy).toContain('SKILL_INVENTORY_SOURCE_ROOT="$SOURCE_ROOT"');
+    expect(macosDeploy).toContain('SKILL_INVENTORY_SOURCE_REVISION="$SOURCE_COMMIT"');
+    expect(macosDeploy.indexOf('[[ $SOURCE_COMMIT =~ ^[0-9a-fA-F]{40}$ ]]')).toBeLessThan(
+      macosDeploy.indexOf('SKILL_INVENTORY_SOURCE_REVISION="$SOURCE_COMMIT"'),
+    );
+    expect(macosDeploy).toContain('"$SOURCE_DIR/" "$CODE_DIR/"');
+    expect(macosDeploy).not.toMatch(/rsync[^\n]*(?:claude|codex)\/skills/);
   });
 
   it("converges the Phase 1 console install/service path idempotently and supports a no-write dry run", () => {

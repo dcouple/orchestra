@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { EventLog } from "../src/eventlog.js";
+import { projectDependencies } from "../src/console-projections.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -24,6 +25,28 @@ function setup() {
 }
 
 describe("console projections", () => {
+  it("derives fresh, stale, future-skewed, disabled, missing, and aggregate dependency truth", () => {
+    const observations = [
+      { kind: "mcp" as const, name: "linear", configured: true, status: "healthy" as const, reasonCode: null,
+        capabilities: { toolCount: 4, truncated: false }, observedAt: 900, staleAfterMs: 200 },
+      { kind: "mcp" as const, name: "playwright", configured: false, status: "disabled" as const, reasonCode: "disabled", capabilities: {}, observedAt: 900, staleAfterMs: 200 },
+      { kind: "mcp" as const, name: "xcodebuildmcp", configured: true, status: "healthy" as const, reasonCode: null, capabilities: {}, observedAt: 700, staleAfterMs: 200 },
+      { kind: "harness" as const, name: "claude", configured: true, status: "healthy" as const, reasonCode: null, capabilities: {}, observedAt: 1_100, staleAfterMs: 200 },
+    ];
+    const projected = projectDependencies(observations, { status: "online", observedAt: 1_000 }, 1_000);
+    expect(projected.status).toBe("degraded");
+    expect(projected.dependencies).toMatchObject([
+      { name: "linear", status: "healthy", lastStatus: "healthy", capabilities: { toolCount: 4 }, staleAt: 1_100 },
+      { name: "playwright", status: "disabled" }, { name: "xcodebuildmcp", status: "stale", lastStatus: "healthy", reasonCode: "stale" },
+      { name: "claude", status: "future_timestamp", lastStatus: "healthy", reasonCode: "future_timestamp" },
+      { name: "claudex", configured: null, status: "unknown", observedAt: null },
+    ]);
+    expect(projectDependencies([], { status: "online", observedAt: 1_000 }, 1_000).status).toBe("unknown");
+    expect(projectDependencies(observations, { status: "offline", observedAt: 1_000 }, 1_000).status).toBe("degraded");
+    const allDisabled = observations.map(row => ({ ...row, configured: false, status: "disabled" as const, reasonCode: "disabled" }));
+    allDisabled.push({ kind: "harness", name: "claudex", configured: false, status: "disabled", reasonCode: "disabled", capabilities: {}, observedAt: 900, staleAfterMs: 200 });
+    expect(projectDependencies(allDisabled, { status: "online", observedAt: 1_000 }, 1_000).status).toBe("unknown");
+  });
   it("projects complete run detail from SQLite without secret-bearing fields", () => {
     const log = setup();
     const run = log.consoleRun("session-1", 2_000, "https://linear.example");

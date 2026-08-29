@@ -9,8 +9,9 @@
     "pnpm": ">=11 <12"
   },
   "scripts": {
-    "build": "pnpm build:backend && pnpm build:console",
+    "build": "pnpm build:backend && pnpm build:console && pnpm build:inventory",
     "build:backend": "tsc",
+    "build:inventory": "node dist/skill-inventory-cli.js --source-root \"${SKILL_INVENTORY_SOURCE_ROOT:-..}\" --output dist/console-inventory.json",
     "build:console": "pnpm --dir console build",
     "generate:otel-proto": "node scripts/generate-otel-proto.mjs",
     "check:otel-proto": "node scripts/generate-otel-proto.mjs --check",

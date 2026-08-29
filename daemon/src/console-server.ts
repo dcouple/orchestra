@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { constants, type ReadStream } from "node:fs";
 import { open, realpath, stat, type FileHandle } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -6,16 +7,19 @@ import { extname, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { ConsoleConfig } from "./config.js";
 import type { EventLog } from "./eventlog.js";
-import type { ConsoleDaemonHealth, ConsoleOverview } from "./console-projections.js";
+import { projectDependencies, type ConsoleDaemonHealth, type ConsoleOverview } from "./console-projections.js";
+import { readSkillInventory, type ConsoleSkillsPayload } from "./skill-inventory.js";
 
 export type DaemonProbe = (url: string, timeoutMs: number) => Promise<boolean>;
+interface ConsoleLogger { log(...args: unknown[]): void; error(...args: unknown[]): void }
 export interface ConsoleServerOptions {
   config: ConsoleConfig;
   log: EventLog;
   probe?: DaemonProbe;
   now?: () => number;
-  logger?: Pick<Console, "error">;
+  logger?: ConsoleLogger;
   beforeAssetOpen?: (canonicalPath: string) => void | Promise<void>;
+  readSkills?: () => Promise<ConsoleSkillsPayload>;
 }
 
 interface OpenAsset { path: string; handle: FileHandle }
@@ -42,13 +46,15 @@ export class ConsoleServer {
   private readonly server: Server;
   private readonly probe: DaemonProbe;
   private readonly now: () => number;
-  private readonly logger: Pick<Console, "error">;
+  private readonly logger: ConsoleLogger;
+  private readonly readSkills: () => Promise<ConsoleSkillsPayload>;
   private boundPort?: number;
 
   constructor(private readonly options: ConsoleServerOptions) {
     this.probe = options.probe ?? probeDaemon;
     this.now = options.now ?? Date.now;
     this.logger = options.logger ?? console;
+    this.readSkills = options.readSkills ?? (() => readSkillInventory(options.config.skillInventoryPath));
     this.server = createServer((request, response) => void this.handle(request, response));
     this.server.requestTimeout = 5_000;
     this.server.headersTimeout = 5_000;
@@ -80,7 +86,10 @@ export class ConsoleServer {
       const path = url.pathname;
       if (path.startsWith("/api/")) {
         if (request.method !== "GET") { this.json(response, 405, { error: { code: "method_not_allowed", message: "read-only endpoint" } }, { Allow: "GET" }); return; }
-        await this.api(path, response); return;
+        await this.api(path, response);
+        if ((path === "/api/dependencies" || path === "/api/skills")
+          && response.statusCode >= 200 && response.statusCode < 300) this.logApiRequest(request, path, response.statusCode);
+        return;
       }
       if (request.method !== "GET" && request.method !== "HEAD") {
         this.json(response, 405, { error: { code: "method_not_allowed", message: "console is read-only" } }, { Allow: "GET, HEAD" }); return;
@@ -91,6 +100,16 @@ export class ConsoleServer {
       if (!response.headersSent) this.json(response, 500, { error: { code: "internal_error", message: "request failed" } });
       else response.end();
     }
+  }
+
+  private logApiRequest(request: IncomingMessage, path: "/api/dependencies" | "/api/skills", status: number): void {
+    const remote = request.socket.remoteAddress;
+    const caller = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1"
+      ? "loopback" : "unknown";
+    try {
+      this.logger.log(JSON.stringify({ event: "console_api_request", requestId: randomUUID(),
+        caller, method: "GET", path, status }));
+    } catch { /* Observability must not change a successful read response. */ }
   }
 
   private trustedRequest(request: IncomingMessage): boolean {
@@ -123,19 +142,30 @@ export class ConsoleServer {
       const observedAt = this.now();
       const allRuns = this.options.log.consoleRuns(100, observedAt, this.options.config.linearWorkspaceBaseUrl);
       const recentRuns = allRuns.slice(0, 10);
+      const daemon = await this.daemonHealth();
+      const dependencies = projectDependencies(this.options.log.dependencyObservations(), daemon, observedAt);
       const payload: ConsoleOverview = {
         observedAt,
-        daemon: await this.daemonHealth(),
+        daemon,
         providers: this.options.log.consoleProviders(),
         operations: this.options.log.operationStatus(observedAt),
         activeRuns: allRuns.filter(run => run.completedAt === null && run.status === "active").length,
         recentRuns,
+        dependencies: { status: dependencies.status,
+          configured: dependencies.dependencies.filter(row => row.configured === true).length,
+          total: dependencies.dependencies.length },
       };
       this.json(response, 200, payload); return;
     }
     if (path === "/api/runs") {
       this.json(response, 200, { runs: this.options.log.consoleRuns(50, this.now(), this.options.config.linearWorkspaceBaseUrl) }); return;
     }
+    if (path === "/api/dependencies") {
+      const now = this.now();
+      const daemon = await this.daemonHealth();
+      this.json(response, 200, projectDependencies(this.options.log.dependencyObservations(), daemon, now)); return;
+    }
+    if (path === "/api/skills") { this.json(response, 200, await this.readSkills()); return; }
     const match = /^\/api\/runs\/([^/]+)$/.exec(path);
     if (match) {
       let id: string;

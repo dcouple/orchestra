@@ -1,4 +1,5 @@
-import type { ProviderStateRow, SessionRow, AgentInvocationRow, ExternalUrlRow } from "./eventlog.js";
+import type { ProviderStateRow, SessionRow, AgentInvocationRow, ExternalUrlRow,
+  DependencyHealth, DependencyKind, DependencyObservationRow } from "./eventlog.js";
 import type { SafeOperationStatus } from "./operations.js";
 
 export interface ConsoleResource { label: "Linear issue" | "Artifact bundle"; url: string }
@@ -19,6 +20,55 @@ export interface ConsoleDaemonHealth { status: "online" | "offline"; observedAt:
 export interface ConsoleOverview {
   observedAt: number; daemon: ConsoleDaemonHealth; providers: ProviderStateRow[];
   operations: SafeOperationStatus; activeRuns: number; recentRuns: ConsoleRunSummary[];
+  dependencies: { status: "healthy" | "degraded" | "unknown"; configured: number; total: number };
+}
+export type ConsoleDependencyStatus = DependencyHealth | "stale" | "future_timestamp";
+export interface ConsoleDependency {
+  kind: DependencyKind;
+  name: string;
+  configured: boolean | null;
+  status: ConsoleDependencyStatus;
+  lastStatus: DependencyHealth;
+  reasonCode: string | null;
+  capabilities: Record<string, string | number | boolean | null>;
+  observedAt: number | null;
+  staleAt: number | null;
+}
+export interface ConsoleDependencies {
+  observedAt: number;
+  daemon: ConsoleDaemonHealth;
+  status: "healthy" | "degraded" | "unknown";
+  dependencies: ConsoleDependency[];
+}
+
+const SUPPORTED_DEPENDENCIES: Array<{ kind: DependencyKind; name: string }> = [
+  { kind: "mcp", name: "linear" }, { kind: "mcp", name: "playwright" },
+  { kind: "mcp", name: "xcodebuildmcp" }, { kind: "harness", name: "claude" },
+  { kind: "harness", name: "claudex" },
+];
+
+export function projectDependencies(observations: DependencyObservationRow[], daemon: ConsoleDaemonHealth,
+  now = Date.now()): ConsoleDependencies {
+  const byKey = new Map(observations.map(row => [`${row.kind}:${row.name}`, row]));
+  const dependencies = SUPPORTED_DEPENDENCIES.map(({ kind, name }): ConsoleDependency => {
+    const row = byKey.get(`${kind}:${name}`);
+    if (!row) return { kind, name, configured: null, status: "unknown", lastStatus: "unknown",
+      reasonCode: "not_observed", capabilities: {}, observedAt: null, staleAt: null };
+    const staleAt = Number.isSafeInteger(row.observedAt + row.staleAfterMs)
+      ? row.observedAt + row.staleAfterMs : Number.MAX_SAFE_INTEGER;
+    const status = row.observedAt > now ? "future_timestamp"
+      : now > staleAt ? "stale" : row.status;
+    return { kind, name, configured: row.configured, status, lastStatus: row.status,
+      reasonCode: status === "future_timestamp" ? "future_timestamp" : status === "stale" ? "stale" : row.reasonCode,
+      capabilities: row.capabilities, observedAt: row.observedAt, staleAt };
+  });
+  let status: ConsoleDependencies["status"];
+  if (daemon.status === "offline") status = "degraded";
+  else if (observations.length === 0 || dependencies.every(row => row.configured === false)) status = "unknown";
+  else if (dependencies.some(row => row.configured === null)
+    || dependencies.some(row => row.configured === true && row.status !== "healthy")) status = "degraded";
+  else status = "healthy";
+  return { observedAt: now, daemon, status, dependencies };
 }
 
 function safeExternalUrl(url: string): string | undefined {

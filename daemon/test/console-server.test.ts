@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, request } from "node:http";
@@ -19,11 +19,18 @@ function setup(probe: () => Promise<boolean> = async () => true,
   const assets = join(dir, "assets"); mkdirSync(join(assets, "assets"), { recursive: true });
   writeFileSync(join(assets, "index.html"), "<!doctype html><title>Orchestra Console</title><div id=root></div>");
   writeFileSync(join(assets, "assets", "app.js"), "console.log('local')");
+  const skillInventoryPath = join(dir, "console-inventory.json");
+  writeFileSync(skillInventoryPath, JSON.stringify({ schemaVersion: 1, sourceRevision: "a".repeat(40),
+    sources: [{ id: "claude", label: "Claude Code", available: true, skillCount: 1 },
+      { id: "codex", label: "Codex", available: true, skillCount: 1 }],
+    skills: [{ name: "implementer", description: "Implements a bounded plan.", version: null, availability: "available",
+      provenance: ["Claude Code", "Codex"], compatibility: ["claude", "codex"] }] }));
   const config: ConsoleConfig = { port: 0, bindAddr: "127.0.0.1", dbPath: join(dir, "events.db"), assetsDir: assets,
-    daemonHealthUrl: "http://127.0.0.1:8787/healthz" };
+    daemonHealthUrl: "http://127.0.0.1:8787/healthz", skillInventoryPath };
   const log = new EventLog(config.dbPath);
-  const server = new ConsoleServer({ config, log, probe, now: () => 2_000, logger: { error: vi.fn() }, beforeAssetOpen });
-  return { server, log, config, dir };
+  const logger = { log: vi.fn(), error: vi.fn() };
+  const server = new ConsoleServer({ config, log, probe, now: () => 2_000, logger, beforeAssetOpen });
+  return { server, log, config, dir, logger };
 }
 
 function requestWithHost(port: number, host: string): Promise<{ status: number; body: unknown }> {
@@ -63,6 +70,12 @@ function populate(log: EventLog): void {
     rawBody: Buffer.from('{"authorization":"SECOND_RAW_SECRET"}') });
   log.setProviderState("claude", "ready", null, 1_900);
   log.scheduleOperation({ id: "operation-1", requestDigest: "a".repeat(64), type: "restart", reason: "routine", requestedAt: 1_950 });
+  log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true, status: "healthy", reasonCode: null,
+    capabilities: { toolCount: 17, truncated: false }, observedAt: 1_900, staleAfterMs: 1_000 });
+  for (const [kind, name] of [["mcp", "playwright"], ["mcp", "xcodebuildmcp"], ["harness", "claudex"]] as const)
+    log.upsertDependencyObservation({ kind, name, configured: false, status: "disabled", reasonCode: "disabled", observedAt: 1_900, staleAfterMs: 1_000 });
+  log.upsertDependencyObservation({ kind: "harness", name: "claude", configured: true, status: "healthy", reasonCode: null,
+    observedAt: 1_900, staleAfterMs: 1_000 });
 }
 
 describe("console HTTP server", () => {
@@ -114,6 +127,40 @@ describe("console HTTP server", () => {
     await server.close(); log.close();
   });
 
+  it("returns a bounded unavailable skills DTO when the installed manifest is missing", async () => {
+    const { server, log, config } = setup(); rmSync(config.skillInventoryPath);
+    const address = await server.listen();
+    expect(await (await fetch(`http://127.0.0.1:${address.port}/api/skills`)).json()).toEqual({
+      availability: "unavailable", reasonCode: "missing", sourceRevision: null, sources: [], skills: [],
+    });
+    await server.close(); log.close();
+  });
+
+  it("logs bounded request context for successful Phase 2 reads without query, header, or raw caller details", async () => {
+    const { server, log, logger } = setup(); const address = await server.listen();
+    const base = `http://127.0.0.1:${address.port}`;
+    expect((await fetch(`${base}/api/dependencies?query=QUERY_SECRET`, {
+      headers: { "X-Request-Secret": "HEADER_SECRET" },
+    })).status).toBe(200);
+    expect((await fetch(`${base}/api/skills?token=TOKEN_SECRET`, {
+      headers: { Authorization: "Bearer AUTH_SECRET" },
+    })).status).toBe(200);
+    const records = logger.log.mock.calls.map(call => JSON.parse(String(call[0])) as Record<string, unknown>);
+    expect(records).toHaveLength(2);
+    expect(records).toEqual([
+      { event: "console_api_request", requestId: expect.stringMatching(/^[0-9a-f-]{36}$/), caller: "loopback",
+        method: "GET", path: "/api/dependencies", status: 200 },
+      { event: "console_api_request", requestId: expect.stringMatching(/^[0-9a-f-]{36}$/), caller: "loopback",
+        method: "GET", path: "/api/skills", status: 200 },
+    ]);
+    expect(records[0]!.requestId).not.toBe(records[1]!.requestId);
+    const serialized = JSON.stringify(records);
+    for (const sentinel of ["QUERY_SECRET", "HEADER_SECRET", "TOKEN_SECRET", "AUTH_SECRET", "Bearer",
+      "Authorization", "query", "headers", "host", "origin", "127.0.0.1", "/Users/"])
+      expect(serialized).not.toContain(sentinel);
+    await server.close(); log.close();
+  });
+
   it("rejects an in-root static symlink whose real target escapes the assets root", async () => {
     const { server, log, config, dir } = setup();
     const secret = join(dir, "outside-secret.txt"); writeFileSync(secret, "OUTSIDE_ASSET_SECRET");
@@ -151,14 +198,19 @@ describe("console HTTP server", () => {
     const runsResponse = await fetch(`${base}/api/runs`);
     const detailResponse = await fetch(`${base}/api/runs/session-1`);
     const unlinkedResponse = await fetch(`${base}/api/runs/session-2`);
-    expect([overviewResponse.status, runsResponse.status, detailResponse.status, unlinkedResponse.status]).toEqual([200, 200, 200, 200]);
+    const dependenciesResponse = await fetch(`${base}/api/dependencies`); const skillsResponse = await fetch(`${base}/api/skills`);
+    expect([overviewResponse.status, runsResponse.status, detailResponse.status, unlinkedResponse.status,
+      dependenciesResponse.status, skillsResponse.status]).toEqual([200, 200, 200, 200, 200, 200]);
     const overviewText = await overviewResponse.text(); const overview = JSON.parse(overviewText) as any;
     const runsText = await runsResponse.text(); const runs = JSON.parse(runsText) as any;
     const detailText = await detailResponse.text(); const detail = JSON.parse(detailText) as any;
     const unlinkedText = await unlinkedResponse.text(); const unlinked = JSON.parse(unlinkedText) as any;
+    const dependenciesText = await dependenciesResponse.text(); const dependencies = JSON.parse(dependenciesText) as any;
+    const skillsText = await skillsResponse.text(); const skills = JSON.parse(skillsText) as any;
     expect(overview).toMatchObject({ observedAt: 2_000, daemon: { status: "online", observedAt: 2_000 }, activeRuns: 2,
       providers: [{ provider: "claude", status: "ready", reason: null, cooldownUntil: null, updatedAt: 1_900 }],
-      operations: { pending: { id: "operation-1", type: "restart", state: "pending" } } });
+      operations: { pending: { id: "operation-1", type: "restart", state: "pending" } },
+      dependencies: { status: "healthy", configured: 2, total: 5 } });
     expect(overview.recentRuns).toHaveLength(2);
     expect(runs.runs).toHaveLength(2);
     expect(runs.runs.find((run: any) => run.id === "session-1")).toMatchObject({ issueIdentifier: "ENG-42",
@@ -180,18 +232,32 @@ describe("console HTTP server", () => {
           usage: { inputTokens: 7, outputTokens: null, cacheCreationTokens: null, cacheReadTokens: 3, totalTokens: 10 } },
       ] });
     expect(unlinked).toMatchObject({ id: "session-2", issueIdentifier: "ENG-99", resources: [] });
-    const serialized = [overviewText, runsText, detailText, unlinkedText].join("\n");
+    expect(dependencies).toMatchObject({ status: "healthy", daemon: { status: "online" }, dependencies: [
+      { kind: "mcp", name: "linear", configured: true, status: "healthy", capabilities: { toolCount: 17, truncated: false } },
+      { kind: "mcp", name: "playwright", configured: false, status: "disabled" },
+      { kind: "mcp", name: "xcodebuildmcp", configured: false, status: "disabled" },
+      { kind: "harness", name: "claude", configured: true, status: "healthy" },
+      { kind: "harness", name: "claudex", configured: false, status: "disabled" },
+    ] });
+    expect(skills).toMatchObject({ availability: "available", sourceRevision: "a".repeat(40), skills: [
+      { name: "implementer", description: "Implements a bounded plan.", version: null,
+        provenance: ["Claude Code", "Codex"], compatibility: ["claude", "codex"] },
+    ] });
+    const serialized = [overviewText, runsText, detailText, unlinkedText, dependenciesText, skillsText].join("\n");
     for (const secret of ["RAW_WEBHOOK_SECRET", "SECOND_RAW_SECRET", "PROMPT_SECRET", "REPORT_SECRET", "TRACE_SECRET",
       "PROVIDER_SECRET", "PROVIDER_TURN_SECRET", "CHILD_PROMPT_SECRET", "CHILD_TRACE_SECRET", "secret-delivery"])
       expect(serialized).not.toContain(secret);
     for (const forbidden of ["prompt", "report", "rawBody", "worktreePath", "claudeSessionId", "traceId",
       "providerConversationId", "providerTurnId", "webhookSecret", "staticToken", "linearApiKey"])
       expect(serialized).not.toContain(`\"${forbidden}\"`);
+    for (const forbidden of ["Authorization", "Bearer", "inputSchema", "environment", "absolutePath", "/Users/"])
+      expect(serialized).not.toContain(forbidden);
     await server.close(); log.close();
   });
 
   it("rejects invalid Host, hostile Origin, unsupported methods, and mutation routes", async () => {
-    const { server, log } = setup(); const address = await server.listen(); const base = `http://127.0.0.1:${address.port}`;
+    const { server, log, config } = setup(); const address = await server.listen(); const base = `http://127.0.0.1:${address.port}`;
+    const dbBefore = readFileSync(config.dbPath); const skillsBefore = readFileSync(config.skillInventoryPath);
     expect(await requestWithHost(address.port, "evil.example")).toEqual({ status: 403,
       body: { error: { code: "forbidden", message: "untrusted host or origin" } } });
     await expectJsonError(await fetch(`${base}/api/overview`, { headers: { Origin: "https://evil.example" } }), 403,
@@ -208,6 +274,26 @@ describe("console HTTP server", () => {
       { error: { code: "not_found", message: "run not found" } });
     await expectJsonError(await fetch(`${base}/api/runs/%`), 400,
       { error: { code: "bad_request", message: "invalid run id" } });
+    const mutationGuesses = [
+      ["configuration", "/api/config"],
+      ["credentials", "/api/credentials"],
+      ["enablement", "/api/dependencies/enable"],
+      ["disablement", "/api/dependencies/disable"],
+      ["refresh", "/api/dependencies/refresh"],
+      ["execution", "/api/dependencies/execute"],
+      ["skill editing", "/api/skills/implementer/edit"],
+    ] as const;
+    for (const [family, path] of mutationGuesses) {
+      await expectJsonError(await fetch(`${base}${path}`), 404,
+        { error: { code: "not_found", message: "endpoint not found" } });
+      await expectJsonError(await fetch(`${base}${path}`, { method: "POST", body: family }), 405,
+        { error: { code: "method_not_allowed", message: "read-only endpoint" } });
+    }
+    for (const path of ["/api/dependencies", "/api/skills"])
+      await expectJsonError(await fetch(`${base}${path}`, { method: "POST" }), 405,
+        { error: { code: "method_not_allowed", message: "read-only endpoint" } });
+    expect(readFileSync(config.dbPath)).toEqual(dbBefore);
+    expect(readFileSync(config.skillInventoryPath)).toEqual(skillsBefore);
     await server.close(); log.close();
   });
 

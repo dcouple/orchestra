@@ -76,7 +76,7 @@ acquire_maintenance_lock() {
 if (( DRY_RUN )); then
   echo "DRY RUN: deployment plan; no changes will be made."
   echo "plan sync: $SOURCE_DIR -> $CODE_DIR"
-  echo "plan build: pnpm install --frozen-lockfile; pnpm build; pnpm prune --prod"
+  echo "plan build: pnpm install --frozen-lockfile; SOURCE_COMMIT-backed pnpm build; pnpm prune --prod"
   echo "plan restart: $DAEMON_LABEL, $CONSOLE_LABEL"
   echo "plan health: $HEALTH_URL, $CONSOLE_HEALTH_URL"
   exit 0
@@ -150,7 +150,9 @@ rsync -aO --no-perms --no-owner --no-group --delete \
 chmod 0755 "$CODE_DIR/ops/proxy-accounts.sh" "$CODE_DIR/ops/codex-provider-gate.sh"
 # CI=true: pnpm otherwise refuses to purge a stale modules dir without a TTY
 # (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) — deploys are always headless.
-(cd "$CODE_DIR" && CI=true "$PNPM_BIN" install --frozen-lockfile && CI=true "$PNPM_BIN" build && CI=true "$PNPM_BIN" prune --prod)
+(cd "$CODE_DIR" && CI=true "$PNPM_BIN" install --frozen-lockfile \
+  && SKILL_INVENTORY_SOURCE_ROOT="$SOURCE_ROOT" SKILL_INVENTORY_SOURCE_REVISION="$SOURCE_COMMIT" CI=true "$PNPM_BIN" build \
+  && CI=true "$PNPM_BIN" prune --prod)
 
 env_has_key() { grep -Eq "^[[:space:]]*$1=[^[:space:]]+" "$ENV_FILE"; }
 env_sessions_enabled() { ! grep -Eq '^[[:space:]]*SESSIONS_ENABLED=0([[:space:]]*(#.*)?)?$' "$ENV_FILE"; }

@@ -33,6 +33,21 @@ function event(overrides: Record<string, unknown> = {}) {
 }
 
 describe("EventLog", () => {
+  it("atomically replaces bounded dependency observations and persists only safe capability fields", () => {
+    const db = path(); let log = new EventLog(db);
+    log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true, status: "healthy",
+      reasonCode: null, capabilities: { toolCount: 12, truncated: false }, observedAt: 1_000, staleAfterMs: 5_000 });
+    log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true, status: "unavailable",
+      reasonCode: "timeout", observedAt: 2_000, staleAfterMs: 5_000 });
+    expect(log.dependencyObservations()).toEqual([{ kind: "mcp", name: "linear", configured: true,
+      status: "unavailable", reasonCode: "timeout", capabilities: {}, observedAt: 2_000, staleAfterMs: 5_000 }]);
+    expect(() => log.upsertDependencyObservation({ kind: "mcp", name: "bad/name", configured: true,
+      status: "healthy", reasonCode: null, capabilities: { secret: "\nTOKEN" }, observedAt: 2_000, staleAfterMs: 5_000 })).toThrow();
+    expect(() => log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true,
+      status: "healthy", reasonCode: null, capabilities: { token: "SECRET" }, observedAt: 2_000, staleAfterMs: 5_000 })).toThrow();
+    log.close(); log = new EventLog(db);
+    expect(log.dependencyObservations()).toHaveLength(1); log.close();
+  });
   it("persists simulator leases across reopen and atomically enforces limits", () => {
     const db = path(); let log = new EventLog(db);
     log.append(event()); const turn = log.claimNextTurn(1000)!;

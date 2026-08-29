@@ -16,6 +16,7 @@ import { OtlpRelay } from "./otel-relay.js";
 import { resolveOtlpTraces } from "./otel.js";
 import { LinearMcpMonitor } from "./linear-mcp-monitor.js";
 import { detectSimCapability, SimPool, SimReaper, Simctl } from "./sim.js";
+import { DependencyMonitor } from "./dependency-monitor.js";
 
 const config = loadConfig();
 let log: EventLog;
@@ -46,8 +47,15 @@ const linearMcpMonitor = config.sessionsEnabled
       token: config.linearApiKey!,
       intervalMs: config.linearMcpMonitorIntervalMs,
       timeoutMs: config.linearMcpMonitorTimeoutMs,
+      staleAfterMs: config.dependencyStateStaleMs,
+      log,
     })
   : undefined;
+if (!linearMcpMonitor) log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: false,
+  status: "disabled", reasonCode: "disabled", observedAt: Date.now(), staleAfterMs: config.dependencyStateStaleMs });
+const dependencyMonitor = new DependencyMonitor({ config, log, simctl,
+  intervalMs: config.dependencyMonitorIntervalMs, timeoutMs: config.dependencyMonitorTimeoutMs,
+  staleAfterMs: config.dependencyStateStaleMs });
 const upstream = resolveOtlpTraces(process.env);
 const relay = upstream
   ? new OtlpRelay({
@@ -149,6 +157,7 @@ if (providerPoller) {
 await simReaper?.reconcileOnce();
 worker.start();
 linearMcpMonitor?.start();
+dependencyMonitor.start();
 await sessionWorker?.start();
 cleanupWorker?.start();
 simReaper?.start();
@@ -178,6 +187,7 @@ async function shutdown(signal: string): Promise<void> {
   );
   await reconcileWorker?.stop();
   await linearMcpMonitor?.stop();
+  await dependencyMonitor.stop();
   await server.close();
   await worker.stop();
   await sessionWorker?.stop(policy);

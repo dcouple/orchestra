@@ -33,6 +33,9 @@ export interface Config {
   linearMcpUrl: string;
   linearMcpMonitorIntervalMs: number;
   linearMcpMonitorTimeoutMs: number;
+  dependencyMonitorIntervalMs: number;
+  dependencyMonitorTimeoutMs: number;
+  dependencyStateStaleMs: number;
   webhookBaseUrl: string;
   artifactToken?: string;
   mcpEnvPassthrough?: string[];
@@ -92,6 +95,7 @@ export interface ConsoleConfig {
   assetsDir: string;
   daemonHealthUrl: string;
   linearWorkspaceBaseUrl?: string;
+  skillInventoryPath: string;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -143,6 +147,8 @@ export function loadConsoleConfig(env: NodeJS.ProcessEnv = process.env): Console
     dbPath: env.DB_PATH?.trim() || "/var/lib/linear-agent-daemon/events.db",
     assetsDir: env.CONSOLE_ASSETS_DIR?.trim() || resolve(dirname(fileURLToPath(import.meta.url)), "console"),
     daemonHealthUrl: httpUrl(env, "CONSOLE_DAEMON_HEALTH_URL", "http://127.0.0.1:8787/healthz", true),
+    skillInventoryPath: env.CONSOLE_SKILL_INVENTORY_PATH?.trim()
+      || resolve(dirname(fileURLToPath(import.meta.url)), "console-inventory.json"),
     ...(base ? { linearWorkspaceBaseUrl: httpUrl(env, "LINEAR_WORKSPACE_BASE_URL", base) } : {}),
   };
 }
@@ -232,6 +238,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error("IOS_SIM_RUNTIME and IOS_SIM_DEVICE_TYPE are required when IOS_SIM_ENABLED=1");
   }
   const providerProbeIntervalMs = positiveInteger(env, "PROVIDER_PROBE_INTERVAL_MS", 60_000);
+  const dependencyMonitorIntervalMs = positiveInteger(env, "DEPENDENCY_MONITOR_INTERVAL_MS", 60_000);
+  const dependencyMonitorTimeoutMs = positiveInteger(env, "DEPENDENCY_MONITOR_TIMEOUT_MS", 10_000);
+  if (dependencyMonitorTimeoutMs > 60_000) throw new Error("DEPENDENCY_MONITOR_TIMEOUT_MS must be at most 60000");
+  const dependencyStateStaleMs = positiveInteger(env, "DEPENDENCY_STATE_STALE_MS", 5 * dependencyMonitorIntervalMs);
+  if (dependencyStateStaleMs > 86_400_000) throw new Error("DEPENDENCY_STATE_STALE_MS must be at most 86400000");
   const bashDefaultTimeoutMs = positiveInteger(env, "BASH_DEFAULT_TIMEOUT_MS", 900_000);
   const bashMaxTimeoutMs = positiveInteger(env, "BASH_MAX_TIMEOUT_MS", 900_000);
   if (bashMaxTimeoutMs < bashDefaultTimeoutMs) {
@@ -256,6 +267,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     linearMcpUrl: (env.LINEAR_MCP_URL?.trim() || "https://mcp.linear.app/mcp").replace(/\/+$/, ""),
     linearMcpMonitorIntervalMs: positiveInteger(env, "LINEAR_MCP_MONITOR_INTERVAL_MS", 60_000),
     linearMcpMonitorTimeoutMs: positiveInteger(env, "LINEAR_MCP_MONITOR_TIMEOUT_MS", 10_000),
+    dependencyMonitorIntervalMs,
+    dependencyMonitorTimeoutMs,
+    dependencyStateStaleMs,
     webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
     ...(artifactToken ? { artifactToken } : {}),
     ...(passthrough.length > 0 ? { mcpEnvPassthrough: passthrough } : {}),

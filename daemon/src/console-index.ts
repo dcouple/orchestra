@@ -1,10 +1,12 @@
 import { loadConsoleConfig } from "./config.js";
 import { ConsoleServer } from "./console-server.js";
 import { EventLog } from "./eventlog.js";
+import { readSkillInventory } from "./skill-inventory.js";
 
 const config = loadConsoleConfig();
 const log = new EventLog(config.dbPath);
-const server = new ConsoleServer({ config, log });
+const server = new ConsoleServer({ config, log,
+  readSkills: () => readSkillInventory(config.skillInventoryPath) });
 const address = await server.listen();
 console.log(JSON.stringify({ event: "console_listening", address: address.address, port: address.port }));
 
