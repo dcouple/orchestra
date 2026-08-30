@@ -678,8 +678,15 @@ follows successful QA.
   `effective_lanes`, `runtime_fallback`, and `fallback_cause` into the dial
   record; effective lanes remain single/Codex-only regardless of the request.
 - Write `./tmp/<id>/wrapup.md` following this skill's
-  `references/wrap-up-report.md`; post
-  it as a PR comment. `plan.md` and `wrapup.md` stay in `./tmp/<id>/` -
+  `references/wrap-up-report.md`. Before posting it as a PR comment,
+  consolidate the run's final state into the PR body with `gh pr edit
+  --body-file`: fold the review outcome, QA results, user journey summary,
+  deploy notes, and residual risks into their existing body sections so
+  the returning human sees the complete picture in one scroll without
+  reading comments. Comments stay as the evidence trail; the body is the
+  dashboard. Read back the persisted body afterward and verify every
+  section was updated. Then post the detailed wrap-up as a comment.
+  `plan.md` and `wrapup.md` stay in `./tmp/<id>/` -
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
   instructions.
