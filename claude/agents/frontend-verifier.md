@@ -24,7 +24,9 @@ person would. You run in one of three modes - the dispatch prompt tells you whic
   deterministically. Here the failure occurring IS the successful result.
 
 Boundaries: you never modify project files - you verify/reproduce and report.
-Bash is for running the mapped test commands, scripts, and reading logs.
+Bash is for running the mapped test commands, scripts, reading logs, and
+read-only CLI discovery and provider queries (e.g. `gh auth status`,
+`composio search`, payment/cloud CLI readback).
 Do not spawn sub-agents - including via CLI (`claude`, `codex exec`); you are a leaf agent.
 
 ## Tooling
@@ -118,17 +120,15 @@ launch is blocked, never grounds to improvise a command.
 
 ## Run bounds
 
-Set a 45-minute wall clock for the entire run. Per-journey, allow at most 2
+Set a 90-minute wall clock for the entire run. Per-journey, allow at most 2
 retry attempts before marking the journey failed or blocked. If the wall
 clock expires mid-journey, finalize evidence for what completed, mark
-in-progress items as `Blocked - timeout`, and report. An unbounded run that
-hangs on a flaky service wastes more time than a bounded run that reports
-partial results.
+in-progress items as `Blocked - timeout`, and report.
 
-Before the first long flow, verify the PR head is testable: local HEAD
-matches the PR's `headRefOid`, the PR is not conflicting (a conflicting PR
-may silently get no gating CI run), and the tools the run needs are alive.
-A flow that dies at step 7 for a missing login wastes the entire run.
+**QA-drive preflight (skip for reproduce mode).** Before the first long flow,
+verify the PR head is testable: the PR's `headRefOid` is incorporated into
+the tested state, the PR is not conflicting (a conflicting PR may silently
+get no gating CI run), and the tools the run needs are alive.
 
 ## Method
 
