@@ -21,7 +21,8 @@ matching role skills; this entrypoint uses a single Codex lane. **All
 implementation runs on the Codex `implementer`** at effort `low`,
 every surface - backend/ops and frontend web/mobile alike. The Codex
 `frontend-verifier` is the app-driving QA agent: it runs **once per run,
-post-PR** (Step 5), never at the verify stage. The Codex `web-researcher`
+post-PR** (Step 5), never at the verify stage, and drives web UI with local
+Playwright by default. The Codex `web-researcher`
 handles external research.
 
 ## Autonomy & safety (read first)
@@ -168,31 +169,38 @@ calls for them.
 
 These preflight items are only checkable now that the item is loaded:
 
-- Classify browser need from the authoritative loaded item before any browser
-  preflight. E2E-browser criteria or a manual UI journey make the run browser
-  required. On the initial daemon turn, if required and
-  `ORCHESTRA_BROWSER_REQUEST_FILE` is present, atomically replace that file
-  with JSON `{ "requested": true }` and return exactly
-  `ORCHESTRA_BROWSER_RELAUNCH_REQUIRED` with no other terminal text. Never
-  write the marker for a non-browser item. If browser proof is required but
-  neither the request file nor `ORCHESTRA_BROWSER_EVIDENCE_DIR` is present,
-  stop with an explicit browser-prerequisite failure.
-- After relaunch, prove the attached MCP and Chrome by invoking
-  `mcp__playwright__browser_snapshot`, then close the probe with
-  `mcp__playwright__browser_close`. Classify MCP startup/connection, Chrome
-  launch, and target-application reachability as separate prerequisite
-  failures. None may fall back to scripts/logs as browser evidence.
+- Classify browser need from the authoritative loaded item before browser
+  preflight. E2E-browser criteria or a manual UI journey require an app-driving
+  attempt, **not a particular Codex browser plugin or daemon mode**. Use local
+  Playwright as the default transport, following the same best-effort contract
+  as `pr-test-automation`: reuse the repo's Playwright installation when
+  present; otherwise install Playwright and its browser in a temporary
+  directory outside the repo so no dependency or lockfile changes land. A
+  callable in-app Browser/Chrome transport may be used when already attached,
+  but `ORCHESTRA_BROWSER_REQUEST_FILE`, `ORCHESTRA_BROWSER_EVIDENCE_DIR`, and
+  Playwright MCP are optional accelerators and **their absence is never a
+  preflight stop**.
+- Preflight the chosen browser path by proving the Playwright package and one
+  browser executable can launch. If setup or launch fails, record a named
+  environment note and continue every independent phase through PR and
+  wrap-up; retry once at the QA drive, then mark only the affected UI criteria
+  and Manual tests `remaining for the human`. Logs, component tests, or HTTP
+  checks may supplement that result but never masquerade as visual evidence.
 - Read `ios_testing` (`optional` by default). When it is `required`, run
   the metadata conflict rule from `.references/html-brief.md` first: if
   `frontend_verifier: false`, stop with `ios_testing: required needs the
   frontend verifier; frontend_verifier: false contradicts it - fix the item
   metadata`. Otherwise run
-  `orchestra-sim status` and call `mcp__xcodebuildmcp__list_sims`;
+  `orchestra-sim status` and, when available, call
+  `mcp__xcodebuildmcp__list_sims`;
   `orchestra-sim status` is the non-mutating readiness check, so exit 0 means
   the configured golden is present and shut down and the pool is reconciled.
-  If either check fails, stop with `simulator prerequisite failed:` naming
-  the missing `orchestra-sim` or XcodeBuildMCP half, never “unverified.” When
-  optional, note which halves are available and continue.
+  XcodeBuildMCP is optional in standalone Codex: when absent, prove local
+  Xcode/simulator readiness with `xcodebuild -version` and
+  `xcrun simctl list -j`. If no simulator path is usable after those checks,
+  record `simulator prerequisite unavailable:` with the failing half and
+  continue the pipeline, leaving affected mobile criteria for the human. When
+  optional, note which paths are available and continue.
 
 - Read the item's **Dependencies & mechanics** section when present and
   check each listed dependency; a dependency the brief marks `assumed` gets
@@ -405,9 +413,12 @@ deploy scan is only the backstop for one slipping through).
 Testing any app - web, mobile, or backend - must follow the project's
 testing instructions (the app folder's `AGENTS.md`/testing docs). If a
 verifier reports it has no testing instructions for the app, or can't test
-for lack of credentials, environment, or tooling, don't retry or improvise a
-workaround - stop the verify loop and ask the user for the missing
-instructions or access. When verification needs the running app, apply Step
+for lack of credentials, environment, or tooling, don't invent commands,
+credentials, or product state. Record the exact unavailable criteria and
+continue all independent verification and the rest of the pipeline; surface
+the gap as a verification/QA prerequisite in the PR and wrap-up. Missing UI
+tooling alone follows Step 0's temporary-Playwright fallback and is not a
+reason to stop the run. When verification needs the running app, apply Step
 0's `AGENTS.md`-sourced launch rule and stop what the pipeline started. A
 service the verification needs alive runs detached (nohup + pidfile under
 `./tmp/<id>/`) so its lifetime is owned by the run rather than a tool
@@ -419,8 +430,10 @@ An implementer touching a mobile surface may use `orchestra-sim acquire` to
 check its work and must `orchestra-sim release <udid>` when finished. Mobile
 UI acceptance criteria are deferred to the single QA drive like web UI ACs.
 
-**Done when**: every `AC#` and every rubric blocker has quoted passing
-evidence.
+**Done when**: every runnable `AC#` and rubric blocker has quoted evidence;
+anything genuinely unavailable after the prescribed best-effort attempt is
+explicitly recorded for the human and does not silently disappear or halt
+unrelated work.
 
 ## Step 4: PR
 
@@ -465,7 +478,11 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   open** (the pre-open Visual overview says so explicitly:
   `After-shots: landing with the QA drive`); anything already captured hosts
   on the rolling assets prerelease per Step 5's evidence rule, filenames
-  keyed to the work item id;
+  keyed to the work item id. If the best-effort browser drive remains
+  unavailable after its retry, replace that pending line with
+  `After-shots: unavailable - left to human: <environment reason>` and carry
+  the same gap into QA results; an unavailable browser must not leave the PR
+  body pretending evidence is still about to arrive;
   flow-/boundary-/lifecycle-shaped changes lead with the before → after
   diagram per the `excalidraw-pr-diagrams` skill - and for a change with
   **no user-visible surface**, the diagram lands with the QA drive's first
@@ -538,12 +555,20 @@ follows successful QA.
   recorded as `unverified - frontend verifier disabled by the item` in the
   wrap-up, never claimed passed. When the
   app is needed, apply Step 0's launch rule; the frontend-verifier dispatch carries
-  the `AGENTS.md`-sourced launch command, flags, port/URL, and env.
-  When `ios_testing: required`, the verifier must acquire a device with
-  `orchestra-sim acquire`, drive every mobile AC, finalize the simulator
-  `evidence-manifest.json`, and release the lease before reporting. When it
-  is optional and a mobile surface changed, tell the verifier to acquire a
-  device whenever it would help.
+  the `AGENTS.md`-sourced launch command, flags, port/URL, and env. For web UI,
+  it also carries the local-Playwright contract: reuse repo Playwright when
+  present, otherwise install it and its browser in a temporary directory
+  outside the repo; never add it to the product's dependencies merely to run
+  QA. An attached Codex Browser/Chrome transport is optional and must not be
+  treated as the only valid way to drive the app.
+  When `ios_testing: required`, the verifier prefers a leased device from
+  `orchestra-sim acquire`; in standalone Codex where that tool is unavailable,
+  it may select a local simulator via `xcrun simctl`, record the UDID and
+  pre-run state, and use the run's attempt evidence directory. Drive every
+  mobile AC, finalize `evidence-manifest.json`, then release an orchestra lease
+  or restore/shut down only the local simulator the run started before
+  reporting. When testing is optional and a mobile surface changed, use either
+  simulator path whenever it would help.
   The dispatch also carries the QA-drive contract: map every touched surface
   and user journey to **ordered,
   step-named captures** (`01-<journey>-<state>.png`) covering meaningful
@@ -565,9 +590,14 @@ follows successful QA.
   `.references/qa-verification.md` § Journey videos), save all to the
   scratchpad, enumerate each in the report's Captures table (path · what it
   shows · AC#/J#). A report claiming a UI pass with an empty Captures table
-  is incomplete - one re-ask for the enumeration before accepting it. Then
-  **every enumerated capture gets hosted and embedded** - after-shots into
-  the body's Visual overview, per-item evidence into the QA proof comment;
+  is incomplete - one re-ask for the enumeration before accepting it. If the
+  browser attempt itself remains unavailable after the retry, accept an
+  explicit `not run` result with the environment evidence and move those
+  items to `remaining for the human`; never claim a UI pass. Then
+  **every safe, publishable enumerated capture gets hosted and embedded when a
+  durable host is available** - after-shots into the body's Visual overview,
+  per-item evidence into the QA proof comment. Unsafe captures and captures
+  blocked on hosting stay local and are listed with the reason in the handoff;
   journey videos get hosted for a durable link (the rolling `qa-assets`
   prerelease below) and linked next to their journey's gallery with the local
   path noted, since inline video players require a human web-UI upload; a
@@ -593,8 +623,10 @@ follows successful QA.
   original review budget has a pass left, loop its fix to the implementer,
   then run one **scoped review pass over the fix's diff alone** - the zone's
   review lanes, using that remaining pass - before the QA results line
-  closes. When no pass remains, stop with the bug as a blocker; do not change
-  code or accept QA. The QA drive runs after
+  closes. When no pass remains, do not change code or accept QA: mark the PR
+  and wrap-up `QA blocked`, preserve the reproduction evidence, leave the
+  affected Manual tests unchecked, and continue the administrative handoff so
+  the human still receives the open PR and exact blocker. The QA drive runs after
   the review loop exits, so without this pass a behavioral fix born from
   app-driving evidence (exactly the client-state bug a diff-reading
   reviewer can't see) would ship un-reviewed. Body carries state, comment
@@ -605,16 +637,20 @@ follows successful QA.
   Any code fix after QA begins invalidates that QA evidence: return to the
   review phase using only the original cap's remaining passes, then rerun QA
   from the start so the final accepted phase is QA.
-- **Hosting evidence media**: when the consumer config sets
+- **Hosting evidence media**: classify every capture before publication.
+  Secrets, PHI, MFA codes, payment details, private customer data, and other
+  unsafe captures stay local; publish only a visually verified redacted copy
+  when safe, and state why the original was withheld. When the consumer config sets
   `artifact_host:`, evidence media MAY be hosted as an artifact bundle per
   `.references/artifact-host-upload.md`; its stable viewer URLs are
   unauthenticated. For GitHub repos, the default remains screenshots, GIFs,
-  and videos as assets on a rolling `qa-assets` **prerelease**
-  (once per repo: `gh release create qa-assets --prerelease
-  --title "QA evidence assets" --notes "Rolling QA evidence host - not a
-  software release."` - the explicit `--title`/`--notes` matter: without
-  them `gh release create` prompts interactively and a headless run hangs;
-  then `gh release upload qa-assets <pr#>-<name> --clobber`) and reference the
+  and videos as assets on an existing rolling `qa-assets` **prerelease**.
+  Creating that release is a separate external mutation requiring explicit
+  authorization; if it does not exist or upload is unavailable, keep the
+  evidence local, write the asset manifest and ready-to-paste PR Markdown,
+  mark publication unavailable, and continue the handoff. For uploads, use
+  content-addressed filenames containing item/PR context, head SHA, and a
+  source-hash suffix; never `--clobber` an existing asset. Reference the
   `releases/download/...` URLs - CLI-native, permanent, permission-scoped,
   any file type. This rule is step-agnostic: Step 4 hosts the
   Visual-overview captures here *before* the PR exists, so prefix filenames
@@ -624,23 +660,39 @@ follows successful QA.
   links (GitHub only inline-plays web-UI uploads). Expiring temp hosts are
   forbidden for evidence - a dead link months later is no evidence at all.
   On a private repo, note that inline rendering may fail for viewers
-  without repo access; the links still work - and unauthenticated fetches
-  (curl, markdown proxies) get 404s from `releases/download/...` URLs, so
-  verify an upload via its API asset id, never a bare curl.
-- Before the frontend-verifier dispatch, save `git status --short`. Accept only
-  the actual dispatched verifier's completed `evidence-manifest.json`; require
-  its run/attempt ids to match the current daemon environment, require every
-  listed absolute path to remain under the current attempt evidence directory,
-  and reject missing, partial, unlisted, fixture, or older-attempt files. Host
-  every manifest entry through `qa-assets`, then read back the persisted PR
-  body and evidence comment and confirm every expected asset is present.
+  without repo access; the links still work. Verify every upload by an
+  authenticated byte download and compare SHA-256, size, and decoded file
+  type with the local source; an asset API record alone is insufficient.
+  Persist those values, the head commit, asset URL, and verification timestamp
+  in the run's asset manifest.
+- Before the frontend-verifier dispatch, save `git status --short`. Create a
+  unique attempt directory under `./tmp/<id>/qa/` (or use the current
+  `ORCHESTRA_BROWSER_EVIDENCE_DIR` when supplied) and pass its absolute path
+  plus a generated run/attempt id to the verifier. Accept only the actual
+  dispatched verifier's completed `evidence-manifest.json` whenever it
+  produced captures; require its run/attempt ids to match the values passed in
+  that dispatch, require every listed absolute path to remain under that
+  attempt directory, and reject missing, partial, unlisted, fixture, or
+  older-attempt files. This validation is identical in daemon and standalone
+  Codex runs; orchestra environment variables are not required. An explicit
+  browser `not run` result requires diagnostics and no manifest, and leaves
+  every affected checkbox unchecked for the human. For each safe, publishable
+  manifest entry, host it through the available durable evidence surface; when
+  hosting is unavailable, preserve it locally and list it in the publication
+  handoff instead. Then read back the persisted PR body and evidence comment
+  and confirm every expected published asset is present.
   Compare `git status --short` afterward byte-for-byte with the saved value;
-  any delta fails QA publication because evidence must never enter the repo.
+  any new staged path or any evidence path inside the repo fails QA
+  publication because evidence must never enter the product diff. Classify
+  unrelated concurrent worktree deltas separately instead of failing QA for
+  changes the verifier did not create.
   A simulator manifest is accepted equivalently only when it has
   `status: "completed"`, `kind: "ios-simulator"`, the current turn id from
-  `ORCHESTRA_SIM_CONTEXT`, absolute paths beneath that lease's `evidenceDir`,
-  no older-lease files, and quoted proof the lease was released before the
-  report.
+  `ORCHESTRA_SIM_CONTEXT` when supplied or the generated run/attempt id passed
+  to the verifier in standalone Codex, absolute paths beneath the orchestra
+  lease or standalone attempt `evidenceDir`, no older-attempt files, and quoted
+  proof that the lease was released or the locally started simulator was
+  restored before the report.
 - After the loop and QA, post surviving Should Fix / Nice to Have findings
   as line-anchored inline PR comments (`gh api` reviews, event `COMMENT` -
   never `REQUEST_CHANGES`: the loop owns Must Fix, and capped survivors are
