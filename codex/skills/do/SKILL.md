@@ -19,10 +19,10 @@ autonomously; the human returns at the PR.
 backend-verifier, plan-reviewer, and code-reviewer run on Codex via the
 matching role skills; this entrypoint uses a single Codex lane. **All
 implementation runs on the Codex `implementer`** at effort `medium`,
-every surface - backend/ops and frontend web/mobile alike. Use the Codex
-browser capability for app-driving QA when the work item requires it: it runs
-**once per run, post-PR** (Step 5), never at the verify stage. For external
-research, use the available web research capability directly.
+every surface - backend/ops and frontend web/mobile alike. The Codex
+`frontend-verifier` is the app-driving QA agent: it runs **once per run,
+post-PR** (Step 5), never at the verify stage. The Codex `web-researcher`
+handles external research.
 
 ## Autonomy & safety (read first)
 
@@ -278,9 +278,9 @@ Full lane: dispatch the Codex `code-researcher` role to map the
 territory the plan builds on - critical codebase anchors, patterns to
 reuse, load-bearing gotchas, exact `file:line` evidence for every claim.
 When the item leans on an external library, framework, or API the repo
-alone can't answer, use web research in parallel - its cited findings (URL +
-why + the critical insight) go into the dossier too. Save the combined
-findings as `./tmp/<id>/refs/research-dossier.md` -
+alone can't answer, dispatch the Codex `web-researcher` role in parallel - its
+cited findings (URL + why + the critical insight) go into the dossier too.
+Save the combined findings as `./tmp/<id>/refs/research-dossier.md` -
 the researchers report in-conversation; you persist the dossier.
 Reconcile it into the plan: import the highest-value anchors and gotchas,
 re-check the repo wherever the dossier and your draft disagree - and
@@ -298,7 +298,7 @@ fetch them rather than planning around the gap. Then write
 its evidence contract is binding: facts live in Verified repo truths with
 `path:line` evidence from files opened this session, and proposals stay out
 of fact sections. Write Goal & invariants from the item's intent; reconcile
-dossier gotchas into Known gotchas and web-research citations into
+dossier gotchas into Known gotchas and web-researcher citations into
 External references. When genuinely uncertain about a requirement or design
 detail, never decide by silent assumption - name it in the plan's Open
 questions and proceed on the least-committal reading. Restate the item's
@@ -523,7 +523,7 @@ follows successful QA.
 - When the loop ends - zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up - run the **QA drive**. This is the
   run's **final accepted app-driving phase** (Step 3 defers all UI acceptance
-  criteria here): Codex's browser capability proves the deferred UI ACs *and*
+  criteria here): the Codex `frontend-verifier` proves the deferred UI ACs *and*
   executes the PR body's Manual tests checklist in one session, highest
   risk tier first; the Codex `backend-verifier` role runs the command-shaped
   items. Zone dial (`.references/zones.md`): zones 0–1
@@ -537,7 +537,7 @@ follows successful QA.
   wouldn't; `false` skips it entirely - app-only ACs left unproven are
   recorded as `unverified - frontend verifier disabled by the item` in the
   wrap-up, never claimed passed. When the
-  app is needed, apply Step 0's launch rule; the Codex browser dispatch carries
+  app is needed, apply Step 0's launch rule; the frontend-verifier dispatch carries
   the `AGENTS.md`-sourced launch command, flags, port/URL, and env.
   When `ios_testing: required`, the verifier must acquire a device with
   `orchestra-sim acquire`, drive every mobile AC, finalize the simulator
@@ -558,7 +558,7 @@ follows successful QA.
   both the run's machinery and the product state it created (deleted where
   the surface is safe, registered by marker where it isn't - reported either
   way).
-  **The capture contract rides in every browser/QA dispatch you
+  **The capture contract rides in every frontend-verifier/QA dispatch you
   write** - the sub-agent only knows what its prompt says, so state it:
   screenshot every UI state verified, record a video of every journey
   driven through a scriptable driver (one native WebM per journey -
@@ -627,7 +627,7 @@ follows successful QA.
   without repo access; the links still work - and unauthenticated fetches
   (curl, markdown proxies) get 404s from `releases/download/...` URLs, so
   verify an upload via its API asset id, never a bare curl.
-- Before the browser dispatch, save `git status --short`. Accept only
+- Before the frontend-verifier dispatch, save `git status --short`. Accept only
   the actual dispatched verifier's completed `evidence-manifest.json`; require
   its run/attempt ids to match the current daemon environment, require every
   listed absolute path to remain under the current attempt evidence directory,
