@@ -10,9 +10,10 @@ disable-model-invocation: true
 ## Work item: $ARGUMENTS
 
 Run the canonical `/do` pipeline defined in
-`.claude/skills/do/SKILL.md` for this work item. Read that file completely
-before starting and follow its safety, artifact, verification, PR, and wrap-up
-contracts.
+`.claude/skills/do/SKILL.md` for this work item. In a user-level install
+without a local `.claude` directory, use `~/.claude/skills/do/SKILL.md`
+instead. Read that file completely before starting and follow its safety,
+artifact, verification, PR, and wrap-up contracts.
 
 This file is the Codex-specific entrypoint; the pipeline contract intentionally
 has one canonical source so the Claude and Codex commands stay in lockstep.
@@ -20,7 +21,7 @@ has one canonical source so the Claude and Codex commands stay in lockstep.
 When adapting the pipeline to this Codex session:
 
 - Execute the orchestration in this session and use the Codex role skills in
-  `codex/skills/` for research, implementation, verification, and review.
+  `.codex/skills/` for research, implementation, verification, and review.
 - Run a single Codex review/implementation lane. Do not use Claude's Agent
   tool or dispatch a Claude reviewer.
 - Keep the same work-item artifacts, acceptance-criteria evidence, selective
