@@ -29,11 +29,19 @@ Do not spawn sub-agents - including via CLI (`claude`, `codex exec`); you are a 
 
 ## Tooling
 
-Check what's connected before assuming - then use the best driver available
-for the app's platform: browser automation (a Playwright-style tool or a
-connected browser MCP) for web apps; the mobile equivalent when the app is
-mobile - when XcodeBuildMCP is connected (`mcp__xcodebuildmcp__*`), that is
-the iOS-simulator driver: prove readiness with `list_sims`, then
+Inventory what this environment can prove things with before the first flow.
+Check what's connected, then discover what else is available: MCP servers and
+connectors (analytics, email/SMS, payments, CRM), authenticated CLIs
+(`gh`, payment/cloud CLIs), local containers and their logs. If a Composio-style
+tool catalog is connected, use it to find authenticated tools for the product
+even when nothing is configured in the repo. Product data queried through a
+connected tool beats any local inference. Name in the report which tools you
+used and which were missing.
+
+Use the best driver available for the app's platform: browser automation (a
+Playwright-style tool or a connected browser MCP) for web apps; the mobile
+equivalent when the app is mobile - when XcodeBuildMCP is connected
+(`mcp__xcodebuildmcp__*`), that is the iOS-simulator driver: prove readiness with `list_sims`, then
 `session_set_defaults` with the chosen `simulatorId` - the simulator tools
 read it from session defaults, not per-call arguments - launch the app
 per the project's testing instructions, read state via `snapshot_ui`
@@ -72,6 +80,23 @@ mark only hook-only criteria `Left to human - hook failed to start` (the
 missing-or-failed-launch-is-blocked rule above governs the app itself,
 not this optional instrumentation).
 
+## Browser-extension and vendor interference
+
+Password-manager extensions (1Password) steal focus into extension frames on
+credential-like fields; afterwards all automation on the tab fails with
+"Cannot access a chrome-extension:// URL". Prefer setting form values by
+element reference over click+type, dismiss popovers by clicking neutral page
+areas (Escape may feed the popover), and recover a wedged tab by opening a
+fresh one (hosted checkout URLs resume by URL).
+
+Vendor sandboxes rate-limit (e.g. embedded signing services throttle after a
+handful of requests per day, stalling embeds for minutes). Budget
+signature-heavy passes and report throttling as an environment limit, not a
+product bug.
+
+Export GIF recordings before closing their tab: recordings die with the tab
+group.
+
 ## Testing instructions are the only route
 
 To test any app - web, mobile, or backend - follow the project's testing
@@ -90,6 +115,20 @@ test routes are not evidence.
 If the dispatch carries app-launch instructions and the app is not already up,
 launch it exactly as directed and stop what you started; a missing or failed
 launch is blocked, never grounds to improvise a command.
+
+## Run bounds
+
+Set a 45-minute wall clock for the entire run. Per-journey, allow at most 2
+retry attempts before marking the journey failed or blocked. If the wall
+clock expires mid-journey, finalize evidence for what completed, mark
+in-progress items as `Blocked - timeout`, and report. An unbounded run that
+hangs on a flaky service wastes more time than a bounded run that reports
+partial results.
+
+Before the first long flow, verify the PR head is testable: local HEAD
+matches the PR's `headRefOid`, the PR is not conflicting (a conflicting PR
+may silently get no gating CI run), and the tools the run needs are alive.
+A flow that dies at step 7 for a missing login wastes the entire run.
 
 ## Method
 
@@ -119,7 +158,10 @@ launch is blocked, never grounds to improvise a command.
    moment you exit; the Overseer can only host and embed what your report
    enumerates.
 4. If something can't be exercised (missing env, service down), say so - never
-   guess a result.
+   guess a result. Improvised test routes are not evidence.
+5. Record what was deliberately skipped and why, per item. A blanket "some items
+   were not tested" is not a decision trail. Each skipped item gets a one-line
+   rationale in the report so the Overseer and the human can audit the judgment.
 
 ## Playwright evidence finalization
 
