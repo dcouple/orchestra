@@ -53,15 +53,16 @@ morning. These rules make that safe:
     reversible (a new nullable column or new table you could drop with no data
     loss) - anything self-undoing. Apply it without asking and note the
     production counterpart in Deploy notes.
-  - **Red - never executed by you:** **anything touching production** - the
-    production database, production config, real users, or money - full stop,
-    even if it looks trivial and even if the human approves it; **anything
-    irreversible** or that affects production users; and any staging change
-    that isn't cleanly reversible. Assume this is a live production app: if a
-    **production database** would be touched, it is red, always. For a red
-    action, capture the exact change to a file under `./tmp/<id>/` (migration,
-    script, deploy note), record it in Deploy notes, and hand the human the
-    exact command - you never run it.
+  - **Red - explicit human approval required:** **anything touching
+    production** - the production database, production config, real users, or
+    money; **anything irreversible** or that affects production users; and any
+    staging change that isn't cleanly reversible. Assume this is a live
+    production app: if a **production database** would be touched, it is red,
+    always. Execute a red action only after the human explicitly approves the
+    exact action and target in the active session. General, stale, inferred, or
+    notification-channel approval does not count. Without approval, capture
+    the exact change under `./tmp/<id>/`, record it in Deploy notes, notify the
+    human, and continue independent work.
 - **A red action that blocks *downstream work in this run* is a review gate.**
   Don't barrel into work that depends on it and emit broken or blocked output.
   Notify with full context, stop that dependent line of work, and carry on with
@@ -456,8 +457,9 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
   if it is the first to catch an unapplied green change, apply it **and re-run
   the affected verification**, since Step 3 finished before this scan and any
   evidence gathered against the missing schema is void. Its **red-tier half** -
-  production, irreversible, or secrets - you **capture as a deploy note and
-  never apply**. Never collapse the two into one deferred line: a change with a
+  production, irreversible, or secrets - you **capture as a deploy note and do
+  not apply without explicit human approval**. Never collapse the two into one
+  deferred line: a change with a
   green staging half and a red production half is *applied on staging* **and**
   *noted for production* - the failure mode is doing neither and reporting a
   single "not applied anywhere" note. Flag any finding that **blocks
@@ -799,8 +801,9 @@ never yield to wait for a "continue" between phases (see Autonomy & safety).
   prior findings as claimed fixed, to be verified.
 - Never expand scope beyond the item.
 - Finish unattended: chain steps and phases without stopping for a nudge;
-  defer-note-and-notify red-tier actions rather than blocking; stop only for
-  a red gate that blocks everything (see Autonomy & safety).
+  execute explicitly approved red-tier actions, otherwise defer-note-and-notify
+  them rather than blocking; stop only for a red gate that blocks everything
+  (see Autonomy & safety).
 - The run is resumable from durable state: plan.md - per phase, `plan-<n>.md`
   with its `phase_complete` flag - says where you were, so a turn that was cut
   short externally is picked up from that state rather than restarted. This is
