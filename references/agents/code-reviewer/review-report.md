@@ -1,8 +1,11 @@
 # Review Report (Code + Security) - agent output format
 
 > Returned **in-conversation** by the Code Reviewer to the Overseer - **not a file**.
-> Runs 1+ times in the post-PR review loop (per-phase diff review on multi-phase items); Must-Fix
-> items loop back to Implement until zero Must-Fix (cap supplied by the caller - /do derives it from the zone; /prepare-pull-request uses 3). The security review is mandatory: security findings live in
+> Runs in the post-PR review loop and, when the zone warrants it, on selected
+> phase diffs. Under `/do`, every invocation spends from one zone-derived,
+> run-global budget capped at four; phase boundaries, PR creation, QA, and a
+> changed HEAD never reset it. Must-Fix items loop back to Implement only while
+> that cumulative budget remains (`/prepare-pull-request` has its own cap). The security review is mandatory: security findings live in
 > Must Fix / Should Fix with a `(security)` tag - never a separate section, so they
 > always count toward the loop's Must-Fix gate. Final outcome folds into `wrapup.md`.
 > **Your final message IS the report: begin with the verdict.** Every line is a verdict,
@@ -12,7 +15,7 @@
 ---
 
 **Verdict:** `<Approve | Request changes>` - `<one-line rationale>`
-**Counts:** Must Fix: `<n>` (security: `<m>`) · Should Fix: `<n>` · pass `<k>`/`<cap>`
+**Counts:** Must Fix: `<n>` (security: `<m>`) · Should Fix: `<n>` · global dispatch `<k>`/`<zone ceiling, max 4>`
 
 ## Must Fix  *(blocks merge; loop back to Implement)*
 - **MF-1** `(security)` - `<what>` · `<file:line>` · `<fix>` · violates `<D# / AC# | "new issue">`

@@ -262,8 +262,8 @@ trajectory into the wrap-up.
 
 Read the item's `zone:` and derive this run's dials from the table in
 `.references/zones.md` - record zone and effective dials in `plan.md`'s
-frontmatter. Zones 0–1 run the full lane (dossier, cap 3); zones 2–3 run
-light (no dossier, cap 1). Zone 0 defaults to dual review; zones 1–3 default
+frontmatter. Zones 0–1 run the full lane (dossier, plan-review cap 3); zones
+2–3 run light (no dossier, plan-review cap 1). Zone 0 defaults to dual review; zones 1–3 default
 to the single Codex lane. An explicit `review_lanes: dual | single` in the item metadata
 outranks the zone's lane dial, and an explicit
 `frontend_verifier: true | false` outranks the zone's verifier dial - both
@@ -275,7 +275,9 @@ human's call at capture, or the table's via postmortem evidence. Item
 missing a zone → classify it yourself from stakes and downstream
 consequences, record the reasoning in the frontmatter, and proceed.
 Multi-phase items (two or more entries in the metadata's `phases` list) keep
-full machinery and cap 3 while their lanes follow the same zone rule.
+the full research/planning machinery while their code-review lanes and
+cumulative pass ceiling still derive from the zone. They never receive a
+separate per-phase code-review cap.
 
 If the daemon's prompt contains a runtime-fallback context line, record
 `requested_lanes`, `effective_lanes`, `runtime_fallback`, and `fallback_cause`
@@ -508,6 +510,18 @@ The lifecycle is linear: run the capped review loop, then QA as the last
 work gate on the final head. Only the administrative PR-readiness update
 follows successful QA.
 
+**One global code-review budget governs the entire run.** The zone sets the
+smaller ceiling; four reviewer dispatches is the absolute maximum at every
+zone. Count every code-review invocation against the same cumulative ledger,
+including per-phase reviews, the whole-PR review, confirmation passes, hosted
+GitHub review triggers such as `@codex review`, and scoped reviews after QA
+fixes. Never reset the counter at a phase, commit, push, PR creation, QA entry,
+resume, or changed HEAD. Reserve at least one dispatch for the whole-PR review,
+so at most three may be spent before Step 5. Persist the cumulative count in
+the current plan's `code_review_dispatches` field and carry it forward across
+phase plans. A new commit does not by itself invalidate prior review evidence
+or require an exact-head review.
+
 - Run the single Codex review lane over the PR diff. The item's explicit
   `review_lanes:` may request a topology, but this Codex entrypoint remains
   Codex-only and never dispatches a Claude reviewer or Agent-tool lane.
@@ -517,26 +531,26 @@ follows successful QA.
   Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the reviewers disagree,
   adjudicate it yourself. Use sub-agents to help you understand what is true
   when needed.
-- **Another pass runs only on a trigger - the caps are ceilings, never
-  quotas** (cap 3 passes; zones 2–3: 1; multi-phase items always 3 passes,
-  with lanes derived from zone unless the item's own `review_lanes:` says
-  otherwise).
-  **The three-pass cap is absolute even when a prompt says “repeat until
-  clean”; at the cap, carry survivors to wrap-up rather than starting a
-  fourth pass.**
+- **Another pass runs only on a trigger - the zone and global caps are
+  ceilings, never quotas.** Zones 0–1 may use up to their zone ceiling while
+  zones 2–3 stop at one; no run may exceed four cumulative code-review
+  dispatches. At either cap, carry survivors to wrap-up rather than starting
+  another pass, even when a prompt says “repeat until clean” or “review the
+  latest head.”
   Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** - loop those findings back to the matching
   implementer, stage the fix commit against `git status --short` (the
   status output is the checklist of the fix round's edits - Step 4's
   selective-commit rule still governs, so unrelated dirty paths stay
   unstaged), never from a remembered file list, push the fixes,
-  re-review; (b) the two lanes' reports
+  re-review only when both the zone and global ledgers have budget; (b) the two lanes' reports
   **diverge sharply** (little overlap in what they caught, or conflicting
   overall verdicts) - one extra pass to confirm convergence. **A pass with
   zero Must Fix from every lane ends the loop**, even with Should Fixes
   open: apply the Should Fixes you judge worth it (or leave them to the
   inline comments below) - a Should Fix never triggers a re-review by
-  itself.
+  itself. Fixing a Should Fix / P2 or Nice to Have / P3 never creates a review
+  trigger; verify the affected behavior and continue.
 - When the loop ends - zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up - run the **QA drive**. This is the
   run's **final accepted app-driving phase** (Step 3 defers all UI acceptance
@@ -620,7 +634,7 @@ follows successful QA.
   remainder list. The QA drive's after-shots also complete the body's
   Visual overview (replacing its `After-shots: landing with the QA drive`
   note). **A bug the QA drive surfaces is never report-and-ship:** when the
-  original review budget has a pass left, loop its fix to the implementer,
+  zone-derived global review budget has a pass left, loop its fix to the implementer,
   then run one **scoped review pass over the fix's diff alone** - the zone's
   review lanes, using that remaining pass - before the QA results line
   closes. When no pass remains, do not change code or accept QA: mark the PR
@@ -629,13 +643,14 @@ follows successful QA.
   the human still receives the open PR and exact blocker. The QA drive runs after
   the review loop exits, so without this pass a behavioral fix born from
   app-driving evidence (exactly the client-state bug a diff-reading
-  reviewer can't see) would ship un-reviewed. Body carries state, comment
+  reviewer can't see) would ship un-reviewed. This scoped pass spends from the
+  same cumulative maximum of four; QA never creates a new budget. Body carries state, comment
   carries proof - never
   leave the results only in a comment when the body has a checklist and a QA
   results line to update. After every body update, **YOU MUST** preserve and
   verify the persisted closing-line set per `.references/tracker-lifecycle.md`.
   Any code fix after QA begins invalidates that QA evidence: return to the
-  review phase using only the original cap's remaining passes, then rerun QA
+  review phase using only the zone-derived global budget's remaining passes, then rerun QA
   from the start so the final accepted phase is QA.
 - **Hosting evidence media**: classify every capture before publication.
   Secrets, PHI, MFA codes, payment details, private customer data, and other
@@ -763,11 +778,12 @@ Run Steps 1–3 per phase, sequentially - per-phase `plan-<n>.md`; on
 phase completion set `phase_complete: true` in that phase's `plan-<n>.md`
 frontmatter (run state lives in the implementation plan, never in the
 brief).
-After each phase verifies, review the phase diff - the multi-phase profile:
-cap 3, with lanes derived from zone unless the item has an explicit
-`review_lanes:` override - fix and
-re-verify, then run the build gate and commit the phase following Step 4's
-commit rules. After the last phase, continue from Step 4's PR steps
+After each phase verifies, use the zone to decide whether its diff warrants a
+code-review dispatch. Every such dispatch spends from the run-global maximum
+of four, and at least one dispatch must remain for the whole-PR review; a phase
+boundary never resets the ledger. Fix and re-verify material findings, then run
+the build gate and commit the phase following Step 4's commit rules. After the
+last phase, continue from Step 4's PR steps
 (deploy-notes scan over the whole multi-phase diff, rebase, push, open the
 PR) and run Steps 5–6 once for the whole item. Phases chain without
 stopping - a completed phase flows straight into the next phase's Step 1;

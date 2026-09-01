@@ -20,9 +20,9 @@ be zone 2. `/do` derives its dials from the zone.
 
 ## Dial table
 
-| Zone | Review lanes | Loop caps (plan / post-PR) | Frontend verifier | End QA pass | Research |
+| Zone | Review lanes | Loop caps (plan / global code review) | Frontend verifier | End QA pass | Research |
 |---|---|---|---|---|---|
-| 0 | dual (Codex + Claude), always | 3 / 3 | yes, when UI is touched | always | full (dossier) |
+| 0 | dual (Codex + Claude), always | 3 / 4 | yes, when UI is touched | always | full (dossier) |
 | 1 | single - Codex | 3 / 3 | when user-visible | always - full checklist when user-visible, command-shaped otherwise | full (dossier) |
 | 2 | single - Codex | 1 / 1 | only when reproduction needs the running app | command-shaped items only | direct (no dossier) |
 | 3 | **single - Codex** | 1 / 1 | no | no | direct |
@@ -62,6 +62,12 @@ never claimed passed.
   pass returns zero Must Fix (Codex tiers: P0/P1) from every lane and the
   lanes roughly agree - remaining cap budget is never spent re-reviewing
   Should Fixes.
+- **The code-review cap is global to the run.** Every phase review, whole-PR
+  review, confirmation pass, hosted review trigger, and QA-fix review spends
+  from the same counter. The zone chooses the ceiling shown above, and four is
+  an absolute maximum. The counter never resets, and at least one dispatch is
+  reserved for the whole-PR review. A changed HEAD alone is not a review
+  trigger; P2/P3 findings never trigger another pass.
 - **`review_lanes:` and `frontend_verifier:` are the two human-settable
   dial overrides.** An item may
   carry `review_lanes: dual | single` in its metadata - set at capture or
@@ -92,8 +98,10 @@ reachable as `unknown`.
 ## Multi-phase items
 
 A multi-phase item (two or more entries in the item metadata's `phases`
-list) is always **full machinery**: dossier and cap 3. Its review lanes follow
-the zone rule: dual at zone 0, single Codex at zones 1–3. The zone still gates
+list) always uses the **full research/planning machinery**. Its review lanes
+and cumulative code-review ceiling still come from its zone: dual at zone 0,
+single Codex at zones 1–3. Phase boundaries never reset the global counter.
+The zone still gates
 the frontend-verifier and QA dials per phase, and still rides in every record.
 Skills reference this override here. An explicit `review_lanes:` on the item
 itself outranks the zone default in either direction.

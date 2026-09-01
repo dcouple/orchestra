@@ -49,9 +49,9 @@ requested_lanes: <dual | single - omit unless runtime fallback occurred>
 effective_lanes: <single-codex - omit unless runtime fallback occurred>
 runtime_fallback: <codex fallback - omit unless runtime fallback occurred>
 fallback_cause: <daemon-classified cause - omit unless runtime fallback occurred>
-passes: {plan: <used>/<cap>, post_pr: <used>/<cap>}
+passes: {plan: <used>/<cap>, code_review_global: <cumulative used>/<zone ceiling, max 4>}
 findings: {plan: {pass1: {codex: <n>}, later: {codex: <n>}},
-           post_pr: {pass1: {codex: <n>}, later: {codex: <n>}}}
+           code_review_global: {phase: {codex: <n>}, whole_pr_and_qa: {codex: <n>}}}
 verifiers: {frontend: <ran|skipped|disabled_by_item>, qa_pass: <ran|trimmed|skipped>}  # disabled_by_item: list each app-only AC as "unverified - frontend verifier disabled by the item" under Verification evidence
 qa_findings: <n>
 cleanup: {disposition: <clean | registered | none_created>, markers: [<run marker>], registered: <n>}  # product state the QA drive created; "registered" means recorded for a reaper, not yet purged
