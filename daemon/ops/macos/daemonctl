@@ -46,6 +46,47 @@ validate_harness() { [[ $1 == claude || $1 == claudex ]] || usage_error "harness
 validate_reason() { [[ $1 != *$'\n'* && ${#1} -le 240 ]] || usage_error "reason must be one line of at most 240 characters"; }
 ops_cli() { DB_PATH="$DB_PATH" "$NODE_BIN" "$OPS_CLI" "$@"; }
 fault_after() { [[ ${DAEMONCTL_FAULT_AFTER:-} == "$1" ]] || return 0; echo "fixture crash after $1" >&2; exit 99; }
+fsync_artifact() {
+  python3 - "$1" <<'PY'
+import os,sys
+path=sys.argv[1]
+fd=os.open(path,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))
+try: os.fsync(fd)
+finally: os.close(fd)
+directory=os.open(os.path.dirname(path),os.O_RDONLY)
+try: os.fsync(directory)
+finally: os.close(directory)
+PY
+}
+write_rollback_trigger() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import json,os,sys
+path,operation_id,digest=sys.argv[1:]
+flags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0)
+fd=os.open(path,flags,0o600)
+try:
+  os.write(fd,(json.dumps({"digest":digest,"operationId":operation_id},sort_keys=True,separators=(",",":"))+"\n").encode())
+  os.fsync(fd)
+finally: os.close(fd)
+directory=os.open(os.path.dirname(path),os.O_RDONLY)
+try: os.fsync(directory)
+finally: os.close(directory)
+PY
+}
+remove_console_artifacts() {
+  python3 - "$@" <<'PY'
+import os,sys
+for path in sys.argv[1:]:
+  try: os.unlink(path)
+  except FileNotFoundError: pass
+for directory in sorted({os.path.dirname(path) for path in sys.argv[1:]}):
+  try:
+    fd=os.open(directory,os.O_RDONLY); os.fsync(fd); os.close(fd)
+  except FileNotFoundError: pass
+if os.environ.get("DAEMONCTL_FAULT_AFTER")=="console_artifact_directories_synced":
+  raise SystemExit(99)
+PY
+}
 health_accept() {
   sudo /bin/launchctl print "system/$DAEMON_LABEL" 2>/dev/null | grep -q 'state = running' || return 1
   CURL_BIN=curl SLEEP_BIN=sleep bash "$HEALTH_WAITER" "$HEALTH_URL"
@@ -106,6 +147,9 @@ PY
   [[ -z $pending_id ]] || print_operation_recovery "$pending_id"
 }
 transition() { ops_cli transition "$@" >/dev/null; }
+console_cancel_requested() {
+  ops_cli get "$1" | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("cancelRequested")==1 else 1)'
+}
 restart_service() { sudo /bin/launchctl kickstart -k "system/$DAEMON_LABEL"; }
 release_maintenance_lock() {
   [[ ${MAINTENANCE_LOCK_OWNED:-0} == 1 ]] || return 0
@@ -309,24 +353,34 @@ execute_update_operation() {
   die "reload failed and rollback was not accepted"
 }
 
+derive_reload_metadata() {
+  [[ -d $SOURCE_CHECKOUT/.git ]] || { echo "reload validation failed: persistent checkout missing: $SOURCE_CHECKOUT" >&2; return 1; }
+  [[ -z $($GIT_BIN -C "$SOURCE_CHECKOUT" status --porcelain) ]] || { echo "reload validation failed: checkout is dirty" >&2; return 1; }
+  RELOAD_REMOTE=$($GIT_BIN -C "$SOURCE_CHECKOUT" config --get remote.origin.url)
+  [[ $RELOAD_REMOTE == https://* ]] || { echo "reload validation failed: origin must use HTTPS" >&2; return 1; }
+  RELOAD_ACCEPTED=$(marker_value "$ACCEPTED_COMMIT_FILE")
+  [[ $RELOAD_ACCEPTED =~ ^[0-9a-fA-F]{40}$ ]] || { echo "reload validation failed: accepted commit marker missing or malformed" >&2; return 1; }
+  RELOAD_ACCEPTED=$(printf '%s' "$RELOAD_ACCEPTED" | tr 'A-F' 'a-f')
+  RELOAD_DEPLOYED=$(marker_value "$DEPLOYED_COMMIT_FILE")
+  RELOAD_TARGET=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'HEAD^{commit}')
+  "$GIT_BIN" -C "$SOURCE_CHECKOUT" cat-file -e "$RELOAD_ACCEPTED^{commit}" 2>/dev/null \
+    || { echo "reload validation failed: accepted commit is absent" >&2; return 1; }
+  "$GIT_BIN" -C "$SOURCE_CHECKOUT" merge-base --is-ancestor "$RELOAD_ACCEPTED" "$RELOAD_TARGET" \
+    || { echo "reload validation failed: HEAD is not a fast-forward descendant" >&2; return 1; }
+}
+
 command_reload() {
   require_user
   local reason="operator reload" dry=0
   while (( $# )); do case $1 in --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;; --dry-run) dry=1 ;; *) usage_error "unknown reload argument: $1" ;; esac; shift; done
   validate_reason "$reason"
-  [[ -d $SOURCE_CHECKOUT/.git ]] || die "reload validation failed: persistent checkout missing: $SOURCE_CHECKOUT"
-  [[ -z $($GIT_BIN -C "$SOURCE_CHECKOUT" status --porcelain) ]] || die "reload validation failed: checkout is dirty"
-  local remote accepted deployed target id
-  remote=$($GIT_BIN -C "$SOURCE_CHECKOUT" config --get remote.origin.url); [[ $remote == https://* ]] || die "reload validation failed: origin must use HTTPS"
-  accepted=$(marker_value "$ACCEPTED_COMMIT_FILE"); [[ $accepted =~ ^[0-9a-fA-F]{40}$ ]] || die "reload validation failed: accepted commit marker missing or malformed"
-  deployed=$(marker_value "$DEPLOYED_COMMIT_FILE"); target=$($GIT_BIN -C "$SOURCE_CHECKOUT" rev-parse 'HEAD^{commit}')
-  "$GIT_BIN" -C "$SOURCE_CHECKOUT" cat-file -e "$accepted^{commit}" 2>/dev/null || die "reload validation failed: accepted commit is absent"
-  "$GIT_BIN" -C "$SOURCE_CHECKOUT" merge-base --is-ancestor "$accepted" "$target" || die "reload validation failed: HEAD is not a fast-forward descendant"
-  [[ $target != "$accepted" || $deployed != "$accepted" ]] || { echo "already deployed and accepted: $accepted"; return; }
-  if (( dry )); then echo "would deploy exact clean checkout commit $target over accepted commit $accepted via detached worktree and deploy.sh; health-gate; mark accepted; rollback on failure"; return; fi
+  local id
+  derive_reload_metadata || die "reload validation failed"
+  [[ $RELOAD_TARGET != "$RELOAD_ACCEPTED" || $RELOAD_DEPLOYED != "$RELOAD_ACCEPTED" ]] || { echo "already deployed and accepted: $RELOAD_ACCEPTED"; return; }
+  if (( dry )); then echo "would deploy exact clean checkout commit $RELOAD_TARGET over accepted commit $RELOAD_ACCEPTED via detached worktree and deploy.sh; health-gate; mark accepted; rollback on failure"; return; fi
   acquire_maintenance_lock
-  id=$(new_id); id=$(schedule_inline "$id" update "$reason" checkout/HEAD "$target" "$accepted")
-  execute_update_operation "$id" "$target" "$accepted"
+  id=$(new_id); id=$(schedule_inline "$id" update "$reason" checkout/HEAD "$RELOAD_TARGET" "$RELOAD_ACCEPTED")
+  execute_update_operation "$id" "$RELOAD_TARGET" "$RELOAD_ACCEPTED"
 }
 
 command_operation() {
@@ -475,6 +529,164 @@ command_sim_preflight() {
   exec /usr/bin/env -i "${env_args[@]}" "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/sim-preflight.js" "$@"
 }
 
+# Fixed executor bridge. It accepts no request arguments; the only input is the
+# contained, service-owned executing leaf selected by the TypeScript executor.
+command_internal_console_execute() {
+  require_user
+  [[ $# -eq 0 ]] || usage_error "internal-console-execute accepts no arguments"
+  local spool=$STATE_DIR/console-requests request='' trigger='' id kind digest row changes candidate backup snapshot candidate_path
+  for candidate_path in "$spool/rollback"/*.json; do [[ -f $candidate_path && ! -L $candidate_path ]] || continue; trigger=$candidate_path; break; done
+  if [[ -n $trigger ]]; then
+    id=${trigger##*/}; id=${id%.json}; backup=$STATE_DIR/backups/$id.env
+    [[ $id =~ ^[A-Za-z0-9-]{1,64}$ && -f $backup && ! -L $backup ]] || die "invalid rollback trigger"
+    digest=$(python3 - "$trigger" "$id" <<'PY'
+import json,os,stat,sys
+path,operation_id=sys.argv[1:]
+info=os.lstat(path); assert stat.S_ISREG(info.st_mode) and not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o077 == 0
+with open(path) as stream: value=json.load(stream)
+assert set(value)=={"digest","operationId"} and value["operationId"]==operation_id
+assert isinstance(value["digest"],str) and len(value["digest"])==64
+print(value["digest"])
+PY
+    ) || die "invalid rollback trigger"
+    row=$(ops_cli get "$id")
+    python3 - "$row" "$digest" <<'PY' || die "rollback trigger does not match durable operation"
+import json,sys
+row=json.loads(sys.argv[1]); assert row and row.get("requestDigest")==sys.argv[2] and row.get("actor")=="local-console"
+assert row.get("state") in ("executing","rolling_back","blocked")
+PY
+    request=$spool/executing/$id.json; changes=$STATE_DIR/backups/$id.changes.json; candidate=$ENV_FILE.new.$id
+    acquire_maintenance_lock; cp -p "$backup" "$ENV_FILE"; fsync_artifact "$ENV_FILE"
+    fault_after rollback_restore
+    if restart_service && health_accept; then
+      "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/managed-env-cli.js" snapshot "$ENV_FILE" "$STATE_DIR/console-config-snapshot.json"
+      transition "$id" failed rolled_back "configuration rollback accepted" health 1 1
+      fault_after terminal_rollback_accept
+      remove_console_artifacts "$trigger" "$request" "$changes" "$candidate" "$backup"
+      return 0
+    fi
+    transition "$id" blocked rollback_acceptance - rollback_acceptance 1 -
+    remove_console_artifacts "$trigger" "$request" "$changes" "$candidate"
+    die "rollback did not pass health acceptance"
+  fi
+  for candidate_path in "$spool/executing"/*.json; do [[ -f $candidate_path && ! -L $candidate_path ]] || continue; request=$candidate_path; break; done
+  [[ -n $request ]] || return 0
+  id=${request##*/}; id=${id%.json}
+  [[ $id =~ ^[A-Za-z0-9-]{1,64}$ ]] || die "invalid console operation id"
+  digest=$(python3 - "$request" <<'PY'
+import hashlib,json,sys
+data=json.load(open(sys.argv[1])); raw=json.dumps(data,sort_keys=True,separators=(",",":"),ensure_ascii=False)
+print(hashlib.sha256(raw.encode()).hexdigest())
+PY
+  )
+  row=$(ops_cli get "$id")
+  python3 - "$row" "$digest" <<'PY' || die "console request does not match durable operation"
+import json,sys
+row=json.loads(sys.argv[1]); assert row and row.get("requestDigest")==sys.argv[2] and row.get("actor")=="local-console"
+PY
+  kind=$(python3 - "$request" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1])); assert p.get("version")==1
+assert p.get("kind") in ("config.apply","daemon.restart","daemon.reload")
+print(p["kind"])
+PY
+  ) || die "invalid console request"
+  acquire_maintenance_lock
+  case $kind in
+    daemon.restart)
+      if console_cancel_requested "$id"; then
+        ops_cli cancel "$id" >/dev/null
+        remove_console_artifacts "$request"
+        return 0
+      fi
+      transition "$id" executing restart_service - - 1 -
+      restart_service && health_accept || { transition "$id" blocked health - health 1 -; die "console operation failed health acceptance"; }
+      transition "$id" succeeded accepted "service active and health accepted" - 1 -
+      ;;
+    daemon.reload)
+      if console_cancel_requested "$id"; then
+        ops_cli cancel "$id" >/dev/null
+        remove_console_artifacts "$request"
+        return 0
+      fi
+      if ! derive_reload_metadata; then
+        transition "$id" blocked reload_validation - reload_validation - -
+        die "console reload validation failed"
+      fi
+      ops_cli reload-bind "$id" "$RELOAD_TARGET" "$RELOAD_ACCEPTED" >/dev/null
+      if [[ $RELOAD_TARGET == "$RELOAD_ACCEPTED" && $RELOAD_DEPLOYED == "$RELOAD_ACCEPTED" ]]; then
+        transition "$id" succeeded accepted "already deployed and accepted" - - -
+      else
+        execute_update_operation "$id" "$RELOAD_TARGET" "$RELOAD_ACCEPTED"
+      fi
+      ;;
+    config.apply)
+      install -d -m 0700 "$STATE_DIR/backups"
+      backup=$STATE_DIR/backups/$id.env; candidate=$ENV_FILE.new.$id; changes=$STATE_DIR/backups/$id.changes.json
+      snapshot=$STATE_DIR/console-config-snapshot.json
+      "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/managed-env-cli.js" matches "$snapshot" "$ENV_FILE" >/dev/null \
+        || { transition "$id" failed snapshot_changed "configuration changed; redraft required" snapshot - -; die "configuration snapshot changed"; }
+      # A pre-intent crash may leave only derived secret transients. The
+      # executing request is still authoritative, so regenerate them safely.
+      remove_console_artifacts "$changes" "$candidate"
+      cp -p "$ENV_FILE" "$backup"; fsync_artifact "$backup"
+      python3 - "$request" "$changes" <<'PY'
+import json,os,sys
+p=json.load(open(sys.argv[1])); c=p.get("changes",{}); s=p.get("secrets",{})
+m={"plannerHarness":"PLANNER_HARNESS","implementerHarness":"IMPLEMENTER_HARNESS","sessionConcurrency":"SESSION_CONCURRENCY","iosSimMaxConcurrent":"IOS_SIM_MAX_CONCURRENT","claudeMaxTurns":"CLAUDE_MAX_TURNS","doMaxTurns":"DO_MAX_TURNS","doMaxBudgetUsd":"DO_MAX_BUDGET_USD","mcpEnvPassthrough":"MCP_ENV_PASSTHROUGH","browserEnabled":"BROWSER_ENABLED","iosSimEnabled":"IOS_SIM_ENABLED","attachmentsEnabled":"ATTACHMENTS_ENABLED","ntfyUrl":"NTFY_URL"}
+out={}
+for k,v in c.items():
+  assert k in m
+  if isinstance(v,bool): v="1" if v else "0"
+  elif isinstance(v,list): v=",".join(v)
+  elif v is None: v=None
+  else: v=str(v)
+  out[m[k]]=v
+for k,v in s.items(): out[k]=v
+flags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0)
+fd=os.open(sys.argv[2],flags,0o600)
+with os.fdopen(fd,"w") as f: json.dump(out,f,sort_keys=True,separators=(",",":"))
+PY
+      "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/managed-env-cli.js" render "$ENV_FILE" "$changes" "$candidate"
+      chmod "$(stat -f %Lp "$ENV_FILE")" "$candidate"; fsync_artifact "$candidate"
+      fault_after candidate_rendered
+      if console_cancel_requested "$id"; then
+        ops_cli cancel "$id" >/dev/null
+        remove_console_artifacts "$request" "$changes" "$candidate" "$backup"
+        return 0
+      fi
+      trigger=$spool/rollback/$id.json
+      write_rollback_trigger "$trigger" "$id" "$digest"
+      fault_after rollback_trigger
+      transition "$id" executing rollback_required - - 1 -
+      fault_after rollback_intent
+      mv "$candidate" "$ENV_FILE"; fsync_artifact "$ENV_FILE"
+      fault_after replace_environment
+      remove_console_artifacts "$request" "$changes"
+      fault_after secret_unlink
+      if restart_service && health_accept; then
+        "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/managed-env-cli.js" snapshot "$ENV_FILE" "$snapshot"
+        transition "$id" succeeded accepted "configuration accepted" - 1 -
+        fault_after terminal_accept
+        remove_console_artifacts "$trigger" "$backup"
+      else
+        cp -p "$backup" "$ENV_FILE"; fsync_artifact "$ENV_FILE"
+        fault_after rollback_restore
+        if restart_service && health_accept; then
+          "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/managed-env-cli.js" snapshot "$ENV_FILE" "$snapshot"
+          transition "$id" failed rolled_back "configuration failed; rollback accepted" health 1 1
+          fault_after terminal_rollback_accept
+          remove_console_artifacts "$trigger" "$backup"
+        else
+          transition "$id" blocked rollback_acceptance - rollback_acceptance 1 -
+          remove_console_artifacts "$trigger"
+          die "configuration rollback did not pass health acceptance"
+        fi
+      fi
+      ;;
+  esac
+}
+
 case ${1:-} in
   --help|-h) [[ $# -eq 1 ]] || usage_error "unexpected arguments"; usage ;;
   config) shift; command_config "$@" ;;
@@ -483,6 +695,7 @@ case ${1:-} in
   operation) shift; command_operation "$@" ;;
   status) shift; command_status "$@" ;;
   sim-preflight) shift; command_sim_preflight "$@" ;;
+  internal-console-execute) shift; command_internal_console_execute "$@" ;;
   sessions) require_user; [[ $# -eq 1 ]] || usage_error "sessions takes no arguments"; result=$(ops_cli running); [[ $result == '[]' ]] && echo 'no running turns' || echo "$result" ;;
   top)
     require_user; shift; watch=0; count=0

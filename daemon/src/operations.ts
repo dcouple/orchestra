@@ -18,6 +18,9 @@ export interface ScheduleOperationInput {
   targetRef?: string | null;
   targetCommit?: string | null;
   previousCommit?: string | null;
+  actor?: "operator" | "local-console" | "system";
+  requestKind?: string | null;
+  requestSummary?: string | null;
 }
 
 export interface OperationRow {
@@ -37,7 +40,21 @@ export interface OperationRow {
   outcome: string | null;
   errorStage: string | null;
   updatedAt: number;
+  actor: "operator" | "local-console" | "system";
+  requestKind: string | null;
+  requestSummary: string | null;
+  stateVersion: number;
+  cancelRequested: number;
 }
+
+export type OperationControlKind = "retry" | "cancel";
+export type OperationControlState = "pending" | "executing" | "succeeded" | "rejected";
+export interface OperationStageEvent { sequence: number; operationId: string; state: OperationState;
+  stage: string | null; outcome: string | null; createdAt: number }
+export interface OperationControlRow { id: string; digest: string; targetOperationId: string;
+  targetDigest: string; kind: OperationControlKind; actor: "local-console"; reason: string;
+  expectedVersion: number; state: OperationControlState; outcome: string | null;
+  requestedAt: number; updatedAt: number }
 
 export interface SafeRunningTurn {
   app: "planner" | "implementer";
@@ -91,4 +108,9 @@ export function validateScheduleOperation(input: ScheduleOperationInput): void {
   for (const commit of [input.targetCommit, input.previousCommit]) {
     if (commit !== undefined && commit !== null && !/^[0-9a-f]{40}$/i.test(commit)) throw new Error("invalid commit id");
   }
+  if (input.actor !== undefined && !["operator", "local-console", "system"].includes(input.actor)) throw new Error("invalid operation actor");
+  if (input.requestKind !== undefined && input.requestKind !== null
+      && !/^[a-z][a-z0-9.]{0,63}$/.test(input.requestKind)) throw new Error("invalid operation request kind");
+  if (input.requestSummary !== undefined && input.requestSummary !== null
+      && (input.requestSummary.length > 2_000 || /[\x00-\x1f\x7f]/.test(input.requestSummary))) throw new Error("invalid operation request summary");
 }

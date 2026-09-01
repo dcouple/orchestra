@@ -3,9 +3,29 @@ import Database from "better-sqlite3";
 import type { TurnUsage } from "./claude.js";
 import type { AppName } from "./config.js";
 import type { InFlightDispatch } from "./dispatches.js";
-import { ACTIVE_OPERATION_STATES, type OperationRow, type OperationState,
+import { ACTIVE_OPERATION_STATES, type OperationControlKind, type OperationControlRow, type OperationRow, type OperationStageEvent, type OperationState,
   type SafeOperationStatus, type SafeRunningTurn, type ScheduleOperationInput, validateScheduleOperation } from "./operations.js";
 import { SimCapacityError, SimTurnLimitError } from "./sim.js";
+import { projectConsoleLoop, projectInvocation, projectResources, type ConsoleLoopDefinition,
+  type ConsoleRunDetail, type ConsoleRunSummary } from "./console-projections.js";
+import { nextLoopDue, type LoopDeclaration, type LoopOutcome } from "./loops.js";
+
+export interface LoopDefinitionRow extends LoopDeclaration {
+  id: string; revision: number; digest: string; nextDueAt: number; blockedReason: string | null;
+  createdAt: number; updatedAt: number;
+}
+export interface LoopAuditRow { loopId: string; sequence: number; kind: string; reason: string; actor: string; details: Record<string, unknown>; createdAt: number }
+export interface LoopOccurrenceRow {
+  id: string; loopId: string; definitionRevision: number; scheduledFor: number; runId: string; turnId: number;
+  status: "pending" | "running" | "retry_wait" | "succeeded" | "blocked" | "cancelled";
+  retryCount: number; nextAttemptAt: number; outcome: LoopOutcome | null; error: string | null;
+  snapshot: LoopDeclaration; worktreePath: string | null; branch: string | null; createdAt: number; startedAt: number | null; finishedAt: number | null;
+  inputTokens:number|null;outputTokens:number|null;cacheCreationTokens:number|null;cacheReadTokens:number|null;costUsd:number|null;model:string|null;
+}
+export interface LoopCleanupJobRow { id: number; occurrenceId: string; loopId: string; ownerKey: string; worktreePath: string | null;
+  status: "pending" | "running" | "done" | "retained" | "failed"; attempts: number; nextAttemptAt: number; error: string | null; createdAt: number }
+export type SafeLoopMutationDefinition = ConsoleLoopDefinition;
+export interface LoopMutationResult { loop: SafeLoopMutationDefinition; auditSequence: number; deduplicated: boolean }
 
 export interface AppendEvent {
   deliveryId?: string | undefined;
@@ -24,6 +44,7 @@ export interface AppendEvent {
 }
 
 export interface SessionRow {
+  originKind?: "linear" | "loop"; originId?: string | null; loopOccurrenceId?: string | null;
   linearSessionId: string;
   app: AppName;
   issueId: string | null;
@@ -53,6 +74,21 @@ export interface ProviderStateRow {
   cooldownUntil: number | null;
   updatedAt: number;
 }
+export type DependencyKind = "mcp" | "harness";
+export type DependencyHealth = "healthy" | "unavailable" | "unknown" | "disabled";
+export interface DependencyObservationInput {
+  kind: DependencyKind;
+  name: string;
+  configured: boolean;
+  status: DependencyHealth;
+  reasonCode: string | null;
+  capabilities?: Record<string, string | number | boolean | null>;
+  observedAt: number;
+  staleAfterMs: number;
+}
+export interface DependencyObservationRow extends Omit<DependencyObservationInput, "capabilities"> {
+  capabilities: Record<string, string | number | boolean | null>;
+}
 export interface AppendResult {
   inserted: boolean;
   deliveryId: string;
@@ -62,12 +98,13 @@ export interface AppendResult {
   stop?: { agentSessionId: string; app: AppName };
 }
 export interface TurnRow {
+  originKind?: "linear" | "loop"; originId?: string | null; loopOccurrenceId?: string | null; resourceKey?: string;
   id: number;
-  eventId: number;
+  eventId: number | null;
   app: AppName;
   linearSessionId: string;
-  issueId: string;
-  kind: "created" | "prompted";
+  issueId: string | null;
+  kind: "created" | "prompted" | "loop";
   prompt: string | null;
   status:
     | "pending"
@@ -274,6 +311,45 @@ export interface StopAckRow {
 const STOP_ACK_BODY =
   "Stopped at your request. Send a follow-up message to continue.";
 
+function validateCapabilities(value: unknown): Record<string, string | number | boolean | null> {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error("dependency capabilities must be an object");
+  const entries = Object.entries(value);
+  if (entries.length > 16) throw new Error("dependency capabilities are too large");
+  const result: Record<string, string | number | boolean | null> = {};
+  for (const [key, capability] of entries) {
+    if (!/^[a-z][a-zA-Z0-9]{0,31}$/.test(key))
+      throw new Error("dependency capability key is invalid");
+    if (capability !== null && typeof capability !== "string" && typeof capability !== "number"
+      && typeof capability !== "boolean") throw new Error("dependency capability value is invalid");
+    if (typeof capability === "string" && (capability.length > 128 || /[^\x20-\x7e]/.test(capability)))
+      throw new Error("dependency capability value is invalid");
+    if (typeof capability === "number" && (!Number.isSafeInteger(capability) || capability < 0))
+      throw new Error("dependency capability value is invalid");
+    result[key] = capability;
+  }
+  if (JSON.stringify(result).length > 2048) throw new Error("dependency capabilities are too large");
+  return result;
+}
+
+function validateDependencyObservation(input: DependencyObservationInput): Record<string, string | number | boolean | null> {
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(input.name)) throw new Error("dependency name is invalid");
+  if (!/^(?:[a-z][a-z0-9_]{0,63})$/.test(input.reasonCode ?? "healthy"))
+    throw new Error("dependency reason code is invalid");
+  if (!Number.isSafeInteger(input.observedAt) || input.observedAt < 0)
+    throw new Error("dependency observed time is invalid");
+  if (!Number.isSafeInteger(input.staleAfterMs) || input.staleAfterMs < 1 || input.staleAfterMs > 86_400_000)
+    throw new Error("dependency stale interval is invalid");
+  const capabilities = validateCapabilities(input.capabilities ?? {});
+  if (input.kind === "mcp" && input.name === "linear") {
+    if (Object.keys(capabilities).some(key => key !== "toolCount" && key !== "truncated")
+      || (capabilities.toolCount !== undefined && (typeof capabilities.toolCount !== "number" || capabilities.toolCount > 256))
+      || (capabilities.truncated !== undefined && typeof capabilities.truncated !== "boolean"))
+      throw new Error("linear dependency capabilities are invalid");
+  } else if (Object.keys(capabilities).length > 0) throw new Error("dependency does not support capabilities");
+  return capabilities;
+}
+
 function randomHex(bytes: number): string {
   let value = randomBytes(bytes).toString("hex");
   while (/^0+$/.test(value)) value = randomBytes(bytes).toString("hex");
@@ -365,6 +441,9 @@ export class EventLog {
       );
       CREATE TABLE IF NOT EXISTS sessions (
         linear_session_id TEXT PRIMARY KEY,
+        origin_kind TEXT NOT NULL DEFAULT 'linear' CHECK(origin_kind IN ('linear','loop')),
+        origin_id TEXT,
+        loop_occurrence_id TEXT,
         app TEXT NOT NULL CHECK(app IN ('planner','implementer')),
         issue_id TEXT,
         issue_identifier TEXT,
@@ -388,11 +467,15 @@ export class EventLog {
       );
       CREATE TABLE IF NOT EXISTS turns (
         id INTEGER PRIMARY KEY,
-        event_id INTEGER NOT NULL UNIQUE REFERENCES events(id),
+        origin_kind TEXT NOT NULL DEFAULT 'linear' CHECK(origin_kind IN ('linear','loop')),
+        origin_id TEXT REFERENCES loop_definitions(id),
+        loop_occurrence_id TEXT REFERENCES loop_occurrences(id),
+        resource_key TEXT NOT NULL,
+        event_id INTEGER UNIQUE REFERENCES events(id),
         linear_session_id TEXT NOT NULL,
-        issue_id TEXT NOT NULL,
+        issue_id TEXT,
         source_key TEXT,
-        kind TEXT NOT NULL CHECK(kind IN ('created','prompted')),
+        kind TEXT NOT NULL CHECK(kind IN ('created','prompted','loop')),
         prompt TEXT,
         status TEXT NOT NULL CHECK(status IN ('pending','running','awaiting_activity','done','failed','interrupted')),
         attempts INTEGER NOT NULL DEFAULT 0,
@@ -407,7 +490,15 @@ export class EventLog {
         model TEXT,
         trace_id TEXT,
         turn_span_id TEXT,
-        execution_finished_at INTEGER
+        execution_finished_at INTEGER,
+        CHECK (
+          (origin_kind='linear' AND kind IN ('created','prompted') AND event_id IS NOT NULL AND issue_id IS NOT NULL
+            AND origin_id IS NULL AND loop_occurrence_id IS NULL)
+          OR
+          (origin_kind='loop' AND kind='loop' AND event_id IS NULL AND issue_id IS NULL
+            AND origin_id IS NOT NULL AND loop_occurrence_id IS NOT NULL)
+        ),
+        FOREIGN KEY(loop_occurrence_id,origin_id) REFERENCES loop_occurrences(id,loop_id)
       );
       CREATE TABLE IF NOT EXISTS turn_activities (
         turn_id INTEGER PRIMARY KEY REFERENCES turns(id),
@@ -451,6 +542,17 @@ export class EventLog {
         reason TEXT,
         cooldown_until INTEGER,
         updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS dependency_observations (
+        kind TEXT NOT NULL CHECK(kind IN ('mcp','harness')),
+        name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 64),
+        configured INTEGER NOT NULL CHECK(configured IN (0,1)),
+        status TEXT NOT NULL CHECK(status IN ('healthy','unavailable','unknown','disabled')),
+        reason_code TEXT CHECK(reason_code IS NULL OR length(reason_code) BETWEEN 1 AND 64),
+        capabilities_json TEXT NOT NULL CHECK(length(capabilities_json) <= 2048),
+        observed_at INTEGER NOT NULL,
+        stale_after_ms INTEGER NOT NULL CHECK(stale_after_ms BETWEEN 1 AND 86400000),
+        PRIMARY KEY(kind,name)
       );
       CREATE TABLE IF NOT EXISTS agent_invocations (
         id INTEGER PRIMARY KEY,
@@ -524,10 +626,39 @@ export class EventLog {
         rollback_verified INTEGER NOT NULL DEFAULT 0,
         outcome TEXT,
         error_stage TEXT,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        actor TEXT NOT NULL DEFAULT 'operator' CHECK(actor IN ('operator','local-console','system')),
+        request_kind TEXT,
+        request_summary TEXT,
+        state_version INTEGER NOT NULL DEFAULT 0,
+        cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1))
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_one_active
         ON operations((1)) WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
+      CREATE TABLE IF NOT EXISTS operation_stage_events (
+        operation_id TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+        sequence INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        stage TEXT,
+        outcome TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(operation_id,sequence)
+      );
+      CREATE TABLE IF NOT EXISTS operation_controls (
+        id TEXT PRIMARY KEY,
+        digest TEXT NOT NULL UNIQUE,
+        target_operation_id TEXT NOT NULL REFERENCES operations(id),
+        target_digest TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('retry','cancel')),
+        actor TEXT NOT NULL CHECK(actor='local-console'),
+        reason TEXT NOT NULL,
+        expected_version INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','succeeded','rejected')),
+        outcome TEXT,
+        requested_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(target_operation_id,target_digest,kind,expected_version)
+      );
       CREATE TABLE IF NOT EXISTS restart_intents (
         singleton INTEGER PRIMARY KEY CHECK(singleton=1),
         policy TEXT NOT NULL CHECK(policy='interrupt'),
@@ -571,11 +702,46 @@ export class EventLog {
         reap_attempts INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_sim_leases_state ON sim_leases(state);
+      CREATE TABLE IF NOT EXISTS loop_definitions (
+        id TEXT PRIMARY KEY, revision INTEGER NOT NULL, digest TEXT NOT NULL, declaration_json TEXT NOT NULL,
+        name TEXT NOT NULL, description TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+        blocked_reason TEXT, next_due_at INTEGER NOT NULL, max_concurrency INTEGER NOT NULL,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS loop_audit_events (
+        loop_id TEXT NOT NULL REFERENCES loop_definitions(id), sequence INTEGER NOT NULL, kind TEXT NOT NULL,
+        reason TEXT NOT NULL, actor TEXT NOT NULL, details_json TEXT NOT NULL, created_at INTEGER NOT NULL,
+        PRIMARY KEY(loop_id,sequence)
+      );
+      CREATE TABLE IF NOT EXISTS loop_occurrences (
+        id TEXT PRIMARY KEY, loop_id TEXT NOT NULL REFERENCES loop_definitions(id), definition_revision INTEGER NOT NULL,
+        scheduled_for INTEGER NOT NULL, run_id TEXT NOT NULL UNIQUE, turn_id INTEGER UNIQUE REFERENCES turns(id), status TEXT NOT NULL,
+        retry_count INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL, outcome TEXT, error TEXT,
+        snapshot_json TEXT NOT NULL, worktree_path TEXT, branch TEXT, created_at INTEGER NOT NULL,
+        started_at INTEGER, finished_at INTEGER,input_tokens INTEGER,output_tokens INTEGER,cache_creation_tokens INTEGER,
+        cache_read_tokens INTEGER,cost_usd REAL,model TEXT, UNIQUE(loop_id,scheduled_for), UNIQUE(id,loop_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_loop_occurrences_claim ON loop_occurrences(status,next_attempt_at);
+      CREATE TABLE IF NOT EXISTS loop_cleanup_jobs (
+        id INTEGER PRIMARY KEY, occurrence_id TEXT NOT NULL UNIQUE REFERENCES loop_occurrences(id),
+        loop_id TEXT NOT NULL REFERENCES loop_definitions(id), owner_key TEXT NOT NULL UNIQUE, worktree_path TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending','running','done','retained','failed')),
+        attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS loop_mutation_receipts (
+        draft_id TEXT PRIMARY KEY, digest TEXT NOT NULL, loop_id TEXT NOT NULL REFERENCES loop_definitions(id),
+        revision INTEGER NOT NULL, audit_sequence INTEGER NOT NULL, response_json TEXT NOT NULL, created_at INTEGER NOT NULL
+      );
     `);
     this.migrateOperationsTable();
+    this.migrateOperationControlGenerations();
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_operation_controls_nonterminal
+      ON operation_controls(state,requested_at,id) WHERE state IN ('pending','executing')`);
     this.migrateEventColumns();
     this.migrateSessionColumns();
     this.migrateTurnColumns();
+    this.migrateLoopColumns();
+    this.migrateTurnOriginShape();
     this.migrateAckColumns();
     this.migrateTurnActivityColumns();
     this.migrateSimLeaseColumns();
@@ -587,10 +753,33 @@ export class EventLog {
     const schema = this.db
       .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='operations'")
       .get() as { sql: string } | undefined;
-    if (!schema?.sql.includes(`'${legacyState}'`)) return;
-    this.db.transaction(() => {
-      this.db.exec(`
-        DROP INDEX IF EXISTS idx_operations_one_active;
+    if (!schema?.sql) return;
+    const columns = new Set((this.db.prepare("PRAGMA table_info(operations)").all() as Array<{ name: string }>).map(row => row.name));
+    const normalized = schema.sql.replace(/\s+/g, "");
+    const auditColumns = ["actor", "request_kind", "request_summary", "state_version", "cancel_requested"];
+    const canonical = auditColumns.every(column => columns.has(column))
+      && normalized.includes("CHECK(actorIN('operator','local-console','system'))")
+      && normalized.includes("CHECK(cancel_requestedIN(0,1))")
+      && !schema.sql.includes(`'${legacyState}'`);
+    if (canonical) return;
+    if (columns.has("actor") && (this.db.prepare(`SELECT 1 FROM operations
+      WHERE actor NOT IN ('operator','local-console','system') LIMIT 1`).get())) throw new Error("invalid legacy operation actor");
+    if (columns.has("cancel_requested") && (this.db.prepare(`SELECT 1 FROM operations
+      WHERE cancel_requested NOT IN (0,1) LIMIT 1`).get())) throw new Error("invalid legacy operation cancellation state");
+    const actor = columns.has("actor") ? "actor" : "'operator'";
+    const requestKind = columns.has("request_kind") ? "request_kind" : "NULL";
+    const requestSummary = columns.has("request_summary") ? "request_summary" : "NULL";
+    const stateVersion = columns.has("state_version") ? "state_version" : "0";
+    const cancelRequested = columns.has("cancel_requested") ? "cancel_requested" : "0";
+    const state = schema.sql.includes(`'${legacyState}'`) ? `CASE state WHEN '${legacyState}' THEN 'pending' ELSE state END` : "state";
+    const stage = schema.sql.includes(`'${legacyState}'`) ? `CASE state WHEN '${legacyState}' THEN NULL ELSE stage END` : "stage";
+    const secondarySchema = this.db.prepare(`SELECT type,name,sql FROM sqlite_master
+      WHERE tbl_name='operations' AND sql IS NOT NULL AND type IN ('index','trigger')
+      AND name<>'idx_operations_one_active' ORDER BY type,name`).all() as Array<{ type: "index" | "trigger"; name: string; sql: string }>;
+    this.db.pragma("foreign_keys = OFF");
+    try {
+      this.db.transaction(() => {
+        this.db.exec(`DROP INDEX IF EXISTS idx_operations_one_active;
         CREATE TABLE operations_new (
           id TEXT PRIMARY KEY,
           request_digest TEXT NOT NULL,
@@ -607,22 +796,54 @@ export class EventLog {
           rollback_verified INTEGER NOT NULL DEFAULT 0,
           outcome TEXT,
           error_stage TEXT,
-          updated_at INTEGER NOT NULL
+          updated_at INTEGER NOT NULL,
+          actor TEXT NOT NULL DEFAULT 'operator' CHECK(actor IN ('operator','local-console','system')),
+          request_kind TEXT,
+          request_summary TEXT,
+          state_version INTEGER NOT NULL DEFAULT 0,
+          cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1))
         );
         INSERT INTO operations_new
           (id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,
-           state,stage,attempts,mutated,rollback_verified,outcome,error_stage,updated_at)
+           state,stage,attempts,mutated,rollback_verified,outcome,error_stage,updated_at,
+           actor,request_kind,request_summary,state_version,cancel_requested)
         SELECT id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,
-          CASE state WHEN '${legacyState}' THEN 'pending' ELSE state END,
-          CASE state WHEN '${legacyState}' THEN NULL ELSE stage END,
-          attempts,mutated,rollback_verified,outcome,error_stage,updated_at
+          ${state},${stage},attempts,mutated,rollback_verified,outcome,error_stage,updated_at,
+          ${actor},${requestKind},${requestSummary},${stateVersion},${cancelRequested}
         FROM operations;
         DROP TABLE operations;
         ALTER TABLE operations_new RENAME TO operations;
         CREATE UNIQUE INDEX idx_operations_one_active
           ON operations((1)) WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
-      `);
-    })();
+        `);
+        for (const object of secondarySchema) this.db.exec(object.sql);
+        const violations = this.db.pragma("foreign_key_check") as Array<Record<string, unknown>>;
+        if (violations.length > 0) throw new Error("operation migration foreign-key violation");
+      })();
+    } finally {
+      this.db.pragma("foreign_keys = ON");
+    }
+  }
+
+  private migrateOperationControlGenerations(): void {
+    const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='operation_controls'")
+      .get() as { sql: string } | undefined;
+    if (!schema?.sql || /UNIQUE\s*\(\s*target_operation_id\s*,\s*target_digest\s*,\s*kind\s*,\s*expected_version\s*\)/i.test(schema.sql)) return;
+    this.db.transaction(() => this.db.exec(`
+      CREATE TABLE operation_controls_new (
+        id TEXT PRIMARY KEY,digest TEXT NOT NULL UNIQUE,target_operation_id TEXT NOT NULL REFERENCES operations(id),
+        target_digest TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('retry','cancel')),
+        actor TEXT NOT NULL CHECK(actor='local-console'),reason TEXT NOT NULL,expected_version INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','succeeded','rejected')),outcome TEXT,
+        requested_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,
+        UNIQUE(target_operation_id,target_digest,kind,expected_version));
+      INSERT INTO operation_controls_new
+        (id,digest,target_operation_id,target_digest,kind,actor,reason,expected_version,state,outcome,requested_at,updated_at)
+      SELECT id,digest,target_operation_id,target_digest,kind,actor,reason,expected_version,state,outcome,requested_at,updated_at
+      FROM operation_controls;
+      DROP TABLE operation_controls;
+      ALTER TABLE operation_controls_new RENAME TO operation_controls;
+    `))();
   }
 
   private migrateEventColumns(): void {
@@ -657,6 +878,9 @@ export class EventLog {
         }>
       ).map((column) => column.name),
     );
+    if(!columns.has("origin_kind"))this.db.prepare("ALTER TABLE sessions ADD COLUMN origin_kind TEXT NOT NULL DEFAULT 'linear'").run();
+    if(!columns.has("origin_id"))this.db.prepare("ALTER TABLE sessions ADD COLUMN origin_id TEXT").run();
+    if(!columns.has("loop_occurrence_id"))this.db.prepare("ALTER TABLE sessions ADD COLUMN loop_occurrence_id TEXT").run();
     if (!columns.has("last_seen_activity_at"))
       this.db
         .prepare(
@@ -729,6 +953,10 @@ export class EventLog {
       ).map((column) => column.name),
     );
     const addedSourceKey = !columns.has("source_key");
+    if(!columns.has("origin_kind"))this.db.prepare("ALTER TABLE turns ADD COLUMN origin_kind TEXT NOT NULL DEFAULT 'linear'").run();
+    if(!columns.has("origin_id"))this.db.prepare("ALTER TABLE turns ADD COLUMN origin_id TEXT").run();
+    if(!columns.has("loop_occurrence_id"))this.db.prepare("ALTER TABLE turns ADD COLUMN loop_occurrence_id TEXT").run();
+    if(!columns.has("resource_key")){this.db.prepare("ALTER TABLE turns ADD COLUMN resource_key TEXT").run();this.db.prepare("UPDATE turns SET resource_key=issue_id WHERE resource_key IS NULL").run();}
     if (addedSourceKey)
       this.db.prepare("ALTER TABLE turns ADD COLUMN source_key TEXT").run();
     if (!columns.has("usage_input_tokens"))
@@ -769,6 +997,76 @@ export class EventLog {
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_source_key ON turns(source_key)",
       )
       .run();
+  }
+
+  private migrateTurnOriginShape(): void {
+    const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'").get() as { sql: string } | undefined;
+    if (!schema?.sql) return;
+    const normalized = schema.sql.replace(/\s+/g, "");
+    const canonicalOriginCheck = normalized.includes("(origin_kind='linear'ANDkindIN('created','prompted')ANDevent_idISNOTNULLANDissue_idISNOTNULLANDorigin_idISNULLANDloop_occurrence_idISNULL)")
+      && normalized.includes("(origin_kind='loop'ANDkind='loop'ANDevent_idISNULLANDissue_idISNULLANDorigin_idISNOTNULLANDloop_occurrence_idISNOTNULL)")
+      && normalized.includes("origin_idTEXTREFERENCESloop_definitions(id)")
+      && normalized.includes("loop_occurrence_idTEXTREFERENCESloop_occurrences(id)")
+      && normalized.includes("FOREIGNKEY(loop_occurrence_id,origin_id)REFERENCESloop_occurrences(id,loop_id)");
+    if (!normalized.includes("event_idINTEGERNOTNULL")
+      && !normalized.includes("issue_idTEXTNOTNULL")
+      && canonicalOriginCheck) return;
+    const secondary = this.db.prepare(`SELECT sql FROM sqlite_master
+      WHERE tbl_name='turns' AND sql IS NOT NULL AND type IN ('index','trigger')
+      AND name<>'idx_turns_source_key' ORDER BY type,name`).all() as Array<{ sql: string }>;
+    this.db.pragma("foreign_keys = OFF");
+    try {
+      this.db.transaction(() => {
+        this.db.exec(`DROP INDEX IF EXISTS idx_turns_source_key;
+          CREATE TABLE turns_new (
+            id INTEGER PRIMARY KEY,
+            origin_kind TEXT NOT NULL DEFAULT 'linear' CHECK(origin_kind IN ('linear','loop')),
+            origin_id TEXT REFERENCES loop_definitions(id),
+            loop_occurrence_id TEXT REFERENCES loop_occurrences(id),
+            resource_key TEXT NOT NULL,
+            event_id INTEGER UNIQUE REFERENCES events(id),
+            linear_session_id TEXT NOT NULL,
+            issue_id TEXT,
+            source_key TEXT,
+            kind TEXT NOT NULL CHECK(kind IN ('created','prompted','loop')),
+            prompt TEXT,
+            status TEXT NOT NULL CHECK(status IN ('pending','running','awaiting_activity','done','failed','interrupted')),
+            attempts INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            started_at INTEGER,
+            finished_at INTEGER,
+            usage_input_tokens INTEGER,
+            usage_output_tokens INTEGER,
+            usage_cache_creation_tokens INTEGER,
+            usage_cache_read_tokens INTEGER,
+            cost_usd REAL,
+            model TEXT,
+            trace_id TEXT,
+            turn_span_id TEXT,
+            execution_finished_at INTEGER,
+            CHECK (
+              (origin_kind='linear' AND kind IN ('created','prompted') AND event_id IS NOT NULL AND issue_id IS NOT NULL
+                AND origin_id IS NULL AND loop_occurrence_id IS NULL)
+              OR
+              (origin_kind='loop' AND kind='loop' AND event_id IS NULL AND issue_id IS NULL
+                AND origin_id IS NOT NULL AND loop_occurrence_id IS NOT NULL)
+            ),
+            FOREIGN KEY(loop_occurrence_id,origin_id) REFERENCES loop_occurrences(id,loop_id)
+          );
+          INSERT INTO turns_new SELECT id,origin_kind,origin_id,loop_occurrence_id,
+            COALESCE(resource_key,issue_id,linear_session_id),event_id,linear_session_id,issue_id,source_key,kind,prompt,status,
+            attempts,error,started_at,finished_at,usage_input_tokens,usage_output_tokens,usage_cache_creation_tokens,
+            usage_cache_read_tokens,cost_usd,model,trace_id,turn_span_id,execution_finished_at FROM turns;
+          DROP TABLE turns;
+          ALTER TABLE turns_new RENAME TO turns;
+          CREATE UNIQUE INDEX idx_turns_source_key ON turns(source_key);`);
+        for (const row of secondary) this.db.exec(row.sql);
+      })();
+    } finally {
+      this.db.pragma("foreign_keys = ON");
+    }
+    const violations = this.db.pragma("foreign_key_check") as Array<Record<string,unknown>>;
+    if (violations.length) throw new Error("turn origin migration foreign-key check failed");
   }
 
   private backfillCreatedTurnSourceKeys(): void {
@@ -861,6 +1159,18 @@ export class EventLog {
       this.db.prepare("ALTER TABLE sim_leases ADD COLUMN reap_attempts INTEGER NOT NULL DEFAULT 0").run();
   }
 
+  private migrateLoopColumns():void{
+    const columns=new Set((this.db.prepare("PRAGMA table_info(loop_occurrences)").all() as Array<{name:string}>).map(row=>row.name));
+    if(!columns.has("turn_id"))this.db.prepare("ALTER TABLE loop_occurrences ADD COLUMN turn_id INTEGER REFERENCES turns(id)").run();
+    for(const [name,type] of [["input_tokens","INTEGER"],["output_tokens","INTEGER"],["cache_creation_tokens","INTEGER"],["cache_read_tokens","INTEGER"],["cost_usd","REAL"],["model","TEXT"]] as const)
+      if(!columns.has(name))this.db.prepare(`ALTER TABLE loop_occurrences ADD COLUMN ${name} ${type}`).run();
+    this.db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_loop_occurrences_id_loop ON loop_occurrences(id,loop_id)").run();
+    const legacy=this.db.prepare(`SELECT id,loop_id loopId,run_id runId,snapshot_json snapshotJson,created_at createdAt
+      FROM loop_occurrences WHERE turn_id IS NULL`).all() as Array<{id:string;loopId:string;runId:string;snapshotJson:string;createdAt:number}>;
+    this.db.transaction(()=>{for(const row of legacy){const snapshot=JSON.parse(row.snapshotJson) as LoopDeclaration;
+      this.insertLoopSessionTurn(row.id,row.loopId,row.runId,snapshot,row.createdAt);
+    }})();
+  }
   private recoverAmbiguousOutbox(): void {
     this.db
       .prepare(
@@ -1002,20 +1312,20 @@ export class EventLog {
           if (existing?.issueId && existing.issueId !== event.issueId) {
             this.db
               .prepare(
-                `UPDATE turns SET issue_id=?
+                `UPDATE turns SET issue_id=?,resource_key=?
               WHERE linear_session_id=? AND issue_id=? AND status IN ('pending','running','awaiting_activity')`,
               )
-              .run(event.issueId, event.agentSessionId, existing.issueId);
+              .run(event.issueId,event.issueId, event.agentSessionId, existing.issueId);
           }
         }
         const sourceKey = this.turnSourceKey(event);
         const turnResult = this.db
           .prepare(
             `INSERT OR IGNORE INTO turns
-          (event_id, linear_session_id, issue_id, source_key, kind, status)
-          VALUES (?, ?, ?, ?, ?, 'pending')`,
+          (event_id, linear_session_id, issue_id, resource_key, source_key, kind, status)
+          VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
           )
-          .run(eventId, event.agentSessionId, issueId, sourceKey, event.action);
+          .run(eventId, event.agentSessionId, issueId, issueId, sourceKey, event.action);
         if (event.action === "created" && turnResult.changes > 0) {
           this.db
             .prepare(
@@ -1072,16 +1382,23 @@ export class EventLog {
         WHERE t.status='pending'
           AND NOT EXISTS (SELECT 1 FROM operations o
             WHERE o.state IN ('pending','executing','accepting','rolling_back','blocked'))
-          AND NOT EXISTS (SELECT 1 FROM turns earlier WHERE earlier.issue_id=t.issue_id
+          AND NOT EXISTS (SELECT 1 FROM turns earlier WHERE earlier.resource_key=t.resource_key
             AND earlier.id<t.id AND (
               earlier.status IN ('pending','running','awaiting_activity')
               OR EXISTS (SELECT 1 FROM turn_activities a WHERE a.turn_id=earlier.id AND a.status='pending')
             ))
-          AND NOT EXISTS (SELECT 1 FROM turns active WHERE active.issue_id=t.issue_id AND active.status='running')
-          AND NOT EXISTS (SELECT 1 FROM cleanup_jobs c WHERE c.issue_id=t.issue_id AND c.status='running')
+          AND NOT EXISTS (SELECT 1 FROM turns active WHERE active.resource_key=t.resource_key AND active.status='running')
+          AND (t.origin_kind='linear' OR EXISTS (
+            SELECT 1 FROM loop_occurrences o JOIN loop_definitions d ON d.id=o.loop_id
+            WHERE o.id=t.loop_occurrence_id AND o.status IN ('pending','retry_wait') AND o.next_attempt_at<=?
+              AND d.enabled=1
+              AND NOT EXISTS(SELECT 1 FROM loop_cleanup_jobs c WHERE c.loop_id=o.loop_id AND c.status<>'done')
+              AND (SELECT COUNT(*) FROM loop_occurrences r WHERE r.loop_id=o.loop_id AND r.status='running')<d.max_concurrency
+          ))
+          AND (t.origin_kind='loop' OR NOT EXISTS (SELECT 1 FROM cleanup_jobs c WHERE c.issue_id=t.issue_id AND c.status='running'))
         ORDER BY t.id LIMIT 1`,
         )
-        .get() as { id: number } | undefined;
+        .get(now) as { id: number } | undefined;
       if (!candidate) return undefined;
       const changed = this.db
         .prepare(
@@ -1090,6 +1407,8 @@ export class EventLog {
         )
         .run(now, candidate.id);
       if (!changed.changes) return undefined;
+      this.db.prepare(`UPDATE loop_occurrences SET status='running',started_at=COALESCE(started_at,?),error=NULL
+        WHERE turn_id=? AND status IN ('pending','retry_wait')`).run(now,candidate.id);
       return this.turnById(candidate.id);
     })();
   }
@@ -1110,10 +1429,12 @@ export class EventLog {
       }
       const now = input.requestedAt ?? Date.now();
       this.db.prepare(`INSERT INTO operations
-        (id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,state,updated_at)
-        VALUES (?,?,?,?,?,?,?,?, 'pending',?)`).run(input.id, input.requestDigest, input.type,
+        (id,request_digest,type,reason,requested_at,target_ref,target_commit,previous_commit,state,updated_at,
+         actor,request_kind,request_summary)
+        VALUES (?,?,?,?,?,?,?,?, 'pending',?,?,?,?)`).run(input.id, input.requestDigest, input.type,
           input.reason, now, input.targetRef ?? null, input.targetCommit ?? null,
-          input.previousCommit ?? null, now);
+          input.previousCommit ?? null, now, input.actor ?? "operator", input.requestKind ?? null, input.requestSummary ?? null);
+      this.appendOperationEvent(input.id, "pending", "scheduled", null, now);
       return { operation: this.operationById(input.id)!, deduplicated: false };
     })();
   }
@@ -1121,14 +1442,16 @@ export class EventLog {
   operationById(id: string): OperationRow | undefined {
     return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
       target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
-      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt
+      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt,
+      actor,request_kind requestKind,request_summary requestSummary,state_version stateVersion,cancel_requested cancelRequested
       FROM operations WHERE id=?`).get(id) as OperationRow | undefined;
   }
 
   activeOperation(): OperationRow | undefined {
     return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
       target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
-      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt
+      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt,
+      actor,request_kind requestKind,request_summary requestSummary,state_version stateVersion,cancel_requested cancelRequested
       FROM operations WHERE state IN ('pending','executing','accepting','rolling_back','blocked')
       ORDER BY requested_at LIMIT 1`).get() as OperationRow | undefined;
   }
@@ -1139,8 +1462,9 @@ export class EventLog {
       if (!row || row.requestDigest !== digest || row.state === "blocked"
           || !ACTIVE_OPERATION_STATES.includes(row.state as never)) return undefined;
       if (row.state === "pending") {
-        this.db.prepare("UPDATE operations SET state='executing',stage='apply',attempts=attempts+1,updated_at=? WHERE id=? AND state='pending'")
+        this.db.prepare("UPDATE operations SET state='executing',stage='apply',attempts=attempts+1,state_version=state_version+1,updated_at=? WHERE id=? AND state='pending'")
           .run(now, id);
+        this.appendOperationEvent(id, "executing", "apply", null, now);
       } else {
         this.db.prepare("UPDATE operations SET attempts=attempts+1,updated_at=? WHERE id=?").run(now, id);
       }
@@ -1148,21 +1472,44 @@ export class EventLog {
     })();
   }
 
+  bindConsoleReload(id: string, targetCommit: string, previousCommit: string, now = Date.now()): OperationRow {
+    if (!/^[0-9a-f]{40}$/.test(targetCommit) || !/^[0-9a-f]{40}$/.test(previousCommit))
+      throw new Error("invalid reload commit metadata");
+    return this.db.transaction(() => {
+      const row=this.operationById(id);
+      if (!row || row.actor!=="local-console" || row.requestKind!=="daemon.reload"
+        || row.type!=="update" || row.state!=="executing") throw new Error("operation is not an executing console reload");
+      if (row.targetRef!==null || row.targetCommit!==null || row.previousCommit!==null) {
+        if (row.targetRef!=="checkout/HEAD" || row.targetCommit!==targetCommit || row.previousCommit!==previousCommit)
+          throw new Error("reload commit metadata changed");
+        return row;
+      }
+      this.db.prepare(`UPDATE operations SET target_ref='checkout/HEAD',target_commit=?,previous_commit=?,updated_at=?
+        WHERE id=? AND target_ref IS NULL AND target_commit IS NULL AND previous_commit IS NULL`)
+        .run(targetCommit,previousCommit,now,id);
+      return this.operationById(id)!;
+    })();
+  }
+
   transitionOperation(id: string, state: OperationState, stage: string | null, options: {
     outcome?: string | null; errorStage?: string | null; mutated?: boolean; rollbackVerified?: boolean;
   } = {}, now = Date.now()): OperationRow {
-    const current = this.operationById(id);
-    if (!current) throw new Error(`unknown operation: ${id}`);
-    if ((state === "failed" || state === "cancelled") && current.mutated === 1
-        && !(options.rollbackVerified ?? current.rollbackVerified === 1)) {
-      throw new Error("cannot release operation gate after mutation without verified rollback");
-    }
-    this.db.prepare(`UPDATE operations SET state=?,stage=?,outcome=?,error_stage=?,
-      mutated=?,rollback_verified=?,updated_at=? WHERE id=?`).run(state, stage,
-        options.outcome ?? current.outcome, options.errorStage ?? current.errorStage,
-        options.mutated === undefined ? current.mutated : Number(options.mutated),
-        options.rollbackVerified === undefined ? current.rollbackVerified : Number(options.rollbackVerified), now, id);
-    return this.operationById(id)!;
+    return this.db.transaction(() => {
+      const current = this.operationById(id);
+      if (!current) throw new Error(`unknown operation: ${id}`);
+      if ((state === "failed" || state === "cancelled") && current.mutated === 1
+          && !(options.rollbackVerified ?? current.rollbackVerified === 1)) {
+        throw new Error("cannot release operation gate after mutation without verified rollback");
+      }
+      const outcome = options.outcome ?? current.outcome;
+      this.db.prepare(`UPDATE operations SET state=?,stage=?,outcome=?,error_stage=?,
+        mutated=?,rollback_verified=?,state_version=state_version+1,updated_at=? WHERE id=?`).run(state, stage,
+          outcome, options.errorStage ?? current.errorStage,
+          options.mutated === undefined ? current.mutated : Number(options.mutated),
+          options.rollbackVerified === undefined ? current.rollbackVerified : Number(options.rollbackVerified), now, id);
+      this.appendOperationEvent(id, state, stage, outcome, now);
+      return this.operationById(id)!;
+    })();
   }
 
   retryOperation(id: string, now = Date.now()): OperationRow {
@@ -1170,8 +1517,9 @@ export class EventLog {
     if (!row || (row.state !== "blocked" && row.state !== "failed"))
       throw new Error("only a blocked or failed operation can be retried");
     this.db.prepare(`UPDATE operations SET state='pending',stage=NULL,error_stage=NULL,
-      rollback_verified=0,updated_at=? WHERE id=?`)
+      rollback_verified=0,state_version=state_version+1,updated_at=? WHERE id=?`)
       .run(now, id);
+    this.appendOperationEvent(id, "pending", "retry", null, now);
     return this.operationById(id)!;
   }
 
@@ -1199,7 +1547,105 @@ export class EventLog {
     const row = this.operationById(id);
     if (!row || !ACTIVE_OPERATION_STATES.includes(row.state as never)) throw new Error("operation is not active");
     if (row.mutated === 1 && row.rollbackVerified !== 1) throw new Error("operation may not be cancelled after mutation without verified rollback");
-    return this.transitionOperation(id, "cancelled", "cancelled", { outcome: "cancelled by operator" }, now);
+    return this.transitionOperation(id, "cancelled", "cancelled",
+      { outcome: row.actor === "local-console" ? "cancelled by local-console" : "cancelled by operator" }, now);
+  }
+
+  private appendOperationEvent(id: string, state: OperationState, stage: string | null, outcome: string | null, now: number): void {
+    this.db.prepare(`INSERT INTO operation_stage_events(operation_id,sequence,state,stage,outcome,created_at)
+      VALUES (?,COALESCE((SELECT MAX(sequence)+1 FROM operation_stage_events WHERE operation_id=?),1),?,?,?,?)`)
+      .run(id, id, state, stage, outcome, now);
+  }
+
+  operationEvents(id: string): OperationStageEvent[] {
+    return this.db.prepare(`SELECT sequence,operation_id operationId,state,stage,outcome,created_at createdAt
+      FROM operation_stage_events WHERE operation_id=? ORDER BY sequence LIMIT 128`).all(id) as OperationStageEvent[];
+  }
+
+  listOperations(limit = 50): OperationRow[] {
+    const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
+    return this.db.prepare(`SELECT id,request_digest requestDigest,type,reason,requested_at requestedAt,
+      target_ref targetRef,target_commit targetCommit,previous_commit previousCommit,state,stage,attempts,
+      mutated,rollback_verified rollbackVerified,outcome,error_stage errorStage,updated_at updatedAt,
+      actor,request_kind requestKind,request_summary requestSummary,state_version stateVersion,cancel_requested cancelRequested
+      FROM operations ORDER BY requested_at DESC LIMIT ?`).all(bounded) as OperationRow[];
+  }
+
+  createOperationControl(input: { id: string; digest: string; targetOperationId: string; targetDigest: string;
+    kind: OperationControlKind; reason: string; expectedVersion: number; requestedAt?: number }): { control: OperationControlRow; deduplicated: boolean } {
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(input.id) || !/^[0-9a-f]{64}$/.test(input.digest)
+      || !/^[0-9a-f]{64}$/.test(input.targetDigest) || !Number.isSafeInteger(input.expectedVersion)
+      || !input.reason || input.reason.length > 240 || /[\x00-\x1f\x7f]/.test(input.reason)) throw new Error("invalid operation control");
+    return this.db.transaction(() => {
+      const existing = this.db.prepare(`SELECT id,digest,target_operation_id targetOperationId,target_digest targetDigest,
+        kind,actor,reason,expected_version expectedVersion,state,outcome,requested_at requestedAt,updated_at updatedAt
+        FROM operation_controls WHERE target_operation_id=? AND target_digest=? AND kind=? AND expected_version=?`)
+        .get(input.targetOperationId, input.targetDigest, input.kind, input.expectedVersion) as OperationControlRow | undefined;
+      if (existing) return { control: existing, deduplicated: true };
+      const target = this.operationById(input.targetOperationId);
+      if (!target || target.requestDigest !== input.targetDigest || target.stateVersion !== input.expectedVersion)
+        throw new Error("operation control target changed");
+      if (input.kind === "cancel" && (!ACTIVE_OPERATION_STATES.includes(target.state as never)
+        || target.mutated === 1 || target.cancelRequested === 1)) throw new Error("operation cannot be cancelled");
+      if (input.kind === "retry" && target.state !== "failed" && target.state !== "blocked") throw new Error("operation cannot be retried");
+      const now = input.requestedAt ?? Date.now();
+      this.db.prepare(`INSERT INTO operation_controls
+        (id,digest,target_operation_id,target_digest,kind,actor,reason,expected_version,state,requested_at,updated_at)
+        VALUES (?,?,?,?,?,'local-console',?,?, 'pending',?,?)`).run(input.id, input.digest,
+          input.targetOperationId, input.targetDigest, input.kind, input.reason, input.expectedVersion, now, now);
+      if (input.kind === "cancel") this.db.prepare(`UPDATE operations SET cancel_requested=1,state_version=state_version+1,
+        updated_at=? WHERE id=? AND state_version=?`).run(now, target.id, target.stateVersion);
+      return { control: this.operationControlById(input.id)!, deduplicated: false };
+    })();
+  }
+
+  operationControlById(id: string): OperationControlRow | undefined {
+    return this.db.prepare(`SELECT id,digest,target_operation_id targetOperationId,target_digest targetDigest,
+      kind,actor,reason,expected_version expectedVersion,state,outcome,requested_at requestedAt,updated_at updatedAt
+      FROM operation_controls WHERE id=?`).get(id) as OperationControlRow | undefined;
+  }
+
+  listOperationControls(): OperationControlRow[] {
+    return this.db.prepare(`SELECT id,digest,target_operation_id targetOperationId,target_digest targetDigest,
+      kind,actor,reason,expected_version expectedVersion,state,outcome,requested_at requestedAt,updated_at updatedAt
+      FROM operation_controls ORDER BY requested_at,id LIMIT 256`).all() as OperationControlRow[];
+  }
+
+  nonterminalOperationControls(): OperationControlRow[] {
+    return this.db.prepare(`SELECT id,digest,target_operation_id targetOperationId,target_digest targetDigest,
+      kind,actor,reason,expected_version expectedVersion,state,outcome,requested_at requestedAt,updated_at updatedAt
+      FROM operation_controls WHERE state IN ('pending','executing') ORDER BY requested_at,id`).all() as OperationControlRow[];
+  }
+
+  transitionOperationControl(id: string, state: OperationControlRow["state"], outcome: string | null, now = Date.now()): OperationControlRow {
+    if (outcome !== null && (outcome.length > 240 || /[\x00-\x1f\x7f]/.test(outcome))) throw new Error("invalid control outcome");
+    this.db.prepare("UPDATE operation_controls SET state=?,outcome=?,updated_at=? WHERE id=?").run(state, outcome, now, id);
+    const row = this.operationControlById(id); if (!row) throw new Error("unknown operation control"); return row;
+  }
+
+  acknowledgeRetryOperationControl(id: string, now = Date.now()): { control: OperationControlRow; operation: OperationRow } {
+    return this.db.transaction(() => {
+      const control = this.operationControlById(id);
+      if (!control || control.kind !== "retry") throw new Error("unknown retry control");
+      const current = this.operationById(control.targetOperationId);
+      if (!current || current.requestDigest !== control.targetDigest) throw new Error("operation control target changed");
+      if (control.state === "succeeded") return { control, operation: current };
+      if ((control.state !== "pending" && control.state !== "executing") || current.stateVersion !== control.expectedVersion)
+        throw new Error("operation control target changed");
+      if (current.state === "failed") {
+        this.db.prepare(`UPDATE operations SET state='pending',stage=NULL,error_stage=NULL,
+          rollback_verified=0,state_version=state_version+1,updated_at=? WHERE id=? AND state='failed' AND state_version=?`)
+          .run(now, current.id, control.expectedVersion);
+        this.appendOperationEvent(current.id, "pending", "retry", null, now);
+      } else if (current.state === "blocked" && current.mutated === 1) {
+        this.db.prepare(`UPDATE operations SET state='rolling_back',stage='rollback_retry',
+          state_version=state_version+1,updated_at=? WHERE id=? AND state='blocked' AND state_version=?`).run(now, current.id, control.expectedVersion);
+        this.appendOperationEvent(current.id, "rolling_back", "rollback_retry", current.outcome, now);
+      } else throw new Error("operation cannot be retried");
+      this.db.prepare("UPDATE operation_controls SET state='succeeded',outcome='acknowledged',updated_at=? WHERE id=?")
+        .run(now, control.id);
+      return { control: this.operationControlById(id)!, operation: this.operationById(current.id)! };
+    })();
   }
 
   runningTurns(now = Date.now()): SafeRunningTurn[] {
@@ -1234,13 +1680,102 @@ export class EventLog {
     };
   }
 
+  consoleProviders(): ProviderStateRow[] {
+    return this.db.prepare(`SELECT provider,status,reason,cooldown_until cooldownUntil,updated_at updatedAt
+      FROM provider_state ORDER BY provider`).all() as ProviderStateRow[];
+  }
+
+  upsertDependencyObservation(input: DependencyObservationInput): void {
+    const capabilities = validateDependencyObservation(input);
+    this.db.prepare(`INSERT INTO dependency_observations
+      (kind,name,configured,status,reason_code,capabilities_json,observed_at,stale_after_ms)
+      VALUES (?,?,?,?,?,?,?,?)
+      ON CONFLICT(kind,name) DO UPDATE SET configured=excluded.configured,status=excluded.status,
+        reason_code=excluded.reason_code,capabilities_json=excluded.capabilities_json,
+        observed_at=excluded.observed_at,stale_after_ms=excluded.stale_after_ms`)
+      .run(input.kind, input.name, input.configured ? 1 : 0, input.status, input.reasonCode,
+        JSON.stringify(capabilities), input.observedAt, input.staleAfterMs);
+  }
+
+  dependencyObservations(): DependencyObservationRow[] {
+    const rows = this.db.prepare(`SELECT kind,name,configured,status,reason_code reasonCode,
+      capabilities_json capabilitiesJson,observed_at observedAt,stale_after_ms staleAfterMs
+      FROM dependency_observations ORDER BY kind,name`).all() as Array<{
+        kind: DependencyKind; name: string; configured: number; status: DependencyHealth;
+        reasonCode: string | null; capabilitiesJson: string; observedAt: number; staleAfterMs: number;
+      }>;
+    return rows.map(({ capabilitiesJson, ...row }) => ({ ...row, configured: row.configured === 1,
+      capabilities: validateCapabilities(JSON.parse(capabilitiesJson) as unknown) }));
+  }
+
+  consoleRuns(limit = 50, now = Date.now(), linearBase?: string): ConsoleRunSummary[] {
+    const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const sessions = this.db.prepare(`SELECT origin_kind originKind,origin_id originId,loop_occurrence_id loopOccurrenceId,linear_session_id linearSessionId,app,issue_id issueId,
+      issue_identifier issueIdentifier,worktree_path worktreePath,branch,claude_session_id claudeSessionId,
+      runtime,fallback_cause fallbackCause,profile,profile_fallback profileFallback,
+      browser_required browserRequired,browser_run_id browserRunId,mode,status,last_seen_at lastSeenAt,
+      last_seen_activity_at lastSeenActivityAt,trace_id traceId,root_span_id rootSpanId,
+      started_at startedAt,completed_at completedAt FROM sessions ORDER BY started_at DESC LIMIT ?`)
+      .all(bounded) as SessionRow[];
+    return sessions.map(session => session.originKind === "loop" && session.loopOccurrenceId
+      ? this.loopRunSummary(this.loopOccurrence(session.loopOccurrenceId)!,now)
+      : this.consoleRunSummary(session, now, linearBase));
+  }
+
+  consoleRun(linearSessionId: string, now = Date.now(), linearBase?: string): ConsoleRunDetail | undefined {
+    const session = this.getSession(linearSessionId);
+    if (!session) return undefined;
+    if(session.originKind === "loop" && session.loopOccurrenceId){const occurrence=this.loopOccurrence(session.loopOccurrenceId);if(!occurrence)return undefined;
+      return {...this.loopRunSummary(occurrence,now),invocations:this.invocations(linearSessionId).map(row=>projectInvocation(row,now))};}
+    return {
+      ...this.consoleRunSummary(session, now, linearBase),
+      invocations: this.invocations(linearSessionId).map(row => projectInvocation(row, now)),
+    };
+  }
+
+  private loopRunSummary(occurrence:LoopOccurrenceRow,now:number):ConsoleRunSummary{
+    const loop=this.loopById(occurrence.loopId);
+    return {id:occurrence.runId,app:occurrence.snapshot.task.role,mode:occurrence.snapshot.task.role,status:occurrence.status,
+      issueIdentifier:null,runtime:occurrence.snapshot.harness.runtime,startedAt:occurrence.startedAt??occurrence.createdAt,
+      completedAt:occurrence.finishedAt,durationMs:Math.max(0,(occurrence.finishedAt??now)-(occurrence.startedAt??occurrence.createdAt)),
+      invocationCount:this.invocations(occurrence.runId).length,totalTokens:this.aggregateSession(occurrence.runId).canonicalTokens,
+      resources:[],origin:"loop",loopName:loop?.name??null,loopId:occurrence.loopId,occurrenceId:occurrence.id};
+  }
+
+  private consoleRunSummary(session: SessionRow, now: number, linearBase?: string): ConsoleRunSummary {
+    const aggregate = this.aggregateSession(session.linearSessionId);
+    const urls = this.db.prepare(`SELECT id,linear_session_id linearSessionId,app,label,url,attempts,
+      next_attempt_at nextAttemptAt,created_at createdAt FROM session_external_urls
+      WHERE linear_session_id=? ORDER BY id`).all(session.linearSessionId) as ExternalUrlRow[];
+    return {
+      id: session.linearSessionId,
+      app: session.app,
+      mode: session.mode,
+      status: session.status,
+      issueIdentifier: session.issueIdentifier,
+      runtime: session.runtime,
+      startedAt: session.startedAt,
+      completedAt: session.completedAt,
+      durationMs: Math.max(0, (session.completedAt ?? now) - session.startedAt),
+      invocationCount: this.invocations(session.linearSessionId).length,
+      totalTokens: aggregate.canonicalTokens,
+      resources: projectResources(session, urls, linearBase),
+      origin: "linear",
+      loopName: null,
+      loopId: null,
+      occurrenceId: null,
+    };
+  }
+
   getTurn(id: number): TurnRow | undefined {
     return this.db
       .prepare(
-        `SELECT t.id, t.event_id eventId, e.app, t.linear_session_id linearSessionId,
+        `SELECT t.origin_kind originKind,t.origin_id originId,t.loop_occurrence_id loopOccurrenceId,t.resource_key resourceKey,
+      t.id, t.event_id eventId, COALESCE(e.app,s.app) app, t.linear_session_id linearSessionId,
       t.issue_id issueId, t.kind, t.prompt, t.status, t.attempts, t.error, t.started_at startedAt,
-      t.finished_at finishedAt, t.turn_span_id turnSpanId,t.execution_finished_at executionFinishedAt,e.raw_body rawBody, e.received_at receivedAt
-      FROM turns t JOIN events e ON e.id=t.event_id WHERE t.id=?`,
+      t.finished_at finishedAt, t.turn_span_id turnSpanId,t.execution_finished_at executionFinishedAt,
+      COALESCE(e.raw_body,X'') rawBody,COALESCE(e.received_at,s.started_at) receivedAt
+      FROM turns t LEFT JOIN events e ON e.id=t.event_id LEFT JOIN sessions s ON s.linear_session_id=t.linear_session_id WHERE t.id=?`,
       )
       .get(id) as TurnRow | undefined;
   }
@@ -1252,7 +1787,7 @@ export class EventLog {
   getSession(linearSessionId: string): SessionRow | undefined {
     return this.db
       .prepare(
-        `SELECT linear_session_id linearSessionId, app, issue_id issueId,
+        `SELECT origin_kind originKind,origin_id originId,loop_occurrence_id loopOccurrenceId,linear_session_id linearSessionId, app, issue_id issueId,
       issue_identifier issueIdentifier, worktree_path worktreePath, branch, claude_session_id claudeSessionId,
       runtime, fallback_cause fallbackCause, profile, profile_fallback profileFallback,
       browser_required browserRequired, browser_run_id browserRunId,
@@ -1287,7 +1822,7 @@ export class EventLog {
       browser_required browserRequired, browser_run_id browserRunId,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt,
       trace_id traceId,root_span_id rootSpanId,started_at startedAt,completed_at completedAt
-      FROM sessions WHERE app='planner' AND mode='planner' AND status='active'
+      FROM sessions WHERE origin_kind='linear' AND app='planner' AND mode='planner' AND status='active'
       AND last_seen_at>=? ORDER BY last_seen_at`,
       )
       .all(activeSince) as SessionRow[];
@@ -1301,7 +1836,7 @@ export class EventLog {
       browser_required browserRequired, browser_run_id browserRunId,
       mode, status, last_seen_at lastSeenAt, last_seen_activity_at lastSeenActivityAt,
       trace_id traceId,root_span_id rootSpanId,started_at startedAt,completed_at completedAt
-      FROM sessions WHERE worktree_path IS NOT NULL ORDER BY last_seen_at`,
+      FROM sessions WHERE origin_kind='linear' AND worktree_path IS NOT NULL ORDER BY last_seen_at`,
       )
       .all() as SessionRow[];
   }
@@ -1682,10 +2217,10 @@ export class EventLog {
     this.db
       .prepare(
         `INSERT OR IGNORE INTO turns
-        (event_id,linear_session_id,issue_id,source_key,kind,status)
-        VALUES (?,?,?,?, 'prompted','pending')`,
+        (event_id,linear_session_id,issue_id,resource_key,source_key,kind,status)
+        VALUES (?,?,?,?,?, 'prompted','pending')`,
       )
-      .run(event.id, row.linearSessionId, row.issueId, sourceKey);
+      .run(event.id, row.linearSessionId, row.issueId,row.issueId, sourceKey);
     return (
       this.db.prepare("SELECT id FROM turns WHERE source_key=?").get(sourceKey) as {
         id: number;
@@ -2741,6 +3276,264 @@ export class EventLog {
     return (this.db.prepare("UPDATE sim_leases SET reap_attempts=reap_attempts+1 WHERE id=? RETURNING reap_attempts reapAttempts")
       .get(id) as { reapAttempts: number }).reapAttempts;
   }
+  loopById(id: string): LoopDefinitionRow | undefined {
+    const row = this.db.prepare(`SELECT id,revision,digest,declaration_json declarationJson,enabled,next_due_at nextDueAt,
+      blocked_reason blockedReason,created_at createdAt,updated_at updatedAt FROM loop_definitions WHERE id=?`).get(id) as
+      ({ id: string; revision: number; digest: string; declarationJson: string; enabled:number;nextDueAt: number; blockedReason: string | null; createdAt: number; updatedAt: number } | undefined);
+    if (!row) return undefined;
+    return { ...JSON.parse(row.declarationJson) as LoopDeclaration,enabled:row.enabled===1, id: row.id, revision: row.revision, digest: row.digest,
+      nextDueAt: row.nextDueAt, blockedReason: row.blockedReason, createdAt: row.createdAt, updatedAt: row.updatedAt };
+  }
+  listLoops(limit = 50): LoopDefinitionRow[] {
+    const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const ids = this.db.prepare("SELECT id FROM loop_definitions ORDER BY updated_at DESC,id LIMIT ?").all(bounded) as Array<{ id: string }>;
+    return ids.map(row => this.loopById(row.id)!);
+  }
+  loopAudit(loopId: string, limit = 50): LoopAuditRow[] {
+    const rows = this.db.prepare(`SELECT loop_id loopId,sequence,kind,reason,actor,details_json detailsJson,created_at createdAt
+      FROM loop_audit_events WHERE loop_id=? ORDER BY sequence DESC LIMIT ?`).all(loopId, Math.max(1, Math.min(100, Math.trunc(limit)))) as Array<Omit<LoopAuditRow,"details"> & { detailsJson: string }>;
+    return rows.map(({ detailsJson, ...row }) => ({ ...row, details: JSON.parse(detailsJson) as Record<string, unknown> }));
+  }
+  loopOccurrences(loopId: string, limit = 50): LoopOccurrenceRow[] {
+    return (this.db.prepare(`SELECT id FROM loop_occurrences WHERE loop_id=? ORDER BY scheduled_for DESC LIMIT ?`)
+      .all(loopId, Math.max(1, Math.min(100, Math.trunc(limit)))) as Array<{ id: string }>).map(row => this.loopOccurrence(row.id)!);
+  }
+  loopOccurrence(id: string): LoopOccurrenceRow | undefined {
+    const row = this.db.prepare(`SELECT id,loop_id loopId,definition_revision definitionRevision,scheduled_for scheduledFor,
+      run_id runId,turn_id turnId,status,retry_count retryCount,next_attempt_at nextAttemptAt,outcome,error,snapshot_json snapshotJson,
+      worktree_path worktreePath,branch,created_at createdAt,started_at startedAt,finished_at finishedAt,
+      input_tokens inputTokens,output_tokens outputTokens,cache_creation_tokens cacheCreationTokens,cache_read_tokens cacheReadTokens,cost_usd costUsd,model
+      FROM loop_occurrences WHERE id=?`).get(id) as (Omit<LoopOccurrenceRow,"snapshot"> & { snapshotJson: string }) | undefined;
+    if (!row) return undefined; const { snapshotJson, ...safe } = row;
+    return { ...safe, snapshot: JSON.parse(snapshotJson) as LoopDeclaration };
+  }
+  loopReceipt(draftId: string): { digest: string; result: LoopMutationResult } | undefined {
+    const row = this.db.prepare("SELECT digest,response_json responseJson FROM loop_mutation_receipts WHERE draft_id=?").get(draftId) as { digest: string; responseJson: string } | undefined;
+    return row ? { digest: row.digest, result: JSON.parse(row.responseJson) as LoopMutationResult } : undefined;
+  }
+  mutateLoop(input: { draftId: string; digest: string; id: string; declaration: LoopDeclaration; expectedRevision: number | null;
+    reason: string; kind: string; now?: number }): LoopMutationResult {
+    return this.db.transaction(() => {
+      const receipt = this.loopReceipt(input.draftId); if (receipt) {
+        if (receipt.digest !== input.digest) throw new Error("confirmation_mismatch"); return { ...receipt.result, deduplicated: true };
+      }
+      const now = input.now ?? Date.now(); const current = this.loopById(input.id);
+      if ((current?.revision ?? null) !== input.expectedRevision) throw new Error("loop_revision_changed");
+      if (input.declaration.enabled && this.hasBlockingLoopCleanup(input.id)) throw new Error("cleanup_unresolved");
+      const revision = (current?.revision ?? 0) + 1; const nextDueAt = current
+        ? (current.trigger.everyMinutes === input.declaration.trigger.everyMinutes && current.trigger.startsAt === input.declaration.trigger.startsAt
+          ? current.nextDueAt : nextLoopDue(input.declaration.trigger.startsAt, input.declaration.trigger.everyMinutes, now - 1))
+        : nextLoopDue(input.declaration.trigger.startsAt, input.declaration.trigger.everyMinutes, now - 1);
+      this.db.prepare(`INSERT INTO loop_definitions(id,revision,digest,declaration_json,name,description,enabled,blocked_reason,next_due_at,max_concurrency,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,digest=excluded.digest,
+        declaration_json=excluded.declaration_json,name=excluded.name,description=excluded.description,enabled=excluded.enabled,
+        blocked_reason=NULL,next_due_at=excluded.next_due_at,max_concurrency=excluded.max_concurrency,updated_at=excluded.updated_at`)
+        .run(input.id, revision, input.digest, JSON.stringify(input.declaration), input.declaration.name, input.declaration.description,
+          Number(input.declaration.enabled), null, nextDueAt, input.declaration.maxConcurrency, current?.createdAt ?? now, now);
+      if (!input.declaration.enabled) {
+        const cancelled=this.db.prepare("SELECT id FROM loop_occurrences WHERE loop_id=? AND status IN ('pending','retry_wait')").all(input.id) as Array<{id:string}>;
+        this.db.prepare(`UPDATE loop_occurrences SET status='cancelled',outcome=NULL,error='disabled',finished_at=?
+          WHERE loop_id=? AND status IN ('pending','retry_wait')`).run(now, input.id);
+        this.db.prepare(`UPDATE turns SET status='interrupted',error='disabled',finished_at=? WHERE loop_occurrence_id IN
+          (SELECT id FROM loop_occurrences WHERE loop_id=? AND status='cancelled') AND status='pending'`).run(now,input.id);
+        for(const row of cancelled)this.appendLoopAudit(input.id,"occurrence.cancelled","disabled","local-console",{occurrenceId:row.id},now);
+      }
+      const sequence = ((this.db.prepare("SELECT COALESCE(MAX(sequence),0)+1 sequence FROM loop_audit_events WHERE loop_id=?").get(input.id) as { sequence: number }).sequence);
+      this.db.prepare("INSERT INTO loop_audit_events(loop_id,sequence,kind,reason,actor,details_json,created_at) VALUES (?,?,?,?,?,?,?)")
+        .run(input.id, sequence, input.kind, input.reason, "local-console", JSON.stringify({ revision, enabled: input.declaration.enabled }), now);
+      const result: LoopMutationResult = { loop: projectConsoleLoop(this.loopById(input.id)!), auditSequence: sequence, deduplicated: false };
+      this.db.prepare("INSERT INTO loop_mutation_receipts(draft_id,digest,loop_id,revision,audit_sequence,response_json,created_at) VALUES (?,?,?,?,?,?,?)")
+        .run(input.draftId, input.digest, input.id, revision, sequence, JSON.stringify(result), now);
+      return result;
+    })();
+  }
+  admitDueLoops(now = Date.now()): LoopOccurrenceRow[] {
+    return this.db.transaction(() => {
+      const due = this.db.prepare(`SELECT id FROM loop_definitions d WHERE enabled=1 AND next_due_at<=?
+        AND NOT EXISTS(SELECT 1 FROM loop_cleanup_jobs c WHERE c.loop_id=d.id AND c.status<>'done') ORDER BY next_due_at,id`).all(now) as Array<{ id: string }>;
+      const admitted: LoopOccurrenceRow[] = [];
+      for (const { id } of due) {
+        const loop = this.loopById(id)!;
+        const active = (this.db.prepare("SELECT COUNT(*) count FROM loop_occurrences WHERE loop_id=? AND status IN ('pending','running','retry_wait')").get(id) as { count: number }).count;
+        const scheduled = loop.nextDueAt; const interval = loop.trigger.everyMinutes * 60_000;
+        const missedIntervals = Math.max(0, Math.floor((now - scheduled) / interval));
+        this.db.prepare("UPDATE loop_definitions SET next_due_at=?,updated_at=? WHERE id=? AND next_due_at=?")
+          .run(nextLoopDue(loop.trigger.startsAt, loop.trigger.everyMinutes, now), now, id, scheduled);
+        if (active >= loop.maxConcurrency) continue;
+        const occurrenceId = randomUUID(); const runId = `loop:${occurrenceId}`;
+        const snapshot=loopDeclaration(loop);
+        const inserted = this.db.prepare(`INSERT OR IGNORE INTO loop_occurrences(id,loop_id,definition_revision,scheduled_for,run_id,turn_id,status,next_attempt_at,snapshot_json,created_at)
+          VALUES (?,?,?,?,?,NULL,'pending',?,?,?)`).run(occurrenceId,id,loop.revision,scheduled,runId,now,JSON.stringify(snapshot),now);
+        if (!inserted.changes) continue;
+        this.insertLoopSessionTurn(occurrenceId,id,runId,snapshot,now);
+        const sequence = (this.db.prepare("SELECT COALESCE(MAX(sequence),0)+1 sequence FROM loop_audit_events WHERE loop_id=?").get(id) as { sequence: number }).sequence;
+        this.db.prepare("INSERT INTO loop_audit_events VALUES (?,?,?,?,?,?,?)").run(id,sequence,"occurrence.admitted","scheduled","system",JSON.stringify({ occurrenceId, scheduledFor: scheduled, missedIntervals }),now);
+        admitted.push(this.loopOccurrence(occurrenceId)!);
+      }
+      return admitted;
+    })();
+  }
+  private insertLoopSessionTurn(occurrenceId:string,loopId:string,runId:string,snapshot:LoopDeclaration,now:number):number{
+    this.db.prepare(`INSERT OR IGNORE INTO sessions
+      (linear_session_id,origin_kind,origin_id,loop_occurrence_id,app,issue_id,issue_identifier,runtime,profile,mode,status,
+       last_seen_at,trace_id,root_span_id,started_at)
+      VALUES (?,'loop',?,?,?,NULL,NULL,?,?,?,'active',?,?,?,?)`)
+      .run(runId,loopId,occurrenceId,snapshot.task.role,snapshot.harness.runtime,snapshot.harness.profile,
+        snapshot.task.role,now,randomHex(16),randomHex(8),now);
+    this.db.prepare(`INSERT OR IGNORE INTO turns
+      (origin_kind,origin_id,loop_occurrence_id,resource_key,event_id,linear_session_id,issue_id,source_key,kind,status)
+      VALUES ('loop',?,?,?,NULL,?,NULL,?,'loop','pending')`)
+      .run(loopId,occurrenceId,loopId,runId,`loop:${occurrenceId}`);
+    const turn=(this.db.prepare("SELECT id FROM turns WHERE source_key=?").get(`loop:${occurrenceId}`) as {id:number}).id;
+    this.db.prepare("UPDATE loop_occurrences SET turn_id=? WHERE id=? AND turn_id IS NULL").run(turn,occurrenceId);
+    return turn;
+  }
+  recoverStaleLoopOccurrences(now=Date.now()):number{
+    return this.db.transaction(()=>{const rows=this.db.prepare("SELECT id FROM loop_occurrences WHERE status='running'").all() as Array<{id:string}>;
+      for(const row of rows)this.finishLoopOccurrence(row.id,"service_restart","service_restart",now);
+      return rows.length;})();
+  }
+  finishLoopOccurrence(id: string, outcome: LoopOutcome, error: string | null, now = Date.now()): LoopOccurrenceRow {
+    return this.db.transaction(() => {
+      const safeError=safeLoopReason(error);
+      const occurrence = this.loopOccurrence(id); if (!occurrence) throw new Error("unknown loop occurrence");
+      if (["succeeded","blocked","cancelled"].includes(occurrence.status)) return occurrence;
+      if (outcome === "service_restart") {
+        this.db.prepare("UPDATE loop_occurrences SET status='pending',next_attempt_at=?,error=?,started_at=NULL WHERE id=?").run(now,safeError,id);
+        this.db.prepare("UPDATE turns SET status='pending',started_at=NULL,error=? WHERE id=?").run(safeError,occurrence.turnId);
+        this.db.prepare("UPDATE sessions SET status='active',completed_at=NULL,claude_session_id=NULL,last_seen_at=? WHERE linear_session_id=?").run(now,occurrence.runId);
+        this.appendLoopAudit(occurrence.loopId,"occurrence.service_restart","service_restart","system",{occurrenceId:id,retryCount:occurrence.retryCount},now);
+      }
+      else if (outcome === "retriable_failure" && occurrence.retryCount < occurrence.snapshot.maxRetries) {
+        const nextAttemptAt=now + Math.min(60_000, 1000 * 2 ** occurrence.retryCount);
+        this.db.prepare("UPDATE loop_occurrences SET status='retry_wait',retry_count=retry_count+1,next_attempt_at=?,error=?,started_at=NULL WHERE id=?")
+          .run(nextAttemptAt,safeError,id);
+        this.db.prepare("UPDATE turns SET status='pending',started_at=NULL,error=? WHERE id=?").run(safeError,occurrence.turnId);
+        this.db.prepare("UPDATE sessions SET claude_session_id=NULL,last_seen_at=? WHERE linear_session_id=?").run(now,occurrence.runId);
+        this.appendLoopAudit(occurrence.loopId,"occurrence.retry_scheduled","retriable_failure","system",
+          {occurrenceId:id,retryCount:occurrence.retryCount+1,nextAttemptAt},now);
+      }
+      else {
+        const status = outcome === "succeeded" ? "succeeded" : "blocked";
+        this.db.prepare("UPDATE loop_occurrences SET status=?,outcome=?,error=?,finished_at=? WHERE id=?").run(status,outcome,safeError,now,id);
+        this.db.prepare("UPDATE turns SET status=?,error=?,finished_at=?,execution_finished_at=? WHERE id=?")
+          .run(status === "succeeded" ? "done" : "failed",safeError,now,now,occurrence.turnId);
+        this.db.prepare("UPDATE sessions SET status=?,completed_at=?,last_seen_at=? WHERE linear_session_id=?")
+          .run(status === "succeeded" ? "completed" : "failed",now,now,occurrence.runId);
+        this.db.prepare(`INSERT OR IGNORE INTO loop_cleanup_jobs(occurrence_id,loop_id,owner_key,worktree_path,status,created_at)
+          VALUES (?,?,?,?,'pending',?)`).run(id,occurrence.loopId,`loop-${occurrence.loopId}-${id}`,occurrence.worktreePath,now);
+        const terminalReason=outcome === "retriable_failure" ? "retries_exhausted" : outcome;
+        this.appendLoopAudit(occurrence.loopId,status === "succeeded" ? "occurrence.succeeded" : "occurrence.blocked",
+          terminalReason,"system",{occurrenceId:id,retryCount:occurrence.retryCount},now);
+        if (status === "blocked" || (outcome === "retriable_failure" && occurrence.retryCount >= occurrence.snapshot.maxRetries)) {
+          const reason = terminalReason;
+          const definitionTransition=this.blockLoopDefinition(occurrence.loopId,reason,now);
+          this.db.prepare("UPDATE loop_occurrences SET status='cancelled',error=?,finished_at=? WHERE loop_id=? AND status IN ('pending','retry_wait')").run(reason,now,occurrence.loopId);
+          this.db.prepare(`UPDATE turns SET status='interrupted',error=?,finished_at=? WHERE loop_occurrence_id IN
+            (SELECT id FROM loop_occurrences WHERE loop_id=? AND status='cancelled') AND status='pending'`).run(reason,now,occurrence.loopId);
+          if(definitionTransition.changed)this.appendLoopAudit(occurrence.loopId,"policy.blocked",reason,"system",
+            {occurrenceId:id,revision:definitionTransition.revision},now);
+        }
+      }
+      return this.loopOccurrence(id)!;
+    })();
+  }
+  updateLoopOccurrenceWorktree(id: string, path: string, branch: string): void {
+    this.db.prepare("UPDATE loop_occurrences SET worktree_path=?,branch=? WHERE id=?").run(path,branch,id);
+  }
+  recordLoopUsage(id:string,usage:{inputTokens?:number|undefined;outputTokens?:number|undefined;cacheCreationTokens?:number|undefined;cacheReadTokens?:number|undefined;costUsd?:number|undefined;model?:string|undefined}):void{
+    this.db.transaction(()=>{const occurrence=this.loopOccurrence(id);if(!occurrence)throw new Error("unknown loop occurrence");
+      this.db.prepare(`UPDATE loop_occurrences SET input_tokens=?,output_tokens=?,cache_creation_tokens=?,cache_read_tokens=?,cost_usd=?,model=? WHERE id=?`)
+        .run(usage.inputTokens??null,usage.outputTokens??null,usage.cacheCreationTokens??null,usage.cacheReadTokens??null,usage.costUsd??null,usage.model??null,id);
+      this.db.prepare(`UPDATE turns SET usage_input_tokens=?,usage_output_tokens=?,usage_cache_creation_tokens=?,usage_cache_read_tokens=?,cost_usd=?,model=? WHERE id=?`)
+        .run(usage.inputTokens??null,usage.outputTokens??null,usage.cacheCreationTokens??null,usage.cacheReadTokens??null,usage.costUsd??null,usage.model??null,occurrence.turnId);
+    })();
+  }
+  recordLoopInvocation(id:string,input:{startedAt:number;endedAt:number;outcome:LoopOutcome;usage?:TurnUsage}):AgentInvocationRow{
+    return this.db.transaction(()=>{const occurrence=this.loopOccurrence(id);if(!occurrence)throw new Error("unknown loop occurrence");
+      const session=this.getSession(occurrence.runId);if(!session)throw new Error("missing loop session");
+      const usage=input.usage;const total=(usage?.inputTokens??0)+(usage?.outputTokens??0)+(usage?.cacheCreationTokens??0)+(usage?.cacheReadTokens??0);
+      const source=occurrence.snapshot.harness.runtime === "claudex" ? "codex" : "claude";
+      const sourceKey=`loop:${id}:attempt:${this.getTurn(occurrence.turnId)?.attempts??occurrence.retryCount+1}`;
+      this.db.prepare(`INSERT OR IGNORE INTO agent_invocations
+        (linear_session_id,turn_id,source,source_key,role,runtime,model,started_at,ended_at,outcome,input_tokens,output_tokens,
+         cache_creation_tokens,cache_read_tokens,raw_total_tokens,prior_total_tokens,delta_total_tokens,usage_epoch,usage_classification,
+         trace_id,span_id,enrichment_state,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'accepted',?,?, 'enriched',?)`)
+        .run(occurrence.runId,occurrence.turnId,source,sourceKey,occurrence.snapshot.task.role,occurrence.snapshot.harness.runtime,
+          usage?.model??null,input.startedAt,input.endedAt,input.outcome,usage?.inputTokens??null,usage?.outputTokens??null,
+          usage?.cacheCreationTokens??null,usage?.cacheReadTokens??null,total,0,total,session.traceId,randomHex(8),input.endedAt);
+      return this.invocationBySourceKey(sourceKey)!;
+    })();
+  }
+  hasBlockingLoopCleanup(loopId: string): boolean { return Boolean(this.db.prepare("SELECT 1 FROM loop_cleanup_jobs WHERE loop_id=? AND status<>'done' LIMIT 1").get(loopId)); }
+  claimNextLoopCleanup(now = Date.now()): LoopCleanupJobRow | undefined {
+    return this.db.transaction(() => { const row = this.db.prepare(`SELECT id FROM loop_cleanup_jobs WHERE status='pending' AND next_attempt_at<=? ORDER BY id LIMIT 1`).get(now) as { id: number } | undefined;
+      if (!row) return undefined; this.db.prepare("UPDATE loop_cleanup_jobs SET status='running',attempts=attempts+1 WHERE id=?").run(row.id); return this.loopCleanup(row.id); })();
+  }
+  reclaimRunningLoopCleanups():number{return this.db.prepare("UPDATE loop_cleanup_jobs SET status='pending' WHERE status='running'").run().changes;}
+  loopCleanup(id: number): LoopCleanupJobRow | undefined { const row=this.db.prepare(`SELECT id,occurrence_id occurrenceId,loop_id loopId,owner_key ownerKey,
+    worktree_path worktreePath,status,attempts,next_attempt_at nextAttemptAt,error,created_at createdAt FROM loop_cleanup_jobs WHERE id=?`).get(id) as LoopCleanupJobRow | undefined;
+    return row?{...row,error:safeLoopCleanupError(row.error)}:undefined; }
+  loopCleanups(loopId:string,limit=20):LoopCleanupJobRow[]{const rows=this.db.prepare(`SELECT id,occurrence_id occurrenceId,loop_id loopId,owner_key ownerKey,
+    worktree_path worktreePath,status,attempts,next_attempt_at nextAttemptAt,error,created_at createdAt FROM loop_cleanup_jobs WHERE loop_id=? ORDER BY id DESC LIMIT ?`)
+    .all(loopId,Math.max(1,Math.min(50,Math.trunc(limit)))) as LoopCleanupJobRow[];return rows.map(row=>({...row,error:safeLoopCleanupError(row.error)}));}
+  completeLoopCleanup(id: number, now = Date.now()): void { this.db.transaction(() => { const job=this.loopCleanup(id);if(!job||job.status==="done")return;
+    this.db.prepare("UPDATE loop_cleanup_jobs SET status='done',error=NULL WHERE id=?").run(id);
+    this.appendLoopAudit(job.loopId,"cleanup.completed","cleanup_completed","system",{jobId:job.id,occurrenceId:job.occurrenceId},now); })(); }
+  retainLoopCleanup(id: number, reason: string, now = Date.now()): void { this.db.transaction(() => { const job=this.loopCleanup(id); if(!job||job.status==="retained")return;
+    const safeReason=safeLoopCleanupError(reason)??"cleanup retained";
+    this.db.prepare("UPDATE loop_cleanup_jobs SET status='retained',error=? WHERE id=?").run(safeReason,id);
+    const definitionTransition=this.blockLoopDefinition(job.loopId,"cleanup_retained",now);
+    const cancelled=this.db.prepare("SELECT id FROM loop_occurrences WHERE loop_id=? AND status IN ('pending','retry_wait')").all(job.loopId) as Array<{id:string}>;
+    this.db.prepare("UPDATE loop_occurrences SET status='cancelled',error='cleanup_retained',finished_at=? WHERE loop_id=? AND status IN ('pending','retry_wait')").run(now,job.loopId);
+    this.db.prepare(`UPDATE turns SET status='interrupted',error='cleanup_retained',finished_at=? WHERE loop_occurrence_id IN
+      (SELECT id FROM loop_occurrences WHERE loop_id=? AND status='cancelled') AND status='pending'`).run(now,job.loopId);
+    for(const row of cancelled)this.appendLoopAudit(job.loopId,"occurrence.cancelled","cleanup_retained","system",{occurrenceId:row.id},now);
+    this.appendLoopAudit(job.loopId,"cleanup.retained",safeReason,"system",
+      {jobId:job.id,occurrenceId:job.occurrenceId,revision:definitionTransition.revision},now); })(); }
+  retryLoopCleanup(id: number, error: string, nextAttemptAt: number, now = Date.now()): void { this.db.transaction(() => { const job=this.loopCleanup(id);if(!job)return;
+    const safeError=safeLoopCleanupError(error)??"cleanup operation failed";
+    this.db.prepare("UPDATE loop_cleanup_jobs SET status='pending',error=?,next_attempt_at=? WHERE id=?").run(safeError,nextAttemptAt,id);
+    this.appendLoopAudit(job.loopId,"cleanup.retry_scheduled",safeError,"system",{jobId:job.id,occurrenceId:job.occurrenceId,nextAttemptAt},now); })(); }
+  failLoopCleanup(id: number, error: string, now = Date.now()): void { this.db.transaction(() => { const job=this.loopCleanup(id); if(!job||job.status==="failed")return;
+    const safeError=safeLoopCleanupError(error)??"cleanup operation failed";
+    this.db.prepare("UPDATE loop_cleanup_jobs SET status='failed',error=? WHERE id=?").run(safeError,id);
+    const definitionTransition=this.blockLoopDefinition(job.loopId,"cleanup_failed",now);
+    const cancelled=this.db.prepare("SELECT id FROM loop_occurrences WHERE loop_id=? AND status IN ('pending','retry_wait')").all(job.loopId) as Array<{id:string}>;
+    this.db.prepare("UPDATE loop_occurrences SET status='cancelled',error='cleanup_failed',finished_at=? WHERE loop_id=? AND status IN ('pending','retry_wait')").run(now,job.loopId);
+    this.db.prepare(`UPDATE turns SET status='interrupted',error='cleanup_failed',finished_at=? WHERE loop_occurrence_id IN
+      (SELECT id FROM loop_occurrences WHERE loop_id=? AND status='cancelled') AND status='pending'`).run(now,job.loopId);
+    for(const row of cancelled)this.appendLoopAudit(job.loopId,"occurrence.cancelled","cleanup_failed","system",{occurrenceId:row.id},now);
+    this.appendLoopAudit(job.loopId,"cleanup.failed",safeError,"system",
+      {jobId:job.id,occurrenceId:job.occurrenceId,revision:definitionTransition.revision},now); })(); }
+  retryRetainedLoopCleanup(loopId: string, reason: string, now = Date.now()): {revision:number;sequence:number} { return this.db.transaction(() => {
+    const loop=this.loopById(loopId);if(!loop)throw new Error("loop_not_found");
+    const changed=this.db.prepare("UPDATE loop_cleanup_jobs SET status='pending',error=NULL,next_attempt_at=? WHERE loop_id=? AND status IN ('retained','failed')").run(now,loopId);
+    if(!changed.changes) throw new Error("cleanup_not_retryable");const revision=loop.revision+1;
+    this.db.prepare("UPDATE loop_definitions SET revision=?,updated_at=? WHERE id=?").run(revision,now,loopId);
+    const sequence=this.appendLoopAudit(loopId,"cleanup.retry",reason,"local-console",{revision,jobs:changed.changes},now);
+    return {revision,sequence}; })(); }
+  confirmLoopCleanupRetry(input:{draftId:string;digest:string;loopId:string;expectedRevision:number;reason:string;now?:number}):LoopMutationResult{
+    return this.db.transaction(()=>{const receipt=this.loopReceipt(input.draftId);if(receipt){if(receipt.digest!==input.digest)throw new Error("confirmation_mismatch");return {...receipt.result,deduplicated:true};}
+      const loop=this.loopById(input.loopId);if(!loop||loop.revision!==input.expectedRevision)throw new Error("loop_revision_changed");const now=input.now??Date.now();
+      const {revision,sequence}=this.retryRetainedLoopCleanup(input.loopId,input.reason,now);const result:LoopMutationResult={loop:projectConsoleLoop(this.loopById(input.loopId)!),auditSequence:sequence,deduplicated:false};
+      this.db.prepare("INSERT INTO loop_mutation_receipts(draft_id,digest,loop_id,revision,audit_sequence,response_json,created_at) VALUES (?,?,?,?,?,?,?)")
+        .run(input.draftId,input.digest,input.loopId,revision,sequence,JSON.stringify(result),now);return result;})();
+  }
+  private appendLoopAudit(loopId:string,kind:string,reason:string,actor:string,details:Record<string,unknown>,now:number):number{
+    const sequence=(this.db.prepare("SELECT COALESCE(MAX(sequence),0)+1 sequence FROM loop_audit_events WHERE loop_id=?").get(loopId) as {sequence:number}).sequence;
+    this.db.prepare("INSERT INTO loop_audit_events VALUES (?,?,?,?,?,?,?)").run(loopId,sequence,kind,safeLoopReason(reason)??"unspecified",actor,JSON.stringify(details),now);return sequence;
+  }
+  private blockLoopDefinition(loopId:string,reason:string,now:number):{revision:number;changed:boolean}{
+    const loop=this.loopById(loopId);if(!loop)throw new Error("loop_not_found");
+    if(!loop.enabled&&loop.blockedReason===reason)return {revision:loop.revision,changed:false};
+    const revision=loop.revision+1;
+    const changed=this.db.prepare(`UPDATE loop_definitions SET revision=?,enabled=0,blocked_reason=?,updated_at=?
+      WHERE id=? AND revision=?`).run(revision,reason,now,loopId,loop.revision);
+    if(changed.changes!==1)throw new Error("loop_revision_changed");
+    return {revision,changed:true};
+  }
   turnIsRunning(turnId: number): boolean {
     return (this.db.prepare("SELECT status FROM turns WHERE id=?").get(turnId) as { status?: string } | undefined)?.status === "running";
   }
@@ -2770,4 +3563,22 @@ export class EventLog {
   close(): void {
     this.db.close();
   }
+}
+
+function loopDeclaration(row: LoopDefinitionRow): LoopDeclaration {
+  return { version: 1, name: row.name, description: row.description, trigger: row.trigger, task: row.task,
+    harness: row.harness, maxConcurrency: row.maxConcurrency, budgetUsd: row.budgetUsd,
+    timeoutMinutes: row.timeoutMinutes, maxRetries: row.maxRetries, enabled: row.enabled };
+}
+
+function safeLoopReason(value:string|null):string|null{return value===null?null:value.replace(/[\x00-\x1f\x7f]/g," ").slice(0,500);}
+function safeLoopCleanupError(value:string|null):string|null{
+  if(value===null)return null;
+  const safe=value.replace(/[\x00-\x1f\x7f]/g," ")
+    .replace(/\b(?:https?|ssh):\/\/\S+/gi,"[redacted-url]")
+    .replace(/(?<!\])(?:\/[^/\s'\"]+){2,}/g,"[redacted-path]")
+    .replace(/\b(?:token|secret|password|credential|authorization|api[_ -]?key)\s*[:=]\s*\S+/gi,"$1=[redacted]")
+    .replace(/\b(?:ghp_|github_pat_|lin_api_|sk-)[A-Za-z0-9_-]+\b/g,"[redacted-token]")
+    .replace(/\s+/g," ").trim().slice(0,240);
+  return safe||"cleanup operation failed";
 }

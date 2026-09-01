@@ -5,7 +5,7 @@ import { isOperationState, isOperationType, type OperationState, type OperationT
 import { ToolBoundaryStore } from "./tool-boundary-store.js";
 
 function usage(): never {
-  process.stderr.write("usage: operations-cli <schedule|claim|transition|park|get|status|running|retry|cancel|restart-intent-set|restart-intent-get|restart-intent-clear> ...\n");
+  process.stderr.write("usage: operations-cli <schedule|claim|reload-bind|transition|park|get|events|list|control-create|control-get|control-transition|status|running|retry|cancel|restart-intent-set|restart-intent-get|restart-intent-clear> ...\n");
   process.exit(2);
 }
 
@@ -40,7 +40,27 @@ try {
       break;
     }
     case "claim": result = log!.claimOperation(required(args[0], "id"), required(args[1], "digest")) ?? null; break;
+    case "reload-bind": result = log!.bindConsoleReload(required(args[0], "id"),
+      required(args[1], "target commit"), required(args[2], "previous commit")); break;
     case "get": result = log!.operationById(required(args[0], "id")) ?? null; break;
+    case "events": result = log!.operationEvents(required(args[0], "id")); break;
+    case "list": result = log!.listOperations(args[0] === undefined ? 50 : Number(args[0])); break;
+    case "control-get": result = log!.operationControlById(required(args[0], "id")) ?? null; break;
+    case "control-create": {
+      const [id, digest, targetOperationId, targetDigest, kind, reason, expectedVersion] = args;
+      if (kind !== "retry" && kind !== "cancel") throw new Error("control kind must be retry or cancel");
+      const version = Number(required(expectedVersion, "expected version"));
+      result = log!.createOperationControl({ id: required(id, "id"), digest: required(digest, "digest"),
+        targetOperationId: required(targetOperationId, "target operation id"), targetDigest: required(targetDigest, "target digest"),
+        kind, reason: required(reason, "reason"), expectedVersion: version });
+      break;
+    }
+    case "control-transition": {
+      const [id, state, outcome] = args;
+      if (state !== "pending" && state !== "executing" && state !== "succeeded" && state !== "rejected")
+        throw new Error("invalid control state");
+      result = log!.transitionOperationControl(required(id, "id"), state, optional(outcome)); break;
+    }
     case "status": result = log!.operationStatus(); break;
     case "running": result = log!.runningTurns(); break;
     case "restart-intent-set": result = log!.recordRestartIntent(required(args[0], "reason")); break;

@@ -32,7 +32,57 @@ function event(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function seedLoop(log: EventLog, now = 1_800_000_000_000) {
+  const loop = log.mutateLoop({ draftId: `schema-${now}`, digest: "d".repeat(64), id: `loop-${now}`,
+    declaration: { version: 1, name: "Schema loop", description: "", trigger: { kind: "fixed-interval", everyMinutes: 15, startsAt: now },
+      task: { kind: "agent", role: "planner", objective: "Check structural lineage." }, harness: { runtime: "claude", profile: "sol" },
+      maxConcurrency: 1, budgetUsd: 1, timeoutMinutes: 5, maxRetries: 0, enabled: true },
+    expectedRevision: null, reason: "schema test", kind: "create", now });
+  const occurrence = log.admitDueLoops(now)[0]!;
+  return { loopId: loop.loop.id, occurrenceId: occurrence.id };
+}
+
+function expectTurnOriginConstraints(db: Database.Database, eventId: number, loopId: string, occurrenceId: string): void {
+  const insert = db.prepare(`INSERT INTO turns
+    (origin_kind,origin_id,loop_occurrence_id,resource_key,event_id,linear_session_id,issue_id,source_key,kind,status)
+    VALUES (?,?,?,?,?,?,?,?,?, 'pending')`);
+  expect(() => insert.run("linear",null,null,"bad-linear-null",null,"bad-linear-null",null,"bad-linear-null","created")).toThrow();
+  expect(() => insert.run("linear",loopId,occurrenceId,"bad-linear-loop",eventId,"bad-linear-loop","issue","bad-linear-loop","created")).toThrow();
+  expect(() => insert.run("loop",null,null,"bad-loop-null",null,"bad-loop-null",null,"bad-loop-null","loop")).toThrow();
+  expect(() => insert.run("loop",loopId,occurrenceId,"bad-loop-event",eventId,"bad-loop-event",null,"bad-loop-event","loop")).toThrow();
+  expect(() => insert.run("linear",null,null,"bad-linear-kind",eventId,"bad-linear-kind","issue","bad-linear-kind","loop")).toThrow();
+  expect(() => insert.run("loop",loopId,occurrenceId,"bad-loop-kind",null,"bad-loop-kind",null,"bad-loop-kind","created")).toThrow();
+  expect(() => insert.run("linear",null,null,"bad-linear-fk",9_999_999,"bad-linear-fk","issue","bad-linear-fk","created")).toThrow();
+  expect(() => insert.run("loop",loopId,"missing-occurrence","bad-loop-fk",null,"bad-loop-fk",null,"bad-loop-fk","loop")).toThrow();
+  const foreignKeys=db.prepare("PRAGMA foreign_key_list(turns)").all() as Array<{id:number;seq:number;table:string;from:string;to:string}>;
+  expect(foreignKeys.map(row=>row.table)).toEqual(expect.arrayContaining(["events","loop_definitions","loop_occurrences"]));
+  const composite=foreignKeys.filter(row=>row.table==="loop_occurrences"&&["loop_occurrence_id","origin_id"].includes(row.from));
+  expect(new Set(composite.map(row=>row.id)).size).toBeLessThan(composite.length);
+}
+
 describe("EventLog", () => {
+  it("structurally enforces fresh linear and loop turn lineage", () => {
+    const dbPath=path();const log=new EventLog(dbPath);log.append(event());const seeded=seedLoop(log);log.close();
+    const db=new Database(dbPath);db.pragma("foreign_keys = ON");
+    const eventId=(db.prepare("SELECT id FROM events WHERE delivery_id='delivery-1'").get() as {id:number}).id;
+    expectTurnOriginConstraints(db,eventId,seeded.loopId,seeded.occurrenceId);
+    expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);db.close();
+  });
+  it("atomically replaces bounded dependency observations and persists only safe capability fields", () => {
+    const db = path(); let log = new EventLog(db);
+    log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true, status: "healthy",
+      reasonCode: null, capabilities: { toolCount: 12, truncated: false }, observedAt: 1_000, staleAfterMs: 5_000 });
+    log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true, status: "unavailable",
+      reasonCode: "timeout", observedAt: 2_000, staleAfterMs: 5_000 });
+    expect(log.dependencyObservations()).toEqual([{ kind: "mcp", name: "linear", configured: true,
+      status: "unavailable", reasonCode: "timeout", capabilities: {}, observedAt: 2_000, staleAfterMs: 5_000 }]);
+    expect(() => log.upsertDependencyObservation({ kind: "mcp", name: "bad/name", configured: true,
+      status: "healthy", reasonCode: null, capabilities: { secret: "\nTOKEN" }, observedAt: 2_000, staleAfterMs: 5_000 })).toThrow();
+    expect(() => log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true,
+      status: "healthy", reasonCode: null, capabilities: { token: "SECRET" }, observedAt: 2_000, staleAfterMs: 5_000 })).toThrow();
+    log.close(); log = new EventLog(db);
+    expect(log.dependencyObservations()).toHaveLength(1); log.close();
+  });
   it("persists simulator leases across reopen and atomically enforces limits", () => {
     const db = path(); let log = new EventLog(db);
     log.append(event()); const turn = log.claimNextTurn(1000)!;
@@ -810,10 +860,87 @@ describe("EventLog", () => {
     log.close();
   });
 
+  it("converges an upgraded operations table to fresh constraints without losing rows, indexes, or relations", () => {
+    const upgradedPath = path(); const old = new Database(upgradedPath); old.pragma("foreign_keys = ON");
+    old.exec(`
+      CREATE TABLE operations (
+        id TEXT PRIMARY KEY, request_digest TEXT NOT NULL, type TEXT NOT NULL CHECK(type IN ('restart','config','update')),
+        reason TEXT NOT NULL, requested_at INTEGER NOT NULL, target_ref TEXT, target_commit TEXT, previous_commit TEXT,
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','accepting','rolling_back','blocked','succeeded','failed','cancelled')),
+        stage TEXT, attempts INTEGER NOT NULL DEFAULT 0, mutated INTEGER NOT NULL DEFAULT 0,
+        rollback_verified INTEGER NOT NULL DEFAULT 0, outcome TEXT, error_stage TEXT, updated_at INTEGER NOT NULL,
+        actor TEXT NOT NULL DEFAULT 'operator', request_kind TEXT, request_summary TEXT,
+        state_version INTEGER NOT NULL DEFAULT 0, cancel_requested INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE UNIQUE INDEX idx_operations_one_active ON operations((1))
+        WHERE state IN ('pending','executing','accepting','rolling_back','blocked');
+      CREATE INDEX idx_operations_requested_fixture ON operations(requested_at,id);
+      CREATE TABLE operation_stage_events (
+        operation_id TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE, sequence INTEGER NOT NULL,
+        state TEXT NOT NULL, stage TEXT, outcome TEXT, created_at INTEGER NOT NULL, PRIMARY KEY(operation_id,sequence));
+      CREATE TABLE operation_controls (
+        id TEXT PRIMARY KEY,digest TEXT NOT NULL UNIQUE,target_operation_id TEXT NOT NULL REFERENCES operations(id),
+        target_digest TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('retry','cancel')),
+        actor TEXT NOT NULL CHECK(actor='local-console'),reason TEXT NOT NULL,expected_version INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','executing','succeeded','rejected')),outcome TEXT,
+        requested_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,
+        UNIQUE(target_operation_id,target_digest,kind,expected_version));
+      INSERT INTO operations
+        (id,request_digest,type,reason,requested_at,state,stage,attempts,updated_at,actor,request_kind,request_summary,state_version,cancel_requested)
+      VALUES ('upgraded-op','${"a".repeat(64)}','restart','preserve me',10,'succeeded','accepted',2,20,
+        'local-console','daemon.restart','{"kind":"daemon.restart"}',4,1);
+      INSERT INTO operation_stage_events(operation_id,sequence,state,stage,outcome,created_at)
+        VALUES ('upgraded-op',1,'succeeded','accepted','healthy',20);
+      INSERT INTO operation_controls
+        (id,digest,target_operation_id,target_digest,kind,actor,reason,expected_version,state,outcome,requested_at,updated_at)
+      VALUES ('upgraded-control','${"b".repeat(64)}','upgraded-op','${"a".repeat(64)}','cancel','local-console',
+        'preserve relation',3,'succeeded','acknowledged',19,20);
+    `); old.close();
+    const log = new EventLog(upgradedPath);
+    expect(log.operationById("upgraded-op")).toMatchObject({ reason: "preserve me", state: "succeeded", stage: "accepted",
+      attempts: 2, actor: "local-console", requestKind: "daemon.restart", requestSummary: '{"kind":"daemon.restart"}',
+      stateVersion: 4, cancelRequested: 1 });
+    expect(log.operationEvents("upgraded-op")).toMatchObject([{ sequence: 1, state: "succeeded", stage: "accepted", outcome: "healthy" }]);
+    expect(log.operationControlById("upgraded-control")).toMatchObject({ targetOperationId: "upgraded-op", state: "succeeded" });
+    log.transitionOperation("upgraded-op", "failed", "rechecked", { outcome: "still related" }, 30);
+    expect(log.operationEvents("upgraded-op")).toHaveLength(2); log.close();
+
+    const freshPath = path(); const fresh = new EventLog(freshPath); fresh.close();
+    for (const dbPath of [freshPath, upgradedPath]) {
+      const raw = new Database(dbPath); raw.pragma("foreign_keys = ON");
+      const schema = (raw.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='operations'").get() as { sql: string }).sql.replace(/\s+/g, "");
+      expect(schema).toContain("CHECK(actorIN('operator','local-console','system'))");
+      expect(schema).toContain("CHECK(cancel_requestedIN(0,1))");
+      if (dbPath === upgradedPath) {
+        expect((raw.prepare("PRAGMA index_list(operations)").all() as Array<{ name: string }>).map(row => row.name))
+          .toEqual(expect.arrayContaining(["idx_operations_one_active", "idx_operations_requested_fixture"]));
+        expect(raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+        expect((raw.prepare("PRAGMA foreign_key_list(operation_stage_events)").all() as Array<{ table: string }>)[0]?.table).toBe("operations");
+        expect((raw.prepare("PRAGMA foreign_key_list(operation_controls)").all() as Array<{ table: string }>)[0]?.table).toBe("operations");
+      }
+      const invalidInsert = raw.prepare(`INSERT INTO operations
+        (id,request_digest,type,reason,requested_at,state,updated_at,actor,cancel_requested) VALUES (?,?,?,?,?,'succeeded',?,?,?)`);
+      expect(() => invalidInsert.run("invalid-actor", "c".repeat(64), "restart", "constraint", 40, 40, "intruder", 0)).toThrow();
+      expect(() => invalidInsert.run("invalid-cancel", "d".repeat(64), "restart", "constraint", 40, 40, "operator", 2)).toThrow(); raw.close();
+    }
+  });
+
   it("migrates a populated pre-usage turns table with null usage", () => {
     const dbPath = path();
     const old = new Database(dbPath);
     old.exec(`
+      CREATE TABLE events (
+        id INTEGER PRIMARY KEY,
+        delivery_id TEXT NOT NULL UNIQUE,
+        webhook_id TEXT,
+        app TEXT NOT NULL CHECK(app IN ('planner','implementer')),
+        action TEXT,
+        agent_session_id TEXT,
+        source_activity_id TEXT,
+        issue_id TEXT,
+        received_at INTEGER NOT NULL,
+        raw_body BLOB NOT NULL
+      );
       CREATE TABLE turns (
         id INTEGER PRIMARY KEY,
         event_id INTEGER NOT NULL UNIQUE,
@@ -827,13 +954,15 @@ describe("EventLog", () => {
         started_at INTEGER,
         finished_at INTEGER
       );
+      INSERT INTO events (id,delivery_id,app,action,agent_session_id,issue_id,received_at,raw_body)
+      VALUES (1,'legacy-delivery','planner','created','old-session','old-issue',1,X'7B7D');
       INSERT INTO turns (id, event_id, linear_session_id, issue_id, kind, prompt, status, attempts)
       VALUES (1, 1, 'old-session', 'old-issue', 'created', 'old prompt', 'done', 1);
     `);
     old.close();
 
-    const log = new EventLog(dbPath);
-    const db = new Database(dbPath, { readonly: true });
+    const log = new EventLog(dbPath);const seeded=seedLoop(log,1_800_000_000_001);
+    const db = new Database(dbPath);db.pragma("foreign_keys = ON");
     const columns = (
       db.prepare("PRAGMA table_info(turns)").all() as Array<{ name: string }>
     ).map((column) => column.name);
@@ -859,6 +988,7 @@ describe("EventLog", () => {
       ]),
     );
     expect(indexes).toContainEqual({ name: "idx_turns_source_key", unique: 1 });
+    expectTurnOriginConstraints(db,1,seeded.loopId,seeded.occurrenceId);
     expect(
       db
         .prepare(
@@ -882,6 +1012,38 @@ describe("EventLog", () => {
     });
     db.close();
     log.close();
+  });
+
+  it.each(["turn-event","unrelated-child"] as const)("rejects %s foreign-key corruption during turn migration", (kind) => {
+    const dbPath=path();const old=new Database(dbPath);old.pragma("foreign_keys = OFF");
+    old.exec(`
+      CREATE TABLE events (
+        id INTEGER PRIMARY KEY,delivery_id TEXT NOT NULL UNIQUE,webhook_id TEXT,
+        app TEXT NOT NULL CHECK(app IN ('planner','implementer')),action TEXT,agent_session_id TEXT,
+        source_activity_id TEXT,issue_id TEXT,received_at INTEGER NOT NULL,raw_body BLOB NOT NULL
+      );
+      CREATE TABLE turns (
+        id INTEGER PRIMARY KEY,event_id INTEGER NOT NULL UNIQUE REFERENCES events(id),linear_session_id TEXT NOT NULL,
+        issue_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('created','prompted')),prompt TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending','running','awaiting_activity','done','failed','interrupted')),
+        attempts INTEGER NOT NULL DEFAULT 0,error TEXT,started_at INTEGER,finished_at INTEGER
+      );
+      INSERT INTO events (id,delivery_id,app,action,agent_session_id,issue_id,received_at,raw_body)
+        VALUES (1,'migration-event','planner','created','migration-session','migration-issue',1,X'7B7D');
+      INSERT INTO turns (id,event_id,linear_session_id,issue_id,kind,status)
+        VALUES (1,${kind === "turn-event" ? 999 : 1},'migration-session','migration-issue','created','done');
+    `);
+    if(kind === "unrelated-child")old.exec(`
+      CREATE TABLE turn_activities (
+        turn_id INTEGER PRIMARY KEY REFERENCES turns(id),kind TEXT NOT NULL CHECK(kind IN ('response','error')),
+        activity_id TEXT NOT NULL UNIQUE,body TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','posted','failed')),
+        attempts INTEGER NOT NULL DEFAULT 0,next_attempt_at INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL DEFAULT 0,
+        progress_barrier INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO turn_activities(turn_id,kind,activity_id,body,status) VALUES (999,'response','orphan-activity','done','posted');
+    `);
+    old.close();
+    expect(()=>new EventLog(dbPath)).toThrow("turn origin migration foreign-key check failed");
   });
 
   it("uses a stable body hash fallback when Linear-Delivery is absent", () => {
@@ -1132,5 +1294,39 @@ describe("EventLog", () => {
     ).toEqual(expect.arrayContaining(["profile", "profile_fallback"]));
     db.close();
     log.close();
+  });
+  it("records local-console actor, ordered stages, and version-bound in-place controls", () => {
+    const log = new EventLog(path());
+    const scheduled = log.scheduleOperation({ id: "console-op", requestDigest: "a".repeat(64), type: "restart",
+      reason: "maintenance", actor: "local-console", requestKind: "daemon.restart", requestSummary: '{"kind":"daemon.restart"}' });
+    expect(scheduled.operation).toMatchObject({ actor: "local-console", stateVersion: 0, cancelRequested: 0 });
+    expect(log.operationEvents("console-op")).toMatchObject([{ sequence: 1, state: "pending", stage: "scheduled" }]);
+    const control = log.createOperationControl({ id: "cancel-control", digest: "b".repeat(64),
+      targetOperationId: "console-op", targetDigest: "a".repeat(64), kind: "cancel", reason: "stop", expectedVersion: 0 });
+    expect(control.control).toMatchObject({ actor: "local-console", kind: "cancel", state: "pending" });
+    expect(log.operationById("console-op")).toMatchObject({ cancelRequested: 1, stateVersion: 1 });
+    expect(() => log.createOperationControl({ id: "raced", digest: "c".repeat(64), targetOperationId: "console-op",
+      targetDigest: "a".repeat(64), kind: "retry", reason: "race", expectedVersion: 0 })).toThrow("target changed");
+    log.close();
+  });
+  it("deduplicates controls only within one expected target generation", () => {
+    const dbPath = path(); const log = new EventLog(dbPath); const digest = "a".repeat(64);
+    log.scheduleOperation({ id: "retry-generations", requestDigest: digest, type: "restart", reason: "run",
+      actor: "local-console", requestKind: "daemon.restart" });
+    log.claimOperation("retry-generations", digest); log.transitionOperation("retry-generations", "failed", "health", { errorStage: "health" });
+    let target = log.operationById("retry-generations")!;
+    const first = log.createOperationControl({ id: "retry-one", digest: "b".repeat(64), targetOperationId: target.id,
+      targetDigest: digest, kind: "retry", reason: "again", expectedVersion: target.stateVersion });
+    expect(log.createOperationControl({ id: "retry-one-duplicate", digest: "c".repeat(64), targetOperationId: target.id,
+      targetDigest: digest, kind: "retry", reason: "same generation", expectedVersion: target.stateVersion })).toMatchObject({ deduplicated: true,
+      control: { id: first.control.id } });
+    log.acknowledgeRetryOperationControl(first.control.id); log.claimOperation(target.id, digest);
+    log.transitionOperation(target.id, "failed", "health", { errorStage: "health" }); target = log.operationById(target.id)!;
+    const second = log.createOperationControl({ id: "retry-two", digest: "d".repeat(64), targetOperationId: target.id,
+      targetDigest: digest, kind: "retry", reason: "new generation", expectedVersion: target.stateVersion });
+    expect(second).toMatchObject({ deduplicated: false, control: { id: "retry-two", expectedVersion: target.stateVersion } });
+    expect(second.control.id).not.toBe(first.control.id);
+    const raw = new Database(dbPath, { readonly: true }); const schema = raw.prepare("SELECT sql FROM sqlite_master WHERE name='operation_controls'").get() as { sql: string };
+    expect(schema.sql.replace(/\s+/g, "")).toContain("UNIQUE(target_operation_id,target_digest,kind,expected_version)"); raw.close(); log.close();
   });
 });

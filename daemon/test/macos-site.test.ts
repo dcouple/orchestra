@@ -25,6 +25,20 @@ function renderWith(siteEnv: string) {
   return { result, out };
 }
 
+function sudoersServiceCommands(sudoers: string): string[] {
+  const lines = sudoers.split("\n");
+  const first = lines.findIndex(line => line.startsWith("Cmnd_Alias DAEMON_SERVICES = "));
+  expect(first).toBeGreaterThanOrEqual(0);
+  const commands: string[] = [];
+  for (let index = first; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    const continued = line.endsWith("\\");
+    commands.push(line.replace(/^Cmnd_Alias DAEMON_SERVICES = /, "").replace(/\\$/, "").trim());
+    if (!continued) break;
+  }
+  return commands.join(" ").split(",").map(command => command.trim());
+}
+
 const validSite = [
   "# comment",
   "DAEMON_PUBLIC_HOSTNAME=agent.example.org",
@@ -120,6 +134,8 @@ describe("macOS site config", () => {
       "org.example.cliproxyapi.plist",
       "org.example.cloudflared.plist",
       "org.example.linear-agent-daemon.plist",
+      "org.example.orchestra-console-operation.plist",
+      "org.example.orchestra-console.plist",
       "sudoers",
     ]);
     for (const file of files) {
@@ -130,12 +146,34 @@ describe("macOS site config", () => {
     expect(daemonPlist).toContain("<string>org.example.linear-agent-daemon</string>");
     expect(daemonPlist).toContain("<string>svcagent</string>");
     expect(daemonPlist).toContain("/Users/svcagent/linear-agent-daemon");
+    const consolePlist = readFileSync(join(out, "org.example.orchestra-console.plist"), "utf8");
+    expect(consolePlist).toContain("<string>org.example.orchestra-console</string>");
+    expect(consolePlist).toContain("<string>127.0.0.1</string>");
+    expect(consolePlist).toContain("<string>8790</string>");
     const tunnel = readFileSync(join(out, "cloudflared-config.yml"), "utf8");
     expect(tunnel).toContain("hostname: agent.example.org");
     expect(tunnel).toContain("tunnel: @TUNNEL_ID@");
     const sudoers = readFileSync(join(out, "sudoers"), "utf8");
     expect(sudoers).toContain("system/org.example.linear-agent-daemon");
     expect(sudoers).toMatch(/^svcagent ALL=\(root\) NOPASSWD: DAEMON_SERVICES$/m);
+    const policyCommands = sudoersServiceCommands(sudoers);
+    const labels: Record<string, string> = {
+      DAEMON_LABEL: "org.example.linear-agent-daemon",
+      CONSOLE_LABEL: "org.example.orchestra-console",
+    };
+    const deployCommands = [...deploy.matchAll(/^sudo (\/bin\/launchctl [^\n]+)$/gm)].map(([, command]) =>
+      command!.replace(/"system\/\$(\w+)"/g, (_match, variable: string) => {
+        expect(labels[variable], `unmapped fixed deploy label ${variable}`).toBeDefined();
+        return `system/${labels[variable]}`;
+      }));
+    expect(deployCommands).toEqual([
+      "/bin/launchctl kickstart -k system/org.example.linear-agent-daemon",
+      "/bin/launchctl kickstart -k system/org.example.orchestra-console",
+    ]);
+    for (const command of deployCommands) expect(policyCommands, command).toContain(command);
+    expect(policyCommands).toContain("/bin/launchctl kickstart -k system/org.example.orchestra-console");
+    expect(policyCommands.filter(command => command.endsWith(".orchestra-console") || command.endsWith(".orchestra-console.plist")))
+      .toEqual(["/bin/launchctl kickstart -k system/org.example.orchestra-console"]);
   });
 
   it("rejects unknown keys, missing keys, and values unsafe for the rendered files", () => {
@@ -145,6 +183,8 @@ describe("macOS site config", () => {
       ["DAEMON_SERVICE_USER=svc\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a|b.com\n", "invalid DAEMON_PUBLIC_HOSTNAME"],
       ["DAEMON_SERVICE_USER=Svc Name\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a.example.com\n", "invalid DAEMON_SERVICE_USER"],
       ["DAEMON_SERVICE_USER=svc\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a.example.com\nDAEMON_SOURCE_REPO_URL=git@github.com:x/y.git\n", "https://"],
+      ["DAEMON_SERVICE_USER=svc\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a.example.com\nDAEMON_CONSOLE_BIND_ADDR=0.0.0.0\n", "must be 127.0.0.1"],
+      ["DAEMON_SERVICE_USER=svc\nDAEMON_LAUNCHD_PREFIX=org.x\nDAEMON_PUBLIC_HOSTNAME=a.example.com\nDAEMON_CONSOLE_PORT=70000\n", "invalid DAEMON_CONSOLE_PORT"],
     ];
     for (const [site, message] of cases) {
       const { result } = renderWith(site);
@@ -162,5 +202,8 @@ describe("macOS site config", () => {
       if (file !== "site.env.example") expect(text, file).not.toMatch(/\/Users\/linearagent/);
     }
     expect(example).toMatch(/^DAEMON_PUBLIC_HOSTNAME=linear-agent\.example\.com$/m);
+    expect(example).toMatch(/^DAEMON_CONSOLE_BIND_ADDR=127\.0\.0\.1$/m);
+    expect(example).toMatch(/^DAEMON_CONSOLE_PORT=8790$/m);
+    expect(example).toContain("${DAEMON_LAUNCHD_PREFIX}.orchestra-console");
   });
 });

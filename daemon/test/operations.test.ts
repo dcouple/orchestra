@@ -1,12 +1,74 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { EventLog } from "../src/eventlog.js";
+import { ConsoleOperationExecutor } from "../src/console-operation-executor.js";
+import { canonicalJson, requestDigest, type ConsoleOperationRequest } from "../src/console-operation-schema.js";
+import { writeConsoleConfigSnapshot } from "../src/console-config-snapshot.js";
 import { appendTurn, executable, fixture, opsFixture, readNumber, treeSnapshot, updateRepo } from "./operations-fixtures.js";
+
+async function macConsoleFixture(secret = "PHASE3_NEW_SECRET_SENTINEL", kind: "config.apply" | "daemon.restart" | "daemon.reload" = "config.apply") {
+  const dir = mkdtempSync(join(tmpdir(), "mac-console-operation-"));
+  const home = join(dir, "home"); const state = join(dir, "state"); const spool = join(state, "console-requests");
+  for (const path of [home, state, join(state, "backups"), ...["staged", "ready", "executing", "control-staged", "controls", "rollback", "quarantine"].map(leaf => join(spool, leaf))])
+    mkdirSync(path, { recursive: true, mode: 0o700 });
+  mkdirSync(join(home, "linear-agent-daemon")); symlinkSync(resolve("dist"), join(home, "linear-agent-daemon", "dist"));
+  const envFile = join(dir, "protected.env");
+  writeFileSync(envFile, "PLANNER_HARNESS='claude'\nIMPLEMENTER_HARNESS='claude'\nLINEAR_API_KEY='PHASE3_OLD_SECRET'\n", { mode: 0o640 });
+  const snapshot = join(state, "console-config-snapshot.json"); await writeConsoleConfigSnapshot(envFile, snapshot, 1_000);
+  const snapshotRevision = JSON.parse(readFileSync(snapshot, "utf8")).revision as string;
+  const requestValue: ConsoleOperationRequest = kind === "config.apply"
+    ? { version: 1, kind, snapshotRevision, changes: { plannerHarness: "claudex" }, secrets: { LINEAR_API_KEY: secret } }
+    : { version: 1, kind, snapshotRevision };
+  const digest = requestDigest(requestValue); const id = `console-${createHash("sha256").update(dir).digest("hex").slice(0, 16)}`;
+  const db = join(dir, "events.db"); const log = new EventLog(db);
+  log.scheduleOperation({ id, requestDigest: digest, type: kind === "config.apply" ? "config" : kind === "daemon.reload" ? "update" : "restart",
+    reason: "fixture", actor: "local-console", requestKind: requestValue.kind,
+    requestSummary: JSON.stringify({kind:requestValue.kind}), requestedAt: 1_100 });
+  log.claimOperation(id, digest, 1_101);
+  const requestPath = join(spool, "executing", `${id}.json`); writeFileSync(requestPath, `${canonicalJson(requestValue)}\n`, { mode: 0o600 });
+  const bin = join(dir, "bin"); mkdirSync(bin);
+  const restartLog = join(dir, "restarts"); const healthCount = join(dir, "health-count"); writeFileSync(healthCount, "0\n");
+  writeFileSync(join(bin, "sudo"), `#!/bin/bash\nif [[ $2 == kickstart ]]; then echo restart >> '${restartLog}'; fi\nif [[ $2 == print ]]; then echo 'state = running'; fi\n`, { mode: 0o755 });
+  const health = join(dir, "health.sh");
+  writeFileSync(health, `#!/bin/bash\nn=$(($(cat '${healthCount}')+1)); echo $n > '${healthCount}'; IFS=, read -ra values <<< "\${HEALTH_SEQUENCE:-0}"; i=$((n-1)); [[ \${values[$i]:-0} == 0 ]]\n`, { mode: 0o755 });
+  const site = join(dir, "site.env"); writeFileSync(site, ["DAEMON_PUBLIC_HOSTNAME=fixture.example.com", "DAEMON_SERVICE_USER=fixture",
+    `DAEMON_SERVICE_HOME=${home}`, "DAEMON_LAUNCHD_PREFIX=com.example.fixture", "DAEMON_SOURCE_REPO_URL=https://github.com/example/repo.git"].join("\n") + "\n");
+  const baseEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}`, DAEMON_SITE_ENV: site,
+    DAEMON_SITE_LIB: resolve("ops/macos/daemon-site-lib.sh"), DAEMONCTL_ALLOW_OTHER_USER: "1", DAEMONCTL_STATE_DIR: state,
+    DAEMONCTL_ENV_FILE: envFile, DB_PATH: db, DAEMONCTL_OPS_CLI: resolve("dist/operations-cli.js"), NODE_BIN: process.execPath,
+    DAEMONCTL_HEALTH_WAITER: health, HEALTH_SEQUENCE: "0" };
+  const run = (extra: Record<string, string> = {}) => spawnSync("bash", [resolve("ops/macos/daemonctl"), "internal-console-execute"],
+    { env: { ...baseEnv, ...extra }, encoding: "utf8" });
+  return { dir, state, spool, envFile, snapshot, requestPath, restartLog, healthCount, secret, id, db, log, run };
+}
+
+function consoleReloadRepo(f: Awaited<ReturnType<typeof macConsoleFixture>>, failures=0) {
+  const checkout=join(f.dir,"reload-checkout");mkdirSync(join(checkout,"daemon"),{recursive:true});
+  const git=(...args:string[])=>execFileSync("git",args,{cwd:checkout,encoding:"utf8"}).trim();
+  git("init","-b","main");git("config","user.email","fixture@example.test");git("config","user.name","Fixture");
+  writeFileSync(join(checkout,"daemon","release.txt"),"accepted\n");git("add",".");git("-c","commit.gpgSign=false","commit","-m","accepted");
+  const accepted=git("rev-parse","HEAD");writeFileSync(join(checkout,"daemon","release.txt"),"candidate\n");git("add",".");
+  git("-c","commit.gpgSign=false","commit","-m","candidate");const target=git("rev-parse","HEAD");
+  git("remote","add","origin","https://fixture.invalid/orchestra.git");
+  const acceptedFile=join(f.state,"accepted-commit"),deployedFile=join(f.state,"deployed-commit");
+  writeFileSync(acceptedFile,`${accepted}\n`);writeFileSync(deployedFile,`${accepted}\n`);
+  const deployLog=join(f.dir,"deploy.log"),failureFile=join(f.dir,"deploy.failures");writeFileSync(failureFile,`${failures}\n`);
+  const deploy=join(f.dir,"deploy.sh");writeFileSync(deploy,`#!/bin/bash\nset -euo pipefail\necho "$SOURCE_COMMIT|$1" >> '${deployLog}'\nn=$(cat '${failureFile}')\nif (( n > 0 )); then echo $((n-1)) > '${failureFile}'; exit 1; fi\necho "$SOURCE_COMMIT" > "$DEPLOYED_COMMIT_FILE"\necho "$SOURCE_COMMIT" > "$ACCEPTED_COMMIT_FILE"\n`,{mode:0o755});
+  return {accepted,target,deployLog,env:{DAEMONCTL_SOURCE_CHECKOUT:checkout,DAEMONCTL_ACCEPTED_COMMIT_FILE:acceptedFile,
+    DAEMONCTL_DEPLOYED_COMMIT_FILE:deployedFile,DAEMONCTL_DEPLOY:deploy}};
+}
+
+function filePayloads(root: string): Buffer[] {
+  if (!existsSync(root)) return []; const info = statSync(root);
+  if (info.isFile()) return [readFileSync(root)];
+  return readdirSync(root).flatMap(name => filePayloads(join(root, name)));
+}
 
 describe("durable maintenance operations", () => {
   it("records pre/post tool hooks synchronously and blocks when the prehook database is unavailable", () => {
@@ -261,6 +323,167 @@ describe("durable maintenance operations", () => {
     expect(output).not.toContain("raw-session-secret");
     expect(output).not.toContain("secret-prompt");
     log.close();
+  });
+});
+
+describe("macOS console operation crash recovery", () => {
+  it("executes a console reload through the exact detached-worktree deploy workflow", async () => {
+    const f=await macConsoleFixture("UNUSED_RELOAD_SECRET","daemon.reload");const repo=consoleReloadRepo(f);
+    try {
+      const result=f.run(repo.env);expect(result.status,result.stderr).toBe(0);
+      expect(readFileSync(repo.deployLog,"utf8").trim().split("\n")).toEqual([expect.stringMatching(new RegExp(`^${repo.target}\\|`))]);
+      expect(f.log.operationById(f.id)).toMatchObject({state:"succeeded",stage:"accepted",type:"update",
+        targetRef:"checkout/HEAD",targetCommit:repo.target,previousCommit:repo.accepted,mutated:1});
+      expect(f.log.operationEvents(f.id).map(event=>event.stage)).toEqual(expect.arrayContaining(["provision","accepted"]));
+    } finally {f.log.close();rmSync(f.dir,{recursive:true,force:true});}
+  });
+
+  it("rolls a failed console reload back to the internally derived accepted commit", async () => {
+    const f=await macConsoleFixture("UNUSED_RELOAD_SECRET","daemon.reload");const repo=consoleReloadRepo(f,1);
+    try {
+      const result=f.run(repo.env);expect(result.status).toBe(1);
+      expect(readFileSync(repo.deployLog,"utf8").trim().split("\n").map(line=>line.split("|")[0]))
+        .toEqual([repo.target,repo.accepted]);
+      expect(f.log.operationById(f.id)).toMatchObject({state:"failed",stage:"rolled_back",targetCommit:repo.target,
+        previousCommit:repo.accepted,mutated:1,rollbackVerified:1});
+    } finally {f.log.close();rmSync(f.dir,{recursive:true,force:true});}
+  });
+
+  it("replays the still-secret executing request after a pre-intent crash without duplicate restart", async () => {
+    const f = await macConsoleFixture("PRE_INTENT_SECRET_SENTINEL");
+    try {
+      const crashed = f.run({ DAEMONCTL_FAULT_AFTER: "candidate_rendered" }); expect(crashed.status).toBe(99);
+      expect(readFileSync(f.envFile, "utf8")).toContain("PHASE3_OLD_SECRET"); expect(readdirSync(join(f.spool, "rollback"))).toEqual([]);
+      expect(readFileSync(f.requestPath, "utf8")).toContain(f.secret);
+      const resumed = f.run(); expect(resumed.status, resumed.stderr).toBe(0);
+      expect(readFileSync(f.envFile, "utf8")).toContain(f.secret); expect(readFileSync(f.restartLog, "utf8").trim().split("\n")).toHaveLength(1);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "succeeded", stage: "accepted" });
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it("accepts a secret change without retaining the sentinel outside the protected env", async () => {
+    const f = await macConsoleFixture();
+    try {
+      const result = f.run(); expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(f.envFile, "utf8")).toContain(`LINEAR_API_KEY='${f.secret}'`);
+      expect(statSync(f.envFile).mode & 0o777).toBe(0o640);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "succeeded", stage: "accepted", mutated: 1 });
+      expect(readFileSync(f.restartLog, "utf8").trim().split("\n")).toHaveLength(1);
+      const surfaces = [result.stdout, result.stderr, JSON.stringify(f.log.listOperations()), JSON.stringify(f.log.operationEvents(f.id)),
+        readFileSync(f.db), ...filePayloads(f.state), ...filePayloads(resolve("dist"))];
+      for (const surface of surfaces) expect(String(surface)).not.toContain(f.secret);
+      expect(readdirSync(join(f.state, "backups"))).toEqual([]);
+      expect(readdirSync(join(f.spool, "executing"))).toEqual([]); expect(readdirSync(join(f.spool, "rollback"))).toEqual([]);
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it("drains a terminal success trigger after the exact post-transition crash even beyond bounded history", async () => {
+    const f = await macConsoleFixture("TERMINAL_SUCCESS_SECRET_SENTINEL");
+    try {
+      const crashed = f.run({ DAEMONCTL_FAULT_AFTER: "terminal_accept" }); expect(crashed.status).toBe(99);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "succeeded", stage: "accepted" });
+      expect(readdirSync(join(f.spool, "rollback"))).toEqual([`${f.id}.json`]);
+      for (let index = 0; index < 101; index += 1) {
+        const id = `terminal-history-${index}`; const digest = (index + 1).toString(16).padStart(64, "0");
+        f.log.scheduleOperation({ id, requestDigest: digest, type: "restart", reason: "history", actor: "local-console",
+          requestKind: "daemon.restart", requestedAt: 2_000 + index });
+        f.log.transitionOperation(id, "succeeded", "accepted", { outcome: "history" }, 2_000 + index);
+      }
+      expect(f.log.listOperations(100).some(row => row.id === f.id)).toBe(false);
+      const restarts = readFileSync(f.restartLog, "utf8"); let processCalls = 0;
+      await new ConsoleOperationExecutor({ log: f.log, spoolDir: f.spool, executable: "/fixed/daemonctl",
+        argv: ["internal-console-execute"], run: async () => { processCalls += 1; } }).run();
+      expect(processCalls).toBe(0); expect(readFileSync(f.restartLog, "utf8")).toBe(restarts);
+      expect(readdirSync(join(f.spool, "rollback"))).toEqual([]); expect(readdirSync(join(f.state, "backups"))).toEqual([]);
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it("drains an accepted rollback trigger after the exact post-transition crash without another restart", async () => {
+    const f = await macConsoleFixture("TERMINAL_ROLLBACK_SECRET_SENTINEL");
+    try {
+      const preIntent = f.run({ DAEMONCTL_FAULT_AFTER: "rollback_trigger" }); expect(preIntent.status).toBe(99);
+      const candidate = `${f.envFile}.new.${f.id}`; expect(readFileSync(candidate, "utf8")).toContain(f.secret);
+      const crashed = f.run({ DAEMONCTL_FAULT_AFTER: "terminal_rollback_accept" }); expect(crashed.status).toBe(99);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "failed", stage: "rolled_back", rollbackVerified: 1 });
+      expect(readdirSync(join(f.spool, "rollback"))).toEqual([`${f.id}.json`]);
+      const restarts = readFileSync(f.restartLog, "utf8"); let processCalls = 0;
+      await new ConsoleOperationExecutor({ log: f.log, spoolDir: f.spool, executable: "/fixed/daemonctl",
+        argv: ["internal-console-execute"], environmentFile: f.envFile, run: async () => { processCalls += 1; } }).run();
+      expect(processCalls).toBe(0); expect(readFileSync(f.restartLog, "utf8")).toBe(restarts);
+      expect(readdirSync(join(f.spool, "rollback"))).toEqual([]); expect(readFileSync(f.envFile, "utf8")).not.toContain(f.secret);
+      expect(readdirSync(join(f.state, "backups"))).toEqual([]); expect(existsSync(candidate)).toBe(false);
+      expect(filePayloads(f.state).every(value => !String(value).includes(f.secret))).toBe(true);
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it("fsyncs the request directory when a restart cancellation removes its executing artifact", async () => {
+    const f = await macConsoleFixture("UNUSED_RESTART_SECRET", "daemon.restart");
+    try {
+      const target = f.log.operationById(f.id)!; const control = { version: 1 as const, kind: "operation.cancel" as const,
+        targetOperationId: f.id, targetDigest: target.requestDigest, expectedVersion: target.stateVersion };
+      f.log.createOperationControl({ id: "restart-cancel-control", digest: requestDigest(control), targetOperationId: f.id,
+        targetDigest: target.requestDigest, kind: "cancel", reason: "cancel fixture", expectedVersion: target.stateVersion });
+      const cancelled = f.run({ DAEMONCTL_FAULT_AFTER: "console_artifact_directories_synced" });
+      expect(cancelled.status).toBe(99); expect(existsSync(f.requestPath)).toBe(false);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "cancelled", cancelRequested: 1 });
+      expect(existsSync(f.restartLog)).toBe(false);
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it.each(["rollback_trigger", "rollback_intent", "replace_environment", "secret_unlink"])(
+    "resumes rollback after a crash at %s with one recovery restart and no secret residue", async boundary => {
+      const f = await macConsoleFixture(`CRASH_SECRET_${boundary.toUpperCase()}`);
+      try {
+        const crashed = f.run({ DAEMONCTL_FAULT_AFTER: boundary }); expect(crashed.status).toBe(99);
+        expect(readdirSync(join(f.spool, "rollback"))).toEqual([`${f.id}.json`]);
+        expect(readFileSync(join(f.spool, "rollback", `${f.id}.json`), "utf8")).not.toContain(f.secret);
+        const resumed = f.run(); expect(resumed.status, resumed.stderr).toBe(0);
+        expect(readFileSync(f.envFile, "utf8")).toContain("PHASE3_OLD_SECRET"); expect(readFileSync(f.envFile, "utf8")).not.toContain(f.secret);
+        expect(statSync(f.envFile).mode & 0o777).toBe(0o640);
+        expect(f.log.operationById(f.id)).toMatchObject({ state: "failed", stage: "rolled_back", rollbackVerified: 1 });
+        expect(readFileSync(f.restartLog, "utf8").trim().split("\n")).toHaveLength(1);
+        expect(readdirSync(join(f.spool, "executing"))).toEqual([]); expect(readdirSync(join(f.spool, "rollback"))).toEqual([]);
+        expect(readdirSync(join(f.state, "backups"))).toEqual([]);
+        expect(`${crashed.stdout}${crashed.stderr}${resumed.stdout}${resumed.stderr}${JSON.stringify(f.log.listOperations())}`).not.toContain(f.secret);
+      } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+    }, 20_000);
+
+  it("restores and verifies the prior env after failed acceptance without retaining secret transients", async () => {
+    const f = await macConsoleFixture("ROLLBACK_SECRET_SENTINEL");
+    try {
+      const result = f.run({ HEALTH_SEQUENCE: "1,0" }); expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(f.envFile, "utf8")).toContain("PHASE3_OLD_SECRET"); expect(readFileSync(f.envFile, "utf8")).not.toContain(f.secret);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "failed", stage: "rolled_back", rollbackVerified: 1 });
+      expect(readFileSync(f.restartLog, "utf8").trim().split("\n")).toHaveLength(2);
+      expect(readdirSync(join(f.spool, "executing"))).toEqual([]); expect(readdirSync(join(f.spool, "rollback"))).toEqual([]);
+      expect(readdirSync(join(f.state, "backups"))).toEqual([]);
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it("resumes rollback acceptance after a crash immediately after exact-byte restore", async () => {
+    const f = await macConsoleFixture("ROLLBACK_RESTORE_CRASH_SENTINEL");
+    try {
+      const crashed = f.run({ HEALTH_SEQUENCE: "1", DAEMONCTL_FAULT_AFTER: "rollback_restore" }); expect(crashed.status).toBe(99);
+      expect(readFileSync(f.envFile, "utf8")).toContain("PHASE3_OLD_SECRET"); expect(readFileSync(f.envFile, "utf8")).not.toContain(f.secret);
+      expect(readdirSync(join(f.spool, "rollback"))).toEqual([`${f.id}.json`]);
+      const resumed = f.run(); expect(resumed.status, resumed.stderr).toBe(0);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "failed", stage: "rolled_back", rollbackVerified: 1 });
+      expect(readFileSync(f.restartLog, "utf8").trim().split("\n")).toHaveLength(2);
+      expect(readdirSync(join(f.spool, "executing"))).toEqual([]); expect(readdirSync(join(f.spool, "rollback"))).toEqual([]);
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it("blocks after failed rollback acceptance, removes secret transients, and retains only the old backup", async () => {
+    const f = await macConsoleFixture("FAILED_ROLLBACK_SECRET_SENTINEL");
+    try {
+      const failed = f.run({ HEALTH_SEQUENCE: "1,1" }); expect(failed.status).not.toBe(0);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "blocked", stage: "rollback_acceptance", mutated: 1, rollbackVerified: 0 });
+      expect(readFileSync(f.envFile, "utf8")).toContain("PHASE3_OLD_SECRET"); expect(readFileSync(f.envFile, "utf8")).not.toContain(f.secret);
+      expect(readdirSync(join(f.spool, "executing"))).toEqual([]); expect(readdirSync(join(f.spool, "rollback"))).toEqual([]);
+      expect(readdirSync(join(f.state, "backups"))).toEqual([`${f.id}.env`]);
+      expect(readFileSync(join(f.state, "backups", `${f.id}.env`), "utf8")).not.toContain(f.secret);
+      expect(f.log.operationStatus().pending?.recoveryCommand).toContain(`operation retry ${f.id}`);
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
   });
 });
 
@@ -586,4 +809,68 @@ describe("subscription lifecycle helper", () => {
     expect(`${added.output}${reauthed.output}`).not.toMatch(/public-management-secret|never-print-refresh-token/);
     server.closeAllConnections(); server.close();
   }, 15_000);
+
+  it("executes a digest-bound console artifact through one fixed process boundary", async () => {
+    const f = fixture(); const spool = join(f.dir, "console-spool");
+    for (const leaf of ["ready", "executing", "controls", "rollback", "quarantine"]) mkdirSync(join(spool, leaf), { recursive: true });
+    const request: ConsoleOperationRequest = { version: 1, kind: "daemon.restart", snapshotRevision: "revision_123456789" };
+    const id = "console-fixed"; const digest = requestDigest(request); const log = new EventLog(f.db);
+    log.scheduleOperation({ id, requestDigest: digest, type: "restart", reason: "fixed", actor: "local-console", requestKind: request.kind });
+    const artifact = join(spool, "ready", `${id}.json`); writeFileSync(artifact, `${canonicalJson(request)}\n`, { mode: 0o600 }); chmodSync(artifact, 0o600);
+    const calls: Array<[string, readonly string[]]> = [];
+    await new ConsoleOperationExecutor({ log, spoolDir: spool, executable: "/fixed/daemonctl", argv: ["internal-console-execute"],
+      run: async (executable, argv) => { calls.push([executable, argv]); } }).run();
+    expect(calls).toEqual([["/fixed/daemonctl", ["internal-console-execute"]]]);
+    expect(log.operationById(id)).toMatchObject({ state: "executing", actor: "local-console" });
+    expect(existsSync(join(spool, "ready", `${id}.json`))).toBe(false);
+    expect(existsSync(join(spool, "executing", `${id}.json`))).toBe(false);
+    log.close();
+  });
+
+  it("cleans a terminal executing receipt without invoking the fixed bridge again", async () => {
+    const f = fixture(); const spool = join(f.dir, "console-terminal");
+    for (const leaf of ["ready", "executing", "controls", "rollback", "quarantine"]) mkdirSync(join(spool, leaf), { recursive: true });
+    const requestValue: ConsoleOperationRequest = { version: 1, kind: "daemon.restart", snapshotRevision: "revision_123456789" };
+    const digest = requestDigest(requestValue); const id = "console-terminal"; const log = new EventLog(f.db);
+    log.scheduleOperation({ id, requestDigest: digest, type: "restart", reason: "fixed", actor: "local-console", requestKind: requestValue.kind });
+    log.claimOperation(id, digest); log.transitionOperation(id, "succeeded", "accepted", { mutated: true, outcome: "accepted" });
+    writeFileSync(join(spool, "executing", `${id}.json`), `${canonicalJson(requestValue)}\n`, { mode: 0o600 });
+    let calls = 0; await new ConsoleOperationExecutor({ log, spoolDir: spool, executable: "/fixed/daemonctl",
+      argv: ["internal-console-execute"], run: async () => { calls += 1; } }).run();
+    expect(calls).toBe(0); expect(readdirSync(join(spool, "executing"))).toEqual([]);
+    expect(log.operationById(id)).toMatchObject({ state: "succeeded", attempts: 1 }); log.close();
+  });
+
+  it.each(["executable", "argv", "path", "serviceLabel"])(
+    "quarantines a request-controlled %s before process or operation counters change", async field => {
+      const f = fixture(); const spool = join(f.dir, `console-invalid-${field}`);
+      for (const leaf of ["ready", "executing", "controls", "rollback", "quarantine"]) mkdirSync(join(spool, leaf), { recursive: true });
+      const valid = { version: 1, kind: "daemon.restart", snapshotRevision: "revision_123456789" } as const;
+      const injected = { ...valid, [field]: field === "argv" ? ["--arbitrary"] : "/request/controlled" };
+      const id = `invalid-${field}`; const log = new EventLog(f.db);
+      log.scheduleOperation({ id, requestDigest: requestDigest(valid), type: "restart", reason: "fixed", actor: "local-console", requestKind: valid.kind });
+      writeFileSync(join(spool, "ready", `${id}.json`), `${canonicalJson(injected)}\n`, { mode: 0o600 });
+      let calls = 0; await new ConsoleOperationExecutor({ log, spoolDir: spool, executable: "/fixed/daemonctl",
+        argv: ["internal-console-execute"], run: async () => { calls += 1; } }).run();
+      expect(calls).toBe(0); expect(log.operationById(id)).toMatchObject({ state: "pending", stateVersion: 0, attempts: 0, mutated: 0 });
+      expect(readdirSync(join(spool, "quarantine"))).toEqual([`${id}.json`]); log.close();
+    });
+
+  it.each(["malformed", "digest-mismatch", "symlink"])(
+    "quarantines a %s artifact without invoking the fixed bridge or mutating durable state", async kind => {
+      const f = fixture(); const spool = join(f.dir, `console-invalid-${kind}`);
+      for (const leaf of ["ready", "executing", "controls", "rollback", "quarantine"]) mkdirSync(join(spool, leaf), { recursive: true });
+      const requestValue: ConsoleOperationRequest = { version: 1, kind: "daemon.restart", snapshotRevision: "revision_123456789" };
+      const id = `invalid-${kind}`; const log = new EventLog(f.db);
+      log.scheduleOperation({ id, requestDigest: kind === "digest-mismatch" ? "f".repeat(64) : requestDigest(requestValue), type: "restart",
+        reason: "fixed", actor: "local-console", requestKind: requestValue.kind });
+      const artifact = join(spool, "ready", `${id}.json`); const target = join(f.dir, "outside-request");
+      if (kind === "symlink") { writeFileSync(target, `${canonicalJson(requestValue)}\n`, { mode: 0o600 }); symlinkSync(target, artifact); }
+      else writeFileSync(artifact, kind === "malformed" ? "{\n" : `${canonicalJson(requestValue)}\n`, { mode: 0o600 });
+      let calls = 0; await new ConsoleOperationExecutor({ log, spoolDir: spool, executable: "/fixed/daemonctl",
+        argv: ["internal-console-execute"], run: async () => { calls += 1; } }).run();
+      expect(calls).toBe(0); expect(log.operationById(id)).toMatchObject({ state: "pending", stateVersion: 0, attempts: 0, mutated: 0 });
+      expect(readdirSync(join(spool, "quarantine"))).toEqual([`${id}.json`]);
+      if (kind === "symlink") expect(readFileSync(target, "utf8")).toBe(`${canonicalJson(requestValue)}\n`); log.close();
+    });
 });

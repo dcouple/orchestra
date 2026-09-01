@@ -13,6 +13,7 @@ import {
 } from "./otel.js";
 import type { OtlpRelay } from "./otel-relay.js";
 import { inFlightDispatches } from "./dispatches.js";
+import { resolve } from "node:path";
 
 interface Logger {
   log(...args: unknown[]): void;
@@ -36,6 +37,7 @@ export class CleanupWorker {
   private draining: Promise<void> | undefined;
   private readonly now: () => number;
   private readonly logger: Logger;
+  private readonly worktreesRoot: string;
   constructor(
     private readonly log: EventLog,
     private readonly gateway: LinearGateway,
@@ -45,12 +47,14 @@ export class CleanupWorker {
   ) {
     this.now = options.now ?? Date.now;
     this.logger = options.logger ?? console;
+    this.worktreesRoot = resolve(worktreesRoot);
     this.worktrees = new WorktreeManager(worktreesRoot, targetRepoPath);
   }
   private readonly worktrees: WorktreeManager;
   start(): void {
     this.stopped = false;
     this.log.reclaimRunningCleanups();
+    this.log.reclaimRunningLoopCleanups();
     this.timer = setInterval(
       () => void this.trigger(),
       this.options.pollMs ?? 250,
@@ -77,6 +81,20 @@ export class CleanupWorker {
       const job = this.log.claimNextCleanup(this.now());
       if (!job) break;
       await this.process(job);
+    }
+    for (;;) {
+      const job=this.log.claimNextLoopCleanup(this.now()); if(!job)break;
+      try{
+        const expected=resolve(this.worktreesRoot,job.ownerKey);
+        if(job.worktreePath&&resolve(job.worktreePath)!==expected){this.log.retainLoopCleanup(job.id,"cleanup path collision",this.now());continue;}
+        if(job.worktreePath&&await this.worktrees.isPresent(job.worktreePath)){
+          if(!await this.worktrees.isClean(job.worktreePath)){this.log.retainLoopCleanup(job.id,"cleanup retained: dirty worktree",this.now());continue;}
+          if(await this.worktrees.hasUnpushedCommits(job.worktreePath)){this.log.retainLoopCleanup(job.id,"cleanup retained: unpushed commits",this.now());continue;}
+        }
+        await this.worktrees.remove(job.ownerKey); this.log.completeLoopCleanup(job.id,this.now());
+      }catch(error){const message=error instanceof Error?error.message:String(error);
+        const now=this.now();if(now<job.createdAt+(this.options.retryWindowMs??30*60_000))this.log.retryLoopCleanup(job.id,message,now+Math.min(60_000,1000*2**Math.min(job.attempts,6)),now);
+        else this.log.failLoopCleanup(job.id,message,now);}
     }
     for (const note of this.log.pendingCleanupNotifications(this.now()))
       await this.postNotification(note);

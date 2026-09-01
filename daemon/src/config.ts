@@ -1,8 +1,25 @@
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { isReservedChildEnvKey } from "./claude.js";
 
 export type AppName = "planner" | "implementer";
 export type HarnessPreference = "claude" | "claudex";
+
+/** One authoritative set of defaults for runtime loading and console snapshots. */
+export const EDITABLE_RUNTIME_DEFAULTS = Object.freeze({
+  plannerHarness: "claude" as HarnessPreference,
+  implementerHarness: "claude" as HarnessPreference,
+  sessionConcurrency: 5,
+  iosSimMaxConcurrent: 2,
+  claudeMaxTurns: 100,
+  doMaxTurns: 300,
+  doMaxBudgetUsd: null as number | null,
+  mcpEnvPassthrough: Object.freeze([]) as readonly string[],
+  browserEnabled: true,
+  iosSimEnabled: false,
+  attachmentsEnabled: true,
+  ntfyUrl: null as string | null,
+});
 
 export interface AppConfig {
   name: AppName;
@@ -14,9 +31,9 @@ export interface AppConfig {
   staticToken?: string;
 }
 
-function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPreference {
+function harnessPreference(env: NodeJS.ProcessEnv, name: string, fallback: HarnessPreference): HarnessPreference {
   const raw = env[name];
-  if (raw === undefined) return "claude";
+  if (raw === undefined) return fallback;
   const value = raw.trim();
   if (value !== "claude" && value !== "claudex") throw new Error(`${name} must be claude or claudex`);
   return value;
@@ -32,6 +49,9 @@ export interface Config {
   linearMcpUrl: string;
   linearMcpMonitorIntervalMs: number;
   linearMcpMonitorTimeoutMs: number;
+  dependencyMonitorIntervalMs: number;
+  dependencyMonitorTimeoutMs: number;
+  dependencyStateStaleMs: number;
   webhookBaseUrl: string;
   artifactToken?: string;
   mcpEnvPassthrough?: string[];
@@ -84,6 +104,23 @@ export interface Config {
   ntfyUrl?: string;
 }
 
+export interface ConsoleConfig {
+  port: number;
+  bindAddr: "127.0.0.1";
+  dbPath: string;
+  assetsDir: string;
+  daemonHealthUrl: string;
+  linearWorkspaceBaseUrl?: string;
+  skillInventoryPath: string;
+  capabilityMode?: "read-only" | "local-trusted";
+  configSnapshotPath?: string;
+  operationSpoolDir?: string;
+  operationExecutorPath?: string;
+  draftTtlMs?: number;
+  snapshotMaxAgeMs?: number;
+  maxBodyBytes?: number;
+}
+
 function required(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name]?.trim();
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
@@ -104,6 +141,57 @@ function enabled(env: NodeJS.ProcessEnv, name: string, fallback = true): boolean
   if (raw === "1") return true;
   if (raw === "0") return false;
   throw new Error(`${name} must be 0 or 1`);
+}
+
+function loopbackAddress(env: NodeJS.ProcessEnv, name: string): "127.0.0.1" {
+  const value = env[name]?.trim() || "127.0.0.1";
+  if (value !== "127.0.0.1") throw new Error(`${name} must be 127.0.0.1`);
+  return value;
+}
+
+function httpUrl(env: NodeJS.ProcessEnv, name: string, fallback: string, loopbackOnly = false): string {
+  const raw = env[name]?.trim() || fallback;
+  let url: URL;
+  try { url = new URL(raw); } catch { throw new Error(`${name} must be a valid HTTP URL`); }
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash)
+    throw new Error(`${name} must be a valid HTTP URL`);
+  if (loopbackOnly && (url.protocol !== "http:" || url.hostname !== "127.0.0.1"))
+    throw new Error(`${name} must be an http://127.0.0.1 URL`);
+  return url.toString().replace(/\/$/, "");
+}
+
+export function loadConsoleConfig(env: NodeJS.ProcessEnv = process.env): ConsoleConfig {
+  const base = env.LINEAR_WORKSPACE_BASE_URL?.trim();
+  const port = positiveInteger(env, "CONSOLE_PORT", 8790);
+  if (port > 65_535) throw new Error("CONSOLE_PORT must be at most 65535");
+  const capabilityMode = env.CONSOLE_CAPABILITY_MODE?.trim() || "read-only";
+  if (capabilityMode !== "read-only" && capabilityMode !== "local-trusted")
+    throw new Error("CONSOLE_CAPABILITY_MODE must be read-only or local-trusted");
+  const stateDir = env.CONSOLE_STATE_DIR?.trim() || dirname(env.DB_PATH?.trim() || "/var/lib/linear-agent-daemon/events.db");
+  const draftTtlMs = positiveInteger(env, "CONSOLE_DRAFT_TTL_MS", 5 * 60_000);
+  if (draftTtlMs > 30 * 60_000) throw new Error("CONSOLE_DRAFT_TTL_MS must be at most 1800000");
+  const snapshotMaxAgeMs = positiveInteger(env, "CONSOLE_SNAPSHOT_MAX_AGE_MS", 24 * 60 * 60_000);
+  const maxBodyBytes = positiveInteger(env, "CONSOLE_MAX_BODY_BYTES", 64 * 1024);
+  if (maxBodyBytes > 1024 * 1024) throw new Error("CONSOLE_MAX_BODY_BYTES must be at most 1048576");
+  return {
+    port,
+    bindAddr: loopbackAddress(env, "CONSOLE_BIND_ADDR"),
+    dbPath: env.DB_PATH?.trim() || "/var/lib/linear-agent-daemon/events.db",
+    assetsDir: env.CONSOLE_ASSETS_DIR?.trim() || resolve(dirname(fileURLToPath(import.meta.url)), "console"),
+    daemonHealthUrl: httpUrl(env, "CONSOLE_DAEMON_HEALTH_URL", "http://127.0.0.1:8787/healthz", true),
+    skillInventoryPath: env.CONSOLE_SKILL_INVENTORY_PATH?.trim()
+      || resolve(dirname(fileURLToPath(import.meta.url)), "console-inventory.json"),
+    capabilityMode,
+    configSnapshotPath: env.CONSOLE_CONFIG_SNAPSHOT_PATH?.trim()
+      ? resolve(env.CONSOLE_CONFIG_SNAPSHOT_PATH.trim()) : resolve(stateDir, "console-config-snapshot.json"),
+    operationSpoolDir: env.CONSOLE_OPERATION_SPOOL_DIR?.trim()
+      ? resolve(env.CONSOLE_OPERATION_SPOOL_DIR.trim()) : resolve(stateDir, "console-operations"),
+    operationExecutorPath: resolve(env.CONSOLE_OPERATION_EXECUTOR_PATH?.trim() || "/usr/local/libexec/orchestra-console-operation"),
+    draftTtlMs,
+    snapshotMaxAgeMs,
+    maxBodyBytes,
+    ...(base ? { linearWorkspaceBaseUrl: httpUrl(env, "LINEAR_WORKSPACE_BASE_URL", base) } : {}),
+  };
 }
 
 function optionalArgv(env: NodeJS.ProcessEnv, name: string): string[] | undefined {
@@ -158,7 +246,8 @@ function appConfig(env: NodeJS.ProcessEnv, name: AppName, testMode: boolean): Ap
   const prefix = name.toUpperCase();
   const staticToken = env[`${prefix}_LINEAR_TOKEN`]?.trim();
   const appActorId = env[`${prefix}_APP_ACTOR_ID`]?.trim();
-  const base = { name, harness: harnessPreference(env, `${prefix}_HARNESS`),
+  const base = { name, harness: harnessPreference(env, `${prefix}_HARNESS`,
+    name === "planner" ? EDITABLE_RUNTIME_DEFAULTS.plannerHarness : EDITABLE_RUNTIME_DEFAULTS.implementerHarness),
     webhookSecret: required(env, `${prefix}_WEBHOOK_SECRET`), ...(appActorId ? { appActorId } : {}) };
   if (testMode && staticToken) return { ...base, staticToken };
   return {
@@ -184,13 +273,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const claudexEnv = stringMap(env, "CLAUDEX_ENV");
   if (claudexEnv && !claudexArgv) throw new Error("CLAUDEX_ENV requires CLAUDEX_BIN");
   const fableBin = env.FABLE_BIN?.trim();
-  const iosSimEnabled = enabled(env, "IOS_SIM_ENABLED", false);
+  const iosSimEnabled = enabled(env, "IOS_SIM_ENABLED", EDITABLE_RUNTIME_DEFAULTS.iosSimEnabled);
   const iosSimRuntime = env.IOS_SIM_RUNTIME?.trim();
   const iosSimDeviceType = env.IOS_SIM_DEVICE_TYPE?.trim();
   if (iosSimEnabled && (!iosSimRuntime || !iosSimDeviceType)) {
     throw new Error("IOS_SIM_RUNTIME and IOS_SIM_DEVICE_TYPE are required when IOS_SIM_ENABLED=1");
   }
   const providerProbeIntervalMs = positiveInteger(env, "PROVIDER_PROBE_INTERVAL_MS", 60_000);
+  const dependencyMonitorIntervalMs = positiveInteger(env, "DEPENDENCY_MONITOR_INTERVAL_MS", 60_000);
+  const dependencyMonitorTimeoutMs = positiveInteger(env, "DEPENDENCY_MONITOR_TIMEOUT_MS", 10_000);
+  if (dependencyMonitorTimeoutMs > 60_000) throw new Error("DEPENDENCY_MONITOR_TIMEOUT_MS must be at most 60000");
+  const dependencyStateStaleMs = positiveInteger(env, "DEPENDENCY_STATE_STALE_MS", 5 * dependencyMonitorIntervalMs);
+  if (dependencyStateStaleMs > 86_400_000) throw new Error("DEPENDENCY_STATE_STALE_MS must be at most 86400000");
   const bashDefaultTimeoutMs = positiveInteger(env, "BASH_DEFAULT_TIMEOUT_MS", 900_000);
   const bashMaxTimeoutMs = positiveInteger(env, "BASH_MAX_TIMEOUT_MS", 900_000);
   if (bashMaxTimeoutMs < bashDefaultTimeoutMs) {
@@ -215,6 +309,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     linearMcpUrl: (env.LINEAR_MCP_URL?.trim() || "https://mcp.linear.app/mcp").replace(/\/+$/, ""),
     linearMcpMonitorIntervalMs: positiveInteger(env, "LINEAR_MCP_MONITOR_INTERVAL_MS", 60_000),
     linearMcpMonitorTimeoutMs: positiveInteger(env, "LINEAR_MCP_MONITOR_TIMEOUT_MS", 10_000),
+    dependencyMonitorIntervalMs,
+    dependencyMonitorTimeoutMs,
+    dependencyStateStaleMs,
     webhookBaseUrl: webhookBaseUrl.replace(/\/+$/, ""),
     ...(artifactToken ? { artifactToken } : {}),
     ...(passthrough.length > 0 ? { mcpEnvPassthrough: passthrough } : {}),
@@ -232,7 +329,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       "DISPATCH_RESUME_GRACE_MS",
       10 * 60_000,
     ),
-    browserEnabled: enabled(env, "BROWSER_ENABLED", true),
+    browserEnabled: enabled(env, "BROWSER_ENABLED", EDITABLE_RUNTIME_DEFAULTS.browserEnabled),
     playwrightMcpBin: env.PLAYWRIGHT_MCP_BIN?.trim() || "/usr/local/bin/playwright-mcp",
     playwrightChromeBin: env.PLAYWRIGHT_CHROME_BIN?.trim() || "/usr/bin/google-chrome",
     browserAttemptTimeoutMs: positiveInteger(env, "BROWSER_ATTEMPT_TIMEOUT_MS", 4 * 60 * 60 * 1000),
@@ -241,7 +338,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     iosSimDeveloperDir: env.IOS_SIM_DEVELOPER_DIR?.trim() || "/Applications/Xcode.app/Contents/Developer",
     ...(iosSimRuntime ? { iosSimRuntime } : {}),
     ...(iosSimDeviceType ? { iosSimDeviceType } : {}),
-    iosSimMaxConcurrent: positiveInteger(env, "IOS_SIM_MAX_CONCURRENT", 2),
+    iosSimMaxConcurrent: positiveInteger(env, "IOS_SIM_MAX_CONCURRENT", EDITABLE_RUNTIME_DEFAULTS.iosSimMaxConcurrent),
     iosSimIdleTimeoutMs: positiveInteger(env, "IOS_SIM_IDLE_TIMEOUT_MS", 900_000),
     iosSimReaperIntervalMs: positiveInteger(env, "IOS_SIM_REAPER_INTERVAL_MS", 60_000),
     simctlArgv: (env.IOS_SIM_SIMCTL_BIN?.trim() || "xcrun simctl").split(/\s+/),
@@ -263,17 +360,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     providerStateStaleMs: positiveInteger(env, "PROVIDER_STATE_STALE_MS", 5 * providerProbeIntervalMs),
     providerInitialProbeTimeoutMs: positiveInteger(env, "PROVIDER_INITIAL_PROBE_TIMEOUT_MS", 5_000),
     claudePermissionMode: env.CLAUDE_PERMISSION_MODE?.trim() || "bypassPermissions",
-    claudeMaxTurns: positiveInteger(env, "CLAUDE_MAX_TURNS", 100),
+    claudeMaxTurns: positiveInteger(env, "CLAUDE_MAX_TURNS", EDITABLE_RUNTIME_DEFAULTS.claudeMaxTurns),
     bashDefaultTimeoutMs,
     bashMaxTimeoutMs,
     doPermissionMode,
-    doMaxTurns: positiveInteger(env, "DO_MAX_TURNS", 300),
+    doMaxTurns: positiveInteger(env, "DO_MAX_TURNS", EDITABLE_RUNTIME_DEFAULTS.doMaxTurns),
     ...(doMaxBudgetUsd !== undefined ? { doMaxBudgetUsd } : {}),
-    sessionConcurrency: positiveInteger(env, "SESSION_CONCURRENCY", 5),
+    sessionConcurrency: positiveInteger(env, "SESSION_CONCURRENCY", EDITABLE_RUNTIME_DEFAULTS.sessionConcurrency),
     keepaliveMs: positiveInteger(env, "KEEPALIVE_MS", 900_000),
     ...(linearApiKey ? { linearApiKey } : {}),
     ...(env.NTFY_URL?.trim() ? { ntfyUrl: env.NTFY_URL.trim() } : {}),
-    attachmentsEnabled: enabled(env, "ATTACHMENTS_ENABLED"),
+    attachmentsEnabled: enabled(env, "ATTACHMENTS_ENABLED", EDITABLE_RUNTIME_DEFAULTS.attachmentsEnabled),
     attachmentHosts: (env.ATTACHMENT_HOSTS?.trim() || "uploads.linear.app").split(",").map(host => host.trim()).filter(Boolean),
   };
 }

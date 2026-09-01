@@ -1,9 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-usage() { echo "usage: deploy.sh <source-daemon-dir>" >&2; exit 2; }
+usage() { echo "usage: deploy.sh [--dry-run] <source-daemon-dir>" >&2; exit 2; }
 die() { echo "$*" >&2; exit 1; }
 
+DRY_RUN=0
+if [[ ${1:-} == --dry-run ]]; then DRY_RUN=1; shift; fi
 [[ $# -eq 1 ]] || usage
 
 SOURCE_DIR=$(cd "$1" && pwd)
@@ -23,6 +25,11 @@ ACCEPTED_COMMIT_FILE=${ACCEPTED_COMMIT_FILE:-$STATE_DIR/accepted-commit}
 DEPLOYED_COMMIT_FILE=${DEPLOYED_COMMIT_FILE:-$STATE_DIR/deployed-commit}
 HEALTH_WAITER=${HEALTH_WAITER:-/usr/local/sbin/wait-for-daemon-health.sh}
 HEALTH_URL=${HEALTH_URL:-http://127.0.0.1:8787/healthz}
+CONSOLE_HEALTH_URL=${CONSOLE_HEALTH_URL:-http://127.0.0.1:$DAEMON_CONSOLE_PORT/api/health}
+if [[ ! $CONSOLE_HEALTH_URL =~ ^http://127\.0\.0\.1:([1-9][0-9]{0,4})/api/health$ ]] \
+  || (( 10#${BASH_REMATCH[1]:-0} > 65535 )); then
+  die "CONSOLE_HEALTH_URL must be a loopback http://127.0.0.1:<port>/api/health URL"
+fi
 PNPM_BIN=${PNPM_BIN:-/usr/local/bin/pnpm}
 SOURCE_COMMIT=${SOURCE_COMMIT:-}
 MAINTENANCE_LOCK=$STATE_DIR/maintenance.lock
@@ -66,6 +73,14 @@ acquire_maintenance_lock() {
 }
 
 [[ -f "$SOURCE_DIR/package.json" ]] || die "source daemon directory is invalid: $SOURCE_DIR"
+if (( DRY_RUN )); then
+  echo "DRY RUN: deployment plan; no changes will be made."
+  echo "plan sync: $SOURCE_DIR -> $CODE_DIR"
+  echo "plan build: pnpm install --frozen-lockfile; SOURCE_COMMIT-backed pnpm build; pnpm prune --prod"
+  echo "plan restart: $DAEMON_LABEL, $CONSOLE_LABEL"
+  echo "plan health: $HEALTH_URL, $CONSOLE_HEALTH_URL"
+  exit 0
+fi
 if [[ -z $SOURCE_COMMIT ]] && git -C "$SOURCE_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   SOURCE_COMMIT=$(git -C "$SOURCE_ROOT" rev-parse HEAD)
 fi
@@ -90,6 +105,8 @@ render_site_templates "$RENDER_DIR" || die "site templates did not render"
 check_artifact "$DAEMON_SITE_ENV" /usr/local/etc/linear-agent-daemon/site.env root:wheel 0644
 check_artifact "$MACOS_DIR/daemon-site-lib.sh" /usr/local/sbin/daemon-site-lib.sh root:wheel 0644
 check_artifact "$RENDER_DIR/$DAEMON_LABEL.plist" "/Library/LaunchDaemons/$DAEMON_LABEL.plist" root:wheel 0644
+check_artifact "$RENDER_DIR/$CONSOLE_LABEL.plist" "/Library/LaunchDaemons/$CONSOLE_LABEL.plist" root:wheel 0644
+check_artifact "$RENDER_DIR/$CONSOLE_OPERATION_LABEL.plist" "/Library/LaunchDaemons/$CONSOLE_OPERATION_LABEL.plist" root:wheel 0644
 check_artifact "$RENDER_DIR/$PROXY_LABEL.plist" "/Library/LaunchDaemons/$PROXY_LABEL.plist" root:wheel 0644
 if [[ -f $HOME_DIR/.cloudflared/config.yml ]]; then
   check_artifact "$RENDER_DIR/$TUNNEL_LABEL.plist" "/Library/LaunchDaemons/$TUNNEL_LABEL.plist" root:wheel 0644
@@ -110,6 +127,9 @@ check_artifact_metadata_only() {
 }
 check_artifact_metadata_only /etc/sudoers.d/linear-agent-daemon-services root:wheel 0440
 check_artifact "$MACOS_DIR/run-daemon.sh" /usr/local/sbin/run-daemon.sh root:wheel 0755
+check_artifact "$MACOS_DIR/run-console.sh" /usr/local/sbin/run-console.sh root:wheel 0755
+check_artifact "$MACOS_DIR/run-console-operation.sh" /usr/local/sbin/run-console-operation.sh root:wheel 0755
+check_artifact "$MACOS_DIR/install-console-service.sh" /usr/local/sbin/install-console-service.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cliproxyapi.sh" /usr/local/sbin/run-cliproxyapi.sh root:wheel 0755
 check_artifact "$MACOS_DIR/run-cloudflared.sh" /usr/local/sbin/run-cloudflared.sh root:wheel 0755
 check_artifact "$MACOS_DIR/deploy.sh" /usr/local/sbin/deploy.sh root:wheel 0755
@@ -132,7 +152,9 @@ rsync -aO --no-perms --no-owner --no-group --delete \
 chmod 0755 "$CODE_DIR/ops/proxy-accounts.sh" "$CODE_DIR/ops/codex-provider-gate.sh"
 # CI=true: pnpm otherwise refuses to purge a stale modules dir without a TTY
 # (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) — deploys are always headless.
-(cd "$CODE_DIR" && CI=true "$PNPM_BIN" install --frozen-lockfile && CI=true "$PNPM_BIN" build && CI=true "$PNPM_BIN" prune --prod)
+(cd "$CODE_DIR" && CI=true "$PNPM_BIN" install --frozen-lockfile \
+  && SKILL_INVENTORY_SOURCE_ROOT="$SOURCE_ROOT" SKILL_INVENTORY_SOURCE_REVISION="$SOURCE_COMMIT" CI=true "$PNPM_BIN" build \
+  && CI=true "$PNPM_BIN" prune --prod)
 
 env_has_key() { grep -Eq "^[[:space:]]*$1=[^[:space:]]+" "$ENV_FILE"; }
 env_sessions_enabled() { ! grep -Eq '^[[:space:]]*SESSIONS_ENABLED=0([[:space:]]*(#.*)?)?$' "$ENV_FILE"; }
@@ -169,11 +191,14 @@ write_marker() {
   mv "$tmp" "$marker"
 }
 sudo /bin/launchctl kickstart -k "system/$DAEMON_LABEL"
+sudo /bin/launchctl kickstart -k "system/$CONSOLE_LABEL"
 if [[ -n $SOURCE_COMMIT ]]; then
   write_marker "$DEPLOYED_COMMIT_FILE" "$SOURCE_COMMIT"
 fi
 CURL_BIN=curl SLEEP_BIN=sleep bash "$HEALTH_WAITER" "$HEALTH_URL" \
   || die "daemon deployment failed at health acceptance"
+CURL_BIN=curl SLEEP_BIN=sleep bash "$HEALTH_WAITER" "$CONSOLE_HEALTH_URL" \
+  || die "console deployment failed at health acceptance"
 
 if [[ -n $SOURCE_COMMIT ]]; then
   write_marker "$ACCEPTED_COMMIT_FILE" "$SOURCE_COMMIT"
