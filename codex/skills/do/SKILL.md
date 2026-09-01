@@ -59,10 +59,10 @@ morning. These rules make that safe:
     staging change that isn't cleanly reversible. Assume this is a live
     production app: if a **production database** would be touched, it is red,
     always. Execute a red action only after the human explicitly approves the
-    exact action and target in the active session. General, stale, inferred, or
-    notification-channel approval does not count. Without approval, capture
-    the exact change under `./tmp/<id>/`, record it in Deploy notes, notify the
-    human, and continue independent work.
+    exact action, target, and scope in the active session. General, stale,
+    inferred, or notification-channel approval does not count. Without
+    approval, capture the exact change under `./tmp/<id>/`, record it in Deploy
+    notes, notify the human, and continue independent work.
 - **A red action that blocks *downstream work in this run* is a review gate.**
   Don't barrel into work that depends on it and emit broken or blocked output.
   Notify with full context, stop that dependent line of work, and carry on with
