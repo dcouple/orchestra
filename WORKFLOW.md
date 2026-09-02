@@ -82,7 +82,7 @@ consumer repos, so the skills' restatement is what actually executes.
 | Write the diff - all surfaces, one dispatch per vertical slice | **Codex** GPT-5.6 `medium` | fix rounds resume the same session; repo statically green after every dispatch |
 | Challenge the draft work item (Socratic gate) | Claude `socrates` - Fable | always invoked by `/create-brief`; self-calibrates - fast-passes straightforward drafts, full challenge for multi-phase/unargued items |
 | Review the plan | dual at zone 0 (Codex GPT-5.6 `low` + Claude `plan-reviewer` (Opus)); zones 1–3 Codex alone | Must-Fix gate = union of the lanes run |
-| Review the diff + security | dual at zone 0 (Codex GPT-5.6 `low` + Claude `code-reviewer` (Opus)); zones 1–3 Codex alone | Must-Fix gate = union of the lanes run |
+| Review the diff + security | dual at zone 0 (Codex GPT-5.6 `medium` + Claude `code-reviewer` (Opus)); zones 1–3 Codex alone - `medium` at zone 1 and on multi-phase items, `low` at zones 2–3 | Must-Fix gate = union of the lanes run |
 
 Every Codex role is dispatched by the **`codex` skill**
 (`claude/skills/codex/`), the one place that knows the `codex exec`
@@ -95,14 +95,19 @@ Review loops exit when **no Must Fix remains from either reviewer** - a
 Codex report tiered P0–P3 maps rather than reformats (P0/P1 ≡ Must Fix,
 P2 ≡ Should Fix, P3 ≡ Nice to Have). Caps are ceilings, never quotas: a
 zero-Must-Fix pass ends the loop even with Should Fixes open (the Overseer
-applies those at its discretion, no re-review), and the only other trigger
-for an extra pass is the two lanes sharply diverging. When reviewers disagree,
+applies those before the QA drive, no re-review), and the only other trigger
+for an extra pass is the two lanes sharply diverging. The post-PR loop has
+three units, counted in lane-sets and ceilinged by the dial table in
+`references/zones.md`: pre-QA passes, one reserved pass for the fix of a
+QA-found bug, and scoped fix reads over fixes landed after the last pass. A
+Must Fix with no read left ships as a named survivor, never as unread code;
+the ledger is `plan.md`'s `review_state:` block. When reviewers disagree,
 the Overseer adjudicates directly, using sub-agents to understand what is true
 when needed. The Overseer flags anything left unresolved at a cap in the
-wrap-up. Codex efforts are defaults - `medium` for the
-implementer, `low` for every other role; the dispatcher may raise a
-reviewer to `medium` or `high` rarely, when the zone warrants it (zone 0
-or a multi-phase item), with the reason stated in the dispatch - never above `high`. `/do` and
+wrap-up. Codex efforts are defaults - `medium` for the implementer and for
+the code-reviewer at zones 0–1 and on multi-phase items, `low` for every
+other role; the dispatcher may raise a reviewer one step above its zone
+default, with the reason stated in the dispatch - never above `high`. `/do` and
 `/prepare-pull-request` are user-invoked only (`disable-model-invocation`). The
 `/create-brief` capture skill is model-invocable at convergence, with publish still gated by
 its alignment pause.
