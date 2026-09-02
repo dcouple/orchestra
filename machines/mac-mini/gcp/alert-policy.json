@@ -23,7 +23,7 @@
     "notificationPrompts": ["OPENED", "CLOSED"]
   },
   "documentation": {
-    "content": "The FileVault-enabled home Mac Mini stopped reporting while Tailscale was healthy. Check power and tailnet reachability. Planned restarts must use machines/mac-mini/bin/mini-restart.",
+    "content": "The home Mac Mini stopped reporting while Tailscale was healthy. Check tailnet reachability, then power: it boots unattended after a power cycle (FileVault off, pmset autorestart 1). Planned restarts must use machines/mac-mini/bin/mini-restart.",
     "mimeType": "text/markdown"
   }
 }

@@ -10,5 +10,6 @@ set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 set +a
+wait_for_network
 cd "$DAEMON_SERVICE_HOME/linear-agent-daemon"
 exec /opt/homebrew/opt/node@22/bin/node dist/index.js

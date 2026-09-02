@@ -165,10 +165,16 @@ commands of a given migration.
 
 Launchd has no equivalents for the Linux unit's systemd sandbox directives;
 those controls are intentionally absent on this single-purpose machine. There
-is no codex-live service. Reboot acceptance is deferred until the operator is
-physically near the machine; `RunAtLoad` and `KeepAlive` provide the intended
-no-login startup behavior but are not claimed as reboot evidence until that
-test is performed.
+is no codex-live service. `RunAtLoad` and `KeepAlive` bring the three services
+up with no console login. Launchd starts them before DNS is usable on a cold
+boot, so `run-cliproxyapi.sh` and `run-daemon.sh` call the site lib's
+`wait_for_network` first: it polls until one of the upstream hosts resolves
+(bounded by `DAEMON_NETWORK_WAIT_SECONDS`, default 120, then starts anyway).
+Without it the proxy's startup model-catalog fetch fails and it serves its
+built-in catalog until the next periodic refresh, and the Fable wrapper
+refuses every turn whose model is absent from that catalog. Reboot evidence:
+`grep 'startup model refresh' ~/Library/Logs/cliproxyapi.log` in the service
+user's home reads `completed`, not `fetch failed`.
 
 ### Simulator automation
 
@@ -183,8 +189,9 @@ was skipped so it cannot race the pool cloning the golden. If the pre-enable
 probe fails with a session-binding error, log in once, re-run it, and record a
 console session as a host requirement; that result reopens the LaunchAgent
 design as a new item.
-Classic automatic login is unavailable while FileVault is enabled, so it is
-not configured.
+Classic automatic login is deliberately not configured: the daemon needs no
+console session, and one would interfere with system-domain simulator
+automation.
 
 ### Supply-chain posture
 

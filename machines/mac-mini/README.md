@@ -7,14 +7,20 @@ Logging heartbeat. It is orchestra-only and is not copied by either sync script.
 
 ## Safety rules
 
-- Keep FileVault enabled and automatic login disabled.
+- Keep FileVault disabled and automatic login disabled. FileVault off is
+  what lets a power-loss or smart-plug boot come all the way up unattended;
+  automatic login stays off because the daemons run in the system launchd
+  domain and a console session interferes with simulator automation.
+  `apply.sh` refuses to run while FileVault is on; disable it once with
+  `ssh -t mini 'sudo fdesetup disable'` and wait for `sudo fdesetup status`
+  to report Off before restarting.
 - Keep automatic macOS update installs disabled; run `bin/mini-update`
   deliberately instead. Automatic downloads are not changed.
-- Never run plain `reboot` on the Mini. Use `bin/mini-restart`; use
-  `bin/mini-update` for OS updates that may restart it.
-- Enter the FileVault credential only at the interactive SSH TTY prompt.
-  Never put it in an argument, environment variable, file, keychain, plist,
-  shell history, or script.
+- Restart with `bin/mini-restart` (clean `shutdown -r` plus a return wait)
+  and update with `bin/mini-update`; both refuse to run while FileVault is on.
+- `pmset autorestart 1` is set, so cutting and restoring power (a smart plug
+  on the Mini's cord) boots it without a button press. Treat that as the
+  last resort after SSH is unreachable, not as a routine restart.
 
 ## Human bootstrap
 
@@ -107,8 +113,7 @@ machines/mac-mini/bin/mini-restart
 machines/mac-mini/bin/mini-update
 ```
 
-Both allocate a TTY and let `fdesetup` prompt directly. They do not read or
-store the FileVault credential themselves.
+Both allocate a TTY for `sudo` and verify FileVault is off before acting.
 
 After a restart, run the daemon's simulator probe before any GUI login; see
 `daemon/ops/macos/README.md` under "Simulator automation" for the acceptance
