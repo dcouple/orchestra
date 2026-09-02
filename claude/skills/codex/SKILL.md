@@ -20,13 +20,11 @@ this conversation - the prompt must carry everything the role needs.
 | `implementer` | `gpt-5.6-sol` / `medium` | `--yolo` | persistent - resume for fix rounds |
 | `backend-verifier` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `plan-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
-| `code-reviewer` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
+| `code-reviewer` | `gpt-5.6-sol` / `medium` at effective zones 0–1 and on multi-phase items; `low` at zones 2–3 | `--yolo` | `--ephemeral` |
 | `code-researcher` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 | `investigator` | `gpt-5.6-sol` / `low` | `--yolo` | `--ephemeral` |
 
-Efforts are defaults: `medium` for the implementer and the refactor roles, `low` for every other role. The dispatcher may raise a reviewer to `medium` or
-`high` - rarely, when the zone warrants it (zone 0, or a multi-phase item), with the
-reason stated in the dispatch; never above `high`, never by default. The investigator and
+Efforts are defaults: `medium` for the implementer, the refactor roles, and the code-reviewer at effective zones 0–1 or on a multi-phase item; `low` for every other role and for the code-reviewer at zones 2–3. Every reviewer dispatch states the resolved effort and the effective zone it derives from. The dispatcher may raise a reviewer one step above its zone default with the reason stated in the dispatch; never above `high`, never silently. A scoped fix read runs at the effort of the pass whose findings it verifies. The investigator and
 backend-verifier act on the environment (tests, scripts, app boots), but
 their charters forbid editing project files.
 
@@ -154,8 +152,8 @@ its command with the following so session context survives:
 
 ```bash
 perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' 2700 \
-  codex exec resume --last --yolo -o <owner dir>/<name>.md \
-  "$(cat <owner dir>/<name>.prompt)" </dev/null
+  codex exec resume --last -m gpt-5.6-sol -c model_reasoning_effort="<effort>" --yolo \
+  -o <owner dir>/<name>.md "$(cat <owner dir>/<name>.prompt)" </dev/null
 status=$?
 echo "$status" > <owner dir>/<name>.done.tmp && \
   mv <owner dir>/<name>.done.tmp <owner dir>/<name>.done
@@ -165,6 +163,7 @@ A resume dispatch carries `--yolo` exactly like a fresh one - a resumed
 session that loses it runs sandboxed and blocks the very tests the fix
 round must run. `resume` takes no `-C`: it matches recorded sessions by
 cwd, so launch it from the same repo root as the original dispatch.
+Pass the same `-m`/`-c` the original dispatch used: without them `resume` runs on the CLI's defaults (observed `gpt-5.5`/`high`), so fix rounds silently change model. Read the `.log` header's `model:` and `reasoning effort:` lines on every resumed round and record them per round in the agents roster; a header that disagrees with the flags is a finding for the postmortem, not a reason to re-dispatch.
 
 The marker convention is: `<name>.md` is the final report, `<name>.log` is
 durable stdout/stderr including the `tokens used` summary, and `<name>.done`

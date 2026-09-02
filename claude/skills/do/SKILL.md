@@ -511,7 +511,7 @@ follows successful QA.
   - never serially; zones 1–3: Codex alone; the item's explicit
   `review_lanes:` outranks the zone default in either direction, including
   when set on a multi-phase item)
-  (correctness + security, `(security)` tags). A Codex report may arrive
+  (correctness + security, `(security)` and `(data)` tags; the Codex code-reviewer at its role table's effort for the effective zone). A Codex report may arrive
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format - map it, never re-dispatch over format: P0/P1 ≡
   Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the reviewers disagree,
