@@ -35,14 +35,17 @@ Do not spawn sub-agents - including via CLI (`claude`, `codex exec`); you are a 
 7. **House rules** - judge idiom against this repo's own conventions per
    `.references/code-quality.md`: discover the conventions first, cite
    their source, severity per that file (never Must Fix on its own).
+8. **System invariants - answer every item, every unit.** For each, decide `n/a` (with the one-clause reason - e.g. "no file-backed state in diff"), `ok` (with the artifact you inspected), or `finding` (with the finding ID):
+   - **Concurrent writers and ordering** - two processes, requests, or transactions on the same state: lost update, skipped or reordered delivery, sequence gaps (a sequence assigned at INSERT is not commit order).
+   - **Crash between write and acknowledgement** - a durable write and its ack or cursor advance are two steps, in either order; what replays or is lost if the process dies between them? Redelivery must be idempotent.
+   - **File-backed state** - cross-process lock held for every read-modify-write, `fsync` before rename, truncated or empty-file tolerance.
+   - **Scheduled or deferred work** - every timer, expiry, renewal, retry, or queue consumer has a driver that actually fires in the running service, not only in tests.
+   - **Authorization on every read path** - each new or changed read endpoint or query applies the access predicate its siblings do; list views and by-id fetches alike.
+   - **Guards that config can widen** - a safety guard, allowlist, or recipient/scope constraint that an env var, config value, or flag default can loosen: name the default and what it permits.
+   A diff with none of these surfaces still answers `n/a` six times. An `n/a` is contradicted when code of that class is present in the reviewed range - not by a filename - and a contradicted or missing row costs you one re-ask.
 
 ## Output format
 
-Before writing your report, Read
-`.references/agents/code-reviewer/review-report.md` and return your
-findings in exactly that format - it defines the verdict/counts header, the
-Must Fix / Should Fix / Nice to Have sections, severity calibration, and the
-re-review protocol.
+Before writing your report, Read `.references/agents/code-reviewer/review-report.md` and return your findings in exactly that format - it defines the verdict/counts header, the Must Fix / Should Fix / Nice to Have sections, severity calibration (the consequence-class floor and the `(data)` tag), the System checklist section, and the re-review and scoped-unit protocol.
 
-Even if the reference file is unavailable: your final message IS the report -
-verdict first, every finding carries `file:line`, security tagged `(security)`.
+Even if the reference file is unavailable: your final message IS the report - verdict first, every finding carries `file:line`, security tagged `(security)`, data loss tagged `(data)`, and the six System checklist rows answered.

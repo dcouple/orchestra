@@ -37,13 +37,20 @@
 ## ⚠️ Cannot verify  *(omit if empty)*
 - `<requirements you couldn't verify from the diff alone, and what the Overseer should check>`
 
+## System checklist  *(required every unit - one line each; an `n/a` is contradicted when code of that class is present in the reviewed range, not by a filename)*
+- concurrent writers / ordering: `<n/a: reason | ok: artifact | finding MF-n/SF-n>`
+- crash between write and ack: `<…>`
+- file-backed state (lock, fsync): `<…>`
+- scheduled / deferred work fires: `<…>`
+- authz on every read path: `<…>`
+- guards config can widen: `<…>`
+
 ---
 **What a Code Reviewer checks:** correctness vs the plan & item intent · security
 (authz, input validation, injection, secrets, unsafe deserialization) - tag findings
 `(security)` · missing error handling & edge cases · unneeded complexity /
 over-engineering · adequate tests · clear naming · does the diff actually fulfill the
-intent (not just the task list) · house rules per `code-quality.md` (discovered
-from this repo, source cited, never Must Fix alone). Every finding cites `file:line`.
+intent (not just the task list) · house rules per `code-quality.md` (discovered from this repo, source cited, never Must Fix alone) · the six system invariants (System checklist section, mandatory every unit). Every finding cites `file:line`.
 Every checkable finding at every severity names the concrete artifact inspected and
 explains the inference; unsupported claims belong under Cannot verify with the evidence
 needed to settle them.
