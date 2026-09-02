@@ -33,6 +33,17 @@ runtime_fallback: <claude -> claudex - only when the daemon signals runtime fall
 fallback_cause: <daemon-classified cause - only when the daemon signals runtime fallback>
 phase: <n | ->
 phase_complete: <true - set when this phase's diff is committed; multi-phase resume state; omit until then>
+review_state:            # post-PR review ledger, the resume source of truth - written BEFORE each reviewer launch, on intake, on every fix round, and on QA start; carried forward into every plan-<n>.md; absent on a run started under the old rules
+  cap: <4 at zone 0 | 3 at zone 1 and on multi-phase items | 1 at zones 2–3 - zones.md dial table>
+  pre_qa: {used: <n>, ceiling: <3 at zone 0 | 2 at zone 1 and on multi-phase items | 1 at zones 2–3>}
+  reserve: <unspent | spent | n/a - one at zones 0–1 and on multi-phase items, none at zones 2–3 single-outcome>
+  fix_reads: {used: <n>, ceiling: <2 at zones 0–1 and on multi-phase items | 1 at zone 2 | 0 at zone 3>}
+  in_flight: <unit id> <sha>..<sha> | none      # set before the launch, cleared on intake; on resume a unit with a report or .done marker is used, one without is re-launched, never double-counted
+  qa: <not_started | running | passed | rerun | failed - <reason> | blocked>   # failed is a blocker, never a skip
+  checklist: {<unit id p1|p2|p3|r1|r2|q>: <complete | missing | contradicted>}
+  survivors: [<MF-id - why unfixed>]
+  unreviewed: [<MF-id or range @ sha - reason>]
+  reports: [{unit: <id>, range: <sha>..<sha> | whole PR, lanes: <both | codex-only | claude-only>, files: [refs/review-<unit>-<lane>.md, refs/review-<unit>-<lane>-reask.md]}]
 confidence: <1-10 - one-pass implementation confidence, scored after review>
 ---
 ```

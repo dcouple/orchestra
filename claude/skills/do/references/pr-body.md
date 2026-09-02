@@ -213,9 +213,7 @@ run left unmet is why a "green" PR fails the moment someone tests it.
 reads as "nothing to do," which is a lie if you skipped the scan.
 
 ### Residual risks
-Known limitations shipping *by choice* - narrowed-but-not-closed windows,
-seams tested instead of end-to-end, follow-ups deferred. One line each, honest.
-**Omit if none** - don't manufacture risk to fill the section.
+Known limitations shipping *by choice* - narrowed-but-not-closed windows, seams tested instead of end-to-end, follow-ups deferred. One line each, honest. Two line shapes are mandatory when they apply: `survivor: <MF-id> - <what> - <why unfixed>` for every Must Fix left open at the cap, and `unreviewed: <MF-id or range> - <what> - <sha> - <why not read>` for any commit no reviewer unit covered. **Omit the section only when none of these exist** - don't manufacture risk to fill it.
 
 ### Metadata & closing
 Apply the repo's issue/PR metadata convention (type + area labels, milestone

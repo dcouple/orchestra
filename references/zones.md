@@ -20,12 +20,14 @@ be zone 2. `/do` derives its dials from the zone.
 
 ## Dial table
 
-| Zone | Review lanes | Loop caps (plan / global code review) | Frontend verifier | End QA pass | Research |
+| Zone | Review lanes | Loop caps (plan / post-PR passes = pre-QA + reserved / fix reads) | Frontend verifier | End QA pass | Research |
 |---|---|---|---|---|---|
-| 0 | dual (Codex + Claude), always | 3 / 4 | yes, when UI is touched | always | full (dossier) |
-| 1 | single - Codex | 3 / 3 | when user-visible | always - full checklist when user-visible, command-shaped otherwise | full (dossier) |
-| 2 | single - Codex | 1 / 1 | only when reproduction needs the running app | command-shaped items only | direct (no dossier) |
-| 3 | **single - Codex** | 1 / 1 | no | no | direct |
+| 0 | dual (Codex + Claude), always | 3 / 4 = 3 + 1 / 2 | yes, when UI is touched | always | full (dossier) |
+| 1 | single - Codex | 3 / 3 = 2 + 1 / 2 | when user-visible | always - full checklist when user-visible, command-shaped otherwise | full (dossier) |
+| 2 | single - Codex | 1 / 1 = 1 + 0 / 1 | only when reproduction needs the running app | command-shaped items only | direct (no dossier) |
+| 3 | **single - Codex** | 1 / 1 = 1 + 0 / 0 | no | no | direct |
+
+Multi-phase items take zone 1's row as a floor (zone 0 keeps its own row). This table is the only place the post-PR counter values are stated; `plan.md`'s `review_state:` records the run's instance of them, and every other file references the two.
 
 Wherever the table drops to one lane, **Codex is the lane that stays**.
 The verifier and QA dials govern *discretionary* verification - an AC whose
@@ -62,12 +64,8 @@ never claimed passed.
   pass returns zero Must Fix (Codex tiers: P0/P1) from every lane and the
   lanes roughly agree - remaining cap budget is never spent re-reviewing
   Should Fixes.
-- **The code-review cap is global to the run.** Every phase review, whole-PR
-  review, confirmation pass, hosted review trigger, and QA-fix review spends
-  from the same counter. The zone chooses the ceiling shown above, and four is
-  an absolute maximum. The counter never resets, and at least one dispatch is
-  reserved for the whole-PR review. A changed HEAD alone is not a review
-  trigger; P2/P3 findings never trigger another pass.
+- **Post-PR code review has three units, each counted in lane-sets** (a dual-lane unit is one unit; a lane-set is complete when at least one lane reports - a lane whose dispatch and single retry both fail is recorded `lanes: codex-only | claude-only` on the unit's report entry and the run proceeds on the lane that reported). **Passes** are whole-diff reviews of the first phase or the PR, capped per the table; of the cap, **one pass is reserved** for the fix of a QA-found bug at zones 0–1 and on multi-phase items (none at zones 2–3 single-outcome), the rest are pre-QA. **Fix reads** are scoped reviews of a post-ceiling fix, with their own ceiling per the table, never moving the pass counter. **The reserved pass** is the third unit. Every first-phase review, whole-PR review, confirmation pass, and hosted review trigger spends a pre-QA pass; a QA-fix review spends the reserve; a checklist re-ask spends nothing; a unit whose every lane failed spends nothing - its range is labeled `unreviewed: <range> - dispatch failed (<reason>)`, it may be retried once after the next successful dispatch of any role, and a zone 0–1 item never reaches QA with no pass used unless that label explains it. Counters never reset - not at a phase boundary, PR open, QA, resume, or changed HEAD - and at least one pre-QA pass is held for the whole-PR review. When no read remains, a Must Fix is carried as a survivor, not fixed unread (zone 3 excepted, labeled `unreviewed:`). A changed HEAD alone is not a review trigger; P2/P3 findings never trigger another unit.
+- **Reviewer-report intake (Overseer, every unit, before adjudicating).** (1) Persist the report verbatim as `./tmp/<id>/refs/review-<unit>-<lane>.md` (unit `p<k>`, `r<j>`, or `q`; lane `codex` or `claude`), record it with its commit range and lanes under `review_state.reports`, and clear `in_flight`. (2) Re-tier to Must Fix any Should Fix whose Evidence line names a concrete path or state describing data loss, a security defect, a config-widenable guard, or a missing authorization check - a Must Fix trigger regardless of the lane's verdict; a class claim with no concrete evidence goes to Cannot verify, not to Must Fix; a finding that reveals an escalator surface (above) re-zones the run to that floor now. (3) Check the System checklist: a report missing it, or carrying an `n/a` the reviewed range contradicts (code of that class present in the range - a filename alone is not a contradiction), gets one re-ask narrowed to those rows - Codex: a fresh `--ephemeral` dispatch carrying the prior report, persisted as `refs/review-<unit>-<lane>-reask.md`, not a unit; a Claude lane: `SendMessage` to the same sub-agent - and a second omission or contradiction records `checklist: missing` or `checklist: contradicted` for that unit.
 - **`review_lanes:` and `frontend_verifier:` are the two human-settable
   dial overrides.** An item may
   carry `review_lanes: dual | single` in its metadata - set at capture or
@@ -97,10 +95,7 @@ reachable as `unknown`.
 
 ## Multi-phase items
 
-A multi-phase item (two or more entries in the item metadata's `phases`
-list) always uses the **full research/planning machinery**. Its review lanes
-and cumulative code-review ceiling still come from its zone: dual at zone 0,
-single Codex at zones 1–3. Phase boundaries never reset the global counter.
+A multi-phase item (two or more entries in the item metadata's `phases` list) always uses the **full research/planning machinery**. Its review lanes come from its zone - dual at zone 0, single Codex at zones 1–3 - and its post-PR counters take **zone 1's row of the dial table as a floor** (zone 0 keeps its own row). Pre-QA passes on a multi-phase item are placed so: pass 1 over the first phase's diff at its commit; the whole-PR pass at open, chartered to list every later phase's commit range as required coverage alongside integration (as a phase-diff pass this caught 3 Must Fix on PR #8 and 1 on PR #7 - the charter must cover the same ground); at zone 0 the third pre-QA pass is a re-review or, with three or more phases, may instead cover the combined diff of phases 2..N−1 at the commit of phase N−1. Later phases never get a pass of their own. Phase boundaries never reset any counter.
 The zone still gates
 the frontend-verifier and QA dials per phase, and still rides in every record.
 Skills reference this override here. An explicit `review_lanes:` on the item
