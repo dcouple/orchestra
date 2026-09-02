@@ -705,6 +705,14 @@ describe("runTurn", () => {
     expect(row.env.ORCHESTRA_SIM_TOKEN).toBeUndefined(); expect(row.env.ORCHESTRA_SIM_DB_PATH).toBeUndefined();
     expect(row.env.ORCHESTRA_SIMX).toBeUndefined();
   });
+  it("forwards the managed codex binary path for the wrapper", async () => {
+    const dir = cwd(); const envFile = join(dir, "env.jsonl");
+    await runTurn(options({ cwd: dir, env: { CLAUDE_FAKE_ENV_FILE: envFile,
+      ORCHESTRA_CODEX_REAL_BIN: "/srv/.codex-managed/bin/codex", ORCHESTRA_CODEX_OTHER: "drop" } }));
+    const row = JSON.parse(readFileSync(envFile, "utf8").trim()) as { env: Record<string, string> };
+    expect(row.env.ORCHESTRA_CODEX_REAL_BIN).toBe("/srv/.codex-managed/bin/codex");
+    expect(row.env.ORCHESTRA_CODEX_OTHER).toBeUndefined();
+  });
   it("merges trusted runtime environment after the allowlist", async () => {
     const dir = cwd();
     const envFile = join(dir, "env.jsonl");
