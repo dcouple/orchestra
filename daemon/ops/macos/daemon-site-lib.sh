@@ -41,6 +41,44 @@ load_site_env() {
     DAEMON_LAUNCHD_PREFIX DAEMON_SOURCE_REPO_URL DAEMON_LABEL PROXY_LABEL TUNNEL_LABEL
 }
 
+# wait_for_network [HOST...] — blocks until one of the hosts resolves, then
+# returns 0. launchd starts the system domain before DNS works on a cold boot,
+# and a service that starts first sees "no such host" for its startup fetches
+# (the proxy then serves its built-in model catalog until the next periodic
+# refresh). Gives up after DAEMON_NETWORK_WAIT_SECONDS (default 120) and still
+# returns 0, so an outage never keeps a service from starting.
+wait_for_network() {
+  local timeout=${DAEMON_NETWORK_WAIT_SECONDS:-120} waited=0 host announced=0
+  [[ $timeout =~ ^[0-9]+$ ]] || site_die "DAEMON_NETWORK_WAIT_SECONDS must be a non-negative integer: $timeout" || return
+  (( $# > 0 )) || set -- api.anthropic.com auth.openai.com raw.githubusercontent.com
+  while :; do
+    for host in "$@"; do
+      if host_resolves "$host"; then
+        (( announced )) && echo "network ready after ${waited}s ($host resolves)" >&2
+        return 0
+      fi
+    done
+    if (( waited >= timeout )); then
+      echo "network wait timed out after ${waited}s (none of: $*); starting anyway" >&2
+      return 0
+    fi
+    if (( ! announced )); then
+      echo "waiting up to ${timeout}s for DNS (${*})" >&2
+      announced=1
+    fi
+    sleep 2
+    (( waited += 2 ))
+  done
+}
+
+host_resolves() {
+  if command -v dscacheutil >/dev/null 2>&1; then
+    dscacheutil -q host -a name "$1" 2>/dev/null | grep -q '^ip'
+  else
+    getent hosts "$1" >/dev/null 2>&1
+  fi
+}
+
 # render_site_template TEMPLATE > OUTPUT — substitutes the site placeholders.
 # @TUNNEL_ID@ is deliberately left alone; the provisioner fills it from the
 # tunnel credentials on the host.

@@ -153,6 +153,31 @@ describe("macOS site config", () => {
     }
   });
 
+  it("run wrappers wait for DNS before exec", () => {
+    for (const wrapper of ["run-cliproxyapi.sh", "run-daemon.sh"]) {
+      const text = readFileSync(join(macosDir, wrapper), "utf8");
+      expect(text, wrapper).toMatch(/^load_site_env\n(.*\n)*?wait_for_network\n(.*\n)*?exec /m);
+    }
+  });
+
+  it("wait_for_network returns once a host resolves and after the timeout", () => {
+    const run = (env: Record<string, string>, ...hosts: string[]) => spawnSync("bash", ["-c", `
+      set -euo pipefail
+      . "${lib}"
+      wait_for_network "$@"
+    `, "bash", ...hosts], { encoding: "utf8", env: { ...process.env, ...env } });
+    const ok = run({}, "localhost");
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stderr).toBe("");
+    const timedOut = run({ DAEMON_NETWORK_WAIT_SECONDS: "2" }, "nonexistent.invalid");
+    expect(timedOut.status, timedOut.stderr).toBe(0);
+    expect(timedOut.stderr).toContain("waiting up to 2s for DNS (nonexistent.invalid)");
+    expect(timedOut.stderr).toContain("network wait timed out after 2s");
+    const bad = run({ DAEMON_NETWORK_WAIT_SECONDS: "soon" }, "localhost");
+    expect(bad.status).not.toBe(0);
+    expect(bad.stderr).toContain("DAEMON_NETWORK_WAIT_SECONDS must be a non-negative integer");
+  });
+
   it("keeps the macOS ops directory free of deployment-specific names", () => {
     const example = readFileSync(join(macosDir, "site.env.example"), "utf8");
     for (const file of readdirSync(macosDir)) {
