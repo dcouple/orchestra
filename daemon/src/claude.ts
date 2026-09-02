@@ -224,6 +224,7 @@ function childEnv(
       pass.has(key) ||
       key === "DEVELOPER_DIR" ||
       key === "ORCHESTRA_SIM_CONTEXT" ||
+      key === "ORCHESTRA_CODEX_REAL_BIN" ||
       (extraOnly && OTEL_CHILD_ENV_KEYS.has(key)) ||
       (extraOnly &&
         (key === "TRACEPARENT" ||
