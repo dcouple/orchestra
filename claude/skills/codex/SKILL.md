@@ -65,7 +65,7 @@ Inputs for this run:
 - work item: <item path - capture-time dispatches only; inside a /do run, sub-agents work from the implementation plan, not the brief (sole exception: the plan-reviewer also gets the brief - checking the plan against it is its job)>
 - plan: <plan path, if the role uses one>
 - question / defect report: <for code-researcher / investigator>
-- review pass: <k>/<cap> <reviewers only - the dispatch states the resolved cap; /do derives it from the run's zone>
+- review unit: `pre-QA pass <k>/<ceiling>` | `fix read <j>/<ceiling> (post-ceiling, scoped: <sha>..<sha>)` | `reserved pass (QA fix, scoped: <sha>..<sha>)` | `re-ask for <unit>` <reviewers only - the dispatch states the resolved ceilings and the effective zone they derive from; a scoped unit also states its commit range and narrowed charter; a re-ask carries the prior report, is narrowed to the checklist rows named, and is not a unit>
 - prior findings by ID: <reviewers, pass 2+> / fix instructions: <implementer fix rounds>
 
 Print the report as your final message, in exactly the specified format.
@@ -201,15 +201,7 @@ report verbatim to the caller, prefixed with one line:
 `CODEX <role>: <status line> · tokens <n | unknown>` - the Overseer sums
 these per role into the wrap-up's run record.
 
-Exit 142 (a SIGALRM watchdog reap) classifies the dispatch as a hung run. Retry
-a hung, errored, timed-out, or status-line-missing run once: make a fresh
-dispatch for an ephemeral role, or use `resume --last` for the implementer so
-its session context survives. A retry that is also reaped never gets a third
-Codex dispatch - a workload that wedged twice stays wedged: reviewer,
-researcher, and verifier work routes to a Claude sub-agent dispatch instead;
-the implementer has no Claude counterpart, so a twice-reaped implementer
-returns the error plus whatever output exists to the caller. Otherwise return
-the error plus whatever output exists after the single retry. A report of `listen EPERM` (the sandbox denied loopback
+Exit 142 (a SIGALRM watchdog reap) classifies the dispatch as a hung run. Retry a hung, errored, timed-out, or status-line-missing run once: make a fresh dispatch for an ephemeral role, or use `resume --last` for the implementer so its session context survives. A reviewer dispatched at `medium` that is reaped retries at `low`, with the downgrade recorded in the agents roster - a slow reviewer must never cost a unit. A `.log` showing `Selected model is at capacity`, an auth error, or any other non-142 error with no report is a provider failure, not a hung run: retry once immediately without waiting for the cap. A retry that also fails - reaped or errored - never gets a third Codex dispatch: reviewer, researcher, and verifier work routes to a Claude sub-agent dispatch instead (record `runtime_fallback` in the plan frontmatter); the implementer has no Claude counterpart, so a twice-failed implementer returns the error plus whatever output exists to the caller. A review unit whose Claude fallback also fails spends nothing and is not retried now: the caller labels the range it was to cover `unreviewed: <range> @ <sha> - dispatch failed (<cause>)`, may retry the unit once after the next successful dispatch of any role, and otherwise proceeds - a run never stalls for a reader. When one lane of a dual-lane unit fails this way and the other reports, the unit is complete on the reporting lane: record `lanes: codex-only | claude-only` on its report entry. A report of `listen EPERM` (the sandbox denied loopback
 binds) is a completed run, not a failure: accept the edits and run the blocked
 check at the Overseer, or hand it to the next verifier dispatch, instead of
 re-dispatching.

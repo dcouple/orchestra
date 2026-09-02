@@ -44,6 +44,7 @@ morning. These rules make that safe:
   scheduled wakeup: `plan-<n>.md` and its `phase_complete` flag record where
   you were, and the next turn picks up from there. Idle-waiting on a human
   nudge is a pipeline bug.
+- **Resume guard.** On a resumed or restarted turn, before any dispatch: if the harness lists another live session on this worktree, or an unfinished dispatch marker exists that this session did not launch, stop and ask the user which session owns the run (two Overseers undo each other's fixes). `review_state:`, not memory, says what is spent and `in_flight`.
 - **A plain human message mid-run - "continue", "still running?", "does it
   work?" - is genuine input, never a task notification.** Inspect the dispatch
   markers and durable outputs, answer from them, and resume immediately.
@@ -516,26 +517,14 @@ follows successful QA.
   Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the reviewers disagree,
   adjudicate it yourself. Use sub-agents to help you understand what is true
   when needed.
-- **Another pass runs only on a trigger - the caps are ceilings, never
-  quotas** (cap 3 passes; zones 2–3: 1; multi-phase items always 3 passes,
-  with lanes derived from zone unless the item's own `review_lanes:` says
-  otherwise).
-  **The three-pass cap is absolute even when a prompt says “repeat until
-  clean”; at the cap, carry survivors to wrap-up rather than starting a
-  fourth pass.**
+- **Another pass runs only on a trigger - the caps are ceilings, never quotas.** The post-PR counters and unit rules come from `.references/zones.md`. **The cap is absolute even when a prompt says “repeat until clean.”** Must Fixes from the last pre-QA pass may be fixed, but the fix gets a scoped **fix read**, never another pass; `persists` or a new Must Fix means one more fix round and the next read. **When no read remains, do not fix**: carry the finding as a `survivor:` (zone 3 only: land it labeled `unreviewed: <id> @ <sha> - zone 3, no read`).
   Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** - loop those findings back to the matching
   implementer, stage the fix commit against `git status --short` (the
   status output is the checklist of the fix round's edits - Step 4's
   selective-commit rule still governs, so unrelated dirty paths stay
   unstaged), never from a remembered file list, push the fixes,
-  re-review; (b) the two lanes' reports
-  **diverge sharply** (little overlap in what they caught, or conflicting
-  overall verdicts) - one extra pass to confirm convergence. **A pass with
-  zero Must Fix from every lane ends the loop**, even with Should Fixes
-  open: apply the Should Fixes you judge worth it (or leave them to the
-  inline comments below) - a Should Fix never triggers a re-review by
-  itself.
+  re-review while a pre-QA pass remains; (b) the two lanes' reports **diverge sharply** (little overlap in what they caught, or conflicting overall verdicts) - one extra pre-QA pass to confirm convergence while one remains; at the ceiling, just record it in the wrap-up. **A pass with zero Must Fix from every lane ends the loop**, even with Should Fixes open: apply the Should Fixes you judge worth it **before the QA drive starts** (QA covers them) or leave them to the inline comments below - a Should Fix never triggers a re-review by itself. Once QA has started, no Should-Fix-only commit lands; carry the rest to follow-ups.
 - When the loop ends - zero Must Fix, or the cap reached with
   survivors flagged in the wrap-up - run the **QA drive**. This is the
   run's **final accepted app-driving phase** (Step 3 defers all UI acceptance

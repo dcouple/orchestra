@@ -52,5 +52,4 @@ needed to settle them.
 criterion. Should Fix = materially better code, but mergeable without it. Everything
 else is Nice to Have - don't inflate severity.
 
-**Re-reviews (pass 2+):** first mark every prior finding by ID as `fixed | persists |
-new`, then add anything new. Don't re-litigate what's fixed.
+**Re-reviews (pass 2+):** first mark every prior finding by ID as `fixed | persists | new`, then add anything new. Don't re-litigate what's fixed. **Scoped units (a fix read or the reserved pass):** the dispatch names a commit range; review that diff alone - mark each prior ID, report only defects introduced by or still present in the range, still answer the System checklist for the range, state the range in Counts, and do not re-review the whole PR.
