@@ -51,8 +51,6 @@ Every checkable finding at every severity names the concrete artifact inspected 
 explains the inference; unsupported claims belong under Cannot verify with the evidence
 needed to settle them.
 
-**Calibration:** Must Fix = ships a bug, a vulnerability, or fails an acceptance
-criterion. Should Fix = materially better code, but mergeable without it. Everything
-else is Nice to Have - don't inflate severity.
+**Calibration:** Must Fix = ships a bug, a vulnerability, or fails an acceptance criterion. Should Fix = materially better code, but mergeable without it. Everything else is Nice to Have - don't inflate severity. **Severity follows consequence class, never diff size or fix size.** A finding whose Evidence line names a concrete path or state in any of these classes is Must Fix, always: (1) **data loss or corruption** - lost, duplicated, reordered, or skipped writes or events; non-idempotent redelivery; unlocked or un-fsynced file-backed state - tag `(data)`; (2) **security** - injection, secrets in code or logs, unsafe deserialization, and any safety guard, allowlist, or recipient/scope constraint that an env var, config value, or flag default can widen - tag `(security)`; (3) **authorization** - any read or write path reachable without the access check its siblings apply - tag `(security)`. Should Fix is not a legal tier for these classes: substantiate the finding as Must Fix, or place it under Cannot verify with the evidence that would settle it.
 
 **Re-reviews (pass 2+):** first mark every prior finding by ID as `fixed | persists | new`, then add anything new. Don't re-litigate what's fixed. **Scoped units (a fix read or the reserved pass):** the dispatch names a commit range; review that diff alone - mark each prior ID, report only defects introduced by or still present in the range, still answer the System checklist for the range, state the range in Counts, and do not re-review the whole PR.

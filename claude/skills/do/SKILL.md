@@ -509,9 +509,7 @@ The lifecycle is: the **pre-QA review loop**, the **QA drive**, then - only if Q
   (correctness + security, `(security)` and `(data)` tags; the Codex code-reviewer at its role table's effort for the effective zone). A Codex report may arrive
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format - map it, never re-dispatch over format: P0/P1 ≡
-  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the reviewers disagree,
-  adjudicate it yourself. Use sub-agents to help you understand what is true
-  when needed.
+  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. **On intake of every reviewer report**, before adjudicating, apply `.references/zones.md`'s intake rule: persist it under `refs/`, re-tier by consequence class, validate the System checklist. When the reviewers disagree, adjudicate it yourself. Use sub-agents to help you understand what is true when needed.
 - **Another pass runs only on a trigger - the caps are ceilings, never quotas.** The post-PR counters and unit rules come from `.references/zones.md`. **The cap is absolute even when a prompt says “repeat until clean.”** Must Fixes from the last pre-QA pass may be fixed, but the fix gets a scoped **fix read**, never another pass; `persists` or a new Must Fix means one more fix round and the next read. **When no read remains, do not fix**: carry the finding as a `survivor:` (zone 3 only: land it labeled `unreviewed: <id> @ <sha> - zone 3, no read`).
   Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** - loop those findings back to the matching
