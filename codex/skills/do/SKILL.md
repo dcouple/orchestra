@@ -40,9 +40,9 @@ morning. These rules make that safe:
   detaching is not licence to yield - **nothing resumes a turn that ends
   itself.** If a turn dies for an external reason - budget ceiling, crash,
   daemon restart - recovery comes from the run's durable state, not from a
-  scheduled wakeup: `plan-<n>.md` and its `phase_complete` flag record where
-  you were, and the next turn picks up from there. Idle-waiting on a human
+  scheduled wakeup: `plan-<n>.md`, its `phase_complete` flag, and its `review_state:` block record where you were and what is spent, and the next turn picks up from there. Idle-waiting on a human
   nudge is a pipeline bug.
+- **Resume guard.** On a resumed or restarted turn, before any dispatch: if the harness lists another live session on this worktree, or an unfinished dispatch marker exists that this session did not launch, stop and ask the user which session owns the run (two Overseers undo each other's fixes). `review_state:`, not memory, says what is spent and `in_flight`.
 - **A plain human message mid-run - "continue", "still running?", "does it
   work?" - is genuine input, never a task notification.** Inspect the dispatch
   markers and durable outputs, answer from them, and resume immediately.
@@ -275,10 +275,7 @@ reason recorded in `plan.md`'s frontmatter; never de-escalate - that's the
 human's call at capture, or the table's via postmortem evidence. Item
 missing a zone → classify it yourself from stakes and downstream
 consequences, record the reasoning in the frontmatter, and proceed.
-Multi-phase items (two or more entries in the metadata's `phases` list) keep
-the full research/planning machinery while their code-review lanes and
-cumulative pass ceiling still derive from the zone. They never receive a
-separate per-phase code-review cap.
+Multi-phase items (two or more entries in the metadata's `phases` list) keep full machinery; their post-PR counters take zone 1's row as a floor while their lanes follow the same zone rule.
 
 If the daemon's prompt contains a runtime-fallback context line, record
 `requested_lanes`, `effective_lanes`, `runtime_fallback`, and `fallback_cause`
@@ -508,53 +505,26 @@ happens on the artifact, not before it exists. The turn in which a reviewer
 or verifier report arrives publishes its results (body edit, evidence
 comment) before ending.
 
-The lifecycle is linear: run the capped review loop, then QA as the last
-work gate on the final head. Only the administrative PR-readiness update
-follows successful QA.
+The lifecycle is: the **pre-QA review loop**, the **QA drive**, then - only if QA found a bug - the **reserved pass** over its fix and a QA rerun; the reserve is never spent pre-QA. Only the administrative PR-readiness update follows the final QA. `plan.md`'s `review_state:` is the ledger: `in_flight: <unit> <range>` is written **before** a unit launches and moved to used on intake.
 
-**One global code-review budget governs the entire run.** The zone sets the
-smaller ceiling; four reviewer dispatches is the absolute maximum at every
-zone. Count every code-review invocation against the same cumulative ledger,
-including per-phase reviews, the whole-PR review, confirmation passes, hosted
-GitHub review triggers such as `@codex review`, and scoped reviews after QA
-fixes. Never reset the counter at a phase, commit, push, PR creation, QA entry,
-resume, or changed HEAD. Reserve at least one dispatch for the whole-PR review,
-so at most three may be spent before Step 5. Persist the cumulative count in
-the current plan's `code_review_dispatches` field and carry it forward across
-phase plans. A new commit does not by itself invalidate prior review evidence
-or require an exact-head review.
+**One counter model governs the run, per `.references/zones.md`'s dial table.** Three units, all single-Codex-lane here and each counted once whatever it took to dispatch: pre-QA passes, one reserved pass for a QA-found fix (zones 0–1 and multi-phase items only), and fix reads over post-ceiling fixes; multi-phase items take zone 1's row as a floor. Hosted GitHub review triggers such as `@codex review` spend a pre-QA pass. Nothing resets a counter - not a phase, commit, push, PR creation, QA entry, resume, or changed HEAD - and at least one pre-QA pass is held for the whole-PR review. Persist the ledger in the current plan's `review_state:` block, written before each launch, and carry it forward across phase plans. A new commit does not by itself invalidate prior review evidence or require an exact-head review.
 
 - Run the single Codex review lane over the PR diff. The item's explicit
   `review_lanes:` may request a topology, but this Codex entrypoint remains
   Codex-only and never dispatches a Claude reviewer or Agent-tool lane.
-  (correctness + security, `(security)` tags). A Codex report may arrive
+  (correctness + security, `(security)` and `(data)` tags; the Codex code-reviewer at its role table's effort for the effective zone). A Codex report may arrive
   tiered P0–P3 (its built-in review format) instead of the prescribed
   Must/Should format - map it, never re-dispatch over format: P0/P1 ≡
-  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the reviewers disagree,
-  adjudicate it yourself. Use sub-agents to help you understand what is true
-  when needed.
-- **Another pass runs only on a trigger - the zone and global caps are
-  ceilings, never quotas.** Zones 0–1 may use up to their zone ceiling while
-  zones 2–3 stop at one; no run may exceed four cumulative code-review
-  dispatches. At either cap, carry survivors to wrap-up rather than starting
-  another pass, even when a prompt says “repeat until clean” or “review the
-  latest head.”
+  Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. **On intake of every reviewer report**, before adjudicating, apply `.references/zones.md`'s intake rule: persist it under `refs/`, re-tier by consequence class, validate the System checklist. When the reviewers disagree, adjudicate it yourself. Use sub-agents to help you understand what is true when needed.
+- **Another pass runs only on a trigger - the caps are ceilings, never quotas.** The post-PR counters and unit rules come from `.references/zones.md`. **The cap is absolute even when a prompt says “repeat until clean.”** Must Fixes from the last pre-QA pass may be fixed, but the fix gets a scoped **fix read**, never another pass; `persists` or a new Must Fix means one more fix round and the next read. **When no read remains, do not fix**: carry the finding as a `survivor:` (zone 3 only: land it labeled `unreviewed: <id> @ <sha> - zone 3, no read`).
   Two triggers: (a) **any Must Fix / P0 / P1
   from either lane** - loop those findings back to the matching
   implementer, stage the fix commit against `git status --short` (the
   status output is the checklist of the fix round's edits - Step 4's
   selective-commit rule still governs, so unrelated dirty paths stay
   unstaged), never from a remembered file list, push the fixes,
-  re-review only when both the zone and global ledgers have budget; (b) the two lanes' reports
-  **diverge sharply** (little overlap in what they caught, or conflicting
-  overall verdicts) - one extra pass to confirm convergence. **A pass with
-  zero Must Fix from every lane ends the loop**, even with Should Fixes
-  open: apply the Should Fixes you judge worth it (or leave them to the
-  inline comments below) - a Should Fix never triggers a re-review by
-  itself. Fixing a Should Fix / P2 or Nice to Have / P3 never creates a review
-  trigger; verify the affected behavior and continue.
-- When the loop ends - zero Must Fix, or the cap reached with
-  survivors flagged in the wrap-up - run the **QA drive**. This is the
+  re-review while a pre-QA pass remains; (b) the two lanes' reports **diverge sharply** (little overlap in what they caught, or conflicting overall verdicts) - one extra pre-QA pass to confirm convergence, when one remains; at the pre-QA ceiling the divergence is recorded in the wrap-up's Review outcome and never spends the reserve or a read. **A pass with zero Must Fix from every lane ends the loop**, even with Should Fixes open: apply the Should Fixes you judge worth it **before the QA drive starts**, so QA covers them (or leave them to the inline comments below) - a Should Fix never triggers a re-review by itself. Once QA has started, no Should-Fix-only commit lands; carry the rest to the wrap-up's follow-ups. Fixing a Should Fix / P2 or Nice to Have / P3 never creates a review trigger; verify the affected behavior and continue.
+- Run the **QA drive** when the pre-QA loop returns zero Must Fix from every lane **or** has used its pre-QA ceiling and every post-ceiling fix is read or labeled - the reserve is not spent here. A QA drive that cannot run is `qa: failed`, a blocker, never a skip. This is the
   run's **final accepted app-driving phase** (Step 3 defers all UI acceptance
   criteria here): the Codex `frontend-verifier` proves the deferred UI ACs *and*
   executes the PR body's Manual tests checklist in one session, highest
@@ -635,25 +605,12 @@ or require an exact-head review.
   returning human's manual pass starts from the unchecked boxes and the
   remainder list. The QA drive's after-shots also complete the body's
   Visual overview (replacing its `After-shots: landing with the QA drive`
-  note). **A bug the QA drive surfaces is never report-and-ship:** when the
-  zone-derived global review budget has a pass left, loop its fix to the implementer,
-  then run one **scoped review pass over the fix's diff alone** - the zone's
-  review lanes, using that remaining pass - before the QA results line
-  closes. When no pass remains, do not change code or accept QA: mark the PR
-  and wrap-up `QA blocked`, preserve the reproduction evidence, leave the
-  affected Manual tests unchecked, and continue the administrative handoff so
-  the human still receives the open PR and exact blocker. The QA drive runs after
-  the review loop exits, so without this pass a behavioral fix born from
-  app-driving evidence (exactly the client-state bug a diff-reading
-  reviewer can't see) would ship un-reviewed. This scoped pass spends from the
-  same cumulative maximum of four; QA never creates a new budget. Body carries state, comment
+  note). **A bug the QA drive surfaces is never report-and-ship:** with the reserved pass unspent (zones 0–1, multi-phase), loop its fix to the implementer, then spend the **reserved pass** as one scoped review over the QA-fix diff alone - Codex `code-reviewer`, `reserved pass (QA fix, scoped: <sha>..<sha>)` - before the QA results line closes. A Must Fix from the reserved pass is fixed and read under the fix-read rule while a read remains; with none left it is carried as a survivor, not fixed. Then rerun QA from the start on the final head. With no reserve (zones 2–3 single-outcome) or it already spent, do not change code or accept QA: mark the PR and wrap-up `QA blocked`, preserve the reproduction evidence, leave the affected Manual tests unchecked, and continue the administrative handoff so the human still receives the open PR and exact blocker. QA never creates a new unit. Body carries state, comment
   carries proof - never
   leave the results only in a comment when the body has a checklist and a QA
   results line to update. After every body update, **YOU MUST** preserve and
   verify the persisted closing-line set per `.references/tracker-lifecycle.md`.
-  Any code fix after QA begins invalidates that QA evidence: return to the
-  review phase using only the zone-derived global budget's remaining passes, then rerun QA
-  from the start so the final accepted phase is QA.
+  Any code fix after QA begins invalidates that QA evidence: it is reviewed by the reserved pass, never a pre-QA pass. A Must Fix from the reserved pass is fixed and read under the fix-read rule while a read remains; with none left it is carried as a survivor, not fixed. Then QA reruns from the start so the final accepted phase is QA; a rerun bug is a blocker.
 - **Hosting evidence media**: classify every capture before publication.
   Secrets, PHI, MFA codes, payment details, private customer data, and other
   unsafe captures stay local; publish only a visually verified redacted copy
@@ -780,11 +737,7 @@ Run Steps 1–3 per phase, sequentially - per-phase `plan-<n>.md`; on
 phase completion set `phase_complete: true` in that phase's `plan-<n>.md`
 frontmatter (run state lives in the implementation plan, never in the
 brief).
-After each phase verifies, use the zone to decide whether its diff warrants a
-code-review dispatch. Every such dispatch spends from the run-global maximum
-of four, and at least one dispatch must remain for the whole-PR review; a phase
-boundary never resets the ledger. Fix and re-verify material findings, then run
-the build gate and commit the phase following Step 4's commit rules. After the
+After the **first** phase verifies, spend pre-QA pass 1 on its diff - the single Codex lane - fix Must Fixes, and re-verify. Later phases get no pass of their own: the whole-PR pass at open covers them, chartered per `.references/zones.md` Multi-phase items. Carry `review_state:` forward into each `plan-<n>.md`. Then run the build gate and commit the phase following Step 4's commit rules. After the
 last phase, continue from Step 4's PR steps
 (deploy-notes scan over the whole multi-phase diff, rebase, push, open the
 PR) and run Steps 5–6 once for the whole item. Phases chain without
@@ -804,7 +757,4 @@ never yield to wait for a "continue" between phases (see Autonomy & safety).
   execute explicitly approved red-tier actions, otherwise defer-note-and-notify
   them rather than blocking; stop only for a red gate that blocks everything
   (see Autonomy & safety).
-- The run is resumable from durable state: plan.md - per phase, `plan-<n>.md`
-  with its `phase_complete` flag - says where you were, so a turn that was cut
-  short externally is picked up from that state rather than restarted. This is
-  a crash-recovery path, not a licence to end a turn with work remaining.
+- The run is resumable from durable state: plan.md - per phase, `plan-<n>.md` with its `phase_complete` flag and its `review_state:` block - says where you were and what is spent, so a turn cut short externally resumes from that state, never re-spending a used unit. A plan with no `review_state:` block is an old-rules run: finish it under its own counter and note the skill commit in the postmortem. This is a crash-recovery path, not a licence to end a turn with work remaining.

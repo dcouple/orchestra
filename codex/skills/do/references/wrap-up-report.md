@@ -1,8 +1,6 @@
 # Wrap-Up Report - format
 
-> Produced by `/do` at the end. Saved as `./tmp/<id>/wrapup.md` and posted to the PR.
-> This is `/do`'s self-report and the human's starting point for PR review - it folds
-> in the **final** review outcome (individual review passes are not persisted).
+> Produced by `/do` at the end. Saved as `./tmp/<id>/wrapup.md` and posted to the PR. This is `/do`'s self-report and the human's starting point for PR review - it folds in the **final** review outcome; every individual reviewer report is persisted verbatim under `./tmp/<id>/refs/review-<unit>-<lane>.md` and the dial record points there.
 
 ---
 ```yaml
@@ -23,7 +21,7 @@ pr: <url or #>
 `Text/log evidence, plus QA screenshots where captured.>`
 
 ## Review outcome
-`<final state after the review loop - "Must Fix: 0 · passes used: k/<cap>" - and the`
+`<final state after the review loop - "Must Fix: 0 · pre-QA k/<ceiling> · reserved <spent|unspent|n/a> · fix reads j/<ceiling> · checklist complete on <n>/<units>" - any recorded lane divergence or lane gap, and the`
 `QA pass: manual tests executed vs left to the human. Note any`
 `Should Fix / Nice to Have items intentionally deferred, and why - the same`
 `survivors live as inline PR comments; this is the summary, not a second list.`
@@ -39,6 +37,9 @@ pr: <url or #>
 
 ## Residual risks / follow-ups
 - `<genuine risks or future work items - NOT actions; actions go in the block above>`
+- `survivor: <MF-id> - <what> - <why unfixed: no read left | reserve spent>` *(mandatory, one per open Must Fix)*
+- `unreviewed: <MF-id or range> - <what> - <sha> - <why not read>` *(mandatory for any code no reviewer unit covered)*
+- `<Should Fixes carried past QA start, one line each - omit when none>`
 - `<genuine follow-ups - omit when there are none>`
 
 ## Dial record
@@ -49,9 +50,13 @@ requested_lanes: <dual | single - omit unless runtime fallback occurred>
 effective_lanes: <single-codex - omit unless runtime fallback occurred>
 runtime_fallback: <codex fallback - omit unless runtime fallback occurred>
 fallback_cause: <daemon-classified cause - omit unless runtime fallback occurred>
-passes: {plan: <used>/<cap>, code_review_global: <cumulative used>/<zone ceiling, max 4>}
+passes: {plan: <used>/<cap>, post_pr: {pre_qa: <used>/<ceiling>, reserved: <spent | unspent | n/a>, fix_reads: <used>/<ceiling>}}  # units in lane-sets, ceilings per zones.md dial table
 findings: {plan: {pass1: {codex: <n>}, later: {codex: <n>}},
-           code_review_global: {phase: {codex: <n>}, whole_pr_and_qa: {codex: <n>}}}
+           post_pr: {pass1: {codex: <n>}, later: {codex: <n>}, by_class: {security: <n>, data: <n>}}}
+checklist: {<unit id>: <complete | missing | contradicted>}   # one entry per reviewer unit, from plan.md review_state
+lane_gaps: [none]                                             # single-lane entrypoint; kept so both entrypoints share one dial-record shape
+survivors: [<MF-id - what - why unfixed> | none]
+unreviewed: [<MF-id or range @ sha - reason> | none]
 verifiers: {frontend: <ran|skipped|disabled_by_item>, qa_pass: <ran|trimmed|skipped>}  # disabled_by_item: list each app-only AC as "unverified - frontend verifier disabled by the item" under Verification evidence
 qa_findings: <n>
 cleanup: {disposition: <clean | registered | none_created>, markers: [<run marker>], registered: <n>}  # product state the QA drive created; "registered" means recorded for a reaper, not yet purged
