@@ -27,7 +27,7 @@ The exact commands, not descriptions. Agents run these verbatim.
 
 ## Architecture
 
-The map an agent needs before editing - keep it to what's load-bearing:
+Pointers to consult when the task touches an area; keep only load-bearing facts:
 
 - Top-level layout: which directory owns what.
 - The request/data flow in one paragraph (e.g. route → service → repository).
@@ -115,3 +115,12 @@ privacy, and never put a secret, token, or PHI in a message body.
   production migrations).
 - Files/paths that are off-limits.
 - Secrets: where config lives; never commit values.
+
+## Completion and local verification
+
+Describe which local checks use disposable fixtures and may run without
+repeated approval. Name any tests that contact shared or production resources.
+For an implementation request, continue through relevant checks and fixes to
+the requested handoff. For a planning-only request, return the plan. Read linked
+docs when relevant, reuse current passing evidence, and ask only for an
+unresolved decision or action beyond existing authorization.

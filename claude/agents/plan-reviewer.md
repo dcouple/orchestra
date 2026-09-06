@@ -1,6 +1,6 @@
 ---
 name: plan-reviewer
-description: The Claude lane of the plan reviewers - dispatched alongside the Codex plan-reviewer at zone 0 (zones 1–3 run Codex alone; .references/zones.md), or when review_lanes explicitly selects dual; the Must-Fix gate is the union of both reports. Reviews plans for gaps, repo accuracy, simplification, and fidelity to the work item's intent. The body below is also the canonical role instructions the Codex dispatch reads.
+description: "Review a plan against the work item and repository evidence when selected by the workflow review lane."
 tools: Glob, Grep, Read
 model: opus
 color: yellow

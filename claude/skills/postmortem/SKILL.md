@@ -1,6 +1,6 @@
 ---
 name: postmortem
-description: Runs a postmortem on a /do run - after the human reviewed the PR, or as a routine after-run review. Covers two dimensions: how the run RAN (wall-clock, agent-active vs idle-waiting-on-human, stalls, blockers - always) and, when the result fell short of intent, WHY (root cause in our system). Use when the user says a /do run missed the mark or asks "why did /do get this wrong", when any workflow skill produced the wrong outcome, or simply to review how a completed run spent its time. Proposes the system improvements the findings support - never applied, never a gate.
+description: "Analyze a completed workflow run for operational cost and causes of a missed outcome; propose supported improvements."
 argument-hint: "[PR url/# or work-item id]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: Investigates bugs through a single evidence-driven investigator, scaling from a normal root-cause pass to a deep falsifiable experiment loop. Use when something is broken, failing, or behaving unexpectedly.
+description: "Find the root cause of broken behavior when diagnosis is requested or needed before a fix."
 argument-hint: "[bug description, error message, or unexpected behavior]"
 ---
 

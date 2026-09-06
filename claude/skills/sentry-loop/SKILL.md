@@ -1,6 +1,6 @@
 ---
 name: sentry-loop
-description: On-demand Sentry triage loop - sweep every project's errors over a time window, classify each issue (new / recurring / regressed, user-impacting / zero-user, real / noise), root-cause only the clusters that matter, file findings into the work tracker under the loop's label, and annotate Sentry so the state sticks. Use when the user asks to run the sentry loop, triage Sentry, "what's new in Sentry", or wants a period's errors root-caused. Report-only - fixes go through /create-brief then /do.
+description: "Triage Sentry errors and publish findings when the user requests a Sentry sweep; implementation is a separate task."
 argument-hint: "[time window, default 7d]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: Investigate broken behavior using the shared evidence-driven method, scaling from a normal root-cause pass to a deep falsifiable experiment loop.
+description: "Find the root cause of broken behavior when diagnosis is requested or needed before a fix."
 ---
 
 # Investigate

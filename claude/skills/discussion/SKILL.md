@@ -1,6 +1,6 @@
 ---
 name: discussion
-description: Interactive back-and-forth to clarify, understand, or figure something out - an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything - e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-brief.
+description: "Explore an unresolved idea, tradeoff, or suspected bug when the user wants discussion before committing to work."
 argument-hint: "[idea, question, or topic]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: create-brief
-description: Captures discussed work as a work item ready for /do - a feature brief for changes and additions (single-outcome or multi-phase), a bug brief for defects (running the investigator first if the root cause isn't established). Use when a conversation has converged on buildable work that has no work item yet - whether the user asks to capture it or convergence makes capture the obvious next step. Do not invoke for a passing idea, an unconverged thread, or work that already has an item.
+description: "Capture agreed work as a feature or bug brief for /do. Use when buildable work needs a new work item."
 argument-hint: "[title or one-line summary]"
 ---
 

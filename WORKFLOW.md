@@ -139,3 +139,12 @@ one-way into each consumer repo by that repo's `update-skills` script
 (`pnpm update-skills` in bloomapi/bloom-mono), which wraps `scripts/sync.sh`.
 The old per-machine rsync to `~/.claude`, `~/.codex`, and `~/.references` is
 retired.
+
+## Reading a workflow
+
+Both `/do` entrypoints keep role routing, continuation, and phase state in
+`SKILL.md`. Their `references/` folders hold each stage's execution contract.
+Read execution boundaries once, then the current stage; load formats and
+surface-specific details when that stage calls for them. A docs-only change
+does not require an app boot. Existing review budgets, explicit lane settings,
+acceptance evidence, and final QA still determine the handoff.

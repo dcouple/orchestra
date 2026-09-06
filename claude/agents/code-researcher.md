@@ -1,6 +1,6 @@
 ---
 name: code-researcher
-description: Backup for the Codex code-researcher - codebase research normally runs via the codex skill. Explores the codebase and returns file:line findings. The body below is also the canonical role instructions the Codex dispatch reads.
+description: "Locate repository facts with file and line evidence when dispatched for codebase research."
 tools: Read, Grep, Glob, LS
 model: sonnet
 color: blue

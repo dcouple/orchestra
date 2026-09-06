@@ -1,6 +1,6 @@
 ---
 name: prepare-pull-request
-description: Take ad-hoc changes made in-session (outside /do) to a pull request - gate them through Socrates (right approach?) and the PR reviewers (correct?), then commit, push, and open the PR in the repo's standard format. /do handles its own PR prep; this skill is for everything else.
+description: "Prepare ad-hoc changes for a reviewed pull request outside the /do pipeline."
 argument-hint: "[optional: issue # to close, or extra context for the PR body]"
 ---
 
@@ -24,8 +24,9 @@ run `/do`'s readiness or status lifecycle and does not prompt for tracker auth.
 
 ## Step 1: Preflight
 
-- Never work on the default branch. If on it, stop and ask the user to set
-  up a branch - don't create one silently.
+- Create a named work branch when starting on the default branch. Preserve
+  unrelated edits and other tasks' PR branches with an isolated worktree when
+  needed. Ask only if ownership or the intended base remains ambiguous.
 - Review `git status` and `git diff` so the gates and the PR describe what
   actually changed, not what you remember changing. If the working tree
   contains files you didn't produce this session, confirm with the user
@@ -97,7 +98,7 @@ names):
 ## Step 6: Open the PR
 
 - Title: same `type: short imperative summary` style as the commit.
-- Write the body following the `/do` skill's `references/pr-body.md` - the
+- Write the body following [the PR body format](../do/references/pr-body.md) - the
   single source for the section spine, the body-state / comment-proof split,
   and the pre-open checklist. Right-size to an ad-hoc change:
   **Summary** (from the final `intent.md`), **Verification**, and **Residual
