@@ -14,8 +14,8 @@ The system at a glance:
 
 _Source: [docs/workflow-map.excalidraw](docs/workflow-map.excalidraw)_
 
-And the story of how it got here - conducted by hand, then Orchestra running
-itself, next the factory that feeds itself:
+The evolution from manually coordinated stages to an autonomous pipeline,
+with signal-driven intake as a direction for further automation:
 
 ![From workflow to software factory](docs/software-factory-story.png)
 
@@ -28,12 +28,12 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 |---|---|---|
 | `claude/skills/` | Claude Code workflow skills (`/do`, `/create-brief`, `/discussion`, `/investigate`, `/prepare-pull-request`, `postmortem`, `postmortem-loop`, `sentry-loop`, `codex`, `excalidraw-pr-diagrams`, `cold-read`) | `.claude/skills/` |
 | `claude/agents/` | Claude sub-agent definitions (reviewers, researchers, verifiers, socrates) | `.claude/agents/` |
-| `codex/skills/` | Codex role skills (implementer, verifiers, reviewers, researcher, investigator, refactor-simple/-deep) - thin pointers into `references/` | `.codex/skills/` |
+| `codex/skills/` | Codex `/do` and `/investigate` workflows, plus role skills for implementation, verification, review, research, and refactoring | `.codex/skills/` |
 | `references/` | Shared skill-system documents: work-item formats, verification methods, rubrics, sub-agent role instructions and output formats | `.references/` |
 | `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) to copy into a new consumer repo and fill in | not synced - copied once by hand |
 | `daemon/` | Orchestra-only Linear agent webhook service (macOS/launchd behind a Cloudflare Tunnel, or Linux/systemd); each deployment's identity comes from a site config kept in the consumer repo | not synced |
 | `machines/` | Orchestra-only, versioned physical-machine setup and operations artifacts | not synced |
-| `scripts/sync.sh` | The mirror logic (four `rsync --delete` targets) | - |
+| `scripts/sync.sh` | Mirrors Orchestra-owned entries in four destinations; preserves consumer-only entries | - |
 
 ## The rules that keep this sane
 
@@ -41,8 +41,8 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
    carries an `update-skills` script (e.g. `pnpm update-skills` in
    bloomapi/bloom-mono) that fetches this repo's `main`, runs
    `scripts/sync.sh` against a temp worktree, and opens (or force-updates)
-   the consumer's `chore/orchestra-sync` PR. Run it after pushing a skill
-   change here.
+   the consumer's `chore/orchestra-sync` PR. Once the change is on `main`,
+   run that consumer flow when its sync is authorized.
 2. **Repo-agnostic skills.** Nothing in the synced directories may name a
    specific codebase, database ID, or machine path. All paths are
    consumer-repo-relative (`.references/…`, `.claude/agents/…`).
@@ -53,9 +53,11 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
    wherever the consumer's `AGENTS.md` `Work-item tracking` section says
    (GitHub issues, Linear, anything the repo documents), and with no
    instructions there they stay local-only in `./tmp/<id>/`.
-4. **Idempotent.** The sync is a full mirror (`rsync --delete`); running it
-   twice produces zero diff. Nothing in the synced dirs is written to at
-   runtime.
+4. **Idempotent.** Each Orchestra-owned directory is an exact mirror
+   (`rsync --delete` within that entry); consumer-only entries remain.
+   Retired top-level names are removed by explicit lists in the scripts.
+   Running a sync twice produces zero diff. Runtime artifacts live outside
+   the synced instruction directories.
 5. **Postmortems** are posted as comments on the run's work item and PR -
    never as separate tracker issues (local-only when no tracker/anchor
    exists); proposed system changes are applied here in orchestra.
@@ -118,3 +120,17 @@ This repo supersedes the `tyler/` tree of `dcouple/skills`, which previously
 synced to `~/.claude`, `~/.codex`, and `~/.references` on each machine. Skills
 now travel with each consumer repo instead, so clones, CI, and cloud agents
 get them with no machine setup.
+
+## Reading and maintaining the workflows
+
+The Claude and Codex `/do` entrypoints route to stage-specific references:
+load execution boundaries once, then the current stage. Research depth,
+review lanes, and QA follow the work item's evidence requirements and the
+selected harness. Existing authorization carries through scoped edits,
+checks, fixes, and the requested PR handoff; merge and deployment have their
+own authorization boundaries.
+
+Use [WORKFLOW.md](WORKFLOW.md) for the stage map and authoritative role links.
+The [diagram index](docs/README.md) identifies each visual's scope and render
+command. Update both the Excalidraw source and its PNG when a depicted
+workflow changes.

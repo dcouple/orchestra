@@ -17,7 +17,9 @@ describe("browser publication contract", () => {
     const verifier = readFileSync(resolve("../claude/agents/frontend-verifier.md"), "utf8");
     const result = readFileSync(resolve("../references/agents/frontend-verifier/verification-result.md"), "utf8");
     const qa = readFileSync(resolve("../references/qa-verification.md"), "utf8");
-    const doSkill = readFileSync(resolve("../claude/skills/do/SKILL.md"), "utf8");
+    const doSkill = ["SKILL.md", "references/preflight.md", "references/review-qa.md"]
+      .map(path => readFileSync(resolve("../claude/skills/do", path), "utf8"))
+      .join("\n");
     for (const text of [verifier, result, qa, doSkill]) expect(text).toContain("evidence-manifest.json");
     for (const kind of ["screenshot", "trace", "console", "network", "video"]) expect(`${verifier}\n${result}`).toContain(kind);
     expect(doSkill).toContain("git status --short");

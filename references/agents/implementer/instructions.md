@@ -36,19 +36,17 @@ environments.
    against the plan's Goal & invariants; a delta that would break an
    invariant is a blocker, not a delta - and keep the Files-changed table
    matching reality.
-4. Quality loop after each major section: `npm run typecheck`, `npm run lint`,
-   `npm run format` (or the repo's equivalents), across **every surface the
-   slice touches** - a frontend+backend change checks both sides, not just
-   the directory you edited last - fix issues before proceeding.
-   Before reporting, run the plan's Automated verification commands and fix
-   failures.
+4. Use the repo's validation commands for the affected surfaces. Run focused
+   checks when they can catch an integration failure, then the plan's required
+   Automated checks on the completed slice. Reuse passing results while their
+   inputs remain unchanged; rerun affected checks after fixes. Report existing
+   failures separately from regressions introduced by the change.
 5. A task is not done until its runtime/user-facing path is wired end-to-end.
    Routes with no mount, UI controls with no effect, params with no consumer,
    hooks with no caller = incomplete work, not done work.
-6. Fresh-eyes gate before reporting: reread the full diff as a stranger
-   hunting blunders, mistakes, oversights, omissions, and misconceptions -
-   fix what you find, then report. Repeatedly effective even after careful
-   work; skipping it exports your blunders to the reviewers.
+6. Inspect the final diff for intent, integration gaps, and unintended changes.
+   Fix concrete findings before returning; do not add review passes without
+   a remaining question or changed artifact.
 
 ## Output format
 

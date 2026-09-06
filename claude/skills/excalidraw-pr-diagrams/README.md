@@ -9,7 +9,7 @@ Compatible with any coding agent that supports skills. Use `.claude/skills/` for
 - **Diagrams that argue, not display.** Every shape/group of shapes mirrors the concept it represents - fan-outs for one-to-many, timelines for sequences, convergence for aggregation. No uniform card grids.
 - **Evidence artifacts.** As an example, technical diagrams include real code snippets and actual JSON payloads.
 - **Built-in visual validation.** A Playwright-based render pipeline lets the agent see its own output, catch layout issues (overlapping text, misaligned arrows, unbalanced spacing), and fix them in a loop before delivering.
-- **PR-ready handoff.** The skill covers shareable reviewer explainers, committed PR assets, raw GitHub image URLs, and PR body preview checks.
+- **PR-ready handoff.** The skill covers shareable reviewer explainers, durable hosted assets, tracked documentation images, and PR body readback checks.
 - **Brand-customizable.** All colors and brand styles live in a single file (`references/color-palette.md`). Swap it out and every diagram follows your palette.
 
 ## Installation
@@ -23,7 +23,7 @@ The skill includes a render pipeline that lets the agent visually validate its d
 
 **Option A: Ask your coding agent (easiest)**
 
-Just tell your agent: *"Set up the Excalidraw diagram skill renderer by following the instructions in SKILL.md."* It will run the commands for you.
+Just tell your agent: *"Set up the Excalidraw diagram skill renderer by following references/rendering.md linked from SKILL.md."* It will run the commands for you.
 
 **Option B: Manual**
 
@@ -43,7 +43,7 @@ Ask your coding agent to create a diagram:
 
 Or ask for a PR visual overview:
 
-> "Create a shareable PR diagram that explains the before and after behavior, commit the PNG under .github/pr-assets, and update the PR body."
+> "Create a shareable PR diagram that explains the before and after behavior, publish the PNG to the authorized asset host, and update the PR body."
 
 The skill handles the rest - concept mapping, layout, JSON generation, rendering, and visual validation.
 
@@ -55,8 +55,12 @@ Edit `references/color-palette.md` to match your brand. Everything else in the s
 
 ```
 excalidraw-pr-diagrams/
-  SKILL.md                          # Design methodology + workflow
+  SKILL.md                          # Entry router, outcomes, and permissions
   references/
+    publishing.md                  # External writes, hosting, and readback
+    design.md                      # Conditional design methodology
+    patterns.md                    # Layout and visual pattern reference
+    rendering.md                   # Render, inspect, and stop when clear
     color-palette.md                # Brand colors (edit this to customize)
     element-templates.md            # JSON templates for each element type
     json-schema.md                  # Excalidraw JSON format reference
@@ -64,3 +68,16 @@ excalidraw-pr-diagrams/
     render_template.html            # Browser template for rendering
     pyproject.toml                  # Python dependencies (playwright)
 ```
+
+## Loading and completion
+
+Start with [SKILL.md](SKILL.md). Read the publishing contract before an external
+write, rendering instructions before changing JSON, and design or pattern
+details when the diagram needs them. Rendering and visual inspection are
+required; stop once the result is accurate, legible, and free of layout errors.
+There is no minimum number of polish passes.
+
+Keep PR working artifacts in scratch. Commit documentation assets when the
+tracked docs need them and the task authorizes it; keep edited sources and PNGs
+in agreement. Publishing, release creation, and asset replacement retain their
+specific authorization requirements in [publishing.md](references/publishing.md).

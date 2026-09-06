@@ -20,14 +20,14 @@ Which command starts the session is the whole switch:
 
 ## Why orchestra needs no configuration for this
 
-- Every Claude-side step (plan-reviewer, code-reviewer, socrates,
-  frontend-implementer, the /do orchestrator itself) runs as an **in-session
-  subagent** via the Agent tool and inherits the session's model and auth. No
-  skill shells out to a `claude` CLI.
+- The `/do` Overseer runs in the main session. Claude-side roles
+  (plan-reviewer, code-reviewer, socrates, frontend-verifier, and researchers)
+  run as subagents via the Agent tool using that session's provider and auth.
+  Role model pins are routed through the aliases below.
 - The Codex lanes (`codex exec` in the codex skill) use their own CLI and
   auth - unaffected by which command launched the session.
 - Some agent definitions pin `model: opus` / `model: sonnet` in frontmatter.
-  The alias's `ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS}_MODEL` remaps route
+  The alias's `ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS,FABLE}_MODEL` remaps route
   those through the proxy too, so pinned agents can't accidentally try (and
   fail) to reach Anthropic.
 
@@ -40,7 +40,7 @@ guide), and the alias maps each Claude model alias onto a tier:
 | Claude Code asks for | Routed to | Effort | Used by |
 | --- | --- | --- | --- |
 | the `--model` (main loop) | `gpt-5.6-sol` | high | the orchestrator session itself |
-| `opus` (frontmatter pins) | `gpt-5.6-sol-medium` | medium | code-reviewer, plan-reviewer, frontend-implementer |
+| `opus` (frontmatter pins) | `gpt-5.6-sol-medium` | medium | code-reviewer, plan-reviewer |
 | `fable` (frontmatter pins) | `gpt-5.6-sol-xhigh` | xhigh | socrates - the Socratic gate gets the strongest tier |
 | `sonnet` (frontmatter pins) | `gpt-5.6-sol-low` | low | code-researcher, web-researcher, frontend-verifier |
 | `haiku` (background chores) | `gpt-5.6-sol-low` | low | session titles, other harness trivia |
@@ -76,8 +76,8 @@ From this repo's root (or any consumer repo):
 claudex -p "Dispatch two subagents in parallel via the Agent tool: 'socrates' and 'code-researcher', each with the prompt: 'Reply with exactly: OK'. Report both replies."
 ```
 
-Both replies coming back proves the chain end-to-end: the opus pin resolved
-to `gpt-5.6-sol-medium` and the sonnet pin to `gpt-5.6-sol-low`, dispatched
+Both replies coming back proves the chain end-to-end: the fable pin resolved
+to `gpt-5.6-sol-xhigh` and the sonnet pin to `gpt-5.6-sol-low`, dispatched
 through the proxy, and answered. A failure means the
 `ANTHROPIC_DEFAULT_*_MODEL` remaps are missing from the alias or the model
 forks are missing from the proxy config.

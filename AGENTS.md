@@ -93,3 +93,24 @@ artifact_host: https://linear-agent.blmapp.com
 - Never run `scripts/sync.sh` pointed at a consumer repo automatically -
   syncs land in consumers via their own `update-skills` PR flow.
 - Don't commit `./tmp/` or `.DS_Store`.
+
+## Completing changes
+
+For an implementation or PR request, continue through the scoped edits,
+relevant verification, fixes, and requested PR handoff. Create a work branch or
+isolated worktree as needed. A plan or first implementation is not completion.
+Existing session authorization covers repeated in-scope local edits and checks;
+merge, release, deployment, production actions, and consumer sync need their own
+scope of authorization.
+
+Inspect the affected instructions, callers, and formats. Load other docs only
+when their subject matters to the change. Validate Markdown routes and sync
+behavior for skill changes; run daemon checks when daemon code or its contracts
+change. The local dispatch-survival check uses disposable fixtures. Continue
+its local repair/rerun cycle without asking again. Reuse passing checks until
+a relevant input changes; read back pushes and PR state before reporting them.
+
+Keep discovery descriptions brief and specific. Put conditional procedures in
+linked references with a clear read condition. Preserve model-independent role,
+permission, output, and evidence contracts; avoid adding a gate solely because
+a model once needed handholding.

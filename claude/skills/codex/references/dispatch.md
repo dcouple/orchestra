@@ -1,0 +1,178 @@
+# Dispatch mechanics
+
+## Steps
+
+### 1. Build the prompt
+Every prompt names the role instructions and output format by absolute path -
+Codex reads them itself:
+
+```
+You are acting as the <role> in an automated software-development pipeline
+conducted by the Overseer, a separate orchestrating agent. You are a
+sub-agent - a leaf of this pipeline: never spawn further agents or invoke
+agent CLIs (`codex exec`, `claude`, or any equivalent) - do the work in
+this session yourself and print your report. Your report is
+consumed by the Overseer, not by a human. <omit for the implementer, whose
+work product is the diff and the updated plan.md: It is the sole evidence
+the Overseer acts on; what you miss, the pipeline misses.>
+
+First read these two files:
+1. Your role instructions: <instructions path per the mapping below>.
+2. Your output format: <format path per the mapping below> - your
+   final message must follow it exactly.
+
+Inputs for this run:
+- work item: <item path - capture-time dispatches only; inside a /do run, sub-agents work from the implementation plan, not the brief (sole exception: the plan-reviewer also gets the brief - checking the plan against it is its job)>
+- plan: <plan path, if the role uses one>
+- question / defect report: <for code-researcher / investigator>
+- review pass: <k>/<cap> <reviewers only - the dispatch states the resolved cap; /do derives it from the run's zone>
+- prior findings by ID: <reviewers, pass 2+> / fix instructions: <implementer fix rounds>
+
+Print the report as your final message, in exactly the specified format.
+```
+
+Role instructions: Codex-only roles (implementer, investigator,
+backend-verifier, refactor-simple, refactor-deep) → `.references/agents/<role>/instructions.md` · roles
+with a Claude twin (code-researcher, plan-reviewer, code-reviewer) →
+`.claude/agents/<role>.md` (tell Codex to follow the body and ignore the
+YAML frontmatter - it applies to a different harness).
+
+Format files, under `.references/agents/<role>/`: implementer →
+`implementation-result.md` · plan-reviewer / code-reviewer →
+`review-report.md` · code-researcher → `codebase-findings.md` ·
+investigator → `root-cause-finding.md` · backend-verifier →
+`../frontend-verifier/verification-result.md` (shared verifier format,
+verify mode) · refactor-simple / refactor-deep → `refactor-report.md`.
+
+**Path resolution**: all paths are relative to the current repo root -
+`.references/` and `.claude/agents/` are synced into every consumer repo
+from `dcouple/orchestra`. Confirm both files exist before dispatching - a
+role that can't read its instructions improvises instead of failing.
+
+**Success criteria**: prompt carries the role, both file paths (resolved
+per the rule above, existence checked), and every input the role needs -
+nothing assumed from this conversation.
+
+### 2. Execute
+At every turn start, before launching new work, inspect
+`.codex-dispatches/${ORCHESTRA_DISPATCH_OWNER:-local}/*.done`. Pick up each
+completed report, then delete all files with that dispatch's basename after
+consuming it. Delete-on-consume is load-bearing: markers otherwise persist and
+the daemon deliberately enqueues at most one resume per marker.
+
+Delete with **literal paths only** - resolve the owner directory and the
+dispatch name first, then write them out in full:
+
+```bash
+rm -f .codex-dispatches/local/code-researcher-1756340000-4242-1.{prompt,sh,log,md,done,otel.json}
+```
+
+Never `rm` a path built from a shell variable or a glob under one
+(`rm -f "$dir/$name".*`): Claude Code's critical-path check prompts on that
+form even in bypass mode, and the prompt halts an unattended run.
+
+Launch every dispatch fully detached from the harness, from the repo root. The
+owner directory is `.codex-dispatches/$ORCHESTRA_DISPATCH_OWNER` when the daemon
+sets that variable to the Linear session UUID, and `.codex-dispatches/local`
+otherwise. Prepare it once per worktree:
+
+```bash
+own="${ORCHESTRA_DISPATCH_OWNER:-local}"; dir=".codex-dispatches/$own"
+mkdir -p "$dir"
+exclude="$(git rev-parse --git-path info/exclude)"
+grep -qxF '/.codex-dispatches/' "$exclude" 2>/dev/null || printf '/.codex-dispatches/\n' >> "$exclude"
+```
+
+For each launch choose
+`<name>=<role>-<epoch>-$$-<sequence>`, where the caller sequence is unique among
+concurrent launches. Write the prompt to `<name>.prompt` with a quoted heredoc,
+then write this launcher as `<name>.sh` (substitute the concrete paths and
+arguments while writing it):
+
+```bash
+#!/usr/bin/env bash
+perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' <cap> \
+  codex exec -m gpt-5.6-sol -c model_reasoning_effort="<effort>" --yolo \
+  [--ephemeral] --skip-git-repo-check -C <repo root> \
+  -o <owner dir>/<name>.md "$(cat <owner dir>/<name>.prompt)" </dev/null
+status=$?
+echo "$status" > <owner dir>/<name>.done.tmp && \
+  mv <owner dir>/<name>.done.tmp <owner dir>/<name>.done
+```
+
+Use a 900-second `<cap>` for `--ephemeral` roles and 2700 for the implementer.
+Redirect stdin as shown because Codex can hang on an open idle pipe. Detach the
+launcher itself with Perl's portable `setsid` (macOS has no `setsid` binary):
+
+```bash
+nohup perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec failed: $!"' \
+  bash <owner dir>/<name>.sh > <owner dir>/<name>.log 2>&1 & disown
+```
+
+For an implementer fix round, use the same launcher and marker write, replacing
+its command with the following so session context survives:
+
+```bash
+perl -e 'alarm shift; exec @ARGV or die "exec failed: $!"' 2700 \
+  codex exec resume --last --yolo -o <owner dir>/<name>.md \
+  "$(cat <owner dir>/<name>.prompt)" </dev/null
+status=$?
+echo "$status" > <owner dir>/<name>.done.tmp && \
+  mv <owner dir>/<name>.done.tmp <owner dir>/<name>.done
+```
+
+A resume dispatch carries `--yolo` exactly like a fresh one - a resumed
+session that loses it runs sandboxed and blocks the very tests the fix
+round must run. `resume` takes no `-C`: it matches recorded sessions by
+cwd, so launch it from the same repo root as the original dispatch.
+
+The marker convention is: `<name>.md` is the final report, `<name>.log` is
+durable stdout/stderr including the `tokens used` summary, and `<name>.done`
+contains exactly the exit code. The `.done` file is written even for failures,
+including watchdog exit 142. A tracked wait loop may poll only the marker for
+in-turn pickup; its death at turn end is harmless because the detached Codex
+process survives and turn-start pickup covers recovery.
+
+Parallel dispatches (e.g. several code-researchers, or a reviewer alongside a
+Claude sub-agent) are launched together. A dual-lane review that does not issue
+the detached launches together serializes the lanes and doubles wall-clock.
+
+**Success criteria**: `.done` exists, contains 0, and the sibling `.md` exists
+and is non-empty. Exit 142 is the watchdog's SIGALRM reap signature: it is a
+classified failure, not a success, and step 3 handles it.
+
+### 3. Return the report
+Read the output file. Check the status line the format requires (reviewers:
+`**Verdict:**` + `**Counts:**` with the Must Fix count - a reviewer report
+that arrives tiered P0–P3 instead is a valid report, not a failed run:
+P0/P1 ≡ Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have; map the tiers,
+synthesize the status line from the mapped counts yourself, and never
+burn a retry or re-dispatch over format · implementer:
+`**Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT` ·
+code-researcher: `**Bottom line:**` · investigator: `**Root cause:**` with a
+confidence word · backend-verifier: `**Verdict:**` pass|fail). Capture the
+token usage `codex exec` prints in its end-of-run summary from the dispatch's
+sibling `.log` file (the line after `tokens used`); per-turn detail lives in
+`~/.codex/sessions/<date>/rollout-*.jsonl` `token_count` events. `unknown` is
+only legal after checking both. For a resumed session the printed figure is
+**cumulative**: record the delta from the previous dispatch's figure as the
+round's cost and the final figure as the role total. Return the
+report verbatim to the caller, prefixed with one line:
+`CODEX <role>: <status line> · tokens <n | unknown>` - the Overseer sums
+these per role into the wrap-up's run record.
+
+Exit 142 (a SIGALRM watchdog reap) classifies the dispatch as a hung run. Retry
+a hung, errored, timed-out, or status-line-missing run once: make a fresh
+dispatch for an ephemeral role, or use `resume --last` for the implementer so
+its session context survives. A retry that is also reaped never gets a third
+Codex dispatch - a workload that wedged twice stays wedged: reviewer,
+researcher, and verifier work routes to a Claude sub-agent dispatch instead;
+the implementer has no Claude counterpart, so a twice-reaped implementer
+returns the error plus whatever output exists to the caller. Otherwise return
+the error plus whatever output exists after the single retry. A report of `listen EPERM` (the sandbox denied loopback
+binds) is a completed run, not a failure: accept the edits and run the blocked
+check at the Overseer, or hand it to the next verifier dispatch, instead of
+re-dispatching.
+
+**Success criteria**: caller received a well-formed report (or the error
+after one retry).
