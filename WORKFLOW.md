@@ -1,150 +1,113 @@
 # The workflow
 
-A dual-harness development workflow. Claude Code is the orchestrating
-harness: Fable makes the judgment calls and dispatches sub-agents; Codex
-(GPT-5.6) runs the engineering-heavy roles.
-
-The whole system at a glance:
+Orchestra captures a work item, executes its scoped outcome, and hands over a
+reviewed PR with evidence. Claude Code and Codex have separate `/do`
+entrypoints. They share artifacts and role contracts while retaining their
+own dispatch, review-budget, and browser procedures.
 
 ![Orchestra workflow map](docs/workflow-map.png)
 
 _Source: [docs/workflow-map.excalidraw](docs/workflow-map.excalidraw)_
 
-The flow separates *clarity*, *capture*, and *execution*:
+## Choose the entrypoint
 
-1. **`/discussion`** - clarify, understand, figure out. General-purpose: it
-   dispatches the code-researcher / `web-researcher` for questions and the
-   investigator (with `frontend-verifier` for reproduction) when the topic is a
-   defect. It produces clarity plus a dated decision log
-   (`./tmp/discussions/`) that the `/create-brief` drafting step reads - never
-   deliverables.
-2. **`/create-brief`** - the capture skill, invoked by the user or by the
-   model when a conversation converges. It turns what the conversation
-   established into a work item at `./tmp/<id>/brief.html` (a feature or bug
-   brief - single-outcome or multi-phase, phases being a property of the
-   item; raw sources and research sub-reports in `./tmp/<id>/refs/`) with a
-   Dependencies & mechanics inventory (verified vs assumed, explicit schema
-   delta, sequencing) and verification criteria. The brief page is both the
-   alignment surface the user reads in the browser and the contract `/do`
-   executes against - machine state lives in its `#orchestra-meta` head
-   block (`references/html-brief.md`). It then **publishes** wherever the
-   project's `AGENTS.md` `Work-item tracking` section says - with an
-   `artifact_host`, a lean tracker body pointing at the bundle; without
-   one, a markdown rendition of the brief as the issue body with the HTML
-   riding as marker comments; with no destination at all, the item stays
-   local in `./tmp/<id>/` and the skill says so. `/create-brief` runs
-   the investigator itself if the root cause isn't already established.
-   Before publish, every draft passes the **Socratic gate**: the `socrates`
-   sub-agent takes an adversarial position on the item's premise (needed at
-   all? root cause or symptom? simpler path? right shape? which dependency
-   is assumed rather than verified? the whole of it?) and the user's
-   answers - distilled into the brief's Justification section - travel with
-   the published item. Intensity is socrates' own calibration
-   (`claude/agents/socrates.md`).
-3. **`/do <item ref or path>`** - the autonomous pipeline: pull the work
-   item's artifacts into `./tmp/<id>/` (fetched per the project
-   `AGENTS.md`'s `Work-item tracking` instructions - e.g. harvested from a
-   GitHub issue's artifact comments - or read from `./tmp/<id>/` when the
-   repo configures no tracker) →
-   zone-derived dials (`references/zones.md`) → plan + review loop (full lane backed by
-   a research dossier, every plan under the evidence contract) → implement →
-   verify → build gate + deploy-notes scan + PR → post-PR review loop + QA
-   pass over the PR's manual tests → wrap-up, with the wrap-up posted as a
-   PR comment at the end. Deliberately high-level:
-   the Overseer applies the item's zone (escalating one notch at most), how much research a plan needs, and when
-   each review loop has converged.
-4. **`/prepare-pull-request`** - the exit ramp for ad-hoc changes made in a
-   session *outside* `/do` (which handles its own PR prep). It retrofits
-   the pipeline's gates before anything goes up: the Overseer materializes
-   an `intent.md` + diff under `./tmp/pr-<branch>/`, Socrates challenges
-   the approach in PR mode (sunk cost is not a defense; diff-vs-intent
-   fidelity joins the attack lines), both code reviewers gate correctness
-   (union Must-Fix, cap 3 passes), then build gate → commit → PR in the
-   repo's documented format.
-5. **`/postmortem`** - when a result falls short, root-cause it in *our
-   system* (skill/agent/template), not just the code.
-
-## Model routing
-
-This table is the single source of truth for model routing - the guides and
-skills point here; update it first when routing changes, and update `/do`'s
-**Sub-agents** paragraph in the same commit: this file is not synced to
-consumer repos, so the skills' restatement is what actually executes.
-
-| Role | Runs on | Notes |
+| Need | Entry | Result |
 | --- | --- | --- |
-| Overseer (conducts `/do`, all judgment) | main session - Fable | |
-| Web research | Claude `web-researcher` - Sonnet | |
-| App-driving QA (one run, post-PR: UI ACs + Manual tests, journey captures) | Claude `frontend-verifier` - Sonnet | also reproduces failures for /discussion & /create-brief |
-| Verify backend (tests/scripts) | **Codex** GPT-5.6 `low` | |
-| Explore codebase | **Codex** GPT-5.6 `low` | Claude `code-researcher` (Sonnet) as backup |
-| Reproduce & root-cause | **Codex** GPT-5.6 `low` | |
-| Write the diff - all surfaces, one dispatch per vertical slice | **Codex** GPT-5.6 `medium` | fix rounds resume the same session; repo statically green after every dispatch |
-| Challenge the draft work item (Socratic gate) | Claude `socrates` - Fable | always invoked by `/create-brief`; self-calibrates - fast-passes straightforward drafts, full challenge for multi-phase/unargued items |
-| Review the plan | dual at zone 0 (Codex GPT-5.6 `low` + Claude `plan-reviewer` (Opus)); zones 1–3 Codex alone | Must-Fix gate = union of the lanes run |
-| Review the diff + security | dual at zone 0 (Codex GPT-5.6 `low` + Claude `code-reviewer` (Opus)); zones 1–3 Codex alone | Must-Fix gate = union of the lanes run |
+| Clarify an idea or decision | [Claude `/discussion`](claude/skills/discussion/SKILL.md) | Clarity and a dated decision log under `./tmp/discussions/` |
+| Reproduce and explain a defect | [Claude `/investigate`](claude/skills/investigate/SKILL.md) or [Codex `/investigate`](codex/skills/investigate/SKILL.md) | Root-cause evidence for the next decision |
+| Capture a work item | [Claude `/create-brief`](claude/skills/create-brief/SKILL.md) | `brief.html`, acceptance criteria, justification, and supporting `refs/` |
+| Execute a ready work item | [Claude `/do`](claude/skills/do/SKILL.md) or [Codex `/do`](codex/skills/do/SKILL.md) | Implementation, review, QA, PR, and wrap-up |
+| Prepare ad-hoc changes for review | [Claude `/prepare-pull-request`](claude/skills/prepare-pull-request/SKILL.md) | Intent check, Socratic challenge, code review, build gate, and PR |
+| Learn from a result that fell short | [Claude `/postmortem`](claude/skills/postmortem/SKILL.md) | System-level root cause and an improvement proposal |
 
-Every Codex role is dispatched by the **`codex` skill**
-(`claude/skills/codex/`), the one place that knows the `codex exec`
-mechanics per role - model, effort, session mode (`--yolo` for every role;
-reviewers/researchers ephemeral and no-edit by charter; implementer
-persistent with `resume --last` across fix rounds), output capture, and
-status-line parsing.
+`/create-brief` runs the Socratic gate before publication and preserves its
+alignment pause. Work items follow the consumer's `AGENTS.md` work-item
+tracking configuration. An artifact host carries the complete bundle with a
+lean tracker body; other configured destinations follow the
+[publishing contract](references/publish-work-item.md). With no configured
+destination, artifacts stay local under `./tmp/<id>/`.
 
-Review loops exit when **no Must Fix remains from either reviewer** - a
-Codex report tiered P0–P3 maps rather than reformats (P0/P1 ≡ Must Fix,
-P2 ≡ Should Fix, P3 ≡ Nice to Have). Caps are ceilings, never quotas: a
-zero-Must-Fix pass ends the loop even with Should Fixes open (the Overseer
-applies those at its discretion, no re-review), and the only other trigger
-for an extra pass is the two lanes sharply diverging. When reviewers disagree,
-the Overseer adjudicates directly, using sub-agents to understand what is true
-when needed. The Overseer flags anything left unresolved at a cap in the
-wrap-up. Codex efforts are defaults - `medium` for the
-implementer, `low` for every other role; the dispatcher may raise a
-reviewer to `medium` or `high` rarely, when the zone warrants it (zone 0
-or a multi-phase item), with the reason stated in the dispatch - never above `high`. `/do` and
-`/prepare-pull-request` are user-invoked only (`disable-model-invocation`). The
-`/create-brief` capture skill is model-invocable at convergence, with publish still gated by
-its alignment pause.
+`/do` is user-invoked (`disable-model-invocation: true`). Invocation metadata
+for other skills lives in their own frontmatter.
 
-## Where formats live (single copy each - no duplicates to drift)
+## Execute by stage
 
-- **`references/`** (synced to `.references/` in each consumer repo -
-  harness-neutral) - anything referenced by more than
-  one skill, or by any agent: the shared blocks (`verification-criteria.md`,
-  `verification-methods.md`, `rubrics/` - per-surface verification rubrics,
-  `code-quality.md` - the reviewers' house-rules rubric, `qa-verification.md`
-  - the QA pass's external-evidence discipline, `system-analysis.md`,
-  `publish-work-item.md`, `html-brief.md` +
-  `brief-template.html` - the work-item page contract and skeleton,
-  `socratic-gate.md`) and every agent's output format
-  (`references/agents/<agent>/…`). Agents are flat `.md` files by design
-  (Claude Code has no agent-folder format), so each agent's body carries a
-  pointer - "Read `.references/agents/<name>/<format>.md`" - plus a few
-  non-negotiable lines as a safety net if the file is missing.
-- **`claude/skills/<name>/references/`** - document formats produced by
-  exactly one skill (implementation-plan, wrap-up-report, postmortem).
+Read `references/execution-boundaries.md` once from the selected `/do`
+directory, then load the current stage. Paths inside stage files resolve from
+that skill directory. Shared `.references/` paths resolve from the consumer
+repo, or from the rewritten user-level installation.
 
-The five workflow skills above, plus two infrastructure skills the others
-invoke - `codex` (dispatches Codex roles) and `excalidraw-pr-diagrams` (the
-PR visual-overview standard `/do`'s PR step uses) - are the whole surface. Web research is the
-`web-researcher` sub-agent, review lives inside `/do` (plan review before
-implement, code review + QA after the PR opens), and all commit/PR prep
-lives in `/do`'s PR step.
+| Stage | Contract file in each `/do/references/` | Work |
+| --- | --- | --- |
+| 0 | `preflight.md` | Load the ready item and its criteria; inspect relevant project instructions, tools, and working state |
+| 1 | `plan.md` | Apply zone and explicit item settings; gather the required research and review the evidence-backed plan |
+| 2 | `implement.md` | Implement the scoped change and integrate review fixes |
+| 3 | `verify.md` | Prove command-shaped criteria; carry app-only criteria into final QA |
+| 4 | `pull-request.md` | Build gate, deploy-notes scan, commit, push, and prepare the PR with its required evidence |
+| 5 | `review-qa.md` | Review the PR, resolve material findings within budget, and perform the applicable final QA |
+| 6 | `wrap-up.md` | Record actual results, unresolved evidence, run statistics, and the PR handoff |
 
-## Keeping in sync
+The stage routers are the [Claude `/do`](claude/skills/do/SKILL.md) and
+[Codex `/do`](codex/skills/do/SKILL.md) roots. Their linked files contain the
+full procedures, output formats, and harness-specific exceptions. Load
+conditional references only when their subject applies. A docs-only change
+does not require an app boot, and passing evidence remains usable until a
+relevant input changes.
 
-See [README.md](README.md): skills are edited only in this repo and mirrored
-one-way into each consumer repo by that repo's `update-skills` script
-(`pnpm update-skills` in bloomapi/bloom-mono), which wraps `scripts/sync.sh`.
-The old per-machine rsync to `~/.claude`, `~/.codex`, and `~/.references` is
-retired.
+Stages continue under existing authorization. Local branch/worktree creation,
+scoped fixes, and relevant checks are part of execution. A planning-only
+request still returns its plan, and a prepared PR does not authorize merge,
+release, deployment, production changes, or broader scope. Missing evidence
+is recorded as blocked or unverified.
 
-## Reading a workflow
+Multi-phase items persist phase state in `plan-<n>.md` and chain phases
+without a new permission prompt. Review accounting follows the selected
+entrypoint; consult its phase and review-stage rules before dispatching.
 
-Both `/do` entrypoints keep role routing, continuation, and phase state in
-`SKILL.md`. Their `references/` folders hold each stage's execution contract.
-Read execution boundaries once, then the current stage; load formats and
-surface-specific details when that stage calls for them. A docs-only change
-does not require an app boot. Existing review budgets, explicit lane settings,
-acceptance evidence, and final QA still determine the handoff.
+## Role and model routing
+
+Executable routing lives in the skills and agent definitions linked below.
+This overview describes those contracts rather than duplicating model IDs
+that can drift from dispatch code.
+
+| Role | Claude `/do` | Codex `/do` |
+| --- | --- | --- |
+| Overseer | Main session; configured Claude/Claudex runtime | Main Codex session |
+| Implementation | Codex `implementer`, default effort `medium`, all surfaces | Codex `implementer`, default effort `low`, all surfaces |
+| Code research, investigation, backend verification | Codex roles through the dispatcher | Matching Codex role skills |
+| Plan and code review | Zone-derived lanes; dual Codex + Claude at zone 0 by default, Codex alone at zones 1–3; explicit item/runtime settings apply | Single Codex lane under this entrypoint |
+| External research | Claude `web-researcher` | Codex `web-researcher` |
+| App-driving final QA | Claude `frontend-verifier` | Codex `frontend-verifier`, local Playwright by default |
+
+The [Claude-to-Codex dispatcher](claude/skills/codex/SKILL.md) owns its
+configured model, effort, session, timeout, and result collection rules.
+Its [dispatch reference](claude/skills/codex/references/dispatch.md) loads
+only for a launch, resume, or collection operation. Read-only role charters
+and active harness permissions still apply to unattended CLI settings.
+
+Reviewers are independent of the implementer. A clean Must-Fix result ends
+the applicable review pass; budgets are ceilings. The
+[zones reference](references/zones.md) defines stakes and shared dials, while
+the selected entrypoint and review stage specify its lane and budget rules.
+Explicit item settings and documented runtime fallback remain visible in
+the plan and wrap-up. Optional tools such as `arena` are used only when their
+work would resolve material uncertainty and the tool is available.
+
+## Sources and supporting tools
+
+- [Shared references](references/README.md) hold work-item formats,
+  verification methods, rubrics, role instructions, and role output formats.
+- Each skill's own `references/` directory holds its stage procedures and
+  private formats. Both `/do` roots link to the implementation-plan, PR-body,
+  and wrap-up formats they produce.
+- [Claude skills](claude/skills/README.md), [Codex skills](codex/skills/README.md),
+  and [Claude agents](claude/agents/README.md) identify the current surface,
+  including the postmortem and Sentry loops, manual cold-read, refactoring
+  roles, and [Excalidraw diagrams](claude/skills/excalidraw-pr-diagrams/README.md).
+
+## Installation and visuals
+
+The [README](README.md) documents consumer-repo sync and the supported optional
+user-level installer. Consumer changes go through their authorized sync PR
+flow. [The visual index](docs/README.md) distinguishes the executable workflow
+map from the broader software-factory direction and explains regeneration.

@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 ## Work item: $ARGUMENTS
 
-You are the **Overseer** - the orchestrating agent (Fable, this session);
+You are the **Overseer** - the orchestrating agent (this Codex session);
 sub-agent role instructions and report formats refer to you by that name.
 Every judgment call is yours - the effective zone (one escalation notch), how much research
 the plan needs, when the plan is ready, when review findings are resolved. Dispatch sub-agents for the work; run fully
