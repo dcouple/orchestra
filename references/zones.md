@@ -22,7 +22,7 @@ be zone 2. `/do` derives its dials from the zone.
 
 | Zone | Review lanes | Loop caps (plan / global code review) | Frontend verifier | End QA pass | Research |
 |---|---|---|---|---|---|
-| 0 | dual (Codex + Claude), always | 3 / 4 | yes, when UI is touched | always | full (dossier) |
+| 0 | dual (Codex + Claude), always | 3 / 3 | yes, when UI is touched | always | full (dossier) |
 | 1 | single - Codex | 3 / 3 | when user-visible | always - full checklist when user-visible, command-shaped otherwise | full (dossier) |
 | 2 | single - Codex | 1 / 1 | only when reproduction needs the running app | command-shaped items only | direct (no dossier) |
 | 3 | **single - Codex** | 1 / 1 | no | no | direct |
@@ -64,7 +64,7 @@ never claimed passed.
   Should Fixes.
 - **The code-review cap is global to the run.** Every phase review, whole-PR
   review, confirmation pass, hosted review trigger, and QA-fix review spends
-  from the same counter. The zone chooses the ceiling shown above, and four is
+  from the same counter. The zone chooses the ceiling shown above, and three is
   an absolute maximum. The counter never resets, and at least one dispatch is
   reserved for the whole-PR review. A changed HEAD alone is not a review
   trigger; P2/P3 findings never trigger another pass.

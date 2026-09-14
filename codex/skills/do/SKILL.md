@@ -513,7 +513,7 @@ work gate on the final head. Only the administrative PR-readiness update
 follows successful QA.
 
 **One global code-review budget governs the entire run.** The zone sets the
-smaller ceiling; four reviewer dispatches is the absolute maximum at every
+smaller ceiling; three reviewer dispatches is the absolute maximum at every
 zone. Count every code-review invocation against the same cumulative ledger,
 including per-phase reviews, the whole-PR review, confirmation passes, hosted
 GitHub review triggers such as `@codex review`, and scoped reviews after QA
