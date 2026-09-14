@@ -13,13 +13,33 @@ the `Work-item tracking` section of the project's `AGENTS.md` (or
 
 `brief.html` and its `refs/` are always authored and kept locally under
 `./tmp/<id>/` - publishing never changes what exists on disk. The
-destination decides the transport: with an `artifact_host:` key the bundle
+destination decides the transport: `artifact_provider: grain` uses
+`.references/grain-artifacts.md` and the lean tracker contract below.
+Otherwise, with an `artifact_host:` key the bundle
 is the transport and the tracker gets a lean body (below); without one,
 fall back to a **markdown rendition** of the brief as the tracker body
-(**Without `artifact_host`** below). If the `Work-item tracking` section is
+(**Without a bundle provider** below). If the `Work-item tracking` section is
 missing or gives no publishing instructions, publish nowhere: the work item
 is complete as local files under `./tmp/<id>/`, and the user is told where
 they live.
+
+## With Grain
+
+When `artifact_provider: grain` is configured, follow
+`.references/grain-artifacts.md` for creation, complete-file pushes,
+retrieval, and failure handling. Use the same publication order as the
+artifact-host steps below: set ready, publish the complete bundle, record
+`artifact_bundle`, publish again with that pointer, create the lean tracker
+item, then update its full metadata and push the final tracker-linked brief.
+The tracker body, Linear attachment, phase list, link fields, and no-marker
+rules below apply unchanged. Replace each host POST/PUT with the appropriate
+Grain create/push operation; no bearer token or HTTP bundle endpoint is used.
+A failed initial publication blocks lean tracker creation.
+
+At plan-complete and wrap-up, update the recorded bundle using its transport,
+not the repository's current default. A `grain:` pointer uses Grain; an
+existing HTTP artifact-host pointer uses the host procedure below. Never
+silently relocate an existing work item or rewrite its legacy tracker body.
 
 ## With `artifact_host`
 
@@ -83,7 +103,7 @@ configured. A failed initial upload stops tracker publication because no
 lean body can point at a complete bundle. On a successful later upload,
 remove the failure field.
 
-## Without `artifact_host`
+## Without a bundle provider
 
 Set `status: ready` in the metadata, then create the tracker item, titled
 `<prefix> <item title>`. The tracker body is a **markdown rendition of the

@@ -80,7 +80,9 @@ sub-reports, plan.md, wrapup.md) locally under `./tmp/<id>/`.
 ```yaml
 tracker: github
 github_repo: dcouple/orchestra
-artifact_host: https://linear-agent.blmapp.com
+artifact_provider: grain
+grain_organization: dcouple
+grain_folder: repos/orchestra/Development Artifacts
 ```
 
 > Publish a lean GitHub issue body containing the brief's full metadata YAML, an Intent
@@ -93,3 +95,18 @@ artifact_host: https://linear-agent.blmapp.com
 - Never run `scripts/sync.sh` pointed at a consumer repo automatically -
   syncs land in consumers via their own `update-skills` PR flow.
 - Don't commit `./tmp/` or `.DS_Store`.
+
+## PR development artifacts
+
+Every PR includes a `Development Artifacts` section linking its private Grain
+workspace and summarizing verification results. Publish the brief, plan,
+research/evidence, and wrap-up that exist for the change, plus a readable HTML
+entry page. Reuse the work-item bundle when present; otherwise create one
+workspace for the branch/PR. Follow `.references/grain-artifacts.md` in the
+organization and folder configured above. Discover the organization ID at
+runtime; the name is not an ID. Organization storage does not authorize
+public or password sharing.
+
+If Grain publication is blocked, preserve the local artifacts and state the
+precise blocker and local paths in the PR. PR creation may proceed, but do
+not claim artifact delivery until a confirmed push and retrieval succeed.

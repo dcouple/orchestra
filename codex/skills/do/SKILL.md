@@ -138,13 +138,17 @@ copy. Also record whether `brief.html` contained genuinely pre-existing local
 document content before the tracker fetch; the lean tracker stub fetched
 during this load does not count as pre-existing local content.
 If that metadata, or a local-only item's metadata, carries
-`artifact_bundle:`, fetch `<artifact_bundle>index.json` and then GET every
-listed raw file from the bundle into `./tmp/<id>/`.
+`artifact_bundle:`, retrieve its complete file set into `./tmp/<id>/`.
+For a `grain:` pointer use authenticated checkout and the bundle inventory
+per `.references/grain-artifacts.md`; for an HTTP artifact-host pointer,
+fetch `<artifact_bundle>index.json` and GET every listed raw file. Select by
+the recorded pointer, even if the repository has since changed providers.
 Existing local files win for document content and bundle files normally fill
 content gaps only. The exception is a tracker-loaded lean stub: when no
 genuinely pre-existing local `brief.html` document content was present before
 the tracker fetch, always replace the stub with the bundle's authoritative
-`brief.html`. Retry the index fetch or any file GET once.
+`brief.html`. Retry failed retrieval once (for Grain, follow its recovery
+procedure).
 If the configured bundle is still
 unreachable, this is a **red gate blocking everything**: notify per
 `.references/notify.md`, state exactly which bundle request must become
@@ -351,8 +355,8 @@ human approval (a release-age allowlist, a license gate) surfaces that
 approval request in a notify at plan-exit - never as a blocking gate the
 implement wave discovers.
 
-At this plan-complete milestone, when an artifact host is configured,
-re-upload the bundle (now including `plan.md`) using the artifact-host
+At this plan-complete milestone, when a bundle provider or recorded bundle
+is present, re-upload the bundle (now including `plan.md`) using the matching transport
 step in `.references/publish-work-item.md`.
 
 ## Step 2: Implement
@@ -658,9 +662,11 @@ or require an exact-head review.
   Secrets, PHI, MFA codes, payment details, private customer data, and other
   unsafe captures stay local; publish only a visually verified redacted copy
   when safe, and state why the original was withheld. When the consumer config sets
-  `artifact_host:`, evidence media MAY be hosted as an artifact bundle per
+  `artifact_provider: grain`, include evidence media in the Grain bundle per
+  `.references/grain-artifacts.md`. Otherwise, with `artifact_host:`, evidence
+  media MAY be hosted as an artifact bundle per
   `.references/artifact-host-upload.md`; its stable viewer URLs are
-  unauthenticated. For GitHub repos, the default remains screenshots, GIFs,
+  unauthenticated. For GitHub repos without Grain, the default remains screenshots, GIFs,
   and videos as assets on an existing rolling `qa-assets` **prerelease**.
   Creating that release is a separate external mutation requiring explicit
   authorization; if it does not exist or upload is unavailable, keep the
@@ -745,8 +751,8 @@ or require an exact-head review.
   unless the project's `AGENTS.md` `Work-item tracking` section specifies
   where work-item artifacts go, in which case save them there per its
   instructions.
-- At this wrap-up milestone, when an artifact host is configured, re-upload
-  the bundle (now including `wrapup.md`) using the artifact-host step in
+- At this wrap-up milestone, when a bundle provider or recorded bundle is
+  present, re-upload the bundle (now including `wrapup.md`) using the matching transport step in
   `.references/publish-work-item.md`.
 - Immediately before the `awaiting-human-review` label, **YOU MUST** run the
   shared contract's current-item handoff set and report each `In Review`

@@ -218,7 +218,7 @@ a hypothesis and the user wants more evidence first - publish happens either
 way.
 
 **Success criteria**: published and cross-linked per the shared procedure
-(bundle transport with an `artifact_host`, markdown-rendition fallback
+(bundle transport with Grain or an `artifact_host`, markdown-rendition fallback
 without one) - or, when the repo configures no destination at all, the item
 is complete in `./tmp/<id>/` and the user was told nothing was published.
 
