@@ -60,6 +60,35 @@ workspace files. Keep `brief.html`'s metadata and the tracker's full YAML in
 sync as that procedure requires. Never replace a multi-file bundle with
 `grain_artifact`, which creates a new single-file workspace.
 
+## Migrating a legacy bundle
+
+When Grain is configured and `artifact_bundle` still points to an HTTP host,
+read its inventory and every listed file using the legacy read procedure.
+Apply the caller's existing local-document precedence and tracker metadata
+rules. Do not proceed from an incomplete source or lean tracker stub. Keep
+the source URL in the local migration notes for recovery; never write to it.
+
+Before publishing a new plan, wrap-up, or PR artifact, discover or create the
+work item's Grain workspace in the configured organization/folder. Record its
+ID in local migration notes immediately and reuse it on retries. Copy the
+complete recovered bundle plus current local artifacts, then push and verify
+as above. Replace `artifact_bundle` in the local brief with the confirmed
+Grain URL and push/read back the updated brief before changing the tracker.
+
+Update the existing tracker's full fenced metadata and bundle link (or Linear
+attachment) to that same Grain URL, preserving all other metadata, body
+content, lifecycle state and legacy marker comments. Read back the tracker
+and Grain brief and verify their pointers agree. Do not create a new tracker
+item. Subsequent milestones reuse this Grain workspace. The PR's Development
+Artifacts section links to it; no new artifacts go to the old host.
+
+If any migration step fails, preserve both source and destination identities
+locally, report the incomplete step and follow the failure policy below.
+Keep the tracker pointer unchanged until the destination brief is verified.
+If tracker update is incomplete, retry it against the same workspace before
+claiming migration complete; never fall back to HTTP writes. PR creation may
+proceed only with the repository's explicit blocked-artifact disclosure.
+
 ## Retrieval and recovery
 
 For a returned `grain://workspace/open?...` pointer, parse `workspaceId` with
@@ -86,5 +115,6 @@ For an uncertain create/push, inspect the returned workspace ID, list and
 history before retrying. Recover the same workspace rather than creating a
 duplicate. On remote drift, pull and reconcile before pushing; do not force
 through other edits. Retry a failed publish once after reconciliation, then
-report the blocker. Legacy HTTP artifact bundles continue to use
-`.references/artifact-host-upload.md`, regardless of the new default.
+report the blocker. Legacy HTTP artifact bundles remain readable through
+`.references/artifact-host-upload.md`. When Grain is configured, that legacy
+transport is read-only and all new artifact writes require Grain.

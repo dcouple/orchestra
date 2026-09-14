@@ -36,12 +36,18 @@ rules below apply unchanged. Replace each host POST/PUT with the appropriate
 Grain create/push operation; no bearer token or HTTP bundle endpoint is used.
 A failed initial publication blocks lean tracker creation.
 
-At plan-complete and wrap-up, update the recorded bundle using its transport,
-not the repository's current default. A `grain:` pointer uses Grain; an
-existing HTTP artifact-host pointer uses the host procedure below. Never
-silently relocate an existing work item or rewrite its legacy tracker body.
+When Grain is configured, all new artifact writes, including plan-complete
+and wrap-up, go to Grain. An existing HTTP pointer is a read-only recovery
+source: migrate its complete bundle and replace the pointer using
+`.references/grain-artifacts.md` before publishing new milestones. Do not
+POST or PUT to the retired host, even if its token is still available.
 
 ## With `artifact_host`
+
+Use these upload operations only when the repository still configures
+`artifact_host` and does not select Grain. Legacy HTTP reads remain available
+regardless of the current provider. A recorded HTTP pointer alone never
+authorizes a host write.
 
 Read the bearer token from `ARTIFACT_HOST_TOKEN`. Build the manifest from
 `brief.html`, any present `plan.md` and `wrapup.md`, and every regular

@@ -4,11 +4,12 @@ Use this procedure when a skill needs to publish files through the optional
 artifact host. The consumer repository owns the configuration:
 
 - Read `artifact_host:` from the `Work-item tracking` section of the
-  repository's `AGENTS.md` (or `CLAUDE.md`) for new bundles. If the key is
-  absent, do not create a host bundle. Existing HTTP `artifact_bundle`
-  pointers remain readable and are updated at their recorded URL even if
-  the repository now selects Grain; authenticated updates still require
-  the original host's token. Never send a token to an unverified host.
+  repository's `AGENTS.md` (or `CLAUDE.md`). Host POST/PUT operations require
+  this key and no `artifact_provider: grain` selection. If Grain is selected,
+  legacy HTTP bundles are read-only recovery sources; migrate using
+  `.references/grain-artifacts.md` before writing any new artifacts.
+  A recorded HTTP pointer or available token does not authorize host writes.
+  Never send a token to an unverified host.
 - Read the bearer token from `ARTIFACT_HOST_TOKEN`. Daemon-spawned sessions
   receive this variable automatically when artifact hosting is configured.
   Never print or persist the token.

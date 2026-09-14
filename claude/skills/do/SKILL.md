@@ -355,8 +355,9 @@ approval request in a notify at plan-exit - never as a blocking gate the
 implement wave discovers.
 
 At this plan-complete milestone, when a bundle provider or recorded bundle
-is present, re-upload the bundle (now including `plan.md`) using the matching transport
-step in `.references/publish-work-item.md`.
+is present, publish the bundle (now including `plan.md`) per
+`.references/publish-work-item.md`. When Grain is configured, migrate a legacy
+HTTP bundle to Grain first; the old pointer authorizes reads only.
 
 ## Step 2: Implement
 
@@ -699,8 +700,9 @@ follows successful QA.
   where work-item artifacts go, in which case save them there per its
   instructions.
 - At this wrap-up milestone, when a bundle provider or recorded bundle is
-  present, re-upload the bundle (now including `wrapup.md`) using the matching transport step in
-  `.references/publish-work-item.md`.
+  present, publish the bundle (now including `wrapup.md`) per
+  `.references/publish-work-item.md`. When Grain is configured, migrate a
+  legacy HTTP bundle first; never publish this milestone to the old host.
 - Immediately before the `awaiting-human-review` label, **YOU MUST** run the
   shared contract's current-item handoff set and report each `In Review`
   operation as `verified`, `already-correct`, `failed`, or `unavailable`.
