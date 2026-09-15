@@ -46,6 +46,19 @@ confidence: <1-10 - one-pass implementation confidence, scored after review>
 `when a plan delta is needed - a delta that breaks an invariant isn't a delta,`
 `it's a blocker.>`
 
+## Intent provenance
+`<carry the origin/starting request, current accepted intent, and decision trail
+forward using .references/pr-writing.md source labels. The current accepted
+outcome, scope, and approach steer this plan; preserve material revisions,
+their reasons, and superseded constraints or outcomes. State the trigger,
+source-grounded why and impact, intended outcome, constraints, non-goals,
+rationale, assumptions, open questions, and sources. Write "Rationale not
+established" when the reason was not established; do not turn that absence
+into an assumption. If evidence or an existing gate changes the current
+intent, record the revision and required agreement before updating the plan;
+never silently redefine it. Each assumption names its validation path or
+owner.>`
+
 ## Files changed
 `<every file this plan touches - lets a reviewer gauge blast radius at a glance.`
 `Keep the "what" to one clause; the tasks below carry the detail.>`

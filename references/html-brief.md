@@ -84,12 +84,12 @@ fixed; omit sections that don't apply and leave the gap.
 | # | Section | feature | bug |
 |---|---------|---------|-----|
 | - | Opening diagram | always - see below | always; the failure path |
-| 01 | Why | intent (the why behind the request - what `/do` optimizes for) + desired end state as before/after panels | summary + **Environment** line + expected-vs-actual panels; defect screenshot when visible |
+| 01 | Why | trigger, source-grounded problem and impact, intent (the why behind the request - what `/do` optimizes for) + desired end state as before/after panels | summary + **Environment** line + expected-vs-actual panels; defect screenshot when visible |
 | 02 | User journeys | flow strips per journey + coverage (multi-journey items only) | failing path vs fixed path |
-| 03 | Direction | locked decisions as `D1…` `.decision` cards (each with its rejected alternative) | root cause with confidence stated (`confirmed | likely | hypothesis`) |
+| 03 | Direction | locked decisions as `D1…` `.decision` cards (each with its rejected alternative) and their rationale/source | root cause with confidence stated (`confirmed | likely | hypothesis`) |
 | 04 | Dependencies & mechanics | see below - always present | same; often collapses to the schema-changes line |
 | 05 | Approach | always present - how we'll tackle this (see below); multi-phase items add the binding timeline + per-phase blocks | the suggested resolution path; a strip only when it genuinely has stages |
-| 06 | Scope | in / out-of-scope panels | business impact + severity; out-of-scope if any |
+| 06 | Scope | in / out-of-scope panels, including constraints and non-goals | business impact + severity; out-of-scope if any |
 | 07 | Verification | categorized checklist + flow→AC map (see below) | AC1 = the reproduction steps flipping to pass (steps listed here, deterministic enough to re-run) + prevention criteria (regression test / lint rule / invariant) |
 | 08 | Mockups | user-facing items - see below; a clickable prototype for multi-screen flows, a collapsed `.shots` pair otherwise (open at zone 0) | - |
 | 09 | Run config | zone panel - see below | same |
@@ -101,6 +101,20 @@ Verification criteria everywhere follow
 mapped to a method from `.references/verification-methods.md` and the change
 type's rubric in `.references/rubrics/` - including the per-phase
 numbering rule for multi-phase items. No "works correctly".
+
+The section map's intent fields are the brief's source of truth: Why records
+the origin/starting request and the current accepted trigger, source-grounded
+problem, impact, and intended outcome; Direction records the rationale for
+locked choices and the alternatives actually considered; Scope records the
+constraints and non-goals. Assumptions and unresolved questions stay visible
+in Dependencies, Justification, or Open questions as appropriate. Preserve a
+decision trail when discussion, evidence, the existing Socratic gate, or user
+alignment refines or rejects the origin. Use the source labels and the
+distinction between missing rationale and assumptions in
+`.references/pr-writing.md`; cite the decision log, tracker, repository
+evidence, tests, research, or QA evidence rather than presenting an inference
+as a user requirement. `/do` carries the current accepted record into its plan
+and PR.
 
 ## Opening diagram
 

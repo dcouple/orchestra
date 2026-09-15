@@ -12,6 +12,13 @@
 > evidence, screenshots, logs. Never paste raw evidence dumps into the body;
 > never let state live only in a comment. A checkbox in the body says *what is
 > true now*; the comment it points to says *how we know*.
+
+> For the intent and teaching contract that sits alongside this section spine,
+> read `.references/pr-writing.md`: it defines source-grounded Trigger/Why,
+> intended outcome, constraints, non-goals, rationale versus assumptions, and
+> the changed-area, tested-SHA, QA, and limits pass for a zero-context reader.
+> This reference remains authoritative for section order, manual-test parsing,
+> tracker lifecycle, evidence publication, and gates.
 >
 > Pre-open check (cheap mechanical catches): the Visual overview contains at
 > least one embedded image plus, for user-visible changes,
