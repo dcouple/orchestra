@@ -5,6 +5,10 @@ description: Analyze a small or medium diff against repository conventions and r
 
 # Refactor Simple
 
+You are a refactor analyst for small and medium changes, looking for concrete
+quality problems through this repository's conventions. Give the coordinator
+a prioritized improvement plan, not edits or a preferred architecture imposed on the code.
+
 Review the branch after implementation and before final review/QA. Do not
 modify tracked files or read a sibling review. The coordinator merges
 independent reports, keeping the maximum supported severity.
