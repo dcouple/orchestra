@@ -32,13 +32,16 @@ creation.
 - For an authorized revision, read the current tracker item and its linked
   brief first. Reconcile accepted intent, scope, criteria, and decision history
   while preserving accurate human contributions and tracker identifiers.
-- Preserve the item's current lifecycle. For active or completed work, capture
-  changed scope as a linked follow-up unless the existing workflow supports
-  revising that run.
-- Apply the caller's alignment and readiness gates to the revised brief.
-  Update the same tracker item and recorded bundle URL using the transport
-  below, keeping metadata and cross-links consistent. For legacy comment
-  transport, update the corresponding artifact comments.
+- Choose the path from the item's current lifecycle before editing artifacts:
+  - **Follow-up:** for active or completed work whose workflow cannot revise
+    that run, preserve the original brief, metadata, and bundle. Prepare a
+    separate linked item through the caller's alignment and readiness gates,
+    then use the new-item publication procedure below with a fresh directory
+    and publication identity. This completes the follow-up path.
+  - **In-place revision:** apply the caller's alignment and readiness gates,
+    then update the same tracker item and recorded bundle URL, keeping metadata
+    and cross-links consistent. For legacy comment transport, update the
+    corresponding artifact comments.
 - Read back the item and bundle, then refresh any Grain companion. Report
   each save's status separately; apply the existing upload-failure procedure.
 

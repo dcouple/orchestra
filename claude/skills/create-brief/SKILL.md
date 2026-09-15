@@ -40,6 +40,18 @@ don't re-litigate it. How many phases the work has is a property of the item
 
 ## Steps
 
+### 0. Load existing context and choose the target
+
+- Resolve any supplied item and check for a matching brief before selecting
+  the shape, researching, or asking questions. Load its current tracker state,
+  linked brief, supporting evidence, and decision history.
+- Reconcile an authorized revision with the latest discussion. Carry forward
+  established decisions and evidence; focus clarification on changes and gaps.
+- Check the item's lifecycle per `.references/publish-work-item.md`. For a
+  required follow-up, preserve the original item and artifacts, then use a new
+  `<id>`, directory, and publication identity with a link to the original.
+  For an in-place revision, retain the existing directory and identifiers.
+
 ### 1. Pick the shape
 Two shapes, one decision:
 
@@ -138,9 +150,8 @@ the attempts listed - plus severity (`critical | high | medium | low`) and
 business impact agreed with the user.
 
 ### 3. Shape the approach and cut phases
-Check for an existing matching item before creating one. For an authorized
-revision, reconcile its brief, tracker, and discussion; retain the current
-intent at the top and a short source-backed history of material changes.
+Retain the current intent at the top and a short source-backed history of
+material changes, using the context loaded in step 0.
 Capture independent outcomes, owners, or release timing as separate linked
 items when requested, applying this workflow's alignment and readiness gates
 to each. Keep exploratory follow-ups in discussion until their scope is agreed.
@@ -170,9 +181,10 @@ produced this item (match by slug and date) - carry its decisions into the
 current accepted intent and locked directions, preserve the origin, revision
 trail, source labels, and rationale status per `.references/pr-writing.md`, and
 link it from `refs/`
-if it holds more than the brief should inline. Reuse the existing item's
-`./tmp/<id>/` and metadata; for new work, pick `<id>` (short kebab-case slug
-from the title) and create the directory. Author or update
+if it holds more than the brief should inline. For the in-place revision
+selected in step 0, reuse its `./tmp/<id>/` and metadata. For new work or a
+follow-up, use a fresh `<id>` (short kebab-case slug from the title), directory,
+and metadata, retaining the original item as a source link. Author or update
 `brief.html` per `.references/html-brief.md` (page contract, section map,
 and rules), opening it in the user's browser. Save transcript-worthy raw
 material (key discussion excerpts, links, research worth keeping) to
