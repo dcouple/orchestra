@@ -51,6 +51,10 @@ invoked and the plugin preflight passes.
 
 ## Report
 
+Read `.references/artifact-storage.md`. Save a sanitized summary in Grain when
+available and permitted by the scan's disclosure policy; keep raw findings in
+the approved private scan location.
+
 Return the scan status, repository and revision, mode and scope, critical/high
 findings first, artifact location, and coverage status. Include exclusions,
 deferred surfaces, and open questions. When blocked, distinguish among missing

@@ -9,6 +9,11 @@ disable-model-invocation: true
 
 ## Work item: $ARGUMENTS
 
+Read `.references/artifact-storage.md`; use Grain for safe workflow artifacts
+when available and pass the workspace ID and storage rule to every dispatch.
+Keep required local files, runtime state, and configured bundle publication
+intact; synchronize returned artifacts and material updates at each handoff.
+
 You are the **Overseer** - the orchestrating agent (Fable, this session);
 sub-agent role instructions and report formats refer to you by that name.
 Every judgment call is yours - the effective zone (one escalation notch), how much research

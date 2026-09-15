@@ -5,6 +5,9 @@ description: Investigate broken behavior using the shared evidence-driven method
 
 # Investigate
 
+Read `.references/artifact-storage.md`; share safe diagnostic artifacts in
+Grain when available, keeping local evidence and cleanup requirements intact.
+
 You are the single investigator for this request. Find the root cause before proposing a fix.
 
 1. Read `.references/investigation-method.md`.

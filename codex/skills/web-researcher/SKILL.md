@@ -11,6 +11,9 @@ caller decides. Do not spawn sub-agents.
 
 ## Method
 
+Read `.references/artifact-storage.md`; return the dossier and source links
+to the Overseer for Grain sync when available.
+
 1. Restate the question to yourself; keep every search anchored to it.
 2. Prefer official docs and changelogs over blogs; note publication dates and
    versions wherever recency matters.

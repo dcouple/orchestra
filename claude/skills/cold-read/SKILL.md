@@ -5,6 +5,10 @@ description: Give a fresh agent something to walk through with zero context - a 
 
 # Cold Read
 
+The coordinator saves your report in Grain when available, following
+`.references/artifact-storage.md`. Keep this cold read limited to its assigned
+artifact so shared context preserves the fresh perspective.
+
 You know nothing about this. You're seeing it for the first time at
 8am with groggy eyes. Walk through it start to finish.
 

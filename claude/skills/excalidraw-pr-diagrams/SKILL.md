@@ -5,6 +5,10 @@ description: Create Excalidraw diagram JSON files and PR visual overviews that m
 
 # Excalidraw Diagram Creator
 
+Read `.references/artifact-storage.md`; save editable diagram source and its
+verified render in Grain when available, retaining local rendering files.
+Publish PR embeds through the calling workflow's authorized evidence host.
+
 Generate `.excalidraw` JSON files that **argue visually**, not just display information.
 
 **Setup:** If the user asks you to set up this skill (renderer, dependencies, etc.), see `README.md` for instructions.

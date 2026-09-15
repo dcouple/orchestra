@@ -8,6 +8,10 @@ argument-hint: "[owner/repo ... to sweep; default: this repo's origin] [window i
 
 ## Sweep: $ARGUMENTS
 
+Read `.references/artifact-storage.md`; share safe decision matrices and
+reports in Grain when available. The anchor-comment verdict ledger remains
+authoritative for adoption status.
+
 Postmortems record system-change proposals but never apply them - that is
 the postmortem skill's contract. This loop is the other half: collect every
 open proposal, show the human one deduplicated decision matrix, apply what

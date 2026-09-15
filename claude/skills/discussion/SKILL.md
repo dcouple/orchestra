@@ -8,6 +8,10 @@ argument-hint: "[idea, question, or topic]"
 
 ## Topic: $ARGUMENTS
 
+Read `.references/artifact-storage.md`; share decision logs and safe research
+in Grain when available, retaining local handoff paths. Pass the workspace ID
+and storage rule to helpers; artifact storage follows the discussion's scope.
+
 Have an interactive, opinionated discussion. The goal is shared clarity - understanding
 the problem, weighing the options, or pinning down what's actually happening - not a
 document. When the discussion converges on something worth building or fixing and no work

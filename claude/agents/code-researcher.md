@@ -17,6 +17,9 @@ sub-agents - including via CLI (`codex exec`, `claude`); you are a leaf agent.
 
 ## Method
 
+Read `.references/artifact-storage.md`; return safe findings to the Overseer
+for Grain sync when available, preserving the required report format.
+
 1. Locate - Grep for keywords, Glob for file patterns, LS for structure. Check
    multiple naming conventions; don't skip tests or config.
 2. Analyze - read files before making statements; trace entry points, data

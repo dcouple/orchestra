@@ -11,6 +11,18 @@ test checklist parsing, tracker closing lines, evidence comments, visual
 overview rules, and artifact-host fallback. This document adds provenance and
 teaching requirements; it does not replace or reorder that contract.
 
+## Shared artifacts
+
+Read `.references/artifact-storage.md` when saving or updating intent records,
+briefs, plans, or PR companions. Carry the task's workspace reference through
+handoffs alongside the existing tracker and artifact-bundle references.
+
+When a Grain companion is used, keep the current what, why, outcome, scope,
+acceptance criteria, and material decision history consistent with the brief
+and tracker. Reconcile authorized revisions with their latest contents,
+preserving accurate human contributions and resolving conflicting decisions
+through the existing alignment path.
+
 ## The handoff
 
 Carry two related records forward. The **origin** is the starting request or
@@ -100,6 +112,19 @@ path, where applicable, to accept a revision before changing the plan or PR.
 
 ## Teach the changed areas in dependency order
 
+Choose explanations and visuals that make the underlying idea easiest to
+understand. Build from first principles, keep useful detail, and let the
+subject determine the format in both the PR and its shared companion.
+
+Possible examples:
+
+- **Retries:** what happens when an attempt fails, how it recovers, and what
+  the person sees.
+- **Permissions:** who can see or change something, and why that boundary
+  exists.
+- **Performance:** where the wait comes from and how the change reduces it,
+  before introducing implementation details.
+
 The PR body is useful to a junior engineer when every changed area answers the
 same small set of questions:
 
@@ -130,6 +155,15 @@ PR body after reviews, QA, and CI settle, so its state and links describe the
 accepted head. This is a presentation pass over the existing host procedure;
 it adds no new host or presentation dependency and does not change the
 fallback.
+
+When Grain is connected, reuse the task's workspace for this presentation.
+Keep the PR walkthrough alongside the intent brief, updating each artifact
+under its existing ID.
+Render the persisted final PR explanation as readable HTML with headings,
+bullets, useful visuals, and named evidence links. Refresh it after material
+PR updates; verify the saved content, navigation, and links. Keep checks and
+QA tied to their actual tested commits and report each publication's status
+independently.
 
 ## Completed fictional example
 
