@@ -8,6 +8,10 @@ argument-hint: "[optional: issue # to close, or extra context for the PR body]"
 
 ## Context: $ARGUMENTS
 
+Read `.references/artifact-storage.md`; save safe review artifacts and the PR
+companion in Grain when available. Pass the workspace ID and storage rule to
+reviewers while preserving their assigned inputs and required local files.
+
 Changes made ad-hoc in a session were never planned, reviewed, or verified
 the way `/do` output is - this skill closes that gap before anything goes
 up. Two gates run before the PR: **Socrates** challenges whether the

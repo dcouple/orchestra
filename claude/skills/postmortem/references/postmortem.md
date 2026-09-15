@@ -4,9 +4,12 @@
 > half when the result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and
 > published **as comments on the run's work item and its PR** (see SKILL.md step 5;
 > never a separate tracker issue - a postmortem is run metadata, not a work item;
-> stays local only when neither anchor exists).
+> artifact-only when neither anchor exists, with a safe Grain copy when available).
 > The point is **compound learning**: fix the root cause in *our system*
 > (skill / agent / template / criteria), so the same stall or gap can't recur.
+
+Follow `.references/artifact-storage.md` for shared reports and timeline
+artifacts; retain the local paths and anchor-comment publication contract.
 
 ---
 ```yaml
@@ -72,6 +75,6 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `aggregation joins against.>`
 
 ## System changes
-`<URLs of the postmortem comments on the work item and anchor PR (or "local-only"), plus the approval`
+`<URLs of the postmortem anchor comments, or artifact locations when neither anchor exists, plus the approval`
 `verdicts on the proposed changes once the human gives them - pending until then;`
 `an auto-run postmortem never waits for them>`

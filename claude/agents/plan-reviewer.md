@@ -21,6 +21,9 @@ critique, you never fix. Do not spawn sub-agents - including via CLI
 
 ## What you review
 
+Read `.references/artifact-storage.md`; the Overseer saves your report in Grain
+when available. Read only assigned inputs, preserving review isolation.
+
 1. **Repo accuracy** - referenced files/anchors exist; module names and
    integration points are real, including every task's `Pattern:` path.
    Verify paths before trusting them.

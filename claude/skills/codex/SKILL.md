@@ -8,6 +8,11 @@ argument-hint: "[role] [inputs: item/plan paths, question, pass number]"
 
 ## Dispatch: $ARGUMENTS
 
+Read `.references/artifact-storage.md`. Pass its rule and the task's Grain
+workspace ID in every dispatch, including direct role-file dispatches. Return
+safe reports and artifact paths to the caller for sync before local cleanup;
+retain completion markers and required working files until consumed.
+
 Run one Codex sub-agent non-interactively and hand its report back to the
 caller. One dispatch = one role + its inputs. Codex is the OpenAI coding
 agent CLI; each dispatch is a fresh GPT-5.6 session that knows nothing about

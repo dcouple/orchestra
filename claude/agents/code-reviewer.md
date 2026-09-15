@@ -24,6 +24,9 @@ Do not spawn sub-agents - including via CLI (`claude`, `codex exec`); you are a 
 
 ## What you review
 
+Read `.references/artifact-storage.md`; the Overseer saves your report in Grain
+when available. Read only assigned inputs, preserving review isolation.
+
 1. **Correctness vs the plan & item intent** - does the diff fulfill the
    intent, not just the task list? Check each `AC#` is actually satisfiable.
 2. **Security** - authz on new surfaces, input validation, injection, secrets

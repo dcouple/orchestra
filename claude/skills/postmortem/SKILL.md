@@ -1,12 +1,17 @@
 ---
 name: postmortem
-description: Runs a postmortem on a /do run - after the human reviewed the PR, or as a routine after-run review. Covers two dimensions: how the run RAN (wall-clock, agent-active vs idle-waiting-on-human, stalls, blockers - always) and, when the result fell short of intent, WHY (root cause in our system). Use when the user says a /do run missed the mark or asks "why did /do get this wrong", when any workflow skill produced the wrong outcome, or simply to review how a completed run spent its time. Proposes the system improvements the findings support - never applied, never a gate.
+description: >-
+  Runs a postmortem on a /do run - after the human reviewed the PR, or as a routine after-run review. Covers two dimensions: how the run RAN (wall-clock, agent-active vs idle-waiting-on-human, stalls, blockers - always) and, when the result fell short of intent, WHY (root cause in our system). Use when the user says a /do run missed the mark or asks "why did /do get this wrong", when any workflow skill produced the wrong outcome, or simply to review how a completed run spent its time. Proposes the system improvements the findings support - never applied, never a gate.
 argument-hint: "[PR url/# or work-item id]"
 ---
 
 # Postmortem
 
 ## Target: $ARGUMENTS
+
+Read `.references/artifact-storage.md`; save safe reports and timeline
+artifacts in Grain when available. Keep required local copies and publish
+anchor comments through the existing procedure.
 
 Compound learning on the last `/do` run - on **two** axes:
 
@@ -22,7 +27,7 @@ Compound learning on the last `/do` run - on **two** axes:
 The completion artifact is `./tmp/<id>/postmortem.md`, published **as comments
 on the run's anchors** - the work item it executed and the `/do` PR - never as
 a separate tracker issue (a postmortem is run metadata about existing work,
-not a work item; local-only when neither anchor exists), plus the proposed (never
+not a work item; artifact-only when neither anchor exists), plus the proposed (never
 applied) system changes its findings support.
 
 This skill changes nothing: no code fixes, no skill edits. If the code itself needs
@@ -123,8 +128,8 @@ backlog with non-actionable items. The anchors:
   the postmortem on that PR; a tracked item whose run died before a PR gets
   it on the work item alone. Only when **neither anchor exists** (e.g. a
   failure inside a `/create-brief` run before anything was published) does the
-  postmortem stay local in `./tmp/<id>/postmortem.md` - and you tell the
-  user so.
+  postmortem stay in `./tmp/<id>/postmortem.md`, with a safe Grain copy when
+  available. Tell the user each artifact's location and save status.
 
 Title the comment's first line `# Postmortem - <item> (<ops-only | full>)`
 so it's scannable in a long thread. Record the comment URLs in
@@ -135,7 +140,7 @@ anchors - it never edits or replaces the ops-only comment.
 **Success criteria**: `postmortem.md` exists with the Run operations section filled and
 (when the run fell short) the "why the gap happened" section naming the system cause (not
 just the code defect); the postmortem body is a comment on the work item and on the
-anchor PR when they exist (local-only and the user told, only when neither exists); **no new tracker
+anchor PR when they exist (artifact-only and the user told when neither exists); **no new tracker
 issue was created for it**; the comment URLs are recorded.
 
 ### 6. Propose system changes
@@ -157,7 +162,7 @@ gate: don't wait for approval, and an auto-run at `/do` wrap-up ends after
 publishing, full stop.
 
 **Success criteria**: each proposal names an exact file and shows the concrete edit;
-nothing outside `./tmp/<id>/` was modified; the run never paused for approval.
+only task artifacts and anchor comments were updated; the run never paused for approval.
 
 ```
 Suggested next steps:

@@ -6,6 +6,10 @@ argument-hint: "[bug description, error message, or unexpected behavior]"
 
 # Investigate
 
+Read `.references/artifact-storage.md`; share safe diagnostic artifacts in
+Grain when available and pass the workspace ID and storage rule to the
+investigator. Preserve local evidence paths and diagnostic cleanup.
+
 Use one investigator to reproduce the defect, isolate its cause, and report the evidence. This skill is the human-facing front door; the `investigator` role owns the diagnostic work.
 
 ## 1. Frame the Defect

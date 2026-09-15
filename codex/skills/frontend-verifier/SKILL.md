@@ -26,6 +26,10 @@ Do not spawn sub-agents - including via CLI (`claude`, `codex exec`); you are a 
 
 ## Tooling
 
+Read `.references/artifact-storage.md`. Keep captures and manifests in their
+required attempt or lease directory; return safe artifacts to the Overseer
+for Grain sync. Shared copies retain their original attempt and evidence status.
+
 Check what's connected before assuming - then use the best driver available
 for the app's platform: browser automation (a Playwright-style tool or a
 connected browser MCP) for web apps; the mobile equivalent when the app is

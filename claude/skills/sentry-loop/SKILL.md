@@ -8,6 +8,10 @@ argument-hint: "[time window, default 7d]"
 
 ## Window: $ARGUMENTS (default: 7d)
 
+Read `.references/artifact-storage.md`; share sanitized reports in Grain when
+available and pass the workspace ID and storage rule to investigators.
+Tracker filing and Sentry annotations still follow this workflow's procedure.
+
 Triage-then-investigate over the error tracker. The output is knowledge, not
 fixes: every issue in the window ends the run classified, the few that matter
 end it root-caused, and the findings live in the work tracker - separably from
@@ -24,8 +28,8 @@ Read the current repo's `AGENTS.md` before filing anything:
   `search_issues` / `search_events` / `get_sentry_resource`). If the repo has
   a `docs/mcp-sentry.md`, follow it.
 
-No tracker configured → produce the report locally under `./tmp/` and stop
-before the filing stage.
+No tracker configured → keep the report under `./tmp/`, share its safe Grain
+copy when available, and finish before the filing stage.
 
 ## Stage 1 - Sweep
 
