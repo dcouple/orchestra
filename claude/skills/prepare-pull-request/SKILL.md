@@ -37,6 +37,15 @@ run `/do`'s readiness or status lifecycle and does not prompt for tracker auth.
     what Socrates interrogates.
   - `diff.patch` - the full diff of the candidate changes.
 
+  Author `intent.md` with the provenance fields in
+  `.references/pr-writing.md`: trigger, source-grounded why and impact,
+  intended outcome, constraints, non-goals, rationale, assumptions, open
+  questions, and sources. Mark each material claim as user/tracker/decision,
+  repository evidence, inference, or assumption. If the reason for the change
+  or approach was never established, write `Rationale not established`; keep
+  that gap separate from an assumption used to proceed. The file must remain
+  understandable without an artifact host.
+
 ## Step 2: Socrates gate (right approach?)
 
 Dispatch the `socrates` agent with the round number, the paths to
@@ -97,6 +106,13 @@ names):
 ## Step 6: Open the PR
 
 - Title: same `type: short imperative summary` style as the commit.
+- Read `.references/pr-writing.md` before drafting. Carry the final
+  `intent.md` provenance into a self-contained Summary and changed-area map:
+  explain concepts and dependencies in logical order, include concrete
+  examples or diagrams where they clarify behavior, and state the tested SHA,
+  QA coverage, and limits. The existing `references/pr-body.md` remains
+  authoritative for section order, manual-test parsing, tracker lifecycle,
+  evidence-publication fallback, and gates.
 - Write the body following the `/do` skill's `references/pr-body.md` - the
   single source for the section spine, the body-state / comment-proof split,
   and the pre-open checklist. Right-size to an ad-hoc change:

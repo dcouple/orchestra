@@ -308,6 +308,13 @@ questions and proceed on the least-committal reading. Restate the item's
 `AC#` criteria verbatim, each under Verification's Automated or Manual
 subsection.
 
+Before saving the plan, carry the brief's Intent provenance section forward
+using `.references/pr-writing.md`: preserve the trigger, source-grounded why,
+intended outcome, constraints, non-goals, rationale status, assumptions, and
+source list. Keep `Rationale not established` separate from `[assumption]`,
+and give every assumption a validation path or owner. The plan adds verified
+implementation facts; it must not replace the item's reason with an inference.
+
 When the plan leaves more than one defensible shape for a non-trivial
 artifact - a module boundary, a schema, a tricky algorithm - settle it with
 the `arena` skill before the review loop runs. Its destination is the plan
@@ -468,6 +475,12 @@ verifies, then improve it in place (Step 5). All commit/PR prep lives here:
 - Commit selectively (only this run's files, never `git add -A`; secret-scan
   the staged diff), message style `type: short imperative summary`. Rebase
   onto the origin default branch; push (`--force-with-lease` on rewrites).
+- Read `.references/pr-writing.md` before drafting the PR body. Use it for
+  source-grounded intent, changed-area teaching in dependency order, concrete
+  examples or diagrams, tested SHA, QA coverage, and limits. The existing
+  `references/pr-body.md` remains authoritative for the section spine, manual
+  test parsing, tracker lifecycle, evidence-publication fallback, and gates;
+  do not replace or reorder that contract.
 - Open the PR: typed title; write the body following this skill's
   `references/pr-body.md` - its section spine (Summary/What-Why-How, Visual
   overview, User journeys, Verification, Manual tests, QA results, Deploy
@@ -695,6 +708,11 @@ follows successful QA.
 - At this wrap-up milestone, when an artifact host is configured, re-upload
   the bundle (now including `wrapup.md`) using the artifact-host step in
   `.references/publish-work-item.md`.
+  When that bundle is generated, include or render the final PR explanation
+  with section navigation, diagrams, and links between changed code and its
+  evidence. Reconcile it against the persisted PR body after final reviews,
+  QA, and CI settle; this presentation pass does not change the existing host
+  upload or fallback procedure.
 - Immediately before the `awaiting-human-review` label, **YOU MUST** run the
   shared contract's current-item handoff set and report each `In Review`
   operation as `verified`, `already-correct`, `failed`, or `unavailable`.

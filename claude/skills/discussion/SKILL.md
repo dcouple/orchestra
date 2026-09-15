@@ -79,6 +79,15 @@ workstreams never collide. This is how intent survives past the
 conversation: `/create-brief`'s drafting step reads it, and anyone resuming
 the thread starts from it instead of from memory.
 
+Make this first handoff source-grounded using `.references/pr-writing.md`:
+record the trigger, observed problem and impact, intended outcome, constraints,
+non-goals, rationale, assumptions, and sources for each material decision.
+Label user statements, repository evidence, inference, and assumptions. If
+the reason for a choice was never established, write `Rationale not
+established` and leave the question open; do not fill the gap with an
+unstated assumption. The decision log is still a concise record of decisions,
+not a second brief.
+
 When the discussion has converged on capturable work with no existing item, start capture
 yourself with `/create-brief` - single-outcome or multi-phase, the phase cut is the capture
 skill's step. Publish remains gated by the capture skill's alignment pause. Otherwise, suggest
