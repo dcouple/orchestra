@@ -14,12 +14,14 @@ work item that `/do` can execute autonomously. The completion artifact is
 both what the user aligns on and what `/do` executes against
 (`.references/html-brief.md`).
 
-Intent is a provenance-bearing handoff, not only a summary. Use
-`.references/pr-writing.md` while assembling either track so the brief carries
-the trigger, source-grounded why and impact, intended outcome, constraints,
-non-goals, rationale, assumptions, and sources from the conversation and
-decision log. Keep `Rationale not established` distinct from an `[assumption]`;
-never invent a reason to make the brief sound complete.
+Intent has provenance, but the initial request is an origin record, not a
+binding contract. Use `.references/pr-writing.md` while assembling either
+track so the brief distinguishes the origin from the current accepted outcome,
+scope, and approach, and preserves the decision trail for each revision and
+its reason. Discussion, evidence, the existing Socratic gate, and required
+user alignment may forge, refine, or reject the initial idea; reflect that
+result in the brief. Keep `Rationale not established` distinct from an
+`[assumption]`; never silently invent or redefine the current intent.
 
 The brief is the user's document. Its purpose is to show the user, as
 concretely as possible, what is going to happen - so the idea gets refined
@@ -150,8 +152,9 @@ a goal, scope, and its own verification surface; order confirmed.
 ### 4. Author the brief and align
 Check `./tmp/discussions/` for a decision log from the conversation that
 produced this item (match by slug and date) - carry its decisions into the
-locked directions rather than re-deriving them, preserve its source labels and
-rationale status per `.references/pr-writing.md`, and link it from `refs/`
+current accepted intent and locked directions, preserve the origin, revision
+trail, source labels, and rationale status per `.references/pr-writing.md`, and
+link it from `refs/`
 if it holds more than the brief should inline. Pick `<id>` (short
 kebab-case slug from the title), create `./tmp/<id>/`, and author
 `brief.html` per `.references/html-brief.md` (page contract, section map,

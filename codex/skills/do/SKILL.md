@@ -316,12 +316,15 @@ questions and proceed on the least-committal reading. Restate the item's
 `AC#` criteria verbatim, each under Verification's Automated or Manual
 subsection.
 
-Before saving the plan, carry the brief's Intent provenance section forward
-using `.references/pr-writing.md`: preserve the trigger, source-grounded why,
-intended outcome, constraints, non-goals, rationale status, assumptions, and
-source list. Keep `Rationale not established` separate from `[assumption]`,
-and give every assumption a validation path or owner. The plan adds verified
-implementation facts; it must not replace the item's reason with an inference.
+Before saving the plan, carry the brief's intent record forward
+using `.references/pr-writing.md`: preserve the origin, current accepted
+intent, decision trail, trigger, source-grounded why, intended outcome,
+constraints, non-goals, rationale status, assumptions, and source list. The
+current accepted intent steers the plan; evidence or an existing gate may
+revise it when the required agreement is recorded. Keep `Rationale not
+established` separate from `[assumption]`, and give every assumption a
+validation path or owner. Never silently redefine the current intent or force
+an obsolete origin.
 
 When the plan leaves more than one defensible shape for a non-trivial
 artifact - a module boundary, a schema, a tricky algorithm - settle it with

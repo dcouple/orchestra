@@ -1,9 +1,10 @@
 # Intent fidelity and PR writing
 
 This reference is shared by `/discussion`, `/create-brief`, `/do`, and
-`/prepare-pull-request`. It keeps the reason for a change intact as work moves
-from conversation to brief to plan to pull request, and it gives a reader who
-has no conversation history enough context to review the result.
+`/prepare-pull-request`. It keeps the origin and evolving accepted intent
+traceable as work moves from conversation to brief to plan to pull request,
+and it gives a reader who has no conversation history enough context to review
+the result.
 
 The companion PR-body reference still owns the required section spine, manual
 test checklist parsing, tracker closing lines, evidence comments, visual
@@ -12,25 +13,33 @@ teaching requirements; it does not replace or reorder that contract.
 
 ## The handoff
 
-Carry the same intent record forward. Each stage may add evidence or clarify a
-gap, but it must not silently replace the user's reason with a model-generated
-story.
+Carry two related records forward. The **origin** is the starting request or
+idea; the **current accepted intent** is what discussion, evidence, the
+existing Socratic gate, and user alignment have forged, refined, or rejected.
+The current accepted intent steers the plan and PR. Preserve the origin and a
+decision trail showing what changed, why it changed, and which constraints or
+outcomes were superseded. No stage may silently invent a new current intent or
+force an obsolete origin after the workflow has accepted a refinement.
 
 ```mermaid
 flowchart LR
-  A[Conversation or request] --> B[Decision log]
-  B --> C[Brief: intent contract]
-  C --> D[Plan: intent plus dependencies]
+  A[Conversation or request] --> B[Decision log: origin plus revisions]
+  B --> C[Brief: current accepted intent]
+  C --> D[Plan: current intent plus dependencies]
   D --> E[PR: independent teaching artifact]
   E --> F[Review and QA evidence]
 ```
 
-At every handoff, preserve these fields:
+At every handoff, preserve these fields. The first three distinguish where the
+request started from what the workflow currently accepts:
 
 | Field | Required content | If the source is missing |
 |---|---|---|
+| Origin / starting request | The initial request, idea, defect report, or desired direction, with its source | Write `Origin not established`; do not reconstruct an initial request from the final diff. |
+| Current accepted intent | The latest agreed outcome, scope, and approach after discussion, evidence, the existing Socratic gate, and required user alignment | Stop calling it accepted; carry the unresolved question through the existing workflow gate. |
+| Decision trail | Each material revision, its reason/source, and superseded constraints, outcomes, or approaches | Write `Decision trail incomplete` and identify the missing source. |
 | Trigger | The event, request, defect, or threshold that started the work | Write `Trigger not established` and name the question. |
-| Why | The user or system problem and evidence that makes it matter | Write `Rationale not established`; do not turn a guess into a fact. |
+| Why | The user or system problem and evidence that makes it matter | Write `Why not established`; do not turn a guess into a fact. |
 | Intended outcome | The observable state that should exist after the change | Ask or derive only from an explicit outcome already established. |
 | Constraints | Compatibility, safety, timing, interfaces, or other boundaries | Mark each proposed boundary as an assumption until confirmed. |
 | Non-goals | Adjacent behavior deliberately left unchanged | Write `Not established` when the conversation did not set one; do not invent exclusions. |
@@ -49,12 +58,19 @@ claim - do not mechanically tag every sentence:
 An inference explains what was concluded from cited facts. An assumption is a
 premise the work needs but has not established. Missing rationale means the
 reason for choosing or prioritizing the work is unknown; it does not mean the
-choice is an assumption. Keep both visible:
+choice is an assumption. Keep both visible. If a refinement has been accepted,
+show the earlier origin and the current choice together:
 
 ```text
-Rationale: not established in the request or tracker.
-Assumption: the existing response shape must remain compatible [assumption];
-validate with the API contract test [test: ...].
+Origin: Add a response field for every retry state [user].
+Current accepted intent: Keep the response enum stable and improve the
+presentation only [user agreement; decision-log].
+Decision trail: Socrates surfaced compatibility risk; the user accepted the
+presentation-only scope [socratic; user agreement].
+Rationale for prioritizing this work: not established in the request or
+tracker.
+Assumption: The scheduler's next-run value is present for every retryable
+failure [assumption]; validate with the integration test [test: ...].
 ```
 
 ## Write the why before the how
@@ -75,9 +91,12 @@ authoring:
 6. **Assumptions and open questions** - unresolved premises, validation, and
    owner where known.
 
-The plan may add implementation facts and the PR may add proof, but neither
-may rewrite this chain. If a later check disproves it, record the mismatch and
-update the intent with the new source before changing the approach.
+The plan and PR follow the current accepted intent; they do not force the
+origin when the workflow has deliberately refined it. They may add
+implementation facts and proof, but they may not silently redefine the current
+outcome, scope, or approach. If later evidence disproves the current intent,
+record the mismatch and use the existing discussion/Socratic/user-alignment
+path, where applicable, to accept a revision before changing the plan or PR.
 
 ## Teach the changed areas in dependency order
 
@@ -120,8 +139,19 @@ It demonstrates the level of detail, not a prescribed product design.
 ### Intent record
 
 ```text
-Trigger: Operators asked for a visible retry state after a delivery attempt
-failed [user].
+Origin: Operators asked for a visible retry state and initially suggested a
+new status value [user].
+Socrates challenge: Would changing the status enum break existing consumers,
+and can a display state be shown without claiming a retry is scheduled
+[socratic]?
+Current accepted intent: Show `retrying at <time>` only when the scheduler has
+a next run, while keeping the existing status values and retry behavior
+[user agreement; decision-log].
+Decision trail: The compatibility concern superseded the proposed enum change;
+the presentation-only scope was accepted after Socrates [socratic;
+user agreement].
+Trigger: A delivery attempt fails and may have a scheduled retry [code:
+src/jobs/retry-scheduler.ts:72-96].
 Why: The current status only says "pending", so an operator cannot tell whether
 the next attempt is scheduled or whether the delivery is stuck [code:
 src/status/formatter.ts:18-31; QA: support reproduction].
@@ -146,10 +176,11 @@ Sources: user request; decision log; cited source files; focused test command.
 
 The delivery status now shows `retrying at <time>` when a failed attempt has a
 scheduled retry. The trigger was an operator report that `pending` hides a
-stuck delivery; the intended outcome is a status that distinguishes waiting
-from retrying while preserving the existing API status values. The formatter
-reads the scheduler's existing next-run value, so retry timing and provider
-selection stay unchanged.
+stuck delivery. The origin request suggested a new retry status, but Socrates
+surfaced compatibility risk and the user accepted a presentation-only outcome:
+the status distinguishes waiting from retrying while preserving the existing
+API status values. The formatter reads the scheduler's existing next-run value,
+so retry timing and provider selection stay unchanged.
 
 **Visual overview**
 
@@ -196,7 +227,12 @@ invoking PR-authoring skill's `references/pr-body.md`; these fields belong in
 the appropriate existing sections rather than in an extra mandatory section.
 
 ```text
-Intent fidelity
+Intent record
+- Origin / starting request: <initial idea or request> [source]
+- Current accepted intent: <latest agreed outcome, scope, and approach>
+  [user agreement | decision-log | existing gate]
+- Decision trail: <material revision, why, and superseded constraint/outcome>
+  [source]
 - Trigger: <event/request/defect> [source]
 - Why and impact: <problem, affected user/system, evidence> [source]
 - Intended outcome: <observable done state> [source]
@@ -239,9 +275,15 @@ Residual risks / limits
 
 A writing pass is ready when every applicable check is true:
 
-- **Fidelity** - Trigger, Why, intended outcome, constraints, and non-goals
-  trace to user/tracker/decision sources; inference and assumption labels are
-  visible.
+- **Source fidelity** - Trigger, Why, intended outcome, constraints, and
+  non-goals trace to user/tracker/decision sources; inference and assumption
+  labels are visible.
+- **Current-intent fidelity** - the origin/starting request is distinguishable
+  from the current accepted intent; plans and PRs follow the current intent,
+  and each material revision records its reason and source.
+- **Gate fidelity** - refinements or rejected approaches are supported by the
+  existing discussion, Socratic, evidence, and required user-alignment path;
+  the writing guidance adds no new pause and permits no silent redefinition.
 - **Rationale honesty** - established rationale is cited; missing rationale is
   stated as missing; assumptions are separately named with validation or an
   owner.

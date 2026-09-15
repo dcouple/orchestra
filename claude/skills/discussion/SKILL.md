@@ -80,8 +80,11 @@ conversation: `/create-brief`'s drafting step reads it, and anyone resuming
 the thread starts from it instead of from memory.
 
 Make this first handoff source-grounded using `.references/pr-writing.md`:
-record the trigger, observed problem and impact, intended outcome, constraints,
-non-goals, rationale, assumptions, and sources for each material decision.
+record the origin/starting request separately from the current agreed
+direction. For each material revision, preserve what changed, why it changed,
+and which constraint, outcome, or approach it superseded. The discussion and
+the existing Socratic/user-alignment path may forge, refine, or reject the
+initial idea; record that result rather than treating the origin as binding.
 Label user statements, repository evidence, inference, and assumptions. If
 the reason for a choice was never established, write `Rationale not
 established` and leave the question open; do not fill the gap with an

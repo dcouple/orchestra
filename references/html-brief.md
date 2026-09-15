@@ -103,15 +103,18 @@ type's rubric in `.references/rubrics/` - including the per-phase
 numbering rule for multi-phase items. No "works correctly".
 
 The section map's intent fields are the brief's source of truth: Why records
-the trigger, source-grounded problem and impact, and intended outcome;
-Direction records the rationale for locked choices and the alternatives
-actually considered; Scope records the constraints and non-goals. Assumptions
-and unresolved questions stay visible in Dependencies, Justification, or Open
-questions as appropriate. Use the source labels and the distinction between
-missing rationale and assumptions in `.references/pr-writing.md`; cite the
-decision log, tracker, repository evidence, tests, research, or QA evidence
-rather than presenting an inference as a user requirement. `/do` carries this
-record into its plan and PR.
+the origin/starting request and the current accepted trigger, source-grounded
+problem, impact, and intended outcome; Direction records the rationale for
+locked choices and the alternatives actually considered; Scope records the
+constraints and non-goals. Assumptions and unresolved questions stay visible
+in Dependencies, Justification, or Open questions as appropriate. Preserve a
+decision trail when discussion, evidence, the existing Socratic gate, or user
+alignment refines or rejects the origin. Use the source labels and the
+distinction between missing rationale and assumptions in
+`.references/pr-writing.md`; cite the decision log, tracker, repository
+evidence, tests, research, or QA evidence rather than presenting an inference
+as a user requirement. `/do` carries the current accepted record into its plan
+and PR.
 
 ## Opening diagram
 

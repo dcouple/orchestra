@@ -38,10 +38,13 @@ run `/do`'s readiness or status lifecycle and does not prompt for tracker auth.
   - `diff.patch` - the full diff of the candidate changes.
 
   Author `intent.md` with the provenance fields in
-  `.references/pr-writing.md`: trigger, source-grounded why and impact,
-  intended outcome, constraints, non-goals, rationale, assumptions, open
-  questions, and sources. Mark each material claim as user/tracker/decision,
-  repository evidence, inference, or assumption. If the reason for the change
+  `.references/pr-writing.md`: origin/starting request, current accepted
+  intent, decision trail, trigger, source-grounded why and impact, intended
+  outcome, constraints, non-goals, rationale, assumptions, open questions, and
+  sources. Mark each material claim as user/tracker/decision, repository
+  evidence, inference, or assumption. Socrates and the required user
+  alignment may refine or reject the origin; record what changed and why, then
+  make the PR follow the current accepted intent. If the reason for the change
   or approach was never established, write `Rationale not established`; keep
   that gap separate from an assumption used to proceed. The file must remain
   understandable without an artifact host.
