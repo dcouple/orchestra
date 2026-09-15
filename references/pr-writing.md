@@ -223,7 +223,9 @@ without removing the reason, concept map, SHA, checks, or limits from the PR.
 ## Adaptable skeleton
 
 Use this as a fill-in guide. Keep the actual PR sections and ordering from the
-invoking PR-authoring skill's `references/pr-body.md`; these fields belong in
+consumer-repo paths `.claude/skills/do/references/pr-body.md` (Claude, including
+standalone PR preparation) or `.codex/skills/do/references/pr-body.md` (Codex);
+these fields belong in
 the appropriate existing sections rather than in an extra mandatory section.
 
 ```text
