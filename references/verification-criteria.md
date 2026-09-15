@@ -37,7 +37,7 @@ in its implementation plan, never here.
 
 | Criterion | Method | Command / flow |
 |---|---|---|
-| AC1 | automated | `npm run test <path>` |
+| AC1 | automated | `<project test command for the relevant suite>` |
 | AC2 | computer-use | `<flow to drive in the running app>` |
 | AC3 | automated | `<script>` |
 
@@ -48,4 +48,7 @@ The verify stage additionally applies the change type's rubric from
 `.references/rubrics/`. Evidence is quoted command output / interaction
 transcripts (screenshots supplement, never the sole proof).
 
-**Rule:** the verify stage must not report success until every mapped method passes.
+**Rule:** never claim a criterion passed without its mapped proof. `/do`
+defers UI-only proof to post-PR QA; a documented deferral is not a pass.
+Save safe evidence per `.references/artifact-storage.md` without changing
+the brief's criteria or recording run state in it.

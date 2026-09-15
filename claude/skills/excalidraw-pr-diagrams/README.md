@@ -1,66 +1,33 @@
-# Excalidraw Diagram Skill
+# Excalidraw renderer setup
 
-A coding agent skill that generates beautiful and practical Excalidraw diagrams from natural language descriptions. Not just boxes-and-arrows - diagrams that **argue visually**. It also supports PR visual overviews that teach before/after changes to reviewers.
+The skill arrives through Orchestra sync. Locate its installed `references/`
+directory rather than assuming a Claude or Codex path.
 
-Compatible with any coding agent that supports skills. Use `.claude/skills/` for Claude Code and `.codex/skills/` for Codex.
-
-## What Makes This Different
-
-- **Diagrams that argue, not display.** Every shape/group of shapes mirrors the concept it represents - fan-outs for one-to-many, timelines for sequences, convergence for aggregation. No uniform card grids.
-- **Evidence artifacts.** As an example, technical diagrams include real code snippets and actual JSON payloads.
-- **Built-in visual validation.** A Playwright-based render pipeline lets the agent see its own output, catch layout issues (overlapping text, misaligned arrows, unbalanced spacing), and fix them in a loop before delivering.
-- **PR-ready handoff.** The skill covers shareable reviewer explainers, committed PR assets, raw GitHub image URLs, and PR body preview checks.
-- **Brand-customizable.** All colors and brand styles live in a single file (`references/color-palette.md`). Swap it out and every diagram follows your palette.
-
-## Installation
-
-Arrives in each consumer repo automatically via the orchestra sync
-(`.claude/skills/excalidraw-pr-diagrams/`). No manual install.
-
-## Setup
-
-The skill includes a render pipeline that lets the agent visually validate its diagrams. There are two ways to set it up:
-
-**Option A: Ask your coding agent (easiest)**
-
-Just tell your agent: *"Set up the Excalidraw diagram skill renderer by following the instructions in SKILL.md."* It will run the commands for you.
-
-**Option B: Manual**
+Run there when renderer setup is requested:
 
 ```bash
-cd .claude/skills/excalidraw-pr-diagrams/references
 uv sync
 uv run playwright install chromium
+uv run python render_excalidraw.py <diagram.excalidraw>
 ```
 
-For Codex installs, use `.codex/skills/excalidraw-pr-diagrams/references`.
+The renderer uses Python 3.11+, Playwright/Chromium, and an Excalidraw module
+loaded from the CDN named in `render_template.html`; initial rendering needs
+network access. Do not claim offline validation when that module is unavailable.
 
-## Usage
+## Resources
 
-Ask your coding agent to create a diagram:
+- `SKILL.md`: design, validation, storage, and authorized PR publishing.
+- `references/color-palette.md`: default colors; user-provided palettes may override.
+- `references/element-templates.md`: element examples and bindings.
+- `references/json-schema.md`: field reference.
+- `references/render_excalidraw.py`: render command, including output/scale options.
+- `references/render_template.html`: browser-side renderer.
+- `references/pyproject.toml`: renderer dependencies.
 
-> "Create an Excalidraw diagram showing how the AG-UI protocol streams events from an AI agent to a frontend UI"
+For example: “Draw the old and new retry paths for this PR.” The workflow
+returns editable source and a visually checked image; it updates a PR or
+commits diagram assets only when that delivery is in scope.
 
-Or ask for a PR visual overview:
-
-> "Create a shareable PR diagram that explains the before and after behavior, commit the PNG under .github/pr-assets, and update the PR body."
-
-The skill handles the rest - concept mapping, layout, JSON generation, rendering, and visual validation.
-
-## Customize Colors
-
-Edit `references/color-palette.md` to match your brand. Everything else in the skill is universal design methodology.
-
-## File Structure
-
-```
-excalidraw-pr-diagrams/
-  SKILL.md                          # Design methodology + workflow
-  references/
-    color-palette.md                # Brand colors (edit this to customize)
-    element-templates.md            # JSON templates for each element type
-    json-schema.md                  # Excalidraw JSON format reference
-    render_excalidraw.py            # Render .excalidraw to PNG
-    render_template.html            # Browser template for rendering
-    pyproject.toml                  # Python dependencies (playwright)
-```
+Save safe output per `.references/artifact-storage.md`, retaining the local
+files the renderer needs. Shared storage does not grant public-upload authority.

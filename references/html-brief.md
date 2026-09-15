@@ -7,6 +7,10 @@ there is no separate machine-facing document, so what the user approved and
 what the agents read can never drift. Supporting depth lives in
 `./tmp/<id>/refs/` and is linked, never inlined.
 
+Follow `.references/artifact-storage.md` for shared Grain copies. Keep the
+local page, relative links, metadata, and configured bundle transport intact;
+Grain storage does not add fields to the metadata schema.
+
 The brief exists so the user can see, as concretely as possible, what is
 going to happen - and refine the idea *before* handing it to an agent,
 minimizing intervention once implementation runs. It stays at the altitude
@@ -40,7 +44,8 @@ The page's `<head>` carries the machine state in one element:
 **Who reads this page**: the human, `/create-brief`, and `/do`'s overseer
 (at run start and preflight). Sub-agents inside a run work from the
 implementation plan the overseer derives - dispatches pass `plan.md`, not
-this page. Machine readers skip the `<style>` block; content starts at
+this page, except the plan-reviewer also receives the brief to check fidelity.
+Machine readers skip the `<style>` block; content starts at
 `<body>`.
 
 ## Procedure
@@ -52,8 +57,8 @@ this page. Machine readers skip the `<style>` block; content starts at
    `start` (Windows) on the file path.
 3. Walk the user through it and get explicit agreement - alignment happens
    against this page.
-4. Later changes (Socratic gate, late user input) are **in-place edits** to
-   the same file - there is nothing to regenerate or sync.
+4. Apply later changes in place. Refresh shared copies and any published
+   bundle after material edits; keep the same artifact identity.
 
 ## Fidelity scales with the zone
 
@@ -195,9 +200,8 @@ inline. Every item has at least one phase; the section scales with the
 - **Bug**: the suggested resolution path is this section; it becomes a
   strip only when it genuinely has stages - a one-step fix stays prose.
 
-The advisory rules (from the old templates) still govern: write only from
-what the conversation established - never dispatch research to fill this
-section; never file-by-file lists or step sequences; `/do` may deviate where
+Write the Approach from established discussion and dependency research,
+without file-by-file lists or task sequences. `/do` may deviate where
 the code disagrees, recording why, and reviewers never treat deviation as
 Must Fix. Locked calls stay in the `D#` cards. If genuinely unknown, one
 honest sentence deferring to `/do`'s plan stage is valid.
@@ -205,9 +209,9 @@ honest sentence deferring to `/do`'s plan stage is valid.
 ## UI mockups (user-facing items)
 
 Backend-only items state "no UI delta" in section 01 and omit the section.
-Everything else starts from the same rule: **never invent a visual
-language.** The app already has one, and a mockup drawn from imagination
-teaches the user about a product that doesn't exist.
+For an existing app, use its visual language. For a new product with no
+existing design system, agree on a direction and label the mockups as
+proposed, not captured behavior.
 
 ### Reconnaissance - inline tokens now, screenshots in the background
 
@@ -220,9 +224,7 @@ only one of them is a dispatch:
    buttons/inputs/selects/modals/tables itself - actual hex values, font
    stacks, control heights, radii, spacing - plus the structural markup of
    the touched screens, any step/wizard chrome worth reusing, and real
-   user-facing copy. **Quoted values, not descriptions.** This is a few
-   tool calls; a `code-researcher` dispatch here is a round-trip that buys
-   nothing.
+   user-facing copy. **Quoted values, not descriptions.**
 2. **Screen capture is one `frontend-verifier` dispatch, run in the
    background.** Boot the app, log in with the repo's testing account, and
    screenshot every surface the change touches, plus the app shell (global
@@ -351,8 +353,8 @@ something the reader must see to judge the change.
   can reasonably decide itself.
 - **Self-contained**: no external requests (fonts, scripts, images) - the
   page must render from disk and from the published bundle. Inline
-  everything; relative links only to `refs/` files that travel in the same
-  bundle.
+  page assets; relative links to `refs/` and `mockups/` files travel in the
+  same bundle. Prototype pages may share their bundled `mock.css`.
 - **Both themes**: keep all additions on the template's tokens.
 - **Lean - relative to zone**: zone 2–3 reads in two minutes; zone 0 earns
   length only where it teaches judgment. Structure earns its place only when

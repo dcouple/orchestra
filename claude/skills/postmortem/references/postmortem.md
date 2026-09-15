@@ -4,9 +4,12 @@
 > half when the result fell short of intent. Saved as `./tmp/<id>/postmortem.md` and
 > published **as comments on the run's work item and its PR** (see SKILL.md step 5;
 > never a separate tracker issue - a postmortem is run metadata, not a work item;
-> stays local only when neither anchor exists).
+> artifact-only when neither anchor exists, with a safe Grain copy when connected).
 > The point is **compound learning**: fix the root cause in *our system*
 > (skill / agent / template / criteria), so the same stall or gap can't recur.
+
+Save safe reports and timeline artifacts per `.references/artifact-storage.md`;
+keep local files and authorized anchor publication, without sharing raw transcripts.
 
 ---
 ```yaml
@@ -25,7 +28,7 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `out (human away after the run finished - inflates duration, not a defect); the`
 `PER-STEP TIMING TABLE - required, never summarized away: one row per pipeline step and`
 `per dispatch with start/end clock time (scripted from the transcript, not estimated),`
-`duration, TOKENS (main JSONL usage + subagents/agent-*.jsonl or notification totals +`
+`duration, TOKENS (deduplicated main and subagent usage +`
 `Codex "tokens used" stdout / rollout token_count events - "unknown" only after checking`
 `all three) and est. cost, and note, closed with phase %-of-wall-clock aggregates and`
 `summed turnaround gaps; the ranked in-run stalls (agent turn-ends that needed a "continue" nudge) with`
@@ -62,8 +65,8 @@ anchor: <the PR or issue this postmortem is connected to (same as pr when a PR e
 `resolve), then ONE judgment line: review effort was overdone | right-sized`
 `| underdone - naming the single dial that would have changed it. Ground the`
 `judgment in spend: tokens per review pass vs the Must Fixes that pass`
-`caught - a pass that found nothing was pure spend. This tunes zones.md's`
-`table.>`
+`caught, the stakes, and coverage. A clean review alone does not prove wasted`
+`effort.>`
 
 ## Acceptance
 `<the human's verdict on the PR, when known: merged as-is | merged after`

@@ -66,7 +66,7 @@ Daemon strings that do appear as replies, exact:
 |---|---|
 | `Planner turn failed: <detail>` / `Implementer turn failed: <detail>` | The turn ended in error. `<detail>` classifies it (table below). |
 | `Stopped at your request. Send a follow-up message to continue.` | A human pressed Stop; nothing is running; a reply resumes. |
-| `Turn completed without reply text - ` (match this prefix; the rest names the turn, model, `subtype=` and token count) | The run finished but its output was lost - a daemon defect. Treat as failed; escalate to the daemon operator. `subtype=` is the one place a budget or turn ceiling is named. |
+| `Turn completed without reply text — ` (match this prefix; the rest names the turn, model, `subtype=` and token count) | The run finished but its output was lost - a daemon defect. Treat as failed; escalate to the daemon operator. `subtype=` is the one place a budget or turn ceiling is named. |
 | A reply containing `was interrupted` (three restart-recovery notices) | Nothing is running. The notice says what revives it: "prompt again" → a reply resumes; "Assign … again" → clear and re-set the delegate; "hard restart" → a human reviews the worktree state first. All three are spend decisions. |
 | Anything else from the agent | Its response: the planner's analysis or question, or the implementer's `/do` report. |
 
@@ -162,3 +162,7 @@ Linear GraphQL API (`agentSession(id)` → `activities`, `externalUrls`) with a
 `LINEAR_API_KEY` read from the environment - never pasted into the
 conversation or written to Linear; without one, say so and decide from the
 thread shape.
+
+## Saved observations
+
+Save requested session reports using `.references/artifact-storage.md`. Grain is a shared record, not live session state or approval to resume, stop, or re-delegate work; refresh Linear evidence before acting.

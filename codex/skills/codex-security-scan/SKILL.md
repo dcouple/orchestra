@@ -44,6 +44,9 @@ invoked and the plugin preflight passes.
   correct.
 - Keep detailed artifacts in the plugin's private state or another location
   outside the repository. Never commit vulnerability reports or source excerpts.
+- Read `.references/artifact-storage.md`. Share only a sanitized summary in
+  Grain when permitted by the scan's disclosure policy; raw vulnerability
+  details and private plugin state stay private unless explicitly authorized.
 - Do not patch findings, create commits, open pull requests, or publish tracking
   items without separate explicit authorization.
 - Let the plugin finish and use its findings and coverage artifacts as the

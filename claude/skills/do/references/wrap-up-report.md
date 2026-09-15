@@ -2,7 +2,11 @@
 
 > Produced by `/do` at the end. Saved as `./tmp/<id>/wrapup.md` and posted to the PR.
 > This is `/do`'s self-report and the human's starting point for PR review - it folds
-> in the **final** review outcome (individual review passes are not persisted).
+> in the **final** review outcome; individual reports need not be repeated here.
+
+Follow `.references/artifact-storage.md` for safe shared reports. Preserve
+unknown measurements as unknown and record the cumulative code-review budget
+used across phases, whole-PR review, and QA fixes under Review outcome.
 
 ---
 ```yaml

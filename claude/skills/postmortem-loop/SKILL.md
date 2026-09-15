@@ -1,6 +1,6 @@
 ---
 name: postmortem-loop
-description: On-demand postmortem adoption loop - sweeps published postmortem comments for open system-change proposals, dedupes them against the current canonical files, lands the human-approved edits in the canonical skills repo, and posts verdict replies so the state sticks. Use when the user asks to run the postmortem loop, adopt postmortem proposals, or close the loop on postmortem findings - routinely after a batch of /do runs.
+description: Collect postmortem proposals, reconcile duplicates, and submit human-approved changes to the canonical skills repository.
 argument-hint: "[owner/repo ... to sweep; default: this repo's origin] [window in days, default 30]"
 ---
 
@@ -18,6 +18,9 @@ canonical skills repo - the repo these skills sync from, named in
 because that is where edits land and re-sync to consumers.
 
 ## Steps
+
+Read `.references/artifact-storage.md` for safe shared reports and decision
+matrices. Grain copies supplement, not replace, the anchor-comment ledger.
 
 ### 1. Collect
 Sweep each repo in $ARGUMENTS (default: this repo's `origin`) for published

@@ -1,6 +1,6 @@
 ---
 name: postmortem
-description: Runs a postmortem on a /do run - after the human reviewed the PR, or as a routine after-run review. Covers two dimensions: how the run RAN (wall-clock, agent-active vs idle-waiting-on-human, stalls, blockers - always) and, when the result fell short of intent, WHY (root cause in our system). Use when the user says a /do run missed the mark or asks "why did /do get this wrong", when any workflow skill produced the wrong outcome, or simply to review how a completed run spent its time. Proposes the system improvements the findings support - never applied, never a gate.
+description: Analyze a workflow run's timing and outcome, publish a postmortem on its existing anchors, and propose improvements without applying them.
 argument-hint: "[PR url/# or work-item id]"
 ---
 
@@ -22,20 +22,18 @@ Compound learning on the last `/do` run - on **two** axes:
 The completion artifact is `./tmp/<id>/postmortem.md`, published **as comments
 on the run's anchors** - the work item it executed and the `/do` PR - never as
 a separate tracker issue (a postmortem is run metadata about existing work,
-not a work item; local-only when neither anchor exists), plus the proposed (never
+not a work item; no anchor publication when neither exists), plus the proposed (never
 applied) system changes its findings support.
 
-This skill changes nothing: no code fixes, no skill edits. If the code itself needs
+This skill makes no code fixes or skill edits. If the code itself needs
 fixing, that goes through `/create-brief` then `/do`; the proposed system change is
 presented for the human to approve, not applied.
 
 > Every postmortem carries the run's dial record (zone, lanes, passes,
-> findings per lane, QA yield, tokens, PR size, spend ratio, agents roster
-> - from `wrapup.md`, cross-checked against the transcripts) plus one
-> judgment line: review effort was overdone / right-sized / underdone,
-> naming the single dial that would have changed it. Review passes are the
-> first place to look - a pass that found nothing was pure spend. This is
-> the data that tunes `.references/zones.md`'s table.
+> findings per lane, QA yield, tokens, PR size, spend ratio, agents roster)
+> from `wrapup.md`, cross-checked against transcripts. Judge review effort as
+> overdone / right-sized / underdone and name the most useful dial adjustment.
+> A clean review alone does not prove that the review was unnecessary.
 
 `/do` invokes this skill automatically at wrap-up in **ops-only mode**:
 steps 3–4 are skipped (the outcome half needs the human's PR review, so it
@@ -47,6 +45,10 @@ applicable.
 ## Steps
 
 ### 1. Load the record
+Read `.references/artifact-storage.md`; use the task's shared artifacts when
+available and retain required local files. Share sanitized findings, not raw
+session transcripts or credentials. Pass the folder ID to any delegated work.
+
 Resolve `<id>` from $ARGUMENTS (a work-item id directly, or match a PR to
 its item via the tracker cross-links - the PR body links the item and the
 wrapup comment links the PR - or via `./tmp/*/wrapup.md`; legacy
@@ -58,7 +60,7 @@ wrapup comment links the PR - or via `./tmp/*/wrapup.md`; legacy
   paste it if it lives outside GitHub
 - the run's session transcripts - `~/.claude/projects/<munged-cwd>/*.jsonl` (the cwd with
   `/`→`-`; a run may span several files after compaction) and the phase/fix commits
-  (`git log --reverse --date=... origin/main..HEAD`) - the raw material for step 2
+(`git log --reverse --date=iso <base>..HEAD`, using the actual PR base) - the raw material for step 2
 
 **Success criteria**: all sources loaded (or their absence noted - a missing wrapup
 is itself a finding; missing transcripts mean the operational analysis is best-effort
@@ -113,8 +115,8 @@ standalone issue orphans it from the thing it analyzes and pollutes the
 backlog with non-actionable items. The anchors:
 - **The work item** (tracker issue the run executed): post the postmortem
   body as a comment there, following the repo's artifact-comment convention
-  (e.g. `ORCHESTRA-ARTIFACT` markers with `path="postmortem.md"`), so a
-  later pull harvests it with the other run artifacts.
+  from `.references/publish-work-item.md`: configured artifact bundles stay
+  authoritative; `ORCHESTRA-ARTIFACT` markers are only for legacy transport.
 - **The `/do` PR** (when one exists): post the same body as a PR comment -
   the reviewer arriving at the PR must see how the run ran without leaving
   the page.
@@ -123,8 +125,8 @@ backlog with non-actionable items. The anchors:
   the postmortem on that PR; a tracked item whose run died before a PR gets
   it on the work item alone. Only when **neither anchor exists** (e.g. a
   failure inside a `/create-brief` run before anything was published) does the
-  postmortem stay local in `./tmp/<id>/postmortem.md` - and you tell the
-  user so.
+  postmortem have no anchor publication. Retain `./tmp/<id>/postmortem.md`
+  and its safe Grain copy when connected; tell the user where it is.
 
 Title the comment's first line `# Postmortem - <item> (<ops-only | full>)`
 so it's scannable in a long thread. Record the comment URLs in
@@ -135,7 +137,7 @@ anchors - it never edits or replaces the ops-only comment.
 **Success criteria**: `postmortem.md` exists with the Run operations section filled and
 (when the run fell short) the "why the gap happened" section naming the system cause (not
 just the code defect); the postmortem body is a comment on the work item and on the
-anchor PR when they exist (local-only and the user told, only when neither exists); **no new tracker
+anchor PR when they exist (artifact-only and the user told when neither exists); **no new tracker
 issue was created for it**; the comment URLs are recorded.
 
 ### 6. Propose system changes
@@ -143,10 +145,10 @@ Propose the system changes the findings actually support - zero, one, or several
 don't force a proposal when nothing is wrong, and don't cap them when the run
 surfaced more. Each proposal names one concrete change to one specific file - a
 skill, sub-agent, template, or criteria block, by its path in the canonical skills
-repo (`dcouple/orchestra` - e.g. `claude/skills/discussion/SKILL.md`,
+repo (e.g. `claude/skills/discussion/SKILL.md`,
 `references/verification-criteria.md`, `claude/agents/code-reviewer.md`).
 The copies in each consumer repo (`.claude/`, `.codex/`, `.references/`) are synced
-mirrors - the edit lands in orchestra and re-syncs. Quote the file path and show the
+mirrors - propose edits to the canonical source. Quote the file path and show the
 proposed edit. Proposals target **operational** findings from step 2 (pre-authorize a
 green-tier gate, await a dispatch in-turn instead of yielding, make a fallback
 non-blocking) as readily as outcome gaps.
@@ -157,7 +159,8 @@ gate: don't wait for approval, and an auto-run at `/do` wrap-up ends after
 publishing, full stop.
 
 **Success criteria**: each proposal names an exact file and shows the concrete edit;
-nothing outside `./tmp/<id>/` was modified; the run never paused for approval.
+only report artifacts and authorized anchor comments were written; the run
+never paused for proposal approval.
 
 ```
 Suggested next steps:

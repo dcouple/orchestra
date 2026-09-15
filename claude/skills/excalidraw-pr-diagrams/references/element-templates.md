@@ -1,6 +1,8 @@
 # Element Templates
 
-Copy-paste JSON templates for each Excalidraw element type. The `strokeColor` and `backgroundColor` values are placeholders - always pull actual colors from `color-palette.md` based on the element's semantic purpose.
+Element examples: replace placeholder colors from `color-palette.md` or the
+user's supplied palette. Assign unique IDs and update both ends of bindings;
+the sample arrow's `elem2` must exist in the resulting diagram.
 
 ## Free-Floating Text (no container)
 ```json

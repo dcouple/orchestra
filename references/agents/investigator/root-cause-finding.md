@@ -5,6 +5,9 @@
 > **Open with the one-line cause + confidence** so the Overseer can branch without
 > reading the body.
 
+The coordinator saves safe findings per `.references/artifact-storage.md`.
+Redact private evidence without losing the diagnostic conclusion or confidence.
+
 ---
 
 **Root cause:** `<one line>` · **Confidence:** `<confirmed | likely | hypothesis>`

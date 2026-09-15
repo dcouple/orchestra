@@ -5,6 +5,9 @@
 > plan-deltas, keeps the Files-changed table true.
 > **Keep the return under ~15 lines** - the detail lives in `plan.md`.
 
+Keep the local plan current; the coordinator shares safe reports and updated
+plan artifacts per `.references/artifact-storage.md`.
+
 ---
 
 **Status:** `<DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT>`

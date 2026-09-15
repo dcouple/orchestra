@@ -8,7 +8,7 @@
 | `ellipse` | Entry/exit points, external systems |
 | `diamond` | Decisions, conditionals |
 | `arrow` | Connections between shapes |
-| `text` | Labels inside shapes |
+| `text` | Standalone labels or text bound to shapes |
 | `line` | Non-arrow connections |
 | `frame` | Grouping containers |
 
@@ -38,7 +38,7 @@ All elements share these:
 | `text` | The display text |
 | `originalText` | Same as text |
 | `fontSize` | Size in pixels (16-20 recommended) |
-| `fontFamily` | 3 for monospace (use this) |
+| `fontFamily` | 3 is this skill's monospace default; use a supported requested style |
 | `textAlign` | "left", "center", "right" |
 | `verticalAlign` | "top", "middle", "bottom" |
 | `containerId` | ID of parent shape |

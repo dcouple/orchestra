@@ -9,6 +9,8 @@ reference carries intent provenance and zero-context PR teaching guidance;
 `.codex/skills/do/references/pr-body.md` (Codex) remain the PR section and
 evidence contracts in a synced consumer.
 
+For every saved workflow artifact, follow [artifact-storage.md](artifact-storage.md): Grain when connected, required local working files preserved, and silent local fallback otherwise.
+
 This directory is a one-way mirror of `references/` in
 [dcouple/orchestra](https://github.com/dcouple/orchestra). Any edit made in a
 consumer repo is overwritten by the next sync PR. These files are

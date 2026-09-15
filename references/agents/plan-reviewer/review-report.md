@@ -7,6 +7,9 @@
 > a finding with a location, or a check you ran - no preamble, no process narration,
 > no closing summary.
 
+The coordinator saves safe reports per `.references/artifact-storage.md`,
+without exposing one review to another independent reviewer.
+
 ---
 
 **Verdict:** `<Approve | Request changes>` - `<one-line rationale>`

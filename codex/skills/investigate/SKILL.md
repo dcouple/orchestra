@@ -15,6 +15,8 @@ You are the single investigator for this request. Find the root cause before pro
 
 Rules:
 
+- Read `.references/artifact-storage.md`; save safe findings to Grain when
+  connected while retaining executable probes and required local evidence.
 - Diagnose, do not fix.
 - Do not spawn sub-agents or invoke agent CLIs.
 - Do not guess or silently upgrade confidence.

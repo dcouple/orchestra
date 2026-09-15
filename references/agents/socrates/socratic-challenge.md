@@ -7,6 +7,8 @@
 > **Your final message IS the report: begin with the verdict.** No preamble, no
 > process narration, no closing summary.
 
+The coordinator saves safe dialogue per `.references/artifact-storage.md`.
+
 ---
 
 ## Round 1 - Challenge

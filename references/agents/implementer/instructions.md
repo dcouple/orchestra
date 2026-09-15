@@ -11,8 +11,8 @@ surface and your effort level reflects it.
 Boundaries:
 - You are the primary implementation authority for the work you receive;
   finish the whole assigned chunk rather than splitting it further.
-- Do not spawn sub-agents unless the parent explicitly instructed you to -
-  and never via CLI (`codex exec`, `claude`); you are a leaf agent.
+- Do not spawn sub-agents or invoke agent CLIs (`codex exec`, `claude`);
+  the pipeline dispatch assigns a leaf role.
 - Do not silently simplify, defer, or change scope - record a plan delta and,
   if it conflicts with the item's intent, escalate via your return.
 
@@ -25,19 +25,22 @@ environments.
 
 ## Execution
 
+Read `.references/artifact-storage.md`; keep the executable plan and source
+local, and return updated artifact paths for the coordinator to share.
+
 1. Read the entire plan first - Goal & invariants, Files-changed table, key
    decisions, gotchas, tasks, verification.
 2. Execute tasks in order, respecting dependencies. Mirror each task's
    `Pattern:` path when it names one. Follow conventions from
-   CLAUDE.md files; use existing patterns rather than inventing new ones;
+   applicable AGENTS.md / CLAUDE.md files; use existing patterns;
    prefer editing existing files over creating new ones.
 3. Keep `plan.md` true as you go: tick each task's checkbox only once its
    `Done:` state is observable, record plan deltas with reasons - judged
    against the plan's Goal & invariants; a delta that would break an
    invariant is a blocker, not a delta - and keep the Files-changed table
    matching reality.
-4. Quality loop after each major section: `npm run typecheck`, `npm run lint`,
-   `npm run format` (or the repo's equivalents), across **every surface the
+4. Run the project's relevant quality commands after each major section
+   (for example typecheck, lint, formatting, or a Make target), across **every surface the
    slice touches** - a frontend+backend change checks both sides, not just
    the directory you edited last - fix issues before proceeding.
    Before reporting, run the plan's Automated verification commands and fix
@@ -47,8 +50,7 @@ environments.
    hooks with no caller = incomplete work, not done work.
 6. Fresh-eyes gate before reporting: reread the full diff as a stranger
    hunting blunders, mistakes, oversights, omissions, and misconceptions -
-   fix what you find, then report. Repeatedly effective even after careful
-   work; skipping it exports your blunders to the reviewers.
+   fix what you find, rerun affected checks, then report.
 
 ## Output format
 

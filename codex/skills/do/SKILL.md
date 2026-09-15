@@ -1,6 +1,6 @@
 ---
 name: do
-description: Run the full autonomous pipeline against a work item - plan, implement, verify, PR, post-PR review + QA, wrap-up. Takes a work-item reference (issue #/URL in whatever tracker the repo's AGENTS.md configures) or a local ./tmp/<id>/brief.html produced by /create-brief.
+description: Take a ready work item through planning, implementation, verification, PR review, QA, and handoff using the repository's tracker and workflow contracts.
 argument-hint: "[work-item # / URL, or path to ./tmp/<id>/brief.html]"
 disable-model-invocation: true
 ---
@@ -9,21 +9,14 @@ disable-model-invocation: true
 
 ## Work item: $ARGUMENTS
 
-You are the **Overseer** - the orchestrating agent (Fable, this session);
-sub-agent role instructions and report formats refer to you by that name.
-Every judgment call is yours - the effective zone (one escalation notch), how much research
-the plan needs, when the plan is ready, when review findings are resolved. Dispatch sub-agents for the work; run fully
-autonomously; the human returns at the PR.
+You are the **Overseer**. Own planning decisions, dispatches, review adjudication, and the final handoff; execute within the action tiers below.
 
-**Sub-agents:** code-researcher, investigator, implementer,
-backend-verifier, plan-reviewer, and code-reviewer run on Codex via the
-matching role skills; this entrypoint uses a single Codex lane. **All
-implementation runs on the Codex `implementer`** at effort `low`,
-every surface - backend/ops and frontend web/mobile alike. The Codex
-`frontend-verifier` is the app-driving QA agent: it runs **once per run,
-post-PR** (Step 5), never at the verify stage, and drives web UI with local
-Playwright by default. The Codex `web-researcher`
-handles external research.
+## Roles and artifacts
+
+- Use the matching Codex role skills for research, investigation, implementation, verification, and review. This entrypoint remains Codex-only.
+- Use the Codex `implementer` at effort `low` for every surface, including mixed frontend/backend work.
+- Use `web-researcher` for external research and `frontend-verifier` for post-PR QA, not Step 3. Local Playwright is the default web transport; attached browser tools remain optional.
+- Read `.references/artifact-storage.md`; share safe artifacts through Grain when connected and pass its folder ID/rule to every dispatch. Keep all required local files and configured bundle publication intact.
 
 ## Autonomy & safety (read first)
 
@@ -74,9 +67,8 @@ morning. These rules make that safe:
   what you need, and wait.
 
 **Notify** per `.references/notify.md` - **one-way**: inform the human,
-don't wait for a phone reply. Target comes from repo config (default a per-operator
-`ntfy.sh/<gh-username>-dcouple-orchestra`; silent no-op if unreachable), and
-after each send you tell the user in chat where it went. Messages are plain
+don't wait for a phone reply. Use the configured target; unconfigured is a
+silent no-op. Report a successful send only after confirmation. Messages are plain
 text - the app doesn't render Markdown - titled `[item] stage - why` so
 concurrent runs stay legible. Fire at: a red gate (deferred or blocking), a
 hard stop, and run completion - never on green-tier progress.
@@ -95,9 +87,10 @@ the Codex orchestrator session uses its configured non-interactive mode and
 every Codex dispatch uses `--yolo`; approvals must never gate an
 unattended run. Not in bypass mode → preflight note with the exact relaunch
 command. Prove each credential with a token-producing probe
-(`gcloud auth print-access-token`, plus the application-default variant
-when terraform is in play), never a listing, and note each token's expiry
-horizon against the run's expected length.
+(`gcloud auth print-access-token >/dev/null`, plus the application-default
+variant with stdout suppressed when terraform is in play), never a listing.
+Never print or save token values; compare non-secret expiry metadata with
+the run's expected length.
 Resolvable from config or a quick check →
 just confirm it silently. If nothing is missing, say so in one line and
 proceed. A missing green-tier dependency is a preflight note, not a
@@ -248,13 +241,17 @@ whose open PR this run must not amend, stop and ask the user to set one up.
 
 Classify the item's goal as you load it: an item whose outcome is one named
 metric reaching a target - latency, bundle size, suite time, lint count -
-    runs Step 2 as the loop in the available `hillclimb` skill, each
+runs Step 2 with the available `hillclimb` skill, each
 cycle's change dispatched to the Codex `implementer`, its accepted-win
 commits riding this run's PR under Step 4, and its attempt log kept in
 `./tmp/<id>/`. Record the metric, its baseline, and its target in the
 plan's Goal & invariants; the action tiers govern, so the loop never idles
 for the human, and a climb that stops short of target carries its
 trajectory into the wrap-up.
+
+If `hillclimb` is unavailable, use a bounded measure/change/re-measure loop
+under the same action tiers. Record the baseline, stopping condition, accepted
+changes, and remaining gap; do not invent a missing skill or expand scope.
 
 **Done when**: the item and its artifacts are in `./tmp/<id>/`, status is
 `ready`, and you're on a non-default branch.
@@ -334,6 +331,9 @@ still writes the code. Candidates go under `./tmp/<id>/refs/arena/`, the
 winner and its grafts into the plan's Key decisions, and the action tiers
 govern rather than a wait for the user.
 
+Use `arena` only when installed. Otherwise compare the defensible options
+directly and record the decision in the plan, without claiming an arena run.
+
 Before dispatching reviewers, run one **cold-read pass** over
 the finished plan yourself - reread it as a stranger hunting blunders,
 mistakes, oversights, omissions, and misconceptions, and fix what you find.
@@ -399,15 +399,16 @@ codemods, per-file transforms):
 
 ## Step 3: Verify
 
-Prove every command-shaped verification criterion - the `codex` skill role
+Prove every command-shaped verification criterion - the Codex role skill
 `backend-verifier` for tests/scripts. **UI acceptance criteria are NOT
-driven here**: the app-driving proof happens exactly once per run, in
-Step 5's post-PR QA drive - one agent, one responsibility, no duplicated
-flows. At this stage a UI criterion gets its non-driving checks only
+driven here**: app-driving proof belongs to Step 5's post-PR QA stage.
+Rerun QA only as that stage requires after reviewed fixes. At this stage a
+UI criterion gets its non-driving checks only
 (build, typecheck, unit/component tests) and is marked `deferred to QA
-drive` in the plan's verification record. Verification that must spawn
-an AI session or feed repo context to an AI CLI routes to the matching Codex
-role. Any ad-hoc verifier dispatched outside the named agents carries an
+drive` in the plan's verification record. When an AI CLI is itself the system
+under test, the Overseer runs the documented, authorized test directly;
+do not assign a leaf verifier work that requires breaking its no-agent-CLI
+boundary. Any ad-hoc verifier dispatched outside the named agents carries an
 explicit model and the leaf-agent line (you are a sub-agent; never spawn
 agents or invoke agent CLIs - `claude`, `codex exec`, or any equivalent).
 The plan's Automated subsection is the
@@ -535,7 +536,7 @@ including per-phase reviews, the whole-PR review, confirmation passes, hosted
 GitHub review triggers such as `@codex review`, and scoped reviews after QA
 fixes. Never reset the counter at a phase, commit, push, PR creation, QA entry,
 resume, or changed HEAD. Reserve at least one dispatch for the whole-PR review,
-so at most three may be spent before Step 5. Persist the cumulative count in
+so at most two may be spent before Step 5. Persist the cumulative count in
 the current plan's `code_review_dispatches` field and carry it forward across
 phase plans. A new commit does not by itself invalidate prior review evidence
 or require an exact-head review.
@@ -551,7 +552,7 @@ or require an exact-head review.
   when needed.
 - **Another pass runs only on a trigger - the zone and global caps are
   ceilings, never quotas.** Zones 0–1 may use up to their zone ceiling while
-  zones 2–3 stop at one; no run may exceed four cumulative code-review
+  zones 2–3 stop at one; no run may exceed three cumulative code-review
   dispatches. At either cap, carry survivors to wrap-up rather than starting
   another pass, even when a prompt says “repeat until clean” or “review the
   latest head.”
@@ -662,7 +663,7 @@ or require an exact-head review.
   the review loop exits, so without this pass a behavioral fix born from
   app-driving evidence (exactly the client-state bug a diff-reading
   reviewer can't see) would ship un-reviewed. This scoped pass spends from the
-  same cumulative maximum of four; QA never creates a new budget. Body carries state, comment
+  same cumulative maximum of three; QA never creates a new budget. Body carries state, comment
   carries proof - never
   leave the results only in a comment when the body has a checklist and a QA
   results line to update. After every body update, **YOU MUST** preserve and
@@ -803,7 +804,7 @@ frontmatter (run state lives in the implementation plan, never in the
 brief).
 After each phase verifies, use the zone to decide whether its diff warrants a
 code-review dispatch. Every such dispatch spends from the run-global maximum
-of four, and at least one dispatch must remain for the whole-PR review; a phase
+of three, and at least one dispatch must remain for the whole-PR review; a phase
 boundary never resets the ledger. Fix and re-verify material findings, then run
 the build gate and commit the phase following Step 4's commit rules. After the
 last phase, continue from Step 4's PR steps

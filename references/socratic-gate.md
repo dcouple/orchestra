@@ -4,6 +4,9 @@ Run by `/create-brief` after `brief.html` is drafted (`status: draft` in its
 metadata) and before publish. The calling skill supplies the per-type
 emphasis - what socrates should bear down on for this item type.
 
+Pass the task folder/storage rule from `.references/artifact-storage.md`;
+the coordinator saves the distilled dialogue, not the read-only reviewer.
+
 1. Dispatch the `socrates` sub-agent with the draft's path (round 1). It
    calibrates its own intensity - that judgment lives in the agent
    definition, not here or in the caller.

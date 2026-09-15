@@ -5,10 +5,13 @@
 > role per run, after implementation and before the final review loop and QA drive. The Overseer merges the two
 > reports itself (cluster by file:line + issue; **max severity, never average**; sole-source
 > findings kept; tag by source) - never re-dispatch a role to "confirm" the other.
-> **Your final message IS the report: begin with the counts.** Every line is a count, a
+> **Your final message IS the report: use the header below.** Every line is a count, a
 > finding with `file:line`, or a check you ran - no preamble, no process narration.
 
 ---
+
+The coordinator saves safe copies per `.references/artifact-storage.md`.
+Keep the local plan path and independent-review boundary intact.
 
 **Plan:** `<absolute path of the plan file written>`
 **Diff base:** merge-base with `<$BASE>` at `<sha>`, to working tree · `<N>` hand-written files / `<M>` lines (`<K>` generated/lockfile excluded)

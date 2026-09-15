@@ -3,7 +3,7 @@
 > Returned **in-conversation** by the Code Reviewer to the Overseer - **not a file**.
 > Runs in the post-PR review loop and, when the zone warrants it, on selected
 > phase diffs. Under `/do`, every invocation spends from one zone-derived,
-> run-global budget capped at four; phase boundaries, PR creation, QA, and a
+> run-global budget capped at three; phase boundaries, PR creation, QA, and a
 > changed HEAD never reset it. Must-Fix items loop back to Implement only while
 > that cumulative budget remains (`/prepare-pull-request` has its own cap). The security review is mandatory: security findings live in
 > Must Fix / Should Fix with a `(security)` tag - never a separate section, so they
@@ -15,7 +15,7 @@
 ---
 
 **Verdict:** `<Approve | Request changes>` - `<one-line rationale>`
-**Counts:** Must Fix: `<n>` (security: `<m>`) · Should Fix: `<n>` · global dispatch `<k>`/`<zone ceiling, max 4>`
+**Counts:** Must Fix: `<n>` (security: `<m>`) · Should Fix: `<n>` · global dispatch `<k>`/`<zone ceiling, max 3>`
 
 ## Must Fix  *(blocks merge; loop back to Implement)*
 - **MF-1** `(security)` - `<what>` · `<file:line>` · `<fix>` · violates `<D# / AC# | "new issue">`

@@ -1,6 +1,6 @@
 ---
 name: sentry-loop
-description: On-demand Sentry triage loop - sweep every project's errors over a time window, classify each issue (new / recurring / regressed, user-impacting / zero-user, real / noise), root-cause only the clusters that matter, file findings into the work tracker under the loop's label, and annotate Sentry so the state sticks. Use when the user asks to run the sentry loop, triage Sentry, "what's new in Sentry", or wants a period's errors root-caused. Report-only - fixes go through /create-brief then /do.
+description: Triage Sentry errors, investigate relevant clusters, and record findings in the configured tracker without implementing fixes.
 argument-hint: "[time window, default 7d]"
 ---
 
@@ -17,6 +17,9 @@ human-authored work items.
 
 Read the current repo's `AGENTS.md` before filing anything:
 
+- Read `.references/artifact-storage.md`; share sanitized reports and pass
+  the task folder ID/rule to investigators. Do not copy raw private events
+  into shared artifacts.
 - **Tracker + label**: the `Work-item tracking` section names the tracker and
   the label/team that marks loop-generated issues (default label:
   `sentry-loop`). Create the label on first use if it doesn't exist.
@@ -24,8 +27,10 @@ Read the current repo's `AGENTS.md` before filing anything:
   `search_issues` / `search_events` / `get_sentry_resource`). If the repo has
   a `docs/mcp-sentry.md`, follow it.
 
-No tracker configured → produce the report locally under `./tmp/` and stop
-before the filing stage.
+No tracker configured → save the report under `./tmp/` (and Grain when
+available) and stop before filing. A request only to inspect or report does
+not authorize tracker writes, label creation, or Sentry status changes;
+present those as proposed actions unless the user requested the triage loop.
 
 ## Stage 1 - Sweep
 

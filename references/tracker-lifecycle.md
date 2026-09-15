@@ -4,6 +4,10 @@ Used by `/do` and `/prepare-pull-request`. Tracker work is non-blocking hygiene:
 report failures accurately and continue implementation, review, verification,
 QA, PR creation, handoff, and completion.
 
+Save any lifecycle report per `.references/artifact-storage.md`, but resolve
+current tracker state live. A Grain copy never supplies approval, identity,
+or evidence that a tracker mutation succeeded.
+
 ## Links and identity
 
 Current-item lifecycle comes from explicit links in the invocation, the

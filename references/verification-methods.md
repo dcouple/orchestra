@@ -5,6 +5,9 @@ mapping each `AC#` to a method, and by `/do`'s verify stage when proving them.
 Per-surface checklists live in `rubrics/` - pick the one matching the change
 type and require its evidence.
 
+Use the project's documented commands and supported platforms; named tools
+below are examples. Save safe reports per `.references/artifact-storage.md`.
+
 ## The menu
 
 | Method | Proves | Evidence to capture |
@@ -16,7 +19,7 @@ type and require its evidence.
 | E2E browser (Playwright-style / computer-use) | the whole user journey via real rendering - user-visible behavior, role-based locators | interaction transcript + assertion output (screenshot alone is not proof) |
 | Mobile simulator (XCUITest / Espresso / Maestro-style) | native flows, gestures, deep links | test report or driven-flow transcript |
 | Visual regression | pixels unchanged vs baseline (behavior not included) | before/after diff pair |
-| Accessibility scan (axe-style) | the automatable ~half of a11y issues | violation report, 0 critical |
+| Accessibility scan (axe-style) | machine-detectable issues; not complete accessibility | violation report, 0 critical |
 | Script (backend changes, one-off behavior) | a specific runtime behavior end-to-end | quoted command output + exit code |
 | Migration checks | row counts, domain-invariant queries, dry run in a transaction, tested rollback | pre/post counts + invariant query results |
 | Performance budget (Lighthouse-CI-style) | metrics within thresholds | report with metric values (average 3 runs) |

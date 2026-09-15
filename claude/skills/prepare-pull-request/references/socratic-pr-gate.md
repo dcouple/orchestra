@@ -12,6 +12,9 @@
 what "done" means) plus `diff.patch` (the full candidate diff). Read both
 before writing a question.
 
+The coordinator keeps these local inputs current and shares safe copies per
+`.references/artifact-storage.md`; the reviewer remains read-only.
+
 ## The premise under attack
 
 The approach actually taken - judged as if the work were not yet done.

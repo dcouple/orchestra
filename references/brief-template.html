@@ -1,4 +1,6 @@
 <!doctype html>
+<!-- Save safe authored pages per .references/artifact-storage.md; retain
+     local assets, relative links, and the configured bundle contract. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -267,13 +269,13 @@
     <h2>What this rests on, and how it actually works</h2>
     <div class="dep">
       <div class="dep-head">
-        <span class="dep-name">HelloSign embedded signing</span>
+        <span class="dep-name">External document-signing service (example)</span>
         <span class="vbadge verified">verified</span>
       </div>
       <p>What it does for this item and how the mechanism works, in two sentences.</p>
       <details>
-        <summary>Research digest <span class="hint">— refs/hellosign.html</span></summary>
-        <div class="body"><p>Key findings summary; full report at <a href="refs/hellosign.html">refs/hellosign.html</a>.</p></div>
+        <summary>Research digest <span class="hint">— refs/signing-service.html</span></summary>
+        <div class="body"><p>Key findings summary; full report at <a href="refs/signing-service.html">refs/signing-service.html</a>.</p></div>
       </details>
     </div>
     <div class="callout"><strong>Schema changes:</strong> `signatures` table gains `expires_at`; migration required. ("none" is a valid — and mandatory-to-state — value.)</div>
@@ -334,7 +336,7 @@
     </div>
     <table class="flowmap">
       <tr><th>User flow</th><th>Exercises</th></tr>
-      <tr><td>SMS user</td><td>AC1, AC2 · AC10</td></tr>
+      <tr><td>Primary user journey</td><td>AC1, AC2 · AC10</td></tr>
     </table>
   </section> -->
 

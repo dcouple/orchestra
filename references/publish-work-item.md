@@ -7,9 +7,11 @@ tracker body. "Metadata" below always means the YAML in the brief's
 read and written there, never in the page body.
 
 Orchestra assumes no tracker. The skills define *what* gets published -
-`brief.html` plus every `refs/` file - and the consumer repo defines *where*:
+`brief.html` and its supporting files - and the consumer repo defines *where*:
 the `Work-item tracking` section of the project's `AGENTS.md` (or
 `CLAUDE.md`) is the only authority on the destination.
+
+Follow `.references/artifact-storage.md` for Grain copies of safe artifacts. Keep the local files and tracker/bundle protocol below unchanged; a Grain save alone does not publish or mark the work item ready.
 
 `brief.html` and its `refs/` are always authored and kept locally under
 `./tmp/<id>/` - publishing never changes what exists on disk. The
@@ -17,7 +19,7 @@ destination decides the transport: with an `artifact_host:` key the bundle
 is the transport and the tracker gets a lean body (below); without one,
 fall back to a **markdown rendition** of the brief as the tracker body
 (**Without `artifact_host`** below). If the `Work-item tracking` section is
-missing or gives no publishing instructions, publish nowhere: the work item
+missing or gives no publishing instructions, publish to no tracker: the work item
 is complete as local files under `./tmp/<id>/`, and the user is told where
 they live.
 
@@ -25,13 +27,15 @@ they live.
 
 Read the bearer token from `ARTIFACT_HOST_TOKEN`. Build the manifest from
 `brief.html`, any present `plan.md` and `wrapup.md`, and every regular
-file under `refs/`. Follow `.references/artifact-host-upload.md` for host
+safe file under `refs/` and `mockups/`, including phase plans when present.
+Follow `.references/artifact-host-upload.md` for host
 and token resolution, manifest construction, authenticated `POST`/`PUT`
 requests, read URLs, cleanup, and the retry-once rule.
 
 On first publish, perform these steps in order:
 
-1. Set `status: ready` in the metadata, build the manifest, and send it to
+1. Use the caller's aligned status (`ready`, or explicitly retained `draft`
+   for a bug needing more evidence), build the manifest, and send it to
    `POST <artifact_host>/a` with `Authorization: Bearer
    $ARTIFACT_HOST_TOKEN`.
 2. Record the returned `url` in the metadata as `artifact_bundle:`. Rebuild
@@ -63,8 +67,8 @@ On first publish, perform these steps in order:
    back to the tracker while the tracker body or attachment links to the
    bundle.
 
-Post no marker comments. The bundle's `brief.html`, `refs/`, and present
-milestone `plan.md` and `wrapup.md` are the complete artifact
+Post no marker comments. The bundle's `brief.html`, `refs/`, `mockups/`, and
+present milestone/phase plans and `wrapup.md` are the complete artifact
 transport; the lean tracker item is state plus summary plus pointer.
 (Legacy items published under the old full-body contract keep their marker
 comments; `/do`'s Step 0 still harvests them.)
@@ -85,7 +89,7 @@ remove the failure field.
 
 ## Without `artifact_host`
 
-Set `status: ready` in the metadata, then create the tracker item, titled
+Use the caller's aligned status as above, then create the tracker item, titled
 `<prefix> <item title>`. The tracker body is a **markdown rendition of the
 brief** - a direct section-by-section conversion, nothing re-authored: the metadata YAML
 as a fenced block, then the brief's content sections rendered as markdown at

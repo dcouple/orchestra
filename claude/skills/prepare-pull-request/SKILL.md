@@ -1,6 +1,6 @@
 ---
 name: prepare-pull-request
-description: Take ad-hoc changes made in-session (outside /do) to a pull request - gate them through Socrates (right approach?) and the PR reviewers (correct?), then commit, push, and open the PR in the repo's standard format. /do handles its own PR prep; this skill is for everything else.
+description: Review, verify, and publish session changes as a PR outside the /do pipeline.
 argument-hint: "[optional: issue # to close, or extra context for the PR body]"
 ---
 
@@ -8,12 +8,8 @@ argument-hint: "[optional: issue # to close, or extra context for the PR body]"
 
 ## Context: $ARGUMENTS
 
-Changes made ad-hoc in a session were never planned, reviewed, or verified
-the way `/do` output is - this skill closes that gap before anything goes
-up. Two gates run before the PR: **Socrates** challenges whether the
-approach was right at all, then the **PR reviewers** check that the code is
-correct. Socrates runs first because a `rethink` verdict invalidates any
-line-level review that ran before it; the reverse is not true.
+Run the Socrates approach gate before the correctness review, then verify
+and publish the scoped changes. An unresolved `rethink` blocks the PR.
 
 You are the Overseer. PR conventions (labels, title format, required body
 sections, milestones) are the repo's to define: read the project's root
@@ -24,6 +20,9 @@ run `/do`'s readiness or status lifecycle and does not prompt for tracker auth.
 
 ## Step 1: Preflight
 
+- Read `.references/artifact-storage.md`; share safe review artifacts when
+  Grain is connected, retain required local files, and pass the folder ID and
+  rule to every agent. Keep parallel reviews blind to one another.
 - Never work on the default branch. If on it, stop and ask the user to set
   up a branch - don't create one silently.
 - Review `git status` and `git diff` so the gates and the PR describe what
