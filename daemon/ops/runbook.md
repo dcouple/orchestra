@@ -186,7 +186,7 @@ CLAUDEX_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
 # points at a bare claude binary instead of the wrapper; it requires CLAUDEX_BIN:
 # CLAUDEX_ENV={"ANTHROPIC_BASE_URL":"http://127.0.0.1:8317","ANTHROPIC_AUTH_TOKEN":"..."}
 # Native Codex harness (IMPLEMENTER_HARNESS=codex) runs `codex exec` on CODEX_MODEL:
-CODEX_BIN=/var/lib/linear-agent-daemon/.codex-managed/bin/codex
+CODEX_BIN=/usr/local/bin/codex
 CODEX_MODEL=gpt-6-astra
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_MAX_TURNS=100

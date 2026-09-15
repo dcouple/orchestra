@@ -243,9 +243,9 @@ CLAUDE_BIN=/var/lib/linear-agent-daemon/.local/bin/claude
 FABLE_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex-fable
 # One-shot capacity fallback through the provisioned claudex wrapper:
 CLAUDEX_BIN=/var/lib/linear-agent-daemon/.local/bin/claudex
-# Native Codex harness (IMPLEMENTER_HARNESS=codex): the daemon user's codex binary
+# Native Codex harness (IMPLEMENTER_HARNESS=codex): the provisioned Codex wrapper
 # and the orchestrator model the astra-ticket skill requires.
-CODEX_BIN=/var/lib/linear-agent-daemon/.codex-managed/bin/codex
+CODEX_BIN=/usr/local/bin/codex
 CODEX_MODEL=gpt-6-astra
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_MAX_TURNS=100
