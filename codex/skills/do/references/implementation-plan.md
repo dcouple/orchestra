@@ -16,6 +16,9 @@
 > cold-read of the whole plan as if it were a stranger's - hunting
 > blunders, oversights, omissions, misconceptions - before any reviewer sees it.
 
+Follow `.references/artifact-storage.md` for safe shared copies. Keep the local
+plan, schema, and exact task state; phase boundaries do not reset the budget.
+
 ---
 ```yaml
 ---
@@ -33,7 +36,7 @@ runtime_fallback: <codex fallback - only when the daemon signals runtime fallbac
 fallback_cause: <daemon-classified cause - only when the daemon signals runtime fallback>
 phase: <n | ->
 phase_complete: <true - set when this phase's diff is committed; multi-phase resume state; omit until then>
-code_review_dispatches: <cumulative used>/<zone ceiling, max 4 - carry across phases; initialize 0>
+code_review_dispatches: <cumulative used>/<zone ceiling, max 3 - carry across phases; initialize 0>
 confidence: <1-10 - one-pass implementation confidence, scored after review>
 ---
 ```

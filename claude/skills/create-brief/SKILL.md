@@ -1,18 +1,18 @@
 ---
 name: create-brief
-description: Captures discussed work as a work item ready for /do - a feature brief for changes and additions (single-outcome or multi-phase), a bug brief for defects (running the investigator first if the root cause isn't established). Use when a conversation has converged on buildable work that has no work item yet - whether the user asks to capture it or convergence makes capture the obvious next step. Do not invoke for a passing idea, an unconverged thread, or work that already has an item.
+description: Capture agreed, buildable work as a feature or bug brief ready for /do. Use after discussion converges and no work item already exists.
 argument-hint: "[title or one-line summary]"
 ---
 
-# Create Brief
+# Create brief
 
-## Work: $ARGUMENTS
+Turn `$ARGUMENTS` and the established discussion into `./tmp/<id>/brief.html`.
+This is the user's decision document; `/do` derives its implementation plan
+later. Capture settled decisions without reopening them. Do not fix code.
 
-Turn what the conversation has established (typically a `/discussion`) into a
-work item that `/do` can execute autonomously. The completion artifact is
-`./tmp/<id>/brief.html` with `status: ready` in its metadata - one page that is
-both what the user aligns on and what `/do` executes against
-(`.references/html-brief.md`).
+Read `.references/html-brief.md` for the page contract and
+`.references/artifact-storage.md` for shared artifacts. Pass the task folder
+ID/storage rule to each agent; retain the required local files and bundle.
 
 Intent has provenance, but the initial request is an origin record, not a
 binding contract. Use `.references/pr-writing.md` while assembling either
@@ -23,218 +23,127 @@ user alignment may forge, refine, or reject the initial idea; reflect that
 result in the brief. Keep `Rationale not established` distinct from an
 `[assumption]`; never silently invent or redefine the current intent.
 
-The brief is the user's document. Its purpose is to show the user, as
-concretely as possible, what is going to happen - so the idea gets refined
-*before* it is handed to an agent, minimizing the need for intervention once
-implementation runs. `/do` later derives its own implementation plan
-(`plan.md`) from the brief; the brief stays at the altitude the user decides
-at.
+## 1. Choose the track
 
-This skill *captures and sharpens* - it does not re-run the discussion, and it
-never fixes code. If the conversation already settled a point, write it down;
-don't re-litigate it. How many phases the work has is a property of the item
-(step 3), not a different skill.
+- **Feature**: a change, addition, refactor, or chore.
+- **Bug**: behavior that should work but does not.
 
-## Steps
+Use one brief with at least one phase. Split into phases only when the
+verification surfaces or sequential outcomes warrant it, not by file count.
 
-### 1. Pick the shape
-Two shapes, one decision:
+## 2. Establish the work
 
-- **Change or addition** (feature, refactor, chore - anything that builds) →
-  feature track below.
-- **Defect** (something worked, or should work, and doesn't) → bug track
-  below.
+### Feature
 
-When in doubt, prefer the smaller shape.
+Carry forward:
 
-**Success criteria**: shape confirmed.
+- Intent and observable desired end state.
+- Locked directions (`D1`, `D2`, …): decisions the implementer must not remake.
+- Out of scope.
+- Dependencies and mechanics, including an explicit schema delta (`none` if none).
 
-### 2. Assemble the core
+Follow the dependency contract in `.references/html-brief.md`: use the Codex
+`code-researcher` for code facts and `web-researcher` for external facts. Each
+load-bearing dependency ends **verified** or **assumed with the user's
+conscious acceptance**. Research missing facts; ask for missing preferences.
 
-**Feature track** - drive toward what the brief needs, pulling from the
-discussion so far:
-- **Intent** - the why behind the request
-- **Desired end state** - user-visible "done"
-- **Locked directions** - only decisions the model shouldn't re-make (number them D1, D2…)
-- **Out of scope**
-- **Dependencies & mechanics** - research the load-bearing dependencies
-  and systems this work will rely on and how they work
-  (`.references/html-brief.md` · Dependencies & mechanics owns the full
-  contract, including sub-reports and sequencing). The required outcome:
-  every dependency ends **verified** - a `codex` dispatch (role
-  `code-researcher`) for codebase facts, the `web-researcher` sub-agent
-  for external ones - or **assumed** with the user consciously accepting
-  that, and the schema delta is stated (explicitly "none" when none).
+When replacing behavior, agree on and lock the compatibility stance:
+clean replacement, or preservation of existing consumers. Do not infer an
+intentional breaking change from silence.
 
-Ask the user the clarifying questions **before** drafting the brief - never
-substitute an assumption for an answer the user could give. And expect that
-more research may be needed before the brief is ready to present: dispatching
-further sub-agents (code-researcher, web-researcher, the investigator)
-mid-capture is normal and encouraged - a brief built on guesses is worse than
-a brief that took one more dispatch.
+### Bug
 
-When the work **replaces existing behavior**, decide the compatibility
-stance now, with the user, and lock it as a direction: clean replacement
-(delete the old path, no shims or fallback layers) or
-compatibility-preserving (existing consumers keep working). `/do`'s
-reviewers treat an unnamed breaking change as a blocker, so an item that
-means to break something must say so.
+- Reuse an existing investigation: repro, root cause, evidence, and confidence.
+- If the cause is unknown, dispatch the Codex `investigator` with expected
+  versus actual behavior, environment, repro steps, and traces. If reproduction
+  requires the app, run `frontend-verifier` first and pass its transcript along.
+- If reproduction fails, record attempts and uncertainty. Gather missing
+  evidence or label the cause `Hypothesis:`; never invent confirmation.
+- Agree on severity (`critical | high | medium | low`), affected users, impact,
+  and whether the resolution direction is locked. Include dependencies and
+  schema delta even when the latter is `none`.
 
-**Clarification scales with the stakes.** Zone 0–1 or multi-phase: run an
-interview loop (AskUserQuestion) - technical mechanics, dependencies, edge
-cases, tradeoffs; don't ask obvious questions, dig into what the user
-hasn't considered - until the dependency inventory holds no `assumed`
-entry the user isn't consciously accepting. Zone 2–3 single-phase: one
-focused round. At every stake level, markers drive to zero
-(`.references/html-brief.md` · Rules): the brief never goes `ready` with
-an unaddressed `[NEEDS CLARIFICATION]` marker.
+### Align the dials
 
-**Propose the zone** (0–3) per `.references/zones.md` - stakes and
-downstream consequence radius, never diff size; escalator surfaces force
-zone ≤ 1 - and confirm it with the user; the user's override is always
-honored. It goes in the item metadata and tells `/do` how thorough to be
-in review. Offer the other three dials with it: `review_lanes: dual | single`
-(review defaults are dual at zone 0, single Codex at zones 1–3) and
-`frontend_verifier: true | false` (whether the app-driving QA agent runs -
-the user's call even when UI criteria exist), and `ios_testing: required | optional`
-(propose `required` when mobile UI acceptance criteria must be guaranteed,
-otherwise `optional`). All override the zone's
-defaults in either direction, ride to the tracker with the item, and stay
-editable there as metadata until `/do` runs. Apply the conflict rule in
-`.references/html-brief.md`: never propose `ios_testing: required` together
-with `frontend_verifier: false`.
+Read `.references/zones.md` and confirm the user's choices:
 
-**Success criteria**: the user has explicitly agreed to intent, end state, each
-locked direction (including the compatibility stance when behavior is
-replaced), the four dials (zone, and any `review_lanes` /
-`frontend_verifier` / `ios_testing` override), the out-of-scope list, and every
-dependency's verified/assumed standing including the schema delta.
+- `zone: 0–3`, based on stakes and consequence radius, not diff size.
+  Escalator surfaces require zone ≤ 1 unless the user explicitly overrides.
+- `review_lanes: dual | single`; default dual at zone 0, single at zones 1–3.
+- `frontend_verifier: true | false`, the user's choice even with UI criteria.
+- `ios_testing: required | optional`; propose required for guaranteed mobile
+  UI verification. Never pair required with `frontend_verifier: false`.
 
-**Bug track** - take stock of the investigation. Check what the conversation
-already established: reproduction, root cause + evidence, confidence level. A
-root-cause finding from an `investigator` dispatch during `/discussion` is the
-ideal input - reuse it, don't redo it.
+Zone 0–1 or multi-phase work gets an interview until important decisions and
+dependency assumptions are accepted. Zone 2–3 single-phase work gets one
+focused clarification round. Do not ask questions already answered by the
+conversation or evidence. No unresolved `[NEEDS CLARIFICATION]` marker may
+remain when the brief becomes ready.
 
-If the root cause is **not** yet established, dispatch the investigator now
-via the `codex` skill (role `investigator`) with the full defect report
-(expected vs actual, environment, repro steps, traces); when reproduction
-needs the running app, dispatch `frontend-verifier` first and pass its
-transcript along. If it cannot reproduce, say so plainly - never invent a
-cause: gather more from the user and re-dispatch, or proceed with the root
-cause marked `Hypothesis:` and what-was-tried captured in `refs/`.
+## 3. Shape the approach
 
-Then confirm impact and severity with the user where judgment is needed: who
-is affected, how widespread, why it matters now, and whether the suggested
-resolution path should be locked as a direction or left to `/do`. Skip the
-ceremony when severity is obvious. Bugs still carry the Dependencies &
-mechanics section - often just the mandatory schema-delta line.
+- Write the Approach at decision altitude, not as a file-by-file plan.
+- Agree on each phase's goal, scope, verification surface, and order.
+- Multi-phase work runs sequentially in one PR. An independent outcome that
+  can ship or wait separately belongs in the Sequencing panel as another item.
 
-**Success criteria**: a root-cause finding with an honest confidence level
-(`confirmed | likely | hypothesis`) - or a documented failed-to-reproduce with
-the attempts listed - plus severity (`critical | high | medium | low`) and
-business impact agreed with the user.
+## 4. Draft and align in the browser
 
-### 3. Shape the approach and cut phases
-Every item's brief carries an **Approach** section - how the work will be
-tackled, at approach altitude (`.references/html-brief.md` · Approach) - and
-at least one `phases` entry. If the work is one coherent outcome, record a
-single entry and move on. Otherwise split it into sequential phases, each a
-self-contained slice:
-one coherent outcome, independently verifiable, buildable on the phases
-before it. Don't split because many files are touched - split where
-verification surfaces genuinely differ. Multi-phase items run sequentially
-in one PR under `/do`. A phase that could stand alone entirely - or wait -
-belongs in the Sequencing panel as a separate candidate item instead.
+- Read the matching dated decision log in `./tmp/discussions/` or the task's
+  shared artifacts. Carry its decisions into the current accepted intent and
+  locked directions; preserve the origin, revision trail, source labels, and
+  rationale status per `.references/pr-writing.md`. Link longer records from `refs/`.
+- Choose a short kebab-case `<id>` and author `brief.html` per
+  `.references/html-brief.md`. Keep research, raw traces, and longer exchanges
+  under `refs/`, linked rather than pasted into the page.
+- Use `.references/system-analysis.md` for a current-state deep dive worth
+  keeping as `refs/system-analysis.md`.
+- Number every acceptance criterion and map it to observable verification.
+  For bugs, AC1 is the rerunnable repro changing from fail to pass, followed
+  by prevention criteria. Each phase has its own criteria.
+- Open the brief in the user's browser and fold corrections into the same
+  page. Confirm intent, directions, scope, dials, phases, and dependency standing.
 
-**Success criteria**: the `phases` list agreed with the user - each phase has
-a goal, scope, and its own verification surface; order confirmed.
+### User-facing work
 
-### 4. Author the brief and align
-Check `./tmp/discussions/` for a decision log from the conversation that
-produced this item (match by slug and date) - carry its decisions into the
-current accepted intent and locked directions, preserve the origin, revision
-trail, source labels, and rationale status per `.references/pr-writing.md`, and
-link it from `refs/`
-if it holds more than the brief should inline. Pick `<id>` (short
-kebab-case slug from the title), create `./tmp/<id>/`, and author
-`brief.html` per `.references/html-brief.md` (page contract, section map,
-and rules), opening it in the user's browser. Save transcript-worthy raw
-material (key discussion excerpts, links, research worth keeping) to
-`./tmp/<id>/refs/`, linked never inlined. This page is the work item: for a feature, the change,
-the before/after, dependencies & mechanics, the direction, and the
-approach; for a bug, expected vs actual, the root cause (confidence stated
-honestly), and the resolution path; for multi-phase work, the Approach
-section carries the binding phase timeline and per-phase blocks. Fold
-corrections in as in-place edits.
+Do the first-pass mockup and app reconnaissance concurrently:
 
-**User-facing items: draw fast, reconnoitre in the background.** Mockups are
-built from the app's real design language, never invented - but the brief
-must not wait on a browser. At section-08 time, do two things at once:
+1. Inspect the project's real tokens, control styles, and copy directly.
+   Draw section 08 from those values using the template's `.mock` parts;
+   caption it `first pass - real captures pending`.
+2. Dispatch `frontend-verifier` in the background to capture touched screens
+   and the app shell under `refs/shots/`. Continue authoring and alignment.
+   Upgrade the mockups when evidence returns; re-upload an already-published
+   bundle after the update.
 
-1. **Inline, now:** quote the design tokens and control CSS yourself - a few
-   greps in this thread (token files; button/input/modal/table styles; real
-   user-facing copy). No `code-researcher` dispatch - it's a round-trip for
-   work this thread does in seconds. Draw the first-pass mockups immediately
-   from the template's `.mock` parts styled with those quoted values, and
-   caption them "first pass - real captures pending."
-2. **Background, meanwhile:** dispatch one `frontend-verifier` in the
-   background to screenshot the touched screens and the app shell into
-   `./tmp/<id>/refs/shots/`. Keep authoring and aligning - the user reads
-   Why/Direction/ACs while it runs. When the capture returns, upgrade
-   section 08 in place and re-upload the bundle if already published.
+Flows or changes spanning more than about two screens also get a clickable
+prototype in `mockups/`, with shared styling and error/blocked states. Serve
+it over `127.0.0.1` when a browser driver cannot use `file://`.
+Zone 0 must receive the real-capture upgrade before becoming ready.
 
-A change spanning more than about two screens, or introducing a flow, still
-gets a **clickable prototype** - linked pages under `./tmp/<id>/mockups/` on
-a shared stylesheet, walkable end to end, including the error and blocked
-states - which may likewise start first-pass and be upgraded by the same
-background capture. Zone 0 is the exception: the upgrade lands before the
-brief goes `ready`. Full contract in `.references/html-brief.md` · UI
-mockups. Serve the item directory over `127.0.0.1` to open a prototype:
-`file://` is commonly blocked for browser-driving extensions.
+## 5. Socratic gate
 
-Bug specifics: the Verification section's bug form - repro steps as AC1
-(flipping from fail to pass) plus prevention criteria - is specified in
-`.references/html-brief.md` (section map, row 07). Raw traces, logs, and
-long transcripts go to `./tmp/<id>/refs/` (e.g. `refs/error-trace.txt`),
-linked not inlined; a current-state deep-dive worth keeping is saved per
-`.references/system-analysis.md` as `refs/system-analysis.md`.
+Run `.references/socratic-gate.md`, with the emphasis appropriate to the item:
 
-**Success criteria**: `brief.html` exists and the user has confirmed the item
-against it in the browser; every AC is numbered, observable, and mapped; bug
-items have a re-runnable repro, AC1 mapped to it, and prevention criteria;
-nothing in the page restates what `refs/` or the model already covers.
+- **Feature**: necessity, alternatives, scope, and assumed dependencies.
+- **Bug**: cause versus symptom, evidence, prevention of the defect class,
+  sibling instances, and implied follow-up work.
+- **Multi-phase**: whether the phases belong together and are shaped correctly.
 
-### 5. Socratic gate
-Run the gate per `.references/socratic-gate.md` - socrates calibrates its
-own intensity. Supply the per-type emphasis in the dispatch:
+Recut phases if the dialogue changes the approach. Re-investigate if it
+reveals a deeper possible cause. Record the justification and any explicit
+waiver; unresolved readiness questions still block `status: ready`.
 
-- **Feature**: necessity, root cause, simpler alternatives, shape, and
-  mechanics (which dependency is `assumed` rather than `verified`?). If
-  the dialogue reveals a different phase shape, return to step 3 and recut.
-- **Bug**: root cause vs symptom (does the cause survive another "why"?),
-  evidence, whether the fix prevents the class or just this instance, and
-  completeness - sibling instances of the defect class, follow-up work the
-  fix implies. If the dialogue surfaces a deeper cause to chase,
-  re-dispatch the investigator before proceeding.
+## 6. Publish and hand off
 
-**Success criteria**: the gate's "Done when" holds
-(`.references/socratic-gate.md`).
+- Follow `.references/publish-work-item.md` and
+  `.references/artifact-host-upload.md`; use `feat: <title>` or `fix: <title>`.
+- Mark the aligned brief ready. A bug may stay draft when the cause remains
+  a hypothesis and the user wants more evidence; publish its draft honestly.
+- With a configured artifact host, publish the bundle and lean tracker body.
+  Without one, use the documented Markdown transport. With no tracker, retain
+  the complete artifact and say it was not published to a tracker.
+- Verify cross-links and shared saves before reporting their locations.
 
-### 6. Mark ready and publish
-Publish per `.references/publish-work-item.md`, using
-`.references/artifact-host-upload.md` for upload mechanics - title
-`feat: <title>` (feature) or `fix: <title>` (bug); the shared procedure owns
-the tracker body. Bug exception: leave `status: draft` if the cause is still
-a hypothesis and the user wants more evidence first - publish happens either
-way.
-
-**Success criteria**: published and cross-linked per the shared procedure
-(bundle transport with an `artifact_host`, markdown-rendition fallback
-without one) - or, when the repo configures no destination at all, the item
-is complete in `./tmp/<id>/` and the user was told nothing was published.
-
-```
-Suggested next steps:
-- `/do <item ref or ./tmp/<id>/brief.html>` - run the autonomous pipeline against this item
-- `/discussion [follow-up]` - if a gap surfaced that needs more thinking first
-```
+Offer `/do <item ref or ./tmp/<id>/brief.html>` to execute, or `/discussion`
+when an unresolved decision needs more thought.

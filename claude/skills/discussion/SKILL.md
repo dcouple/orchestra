@@ -1,6 +1,6 @@
 ---
 name: discussion
-description: Interactive back-and-forth to clarify, understand, or figure something out - an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything - e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-brief.
+description: Explore an idea, tradeoff, or suspected bug through discussion and research, then record decisions before creating a work item.
 argument-hint: "[idea, question, or topic]"
 ---
 
@@ -23,6 +23,10 @@ log - a record of what was decided, not a deliverable - and Step 2's throwaway
 probes, which are research.
 
 ## Steps
+
+Read `.references/artifact-storage.md`. Share safe decision logs and research
+in the task's Grain folder when available; keep local paths used by
+`/create-brief` and pass the folder ID/rule to each specialist.
 
 ### 1. Dispatch the right specialist for each question
 Delegate legwork to sub-agents so bulky exploration stays out of this thread. Pick by

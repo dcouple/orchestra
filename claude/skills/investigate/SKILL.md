@@ -39,6 +39,8 @@ Use the `codex` skill with role `investigator`. Pass a self-contained prompt con
 - the instruction to follow `.references/investigation-method.md`;
 - exact authorization boundaries for diagnostics and production access;
 - any existing logs, screenshots, traces, or reproduction artifacts.
+- the task folder ID and `.references/artifact-storage.md` rule; share safe
+  findings, not raw private logs. Retain local evidence needed to reproduce.
 
 Do not dispatch a separate `code-researcher` for the same investigation. The investigator owns reproduction, code tracing, history, runtime evidence, and root-cause isolation end to end. A second dispatch is justified only when the first finding explicitly names missing evidence that has since become available.
 

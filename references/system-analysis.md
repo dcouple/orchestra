@@ -5,6 +5,9 @@ grounding. Stored at `./tmp/<id>/refs/system-analysis.md` and **linked** from th
 item - never inlined. Optional: only create when the intent or architecture
 directions can't be settled without it.
 
+Follow `.references/artifact-storage.md` for safe shared storage. A leaf
+researcher returns the content; the coordinator saves and links it.
+
 ---
 
 ## Scope of this analysis

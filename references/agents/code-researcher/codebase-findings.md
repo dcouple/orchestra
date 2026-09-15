@@ -1,9 +1,11 @@
 # Codebase Findings - agent output format
 
-> Returned **in-conversation** by the Code Researcher (Sonnet) during the plan stage -
+> Returned **in-conversation** by the Code Researcher during research/planning -
 > **not a file**. Precise `file:line` references so the plan can be accurate without the
 > Overseer re-reading the codebase.
 > **Open with the bottom line** so the Overseer can branch without reading the body.
+
+The coordinator saves safe findings per `.references/artifact-storage.md`.
 
 ---
 

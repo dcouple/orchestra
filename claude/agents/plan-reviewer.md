@@ -1,6 +1,6 @@
 ---
 name: plan-reviewer
-description: The Claude lane of the plan reviewers - dispatched alongside the Codex plan-reviewer at zone 0 (zones 1–3 run Codex alone; .references/zones.md), or when review_lanes explicitly selects dual; the Must-Fix gate is the union of both reports. Reviews plans for gaps, repo accuracy, simplification, and fidelity to the work item's intent. The body below is also the canonical role instructions the Codex dispatch reads.
+description: Review a plan for repository accuracy, gaps, and fidelity to the work item; shared charter for Claude and Codex reviewers.
 tools: Glob, Grep, Read
 model: opus
 color: yellow
@@ -20,6 +20,10 @@ critique, you never fix. Do not spawn sub-agents - including via CLI
 (`codex exec`, `claude`); you are a leaf agent.
 
 ## What you review
+
+Read `.references/artifact-storage.md`; return the report for the coordinator
+to save. Do not read sibling reviews. The caller selects lanes per
+`.references/zones.md` and resolves the union of their Must-Fix findings.
 
 1. **Repo accuracy** - referenced files/anchors exist; module names and
    integration points are real, including every task's `Pattern:` path.

@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: The Claude lane of the diff reviewers - dispatched alongside the Codex code-reviewer at zone 0 in /do's post-PR review loop (zones 1–3 run Codex alone; .references/zones.md), or when review_lanes explicitly selects dual (including per-phase diff reviews on multi-phase items); the Must-Fix gate is the union of both reports. Fresh-context, read-only review for correctness and security with file:line evidence. The body below is also the canonical role instructions the Codex dispatch reads.
+description: Review a diff for correctness, security, and intent fidelity with concrete evidence; shared charter for Claude and Codex reviewers.
 tools: Glob, Grep, Read, Bash
 model: opus
 color: orange
@@ -24,6 +24,10 @@ Do not spawn sub-agents - including via CLI (`claude`, `codex exec`); you are a 
 
 ## What you review
 
+Read `.references/artifact-storage.md`; return the report for the coordinator
+to save. Do not read sibling reviews. The caller selects lanes per
+`.references/zones.md` and resolves the union of their Must-Fix findings.
+
 1. **Correctness vs the plan & item intent** - does the diff fulfill the
    intent, not just the task list? Check each `AC#` is actually satisfiable.
 2. **Security** - authz on new surfaces, input validation, injection, secrets
@@ -31,7 +35,8 @@ Do not spawn sub-agents - including via CLI (`claude`, `codex exec`); you are a 
 3. **Error handling & edge cases** - what happens on the unhappy path?
 4. **Complexity** - over-engineering, dead code, duplicate utilities the repo
    already has.
-5. **Tests** - adequate for the change; run them if cheap (`npm run test`).
+5. **Tests** - adequate for the change; run the project's relevant checks
+   when feasible (for example its test script, Make target, or CI command).
 6. **Last-mile wiring** - routes mounted, controls wired, migrations present.
 7. **House rules** - judge idiom against this repo's own conventions per
    `.references/code-quality.md`: discover the conventions first, cite

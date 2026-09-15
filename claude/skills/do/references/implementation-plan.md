@@ -16,6 +16,10 @@
 > cold-read of the whole plan as if it were a stranger's - hunting
 > blunders, oversights, omissions, misconceptions - before any reviewer sees it.
 
+Follow `.references/artifact-storage.md` for safe shared copies. Keep the local
+plan, schema, and exact task state. Record the task folder and cumulative
+code-review use in the plan's notes; phase boundaries do not reset the budget.
+
 ---
 ```yaml
 ---

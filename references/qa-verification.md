@@ -5,6 +5,11 @@
 > `verification-methods.md` - same proof standard, plus the rules that make
 > automated QA evidence trustworthy end to end.
 
+Read `.references/artifact-storage.md` for safe shared artifacts. Keep the
+required local evidence/manifests and pass their paths to the coordinator.
+The calling harness owns driver prerequisites and fallback rules; this
+reference does not override a required daemon browser or simulator lease.
+
 ## Discover connected tooling first
 
 Inventory what this environment can already prove things with before the
@@ -19,9 +24,10 @@ which were missing.
 ## Build what's missing
 
 The run is allowed to make its own tools. No browser driver in the repo?
-Install one in the scratch directory - never pollute the repo or its
-lockfiles. Need a probe script, webhook listener, or log parser? Write it
-in scratch and remove it after. Drive UIs by stable user-visible selectors
+Install one in scratch only when the dispatch permits that fallback; never
+change the repo or its lockfiles. Write permitted probe scripts, listeners,
+or log parsers in scratch. Preserve useful safe artifacts, stop processes
+you started, and remove only disposable state you own. Drive UIs by stable user-visible selectors
 (labels, button text, routes), and pull verification links/codes from
 local service logs when the environment emits them.
 
@@ -112,17 +118,19 @@ mistaken for product behavior.
 
 ## Evidence hosting
 
-Screenshots and clips are evidence, not repo content - never commit them.
-Upload to whatever host the environment provides and inline the URLs in
-the PR comment so previews render where the reviewer reads. Durable +
-scriptable: the rolling `qa-assets` prerelease (once per repo:
-`gh release create qa-assets --prerelease`, then
-`gh release upload qa-assets <img>` - asset URLs render inline and
-outlive the review). GitHub user-attachment URLs are just as durable but
-have no API (browser-only); a project upload endpoint or temporary image
-host works too. When only a temporary host is available, note its
-expiry next to the link and keep the textual evidence (quoted output, ids)
-self-sufficient without the image.
+Screenshots and clips are evidence, not tracked repo content.
+
+- The coordinator saves safe copies in Grain when connected and publishes
+  through the calling workflow's authorized durable host.
+- An existing approved `qa-assets` release or project upload endpoint may
+  work. Creating a release or changing access requires authorization.
+- Use unique run/attempt/content-based names; never overwrite other evidence.
+  Verify hosted bytes and persisted links before claiming delivery.
+- Inline safe screenshots in journey order. Link videos and any restricted
+  evidence appropriately; do not leak private traces, tokens, or customer data.
+- Expiring links are not durable QA proof. If durable hosting is unavailable,
+  keep local/shared evidence and report the publication gap without inventing
+  a working PR attachment.
 
 ## Journey videos
 
@@ -179,7 +187,7 @@ Delete in-run only when all three hold:
   environment the drive actually reached (the ingestion target, the key, the
   project id), never assumed from the stack you launched;
 - the deletion is **scoped by this run's unique marker**, not a broader query;
-- the drive **already holds** the credentials that perform it.
+- the drive **already holds** the credentials and authorization for cleanup.
 
 If any condition fails or is uncertain, do not delete - **register** it: name
 the marker, the system, and what remains, precisely enough that a repo-side

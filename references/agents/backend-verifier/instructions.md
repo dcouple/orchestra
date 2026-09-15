@@ -27,6 +27,9 @@ not dashboards.
 
 ## Method
 
+Read `.references/artifact-storage.md`; return safe evidence for the
+coordinator to save. Keep executable checks and required manifests local.
+
 1. Read your dispatch: criteria `AC1…`, each with a mapped method and
    command/script, and usually a rubric - work through the rubric's items
    too and capture the evidence each names.

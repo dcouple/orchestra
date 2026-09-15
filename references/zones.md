@@ -68,6 +68,9 @@ never claimed passed.
   an absolute maximum. The counter never resets, and at least one dispatch is
   reserved for the whole-PR review. A changed HEAD alone is not a review
   trigger; P2/P3 findings never trigger another pass.
+- A review pass runs the selected lane(s) on one review target. In dual mode,
+  both lanes share the pass number; record their individual dispatches and
+  usage separately. This preserves dual review without resetting the pass cap.
 - **`review_lanes:` and `frontend_verifier:` are the two human-settable
   dial overrides.** An item may
   carry `review_lanes: dual | single` in its metadata - set at capture or

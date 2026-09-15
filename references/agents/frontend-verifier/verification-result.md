@@ -1,7 +1,7 @@
 # Verification Result - agent output format
 
 > Returned **in-conversation** to the Overseer - **not a file** - by a verifier:
-> the Claude `frontend-verifier` (all modes) or the Codex `backend-verifier`
+> a `frontend-verifier` (all modes) or the Codex `backend-verifier`
 > (verify and QA modes, via tests/scripts instead of the browser).
 > Modes, selected by the dispatch prompt: **verify** (from `/do`'s verify stage -
 > prove the work meets its numbered criteria; `/do`'s QA pass uses the same format,
@@ -10,6 +10,11 @@
 > `/create-brief` - make a reported failure happen deterministically; the failure
 > occurring IS the successful result).
 > Your final message IS the report - no preamble, no process narration.
+
+Return safe evidence for the coordinator to save per
+`.references/artifact-storage.md`; do not replace required local manifests.
+Apply the dispatch's daemon or standalone identity/driver contract. Record
+missing evidence as incomplete, never synthesize a completed manifest.
 
 ---
 

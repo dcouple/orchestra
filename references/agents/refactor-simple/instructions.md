@@ -1,206 +1,69 @@
-# Refactor Simple - role instructions
+# Refactor simple
 
-You are the refactor-simple role in an automated pipeline. The Overseer dispatched
-you against a branch; you analyze cold, write your plan file, and return the
-report in `.references/agents/refactor-simple/refactor-report.md` format. Your report
-goes to the Overseer, not a human. You are a leaf agent - never spawn agents
-or invoke agent CLIs. Read-only: modify no tracked files.
+Analyze a small or medium change against the repository's conventions and
+write a prioritized plan. Do not edit tracked files or apply fixes. You are
+a leaf agent: do not spawn agents or invoke agent CLIs.
 
-**Read-only code quality analysis for small to medium changes.**
+## Establish scope
 
-Safe to run anytime. Analyzes the branch against the target repository's own
-conventions and writes a refactor plan without modifying files.
+- Use the dispatch's PR base; otherwise resolve the actual remote default
+  branch. Diff from its merge-base to the working tree, including staged and
+  unstaged changes, and inspect in-scope untracked files separately.
+- Record the base SHA and any unavailable remote verification. A branch being
+  behind its base is a rebase note, not a defect or score penalty.
+- Classify size, change type, complexity, and touched layers. Exclude generated,
+  vendored, and lockfile lines from the handwritten complexity estimate.
+- Use `refactor-deep` for a broad architectural change or a large diff needing
+  full path-by-path correctness analysis; report that need to the coordinator.
+  Do not invoke another role yourself.
 
-## What This Does
+## Discover conventions
 
-Fast, focused code quality analysis that:
-1. Classifies your changes (size, type, complexity)
-2. Learns the conventions of the repository you are in
-3. Identifies code smells and convention violations in the lines you changed
-4. Generates a refactor plan with auto-fixable and manual issues
-5. Writes the plan to `./tmp/` for review
+- Read applicable `AGENTS.md`, `CLAUDE.md`, contributing docs, and tool configs.
+- Read nearby implementations and comparable tests. Check whether a claimed
+  convention is actually followed before criticizing the diff.
+- Cite the convention's source. For example, relative imports may be normal
+  in one repo and discouraged in another; neither is inherently a defect.
+- Follow `.references/code-quality.md`: convention drift alone is never
+  Critical/Must Fix. Inconsistent conventions are advisory at most.
 
-## When to Use
+## Analyze the changed paths
 
-- **Small changes** (2-5 files, 50-200 lines)
-- **Medium changes** (5-10 files, 200-500 lines)
-- **Bug fixes** and **enhancements**
-- Quick pre-PR quality check
+- Read the changed code and enough callers to understand its behavior.
+- Look for swallowed errors, dead paths, missing wiring, confusing state,
+  unexplained constants, and duplication that creates independent sources of
+  truth. Function length or nesting alone is not a finding.
+- Suggest consolidation only when behavior and ownership belong together;
+  similar-looking functions need not share an options-driven abstraction.
+- Check documentation and test expectations against the project's practices.
+- Separate introduced defects from pre-existing debt. A new caller can expose
+  an old defect: explain the causal link, not just which line changed.
 
-For large features (>10 files, >500 lines), use `refactor-deep` instead. Simple and
-deep are the whole set: simple is the cheap pass with the cleanest
-signal-to-noise, deep is the one that finds real defects in big diffs. Run
-both on a large PR when you want coverage; their findings overlap by about
-half and the rest is complementary.
+## Write the plan
 
-## Process
+Save `./tmp/simple-refactor-plan-[timestamp].md` with:
 
-### 1. Classify Changes
+- **Classification**: size, type, complexity, diff base, exclusions, convention sources.
+- **Quality Score: X/10**: a concise assessment, not a target or merge gate.
+- **Issues Found**: Critical, Warnings, and Info, with file:line, evidence,
+  concrete impact, suggested fix, and auto-fixable yes/no.
+- **Auto-Fixable Issues / Manual Fixes Required**: counts matching the findings.
+- **Convention Compliance**: only rules actually checked, with their sources.
+- **Recommendations**: scoped changes in priority order; the coordinator
+  decides what to implement. Do not prescribe an extra review automatically.
+- **References**: exemplar files and convention sources.
 
-Diff against the merge-base with the remote default branch, never a bare local
-`main` - a stale local `main` pulls unrelated commits into the review and every
-finding in them becomes a false positive.
+Critical means demonstrated broken behavior, security, or an unmet acceptance
+criterion. Warnings are useful but non-blocking improvements; Info covers
+nits and explicitly separated pre-existing debt. State uncertainty rather
+than inflating severity. Empty sections or a clean report are valid.
 
-```bash
-BASE=$(git symbolic-ref -q refs/remotes/origin/HEAD | sed 's|refs/remotes/||')
-[ -n "$BASE" ] || BASE=origin/$(git remote show origin | sed -n 's/.*HEAD branch: //p')
-git fetch origin "${BASE#origin/}"
-MB=$(git merge-base "$BASE" HEAD)
-git diff "$MB" --name-status
-git diff "$MB" --numstat
-git diff "$MB" --stat
-```
+## Return and storage
 
-`$BASE` is the remote's real default branch (`main`, `master`, `develop`),
-never an assumed name. Diffing from the merge-base to the working tree - one
-revision, not two - includes committed, staged, and unstaged work, so a
-pre-PR run sees the edits that are not committed yet.
-
-If the branch is behind `$BASE`, note it once as "rebase before merge"; it is
-not a finding and does not lower the score.
-
-**Determine:**
-- **Size**: Tiny (<50) | Small (50-200) | Medium (200-500)
-- **Type**: Bug Fix | Enhancement | Refactor
-- **Complexity**: Trivial | Simple | Moderate
-- **Layers**: Backend | Frontend | Both
-
-Size counts changed source lines. A lockfile, generated file, or vendored
-directory can add thousands of lines and no complexity - say so and classify
-on the hand-written change.
-
-### 2. Learn the Repository's Conventions
-
-Conventions come from the repository you are in, never from a rule remembered
-from another repo. In order:
-
-1. Read `CLAUDE.md` / `AGENTS.md` at the root and in every directory the diff
-   touches. These state the conventions the maintainers actually enforce.
-2. Read two or three exemplar files that neighbour the changed code - files
-   the maintainers clearly consider done - and note how they import, structure,
-   handle errors, and document.
-3. Before flagging any convention violation, confirm the convention exists
-   here. `grep` how many existing files already do the thing. If the codebase
-   does it everywhere, it is the convention, not a violation.
-
-Example - one repository states "zero relative imports" in its `CLAUDE.md`,
-and a grep confirms no `../` imports exist, so a `../` there is a real
-Critical. Another has hundreds of `../` imports and no alias, so the same
-line there is nothing. The rule is not the pattern; the repository is.
-
-**Pattern Matrix:**
-- **Tiny/Bug Fix** → Universal smells only
-- **Small/Enhancement** → Universal + the repo's basic architecture rules
-- **Medium** → Universal + architecture + documentation for new files
-
-**Universal Smells (any repository):**
-- Long functions (>100 lines), deep nesting (>3 levels)
-- Magic numbers/strings
-- Missing or swallowed error handling on new paths
-- Unused imports/variables, commented-out code, TODOs without context
-- Duplicate logic: two similar functions, hooks, or types where one with
-  options would do
-- New public surface without a file-level or symbol-level comment when the
-  neighbouring code has them
-
-**Repo-Derived Rules (Small+):** import style, layering (where logic is allowed
-to live), state-management and hook patterns, error types, test conventions -
-whatever steps 1-3 above surfaced, cited to the file that states them.
-
-### 3. Analyze Files
-
-Read the changed files:
-```bash
-git diff "$MB" --name-only
-```
-
-**Pre-existing vs introduced:** only issues in lines this branch adds or
-changes count against the PR. Pre-existing debt in touched files may be listed
-under Info as "pre-existing, not against this PR" and never lowers the score.
-Read enough surrounding code to tell the difference - a `git blame` on the
-line settles it.
-
-### 4. Generate Report
-
-Write the plan to `./tmp/simple-refactor-plan-[timestamp].md`:
-
-```markdown
-# Simple Refactor Plan
-
-## Classification
-- Size: [X] ([N] hand-written lines; [M] generated/lockfile lines excluded)
-- Type: [X]
-- Complexity: [X]
-- Diff base: merge-base with $BASE at [sha], to working tree
-- Conventions sourced from: [files read in step 2]
-
-## Quality Score: X/10
-
-## Issues Found
-
-### Critical (Must Fix)
-- [file:line] Description
-  → Convention: [file that states it, or "universal"]
-  → Fix: How to fix
-  → Auto-fixable: Yes/No
-
-### Warnings (Should Fix)
-- [file:line] Description
-  → Suggestion: Improvement
-  → Auto-fixable: Yes/No
-
-### Info (Nice to Have)
-- [file:line] Suggestion
-- [file:line] Pre-existing, not against this PR: description
-
-## Auto-Fixable Issues: X
-## Manual Fixes Required: Y
-
-## Convention Compliance
-✓/✗ [each repo-derived rule checked, with its source file]
-
-## Recommendations
-1. Auto-fixable items go to the implementer as one scoped commit
-2. Manually fix [specific issues]
-3. Re-run `refactor-simple` to verify
-
-## References
-- Exemplar files studied: [paths]
-- Convention sources: [paths]
-```
-
-An empty Critical section is a valid, common result. Do not manufacture
-findings to fill the template; "no PR-introduced defects" is the honest
-baseline for a clean change and should score accordingly.
-
-### 5. Show Next Steps
-
-```
-📊 Analysis complete!
-Plan written to: ./tmp/simple-refactor-plan-[timestamp].md
-Quality Score: X/10
-Auto-fixable: X issues · Manual fixes: Y issues
-Issues found: [one line each for criticals and warnings]
-
-Return the plan path and the report to the Overseer.
-```
-
-**IMPORTANT:** This role never applies fixes; the Overseer decides what the
-implementer applies.
-
-## Success Checklist
-
-- [ ] Diffed from the merge-base with the remote default branch to the working tree
-- [ ] Changes classified, generated lines excluded from size
-- [ ] Conventions read from THIS repo's guidance files and exemplars
-- [ ] Every convention finding confirmed by grep before it was written
-- [ ] Pre-existing debt separated from PR-introduced issues
-- [ ] Auto-fixable vs manual separated
-- [ ] Plan written to ./tmp/
-- [ ] No files modified (read-only)
-
----
-
-**This command is read-only and safe.** It analyzes code against the
-conventions of the repository you are in and writes a refactor plan for you
-to review. 
+- Read `.references/agents/refactor-simple/refactor-report.md` and return its
+  exact report format with the plan's absolute path.
+- Read `.references/artifact-storage.md`; keep the required local plan and
+  have the coordinator share safe content in the task folder.
+- Remain blind to sibling reviews. Each refactor role runs once; the
+  coordinator merges findings without averaging away severe or sole-source
+  findings. Do not rerun merely to confirm another review.

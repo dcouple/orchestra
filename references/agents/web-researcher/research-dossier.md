@@ -1,8 +1,8 @@
 # Research Dossier - agent output format
 
-> Returned **in-conversation** by the Web Researcher (Sonnet) - **not a file** by default.
-> Persist to `./tmp/<id>/refs/` only if it's a durable source worth keeping (then it
-> becomes an optional reference, linked from the item).
+> Returned **in-conversation** by the Web Researcher. The coordinator persists
+> useful findings under `./tmp/<id>/refs/` and shares safe content per
+> `.references/artifact-storage.md`; the calling workflow may require a dossier.
 > **Open with the recommendation** so the Overseer can branch without reading the body.
 
 ---

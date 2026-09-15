@@ -1,6 +1,6 @@
 ---
 name: do
-description: Run the full autonomous pipeline against a work item - plan, implement, verify, PR, post-PR review + QA, wrap-up. Takes a work-item reference (issue #/URL in whatever tracker the repo's AGENTS.md configures) or a local ./tmp/<id>/brief.html produced by /create-brief.
+description: Take a ready work item through planning, implementation, verification, PR review, QA, and handoff using the repository's tracker and workflow contracts.
 argument-hint: "[work-item # / URL, or path to ./tmp/<id>/brief.html]"
 disable-model-invocation: true
 ---
@@ -9,22 +9,15 @@ disable-model-invocation: true
 
 ## Work item: $ARGUMENTS
 
-You are the **Overseer** - the orchestrating agent (Fable, this session);
-sub-agent role instructions and report formats refer to you by that name.
-Every judgment call is yours - the effective zone (one escalation notch), how much research
-the plan needs, when the plan is ready, when review findings are resolved. Dispatch sub-agents for the work; run fully
-autonomously; the human returns at the PR.
+You are the **Overseer**. Own planning decisions, dispatches, review adjudication, and the final handoff; execute within the action tiers below.
 
-**Sub-agents:** code-researcher, investigator, implementer,
-backend-verifier, plan-reviewer, and code-reviewer run on Codex via the
-`codex` skill; each
-review runs the Codex and Claude reviewers in parallel and weighs both
-reports at zone 0; zones 1–3 run the Codex lane alone. **All
-implementation runs on the Codex `implementer`** at effort `medium`,
-every surface - backend/ops and frontend web/mobile alike. The Claude
-`frontend-verifier` is the app-driving QA agent: it runs **once per run,
-post-PR** (Step 5), never at the verify stage. web-researcher is a Claude
-sub-agent.
+## Roles and artifacts
+
+- Dispatch code research, investigation, implementation, backend verification, and review through the `codex` skill.
+- Use the Codex `implementer` at effort `medium` for every surface, including mixed frontend/backend work.
+- Review lanes follow the zone and explicit item overrides: zone 0 defaults to concurrent Codex + Claude; zones 1–3 default to Codex alone.
+- Use the Claude `web-researcher` for external research and `frontend-verifier` for the post-PR QA drive, not Step 3.
+- Read `.references/artifact-storage.md`; share safe artifacts through Grain when connected and pass its folder ID/rule to every dispatch. Keep all required local files and configured bundle publication intact.
 
 ## Autonomy & safety (read first)
 
@@ -75,9 +68,8 @@ morning. These rules make that safe:
   what you need, and wait.
 
 **Notify** per `.references/notify.md` - **one-way**: inform the human,
-don't wait for a phone reply. Target comes from repo config (default a per-operator
-`ntfy.sh/<gh-username>-dcouple-orchestra`; silent no-op if unreachable), and
-after each send you tell the user in chat where it went. Messages are plain
+don't wait for a phone reply. Use the configured target; unconfigured is a
+silent no-op. Report a successful send only after confirmation. Messages are plain
 text - the app doesn't render Markdown - titled `[item] stage - why` so
 concurrent runs stay legible. Fire at: a red gate (deferred or blocking), a
 hard stop, and run completion - never on green-tier progress.
@@ -96,9 +88,10 @@ the orchestrator session runs under `claude --dangerously-skip-permissions`
 and every codex dispatch uses `--yolo`; approvals must never gate an
 unattended run. Not in bypass mode → preflight note with the exact relaunch
 command. Prove each credential with a token-producing probe
-(`gcloud auth print-access-token`, plus the application-default variant
-when terraform is in play), never a listing, and note each token's expiry
-horizon against the run's expected length.
+(`gcloud auth print-access-token >/dev/null`, plus the application-default
+variant with stdout suppressed when terraform is in play), never a listing.
+Never print or save token values; compare non-secret expiry metadata with
+the run's expected length.
 Resolvable from config or a quick check →
 just confirm it silently. If nothing is missing, say so in one line and
 proceed. A missing green-tier dependency is a preflight note, not a
@@ -242,13 +235,17 @@ whose open PR this run must not amend, stop and ask the user to set one up.
 
 Classify the item's goal as you load it: an item whose outcome is one named
 metric reaching a target - latency, bundle size, suite time, lint count -
-runs Step 2 as the loop in `.claude/skills/hillclimb/SKILL.md`, each
+runs Step 2 with the available `hillclimb` skill, each
 cycle's change dispatched to the Codex `implementer`, its accepted-win
 commits riding this run's PR under Step 4, and its attempt log kept in
 `./tmp/<id>/`. Record the metric, its baseline, and its target in the
 plan's Goal & invariants; the action tiers govern, so the loop never idles
 for the human, and a climb that stops short of target carries its
 trajectory into the wrap-up.
+
+If `hillclimb` is unavailable, use a bounded measure/change/re-measure loop
+under the same action tiers. Record the baseline, stopping condition, accepted
+changes, and remaining gap; do not invent a missing skill or expand scope.
 
 **Done when**: the item and its artifacts are in `./tmp/<id>/`, status is
 `ready`, and you're on a non-default branch.
@@ -270,7 +267,8 @@ human's call at capture, or the table's via postmortem evidence. Item
 missing a zone → classify it yourself from stakes and downstream
 consequences, record the reasoning in the frontmatter, and proceed.
 Multi-phase items (two or more entries in the metadata's `phases` list) keep
-full machinery and cap 3 while their lanes follow the same zone rule.
+full research/planning machinery; their lanes and global code-review cap
+still come from the zone. Phase boundaries never reset the counter.
 
 If the daemon's prompt contains a runtime-fallback context line, record
 `requested_lanes`, `effective_lanes`, `runtime_fallback`, and `fallback_cause`
@@ -325,6 +323,9 @@ section that describes the shape, never a shipping file: the implementer
 still writes the code. Candidates go under `./tmp/<id>/refs/arena/`, the
 winner and its grafts into the plan's Key decisions, and the action tiers
 govern rather than a wait for the user.
+
+Use `arena` only when installed. Otherwise compare the defensible options
+directly and record the decision in the plan, without claiming an arena run.
 
 Before dispatching reviewers, run one **cold-read pass** over
 the finished plan yourself - reread it as a stranger hunting blunders,
@@ -400,13 +401,14 @@ codemods, per-file transforms):
 
 Prove every command-shaped verification criterion - the `codex` skill role
 `backend-verifier` for tests/scripts. **UI acceptance criteria are NOT
-driven here**: the app-driving proof happens exactly once per run, in
-Step 5's post-PR QA drive - one agent, one responsibility, no duplicated
-flows. At this stage a UI criterion gets its non-driving checks only
+driven here**: app-driving proof belongs to Step 5's post-PR QA stage.
+Rerun QA only as that stage requires after reviewed fixes. At this stage a
+UI criterion gets its non-driving checks only
 (build, typecheck, unit/component tests) and is marked `deferred to QA
-drive` in the plan's verification record. Verification that must spawn
-an AI session or feed repo context to an AI CLI routes to a **Claude**
-verifier dispatch, never Codex. Any ad-hoc Claude verifier dispatched outside
+drive` in the plan's verification record. When an AI CLI is itself the system
+under test, the Overseer runs the documented, authorized test directly;
+do not assign a leaf verifier work that requires breaking its no-agent-CLI
+boundary. Any ad-hoc Claude verifier dispatched outside
 the named agents (e.g. `general-purpose` for a live-app script check) passes
 an explicit `model` (default `opus`) - never inherit the session model
 silently - and its prompt carries the leaf-agent line (you are a sub-agent;
@@ -442,7 +444,7 @@ An implementer touching a mobile surface may use `orchestra-sim acquire` to
 check its work and must `orchestra-sim release <udid>` when finished. Mobile
 UI acceptance criteria are deferred to the single QA drive like web UI ACs.
 
-**Done when**: every `AC#` and every rubric blocker has quoted passing
+**Done when**: every command-verifiable `AC#` and applicable rubric blocker has quoted passing
 evidence.
 
 ## Step 4: PR
@@ -532,10 +534,12 @@ follows successful QA.
   Must Fix, P2 ≡ Should Fix, P3 ≡ Nice to Have. When the reviewers disagree,
   adjudicate it yourself. Use sub-agents to help you understand what is true
   when needed.
-- **Another pass runs only on a trigger - the caps are ceilings, never
-  quotas** (cap 3 passes; zones 2–3: 1; multi-phase items always 3 passes,
-  with lanes derived from zone unless the item's own `review_lanes:` says
-  otherwise).
+- **Another pass runs only on a trigger; caps are ceilings, not quotas.**
+  Use the zone's run-global code-review counter (zones 0–1: 3; zones 2–3: 1).
+  Phase reviews, whole-PR reviews, confirmation passes, hosted review triggers,
+  and QA-fix reviews share it. Reserve at least one pass for the whole PR.
+  Neither a phase boundary nor a new HEAD resets it. The item's explicit
+  `review_lanes:` still governs the lanes within a pass.
   **The three-pass cap is absolute even when a prompt says “repeat until
   clean”; at the cap, carry survivors to wrap-up rather than starting a
   fourth pass.**
@@ -641,12 +645,13 @@ follows successful QA.
   `artifact_host:`, evidence media MAY be hosted as an artifact bundle per
   `.references/artifact-host-upload.md`; its stable viewer URLs are
   unauthenticated. For GitHub repos, the default remains screenshots, GIFs,
-  and videos as assets on a rolling `qa-assets` **prerelease**
-  (once per repo: `gh release create qa-assets --prerelease
+  and videos as assets on an existing approved `qa-assets` **prerelease**.
+  Creating it requires authorization; when authorized, use
+  `gh release create qa-assets --prerelease
   --title "QA evidence assets" --notes "Rolling QA evidence host - not a
   software release."` - the explicit `--title`/`--notes` matter: without
   them `gh release create` prompts interactively and a headless run hangs;
-  then `gh release upload qa-assets <pr#>-<name> --clobber`) and reference the
+  then `gh release upload qa-assets <item>-<attempt>-<hash>-<name>` and reference the
   `releases/download/...` URLs - CLI-native, permanent, permission-scoped,
   any file type. This rule is step-agnostic: Step 4 hosts the
   Visual-overview captures here *before* the PR exists, so prefix filenames
@@ -658,13 +663,18 @@ follows successful QA.
   On a private repo, note that inline rendering may fail for viewers
   without repo access; the links still work - and unauthenticated fetches
   (curl, markdown proxies) get 404s from `releases/download/...` URLs, so
-  verify an upload via its API asset id, never a bare curl.
+  verify an upload via its API asset id, never a bare curl. Verify downloaded
+  bytes against the local hash; never clobber another attempt's evidence.
+  Apply `.references/artifact-storage.md` before uploading: visually verify
+  redacted copies, preserve their link to the original evidence, and report
+  publication restrictions without claiming delivery.
 - Before the frontend-verifier dispatch, save `git status --short`. Accept only
   the actual dispatched verifier's completed `evidence-manifest.json`; require
   its run/attempt ids to match the current daemon environment, require every
   listed absolute path to remain under the current attempt evidence directory,
   and reject missing, partial, unlisted, fixture, or older-attempt files. Host
-  every manifest entry through `qa-assets`, then read back the persisted PR
+  every safely publishable manifest entry through the approved host; identify
+  restricted entries explicitly. Then read back the persisted PR
   body and evidence comment and confirm every expected asset is present.
   Compare `git status --short` afterward byte-for-byte with the saved value;
   any delta fails QA publication because evidence must never enter the repo.
@@ -748,11 +758,11 @@ Run Steps 1–3 per phase, sequentially - per-phase `plan-<n>.md`; on
 phase completion set `phase_complete: true` in that phase's `plan-<n>.md`
 frontmatter (run state lives in the implementation plan, never in the
 brief).
-After each phase verifies, review the phase diff - the multi-phase profile:
-cap 3, with lanes derived from zone unless the item has an explicit
-`review_lanes:` override - fix and
-re-verify, then run the build gate and commit the phase following Step 4's
-commit rules. After the last phase, continue from Step 4's PR steps
+After each phase verifies, use a phase-diff review when warranted and the
+global budget permits, retaining at least one pass for the whole PR. Lanes
+follow the zone or explicit `review_lanes:` override. Fix and re-verify within
+that budget, then run the build gate and commit under Step 4's rules. Never
+reset the cap per phase. After the last phase, continue from Step 4's PR steps
 (deploy-notes scan over the whole multi-phase diff, rebase, push, open the
 PR) and run Steps 5–6 once for the whole item. Phases chain without
 stopping - a completed phase flows straight into the next phase's Step 1;

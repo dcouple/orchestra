@@ -1,6 +1,7 @@
 # Color Palette & Brand Style
 
-**This is the single source of truth for all colors and brand-specific styles.** To customize diagrams for your own brand, edit this file - everything else in the skill is universal.
+Default semantic palette. Honor a user-provided brand palette without editing
+synced instructions; record any task-specific overrides with the diagram.
 
 ---
 

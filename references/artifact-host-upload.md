@@ -3,6 +3,8 @@
 Use this procedure when a skill needs to publish files through the optional
 artifact host. The consumer repository owns the configuration:
 
+Keep a shared copy of safe source files and upload results per `.references/artifact-storage.md`. Grain does not change this host's wire format or replace a configured bundle URL. Hosted viewer/raw URLs are unauthenticated: exclude secrets and unsafe captures before building the manifest.
+
 - Read `artifact_host:` from the `Work-item tracking` section of the
   repository's `AGENTS.md` (or `CLAUDE.md`). If the key is absent, do not use
   the artifact host.
@@ -16,7 +18,7 @@ The wire format is a JSON manifest:
 {
   "files": [
     { "path": "brief.html", "contentBase64": "PCFkb2N0eXBlIGh0bWw+" },
-    { "path": "refs/hellosign.html", "contentBase64": "PGgxPlN1Yi1yZXBvcnQ8L2gxPg==" }
+    { "path": "refs/research.html", "contentBase64": "PGgxPlN1Yi1yZXBvcnQ8L2gxPg==" }
   ]
 }
 ```
@@ -24,8 +26,10 @@ The wire format is a JSON manifest:
 Paths use `/` separators and are relative to the bundle root. File contents
 are base64 encoded. The root name `index.json` is reserved.
 
-For a work-item bundle, include `brief.html`, any present `plan.md` and
-`wrapup.md`, and every regular file under `refs/`. This dependency-free Node
+For a work-item bundle, include `brief.html`, any present `plan.md`, phase
+plans (`plan-<n>.md`), `wrapup.md`, and safe regular files under `refs/` and
+`mockups/`. Review the input files for disclosure before building the manifest;
+the snippet is not a redactor. This dependency-free Node
 snippet writes that manifest to a temporary file. Set `ARTIFACT_HOST` to the
 exact configured host value and `ITEM_DIR` to the work-item directory:
 
@@ -41,10 +45,14 @@ const add = path => files.push({ path: relative(root, path).split("\\").join("/"
 for (const name of ["brief.html", "plan.md", "wrapup.md", "item.md"]) {
   const path = join(root, name); try { if (statSync(path).isFile()) add(path); } catch {}
 }
+for (const entry of readdirSync(root, { withFileTypes: true })) {
+  if (entry.isFile() && /^plan-\d+\.md$/.test(entry.name)) add(join(root, entry.name));
+}
 const walk = dir => { for (const entry of readdirSync(dir, { withFileTypes: true })) {
   const path = join(dir, entry.name); if (entry.isDirectory()) walk(path); else if (entry.isFile()) add(path);
 }};
 try { walk(join(root, "refs")); } catch {}
+try { walk(join(root, "mockups")); } catch {}
 process.stdout.write(JSON.stringify({ files }));
 NODE
 ```

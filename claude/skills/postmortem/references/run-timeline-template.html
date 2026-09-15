@@ -1,7 +1,11 @@
 <!doctype html>
 <!-- Run-timeline template — fill the RUN object at the top of the script;
      everything else (stats, axis, chart height, table) derives from it.
-     Render to PNG with render-timeline.sh in this directory. -->
+     Render to PNG with render-timeline.sh in this directory.
+     Keep text fields HTML-escaped and serialize data safely into the script.
+     Use measured, ordered, non-overlapping gaps and a positive time span;
+     report unknown timing outside the chart rather than inventing dates.
+     Share safe source/PNG per .references/artifact-storage.md. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">

@@ -1,18 +1,20 @@
 ---
 name: cold-read
-description: Give a fresh agent something to walk through with zero context - a PR body, a landing page, a document, a process, instructions, code. It reports what's broken, confusing, or contradictory. A fresh perspective on something before it ships - especially useful on a PR you think is finished, or any user-facing artifact. Always dispatch as a fresh sub-agent with no conversation history - the zero context is the point.
+description: Have a fresh agent read an artifact without prior context and report confusion, contradictions, and missing information without editing it.
 ---
 
 # Cold Read
 
-You know nothing about this. You're seeing it for the first time at
-8am with groggy eyes. Walk through it start to finish.
+## Dispatch
 
-Report what's broken, confusing, or contradictory. Report what could be
-described more simply. Report what information you don't have that you
-need - do you know the what, why, how, when, where? Be thorough about
-what you don't know and what you'd need to know.
+- Use a fresh sub-agent with no conversation history, prior reviews, or explanation of the intended conclusion.
+- Supply only the artifact and the task of reading it. Walk through the whole artifact in order.
 
-Don't fix anything. You don't have the context to know what the fixes
-should be. Just explain what you experienced as someone walking through
-this for the first time.
+## Report
+
+- What is broken, confusing, contradictory, or unnecessarily hard to understand?
+- What information is missing: what, why, how, when, or where?
+- Quote or locate each issue and explain where the reader got stuck.
+- Do not edit or invent fixes that depend on context you were not given.
+
+If the coordinator saves the report, use `.references/artifact-storage.md`. Keep the blind reader isolated from other artifacts and conclusions in the shared folder.

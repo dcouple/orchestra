@@ -1,6 +1,6 @@
 ---
 name: codex
-description: Dispatches one Codex (GPT-5.6) sub-agent via `codex exec` - implementer, backend-verifier, plan-reviewer, code-reviewer, code-researcher, or investigator - and returns its report. Used by /do, /discussion, and /create-brief whenever one of these roles runs; not normally invoked by the user directly. Use when a pipeline stage needs its Codex sub-agent dispatched, resumed for a fix round, or re-run.
+description: Dispatch or resume one Codex pipeline role and return its report to the calling skill.
 argument-hint: "[role] [inputs: item/plan paths, question, pass number]"
 ---
 
@@ -30,15 +30,17 @@ reason stated in the dispatch; never above `high`, never by default. The investi
 backend-verifier act on the environment (tests, scripts, app boots), but
 their charters forbid editing project files.
 
-**Approvals must never gate a pipeline dispatch.** Every role runs with
-`--yolo` (`--dangerously-bypass-approvals-and-sandbox`) - the run is
-unattended, and an approval prompt or approval-layer refusal mid-flight burns
-the dispatch. The operator authorizes this via the /do preflight harness
-check. Reviewer/researcher dispatches are still no-edit by charter (see
-Rules: one that edited files is a failed run) - the guarantee is the charter
-plus a diff check. The `implementer` role covers
-every surface - backend/ops and frontend web/mobile alike, one effort
-(`medium`), one session per slice.
+## Authorization and handoff
+
+- Dispatch with `--yolo` only after the operator authorizes the unattended
+  harness in `/do` preflight. This flag does not authorize out-of-scope work
+  or bypass the workflow's human gates.
+- Reviewers and researchers remain no-edit by charter; check their diff.
+- The implementer handles backend, ops, web, and mobile at `medium`, one
+  resumable session per slice.
+- Read `.references/artifact-storage.md`. Pass its storage rule and the task
+  folder ID to every dispatch. Keep launcher files and completion markers
+  local; the coordinator shares safe reports without exposing blind reviews.
 
 ## Steps
 
@@ -67,6 +69,7 @@ Inputs for this run:
 - question / defect report: <for code-researcher / investigator>
 - review pass: <k>/<cap> <reviewers only - the dispatch states the resolved cap; /do derives it from the run's zone>
 - prior findings by ID: <reviewers, pass 2+> / fix instructions: <implementer fix rounds>
+- artifacts: <task folder ID, storage rule, and only the inputs this role may see>
 
 Print the report as your final message, in exactly the specified format.
 ```
@@ -86,7 +89,7 @@ verify mode) · refactor-simple / refactor-deep → `refactor-report.md`.
 
 **Path resolution**: all paths are relative to the current repo root -
 `.references/` and `.claude/agents/` are synced into every consumer repo
-from `dcouple/orchestra`. Confirm both files exist before dispatching - a
+from the canonical skills repository. Confirm both files exist before dispatching - a
 role that can't read its instructions improvises instead of failing.
 
 **Success criteria**: prompt carries the role, both file paths (resolved

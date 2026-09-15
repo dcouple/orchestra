@@ -1,5 +1,9 @@
 # PR Body - format
 
+Follow `.references/artifact-storage.md` for shared drafts and safe evidence.
+The persisted PR remains the review dashboard; a Grain copy does not replace
+body updates, proof comments, closing-line checks, or publication permission.
+
 > Produced by `/do` (Step 4) once the work verifies, then kept live through
 > Step 5. The PR body is the **live dashboard** the returning human reads
 > first - not a changelog. Two readers must both be served in one document:
@@ -122,9 +126,8 @@ first, as a sentence.
   do at each step → the outcome. This answers "what is it actually like to use
   this now?" - the PM's question. Keep it experiential, not architectural.
 
-  > **Primary journey - new user, paid intent:** lands on the offer → starts
-  > the trial → picks a number → accepts the agreement → sends their first
-  > message from inside the product. No dead-end, no download wall.
+  > **Primary journey:** opens the workspace → creates an item → sees it
+  > saved → reopens it from the list. Describe the actual product's journey.
 
 - **Flow map (the branches - breadth).** Only when the flow forks (multiple
   entry cohorts, decision points, routed continuations). A flat list hides the
@@ -157,7 +160,8 @@ The human-runnable flows derived from the ACs, as **checkboxes**, risk-tiered:
 - **Important** - user-facing behavior.
 - **Nice** - cosmetic.
 
-Rules: each item traces to a change that motivated it; 10–20 items total;
+Rules: each item traces to a change that motivated it; enough to cover the risk,
+without padding to a quota;
 tag each with its journey `J#` when the Visual overview has a flow map; end
 with an **"Areas not affected"** line so safe surfaces are skippable. This
 checklist is also the QA dashboard - Step 5 flips `[ ]` → `[x]` as items pass
@@ -165,10 +169,15 @@ and appends `- left to human: <reason>` on the ones it can't drive.
 
 ```
 **Must (breaks money/auth/data if wrong):**
+
 - [ ] [J1] <flow> → <observable outcome that proves the invariant>
+
 **Important (user-facing behavior):**
+
 - [ ] [J7] <flow> → <observable outcome>
+
 **Nice (cosmetic):**
+
 - [ ] <flow> → <observable outcome>
 
 Areas not affected: <surfaces the reviewer can skip>.
@@ -206,7 +215,7 @@ type-changing ALTER) separately for explicit human confirmation** rather than
 pasting it as routine.
 
 **Split every finding by environment and state what the run already did.** A
-green-tier reversible change on a non-production environment (additive/nullable
+green-tier authorized reversible change on a non-production environment (additive/nullable
 staging DDL, a test-mode toggle) is **applied by the run** - mark it
 `staging: ✅ applied`; its production counterpart is the human's
 `production: ⛔ run at deploy` with the exact SQL/command. Never write one

@@ -10,7 +10,7 @@ Choose the lightest depth that can establish the cause with evidence.
 
 Use when the failure is deterministic, scoped to one subsystem, and has a clear reproduction or error trail.
 
-- Rank three plausible hypotheses.
+- Rank the plausible hypotheses; do not invent alternatives to meet a quota.
 - Reproduce from a known state.
 - Trace backward from the failure and compare with a working sibling.
 - Check recent history and blame the failing lines.
@@ -31,6 +31,7 @@ Deep mode includes the normal method plus the falsifiable experiment loop below.
 - Use the real product surface when the behavior is observable through a CLI, socket, browser, desktop window, or TUI.
 - Prefer fresh isolated state: temporary profile, database, repository, worktree, port, or process namespace.
 - Do not leave diagnostic logging or temporary investigation edits in the worktree.
+- Undo only your own authorized diagnostic edits; preserve unrelated changes.
 - Do not present a plausible explanation as confirmed.
 
 ## Core Method
@@ -40,7 +41,7 @@ Deep mode includes the normal method plus the falsifiable experiment loop below.
 3. **Rank hypotheses before deep tracing** - include one line explaining why each is plausible.
 4. **Reproduce from a known state** - if reproduction fails, record exactly what was tried and what evidence is missing.
 5. **Localize the path** - trace backward from the symptom, inspect recently changed code, compare broken and working paths, follow data across boundaries, and use blame/log to identify the introducing change.
-6. **Confirm or downgrade** - confirmed means the code path predicts the failure and explains why the expected behavior does not occur. Otherwise report `likely` or `hypothesis` and name the confirming evidence.
+6. **Confirm or downgrade** - confirmed means the code path predicts the failure and an independent observation supports that explanation. Otherwise report `likely` or `hypothesis` and name the confirming evidence.
 7. **Sketch the resolution direction** - high level only; implementation belongs to the next workflow stage.
 
 ## Falsifiable Experiment Loop
@@ -72,6 +73,9 @@ When an authorized candidate change passes:
 ## Evidence Ledger
 
 For deep investigations, keep a compact ledger:
+
+Save sanitized evidence per `.references/artifact-storage.md`. Preserve local
+probes needed for reproduction; a shared historical report is not a fresh run.
 
 | Claim | Single variable | Runtime command/driver | Evidence | Verdict |
 |---|---|---|---|---|
