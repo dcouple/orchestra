@@ -17,9 +17,30 @@ destination decides the transport: with an `artifact_host:` key the bundle
 is the transport and the tracker gets a lean body (below); without one,
 fall back to a **markdown rendition** of the brief as the tracker body
 (**Without `artifact_host`** below). If the `Work-item tracking` section is
-missing or gives no publishing instructions, publish nowhere: the work item
-is complete as local files under `./tmp/<id>/`, and the user is told where
-they live.
+missing or gives no publishing instructions, skip tracker publication: the
+work item is complete as local files under `./tmp/<id>/`, and the user is told
+where they live.
+
+Apply `.references/artifact-storage.md` for an optional Grain companion.
+Report its save status separately from the required transport below.
+
+## Revise an existing item
+
+Use this path for revisions; the sections below define transport and new-item
+creation.
+
+- For an authorized revision, read the current tracker item and its linked
+  brief first. Reconcile accepted intent, scope, criteria, and decision history
+  while preserving accurate human contributions and tracker identifiers.
+- Preserve the item's current lifecycle. For active or completed work, capture
+  changed scope as a linked follow-up unless the existing workflow supports
+  revising that run.
+- Apply the caller's alignment and readiness gates to the revised brief.
+  Update the same tracker item and recorded bundle URL using the transport
+  below, keeping metadata and cross-links consistent. For legacy comment
+  transport, update the corresponding artifact comments.
+- Read back the item and bundle, then refresh any Grain companion. Report
+  each save's status separately; apply the existing upload-failure procedure.
 
 ## With `artifact_host`
 

@@ -1,12 +1,15 @@
 ---
 name: create-brief
-description: Captures discussed work as a work item ready for /do - a feature brief for changes and additions (single-outcome or multi-phase), a bug brief for defects (running the investigator first if the root cause isn't established). Use when a conversation has converged on buildable work that has no work item yet - whether the user asks to capture it or convergence makes capture the obvious next step. Do not invoke for a passing idea, an unconverged thread, or work that already has an item.
+description: Capture converged work as one or more briefs ready for /do, or revise an existing brief as accepted intent changes. Use for requested work-item capture, concrete follow-ups, and agreed revisions during discussion. Supports features, multi-phase changes, and investigated bugs; exploratory ideas remain in discussion.
 argument-hint: "[title or one-line summary]"
 ---
 
 # Create Brief
 
 ## Work: $ARGUMENTS
+
+You are the keeper of intent at delegation. Help the next person understand
+what should change, why it matters, and what success looks like.
 
 Turn what the conversation has established (typically a `/discussion`) into a
 work item that `/do` can execute autonomously. The completion artifact is
@@ -135,6 +138,13 @@ the attempts listed - plus severity (`critical | high | medium | low`) and
 business impact agreed with the user.
 
 ### 3. Shape the approach and cut phases
+Check for an existing matching item before creating one. For an authorized
+revision, reconcile its brief, tracker, and discussion; retain the current
+intent at the top and a short source-backed history of material changes.
+Capture independent outcomes, owners, or release timing as separate linked
+items when requested, applying this workflow's alignment and readiness gates
+to each. Keep exploratory follow-ups in discussion until their scope is agreed.
+
 Every item's brief carries an **Approach** section - how the work will be
 tackled, at approach altitude (`.references/html-brief.md` · Approach) - and
 at least one `phases` entry. If the work is one coherent outcome, record a
@@ -150,13 +160,19 @@ belongs in the Sequencing panel as a separate candidate item instead.
 a goal, scope, and its own verification surface; order confirmed.
 
 ### 4. Author the brief and align
+Apply `.references/artifact-storage.md` to the brief and its supporting files.
+Explain the problem and desired experience from first principles; use a
+before/after example, flow, or decision timeline when it helps the user judge
+the outcome within the existing HTML brief structure.
+
 Check `./tmp/discussions/` for a decision log from the conversation that
 produced this item (match by slug and date) - carry its decisions into the
 current accepted intent and locked directions, preserve the origin, revision
 trail, source labels, and rationale status per `.references/pr-writing.md`, and
 link it from `refs/`
-if it holds more than the brief should inline. Pick `<id>` (short
-kebab-case slug from the title), create `./tmp/<id>/`, and author
+if it holds more than the brief should inline. Reuse the existing item's
+`./tmp/<id>/` and metadata; for new work, pick `<id>` (short kebab-case slug
+from the title) and create the directory. Author or update
 `brief.html` per `.references/html-brief.md` (page contract, section map,
 and rules), opening it in the user's browser. Save transcript-worthy raw
 material (key discussion excerpts, links, research worth keeping) to
@@ -231,7 +247,8 @@ way.
 **Success criteria**: published and cross-linked per the shared procedure
 (bundle transport with an `artifact_host`, markdown-rendition fallback
 without one) - or, when the repo configures no destination at all, the item
-is complete in `./tmp/<id>/` and the user was told nothing was published.
+is complete in `./tmp/<id>/`. Report tracker publication and any Grain
+companion's save status separately.
 
 ```
 Suggested next steps:
