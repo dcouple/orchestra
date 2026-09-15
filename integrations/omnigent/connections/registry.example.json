@@ -1,0 +1,12 @@
+{
+  "keycard": {
+    "type": "mcp",
+    "url": "https://YOUR-GATEWAY.example.invalid/mcp",
+    "auth": "native"
+  },
+  "langfuse_docs": {
+    "type": "mcp",
+    "url": "https://langfuse.com/api/mcp",
+    "auth": "none"
+  }
+}

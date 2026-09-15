@@ -79,6 +79,10 @@ orchestra-omni agent implementer --harness codex --project /path/to/project
 
 `agent` builds a snapshot and invokes `omni run <bundle>`. This is Omnigent's
 configured-agent session interface, with the selected native harness executor.
+The local planner and implementer use `os_env.sandbox.type: none`, matching
+Omnigent's dedicated native launcher. They add no Omnigent OS sandbox; the native
+harness's permission settings still apply. With v0.13.0 on this Mac, `auto`
+prevented Claude from reading Omnigent's generated `claude-settings.json`.
 It differs from the dedicated native-TUI entrypoint above. For a single initial
 task, its option is explicitly called `--task`:
 
@@ -162,33 +166,88 @@ to read it, grant only the access needed for that session.
 
 ## MCP connections
 
-Native `run` sessions use the harness's existing MCP configuration. For configured
-agents, pass a JSON map of Omnigent MCP connections; repeat `--tools` for multiple
-files. Duplicate names are rejected.
+Store named, non-secret endpoints once per machine in
+`~/.config/orchestra/connections.json`. The registry example is
+[`connections/registry.example.json`](connections/registry.example.json).
+Use the gateway's **MCP Access URL**, not its application ID or console URL:
 
 ```sh
-orchestra-omni agent planner --harness claude \
-  --tools /path/to/orchestra/integrations/omnigent/connections/langfuse-docs.json
+orchestra-omni connections add keycard --url 'YOUR_HTTPS_MCP_ACCESS_URL'
+orchestra-omni connections login keycard --harness claude
+orchestra-omni connections login keycard --harness codex
+orchestra-omni connections check keycard --harness codex
+orchestra-omni agent planner --harness claude --connection keycard
+orchestra-omni agent implementer --harness codex --connection keycard
+orchestra-omni run codex --connection keycard
 ```
 
-The included connection uses the public Langfuse documentation MCP and requires
-no credentials. It searches documentation; it does not export traces or read
-private session history.
+`add` writes only endpoint metadata. `login` explicitly registers the server as
+`orchestra_keycard` in the selected harness's persistent user configuration and
+hands the terminal to its native OAuth flow. Complete the browser login when
+prompted. Claude uses `claude mcp login`; Codex automatically attempts OAuth on
+first `mcp add`, and subsequent wrapper logins use `codex mcp login`. If Codex's
+initial discovery does not start authentication, retry the login command.
+Each harness logs in separately; planner and implementer share that harness's
+login. Keycard controls the account's tool grants.
 
-`connections/keycard.json` demonstrates Omnigent's HTTP MCP transport with a
-Keycard gateway URL and an access token supplied through environment references.
-Keep real secrets outside Orchestra and pass them to the process that resolves
-the agent configuration. The builder leaves `${VAR}` references unexpanded.
-A long-running Omnigent host may have a different environment from the invoking
-shell; verify actual runner credential availability.
+Run login from an ordinary terminal before starting Omnigent. Credentials stay
+in the native CLI's credential store: Claude uses its native macOS Keychain/file
+storage; Codex uses its configured OAuth keyring/file store under its durable
+configuration. The wrapper does not read, copy, export, or implement refresh for
+tokens. Omnigent manages the temporary Codex home; real Keycard login persistence
+and refresh through that home still require live verification.
 
-The token must be issued for your gateway and grants. This connection does not
-perform OAuth login or refresh. For an interactive first trial, configure the
-Keycard gateway directly in Claude, authenticate in `/mcp`, then launch
-`orchestra-omni run claude`. Follow [Keycard's gateway guide](https://docs.keycard.ai/admin/unified-access-gateway/).
-Use one route per gateway during testing, and select allowed tools using the
-actual tool names returned by your gateway. The example has no invented tool
-names or configured private account.
+`check` verifies the effective registration's endpoint, transport and settings.
+It does **not** prove authentication or successful tool access. Startup checks
+selected registrations and fails on missing or conflicting settings, without
+opening a browser. To prove access, ask the agent to call an allowed read tool.
+Native inspection can contact the gateway. No credentials belong in the registry,
+agent definitions, bundle snapshots, or command-line arguments; query parameters,
+embedded credentials, custom headers, and unsupported fields are rejected.
+
+To select connections by default, edit an agent's `config.json`:
+
+```json
+"connections": ["keycard"]
+```
+
+The checked-in agents start with an empty list. Repeat `--connection` to add
+other names; duplicates are errors. Use `--connections-file /absolute/path.json`
+on connection commands, builds and launches to select another registry.
+`connections list` displays the non-secret registry. Changing an existing endpoint
+requires `connections add ... --replace`; this changes the registry only. A
+conflicting native registration is never overwritten automatically: inspect and
+remove that specific server using the native CLI, then repeat wrapper login.
+
+This release uses **persistent native user registration**. Registered servers can
+appear in ordinary native sessions and in agents that do not select them. An
+agent's connection list declares requirements, not an access-control boundary.
+Bundles record selected endpoint definitions, but native configuration is
+separate and can change. An old bundle or resumed conversation does not freeze
+native endpoints, credentials or permissions. Start a fresh session after changes.
+
+A public smoke test needs no Keycard credentials:
+
+```sh
+orchestra-omni connections add docs_smoke --url https://langfuse.com/api/mcp --auth none
+orchestra-omni connections login docs_smoke --harness claude
+orchestra-omni connections login docs_smoke --harness codex
+orchestra-omni agent planner --harness claude --connection docs_smoke
+```
+
+Ask it to call `orchestra_docs_smoke`'s `getLangfuseOverview` tool once. This public
+server provides documentation; it does not export traces or read private sessions.
+The public registration is installed on the development machine for local trials.
+
+### Experimental Omnigent bridge
+
+`--tools` still accepts Omnigent JSON tool maps, including the legacy examples in
+`connections/langfuse-docs.json` and `connections/keycard.json`. With v0.13.0,
+configured Claude and Codex runners discovered the public MCP tools but did not
+expose them through their active bridge. Use named native connections for these
+harnesses. The wrapper rejects a selected native connection also supplied through
+`--tools` under the same name or exact endpoint. Existing unrelated native MCP
+registrations are retained; avoid separately registering the same gateway twice.
 
 ## Langfuse tracing
 
@@ -233,14 +292,20 @@ uv run --no-project --python 3.12 --with 'omnigent==0.13.0' \
   python integrations/omnigent/tests/check_upstream.py
 ```
 
-The PR's validation covers all four agent/harness bundles, shared reference
+Automated validation covers all four agent/harness bundles, shared reference
 resolution, immutable snapshots, argument forwarding, the symlinked launcher,
-and a target directory containing spaces. It does not establish live native
-runtime behavior. Before treating the integration as ready for routine use:
+and a target directory containing spaces. Local live checks also opened both
+native TUIs, completed a native Claude turn, and completed configured planner and
+implementer turns on Claude and an implementer turn on Codex. The configured
+implementer exposes its namespaced skills; `/do` retains its manual-only metadata
+and is not advertised for model invocation. Public `getLangfuseOverview` calls succeeded through native registrations in
+configured Claude and Codex sessions. Registry and adapter tests cover conflicts,
+credential-output redaction, login delegation, and connection selection. The MCP
+bridge limitation above was reproduced on both harnesses. Before treating the integration as ready for routine use:
 
 - Launch both native TUIs; send a message; exit and resume the Omnigent session.
 - Load each configured bundle and confirm selected skills and repository instructions.
-- Make a public documentation MCP call through Omnigent's bridge.
+- Make an allowed Keycard read call through each native harness.
 - Verify a completed turn and tool call in Langfuse for each harness.
 - Authenticate Keycard, invoke an allowed read tool, and test credential renewal.
 

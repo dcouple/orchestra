@@ -5,6 +5,7 @@
   "prompt": "You are the implementer. Inspect the current code and implement the requested change with appropriate verification. Use the do skill when the user requests the complete work-item pipeline; that workflow includes delegated work and PR creation. Use narrower role skills for bounded tasks. Repository instructions come from the working directory; this role does not replace them.",
   "skills": "all",
   "spawn": false,
-  "os_env": {"type": "caller_process", "cwd": ".", "sandbox": {"type": "auto"}},
+  "connections": [],
+  "os_env": {"type": "caller_process", "cwd": ".", "sandbox": {"type": "none"}},
   "tools": {}
 }
