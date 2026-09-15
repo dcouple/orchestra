@@ -33,6 +33,7 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 | `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) to copy into a new consumer repo and fill in | not synced - copied once by hand |
 | `daemon/` | Orchestra-only Linear agent webhook service (macOS/launchd behind a Cloudflare Tunnel, or Linux/systemd); each deployment's identity comes from a site config kept in the consumer repo | not synced |
 | `machines/` | Orchestra-only, versioned physical-machine setup and operations artifacts | not synced |
+| `integrations/omnigent/` | Optional machine launcher and reusable Omnigent agent bundles | not synced |
 | `scripts/sync.sh` | The mirror logic (four `rsync --delete` targets) | - |
 
 ## The rules that keep this sane
@@ -101,6 +102,14 @@ retired orchestra-owned entries are purged by exact name. To keep it fresh,
 point a LaunchAgent or cron at a wrapper that fetches `origin/main`, exports
 it (`git archive`), and runs the script from the export - invoke it with
 `bash`, and never schedule a plain one-set rsync over these dirs.
+
+## Omnigent launcher (experimental)
+
+[The Omnigent integration](integrations/omnigent/README.md) launches native
+Claude Code/Codex sessions or builds reusable planner/implementer bundles from
+Orchestra’s canonical skills. It keeps generated files in a user cache and runs
+against the project directory you select. Omnigent is installed separately;
+this integration is not included in consumer or user-level syncs.
 
 ## Manual sync
 

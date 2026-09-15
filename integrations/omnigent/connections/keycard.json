@@ -1,0 +1,7 @@
+{
+  "keycard": {
+    "type": "mcp",
+    "url": "${KEYCARD_MCP_URL}",
+    "headers": {"Authorization": "Bearer ${KEYCARD_MCP_ACCESS_TOKEN}"}
+  }
+}

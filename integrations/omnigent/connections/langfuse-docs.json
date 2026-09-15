@@ -1,0 +1,7 @@
+{
+  "langfuse_docs": {
+    "type": "mcp",
+    "url": "https://langfuse.com/api/mcp",
+    "tools": ["searchLangfuseDocs", "getLangfuseDocsPage", "getLangfuseOverview"]
+  }
+}
