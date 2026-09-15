@@ -109,9 +109,11 @@ spawned session, activating the artifact-host publish branch.
 
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
-`PLANNER_HARNESS` and `IMPLEMENTER_HARNESS` (independent `claude | claudex`
+`PLANNER_HARNESS` and `IMPLEMENTER_HARNESS` (independent `claude | claudex | codex`
 preferences, both default `claude`),
 `CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),
+`CODEX_BIN` (default `codex`, whitespace-split) and `CODEX_MODEL` (default
+`gpt-6-astra`) for the `codex` harness,
 `CLAUDEX_BIN` (optional, whitespace-split; required for a direct `claudex`
 preference and for Sol fallback - point it at the provisioned `claudex` wrapper),
 `CLAUDEX_ENV` (optional JSON string map of
@@ -130,10 +132,14 @@ extra child env for `CLAUDEX_BIN`; requires `CLAUDEX_BIN`),
 `ATTACHMENT_HOSTS` (`uploads.linear.app`). Set `SESSIONS_ENABLED=0` for ingress-only runs.
 For a new role session, `claude` prefers the Fable launcher and retains readiness routing
 plus the one-shot structured capacity fallback to Claudex/GPT-Sol; `claudex` starts
-Claudex/GPT-Sol immediately without probing Fable. The resolved harness and session ID are
-persisted together, so later prompts, restarts, fix rounds, and preference changes continue
-on the established harness. Missing `CLAUDEX_BIN` fails a selected Claudex session closed;
-it never starts a replacement Claude session.
+Claudex/GPT-Sol immediately without probing Fable; `codex` runs the native Codex CLI
+(`codex exec --json`) on `CODEX_MODEL` with approvals and the sandbox bypassed, so the
+implementer starts a new item with `$astra-ticket <issue>` and resumes the same thread for
+later prompts. Codex turns carry the same Linear MCP server (`-c mcp_servers.linear.*`,
+the key by env reference) but no daemon tool hooks, turn cap, or budget cap. The resolved
+harness and session ID are persisted together, so later prompts, restarts, fix rounds, and
+preference changes continue on the established harness. Missing `CLAUDEX_BIN` fails a
+selected Claudex session closed; it never starts a replacement Claude session.
 
 Immediately before each turn, the daemon reads only `CLIPROXY_API_KEY` from
 `CLIPROXY_ENV_FILE` and passes that value plus the two Bash timeout settings to the selected

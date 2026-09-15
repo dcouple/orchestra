@@ -142,6 +142,8 @@ function setup() {
     targetRepoPath: repo,
     claudeArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")],
     fableArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")],
+    codexArgv: [process.execPath, resolve("test/fixtures/fake-codex.mjs")],
+    codexModel: "gpt-6-astra",
     claudePermissionMode: "plan",
     claudeMaxTurns: 5,
     bashDefaultTimeoutMs: 900_000,
@@ -2069,6 +2071,50 @@ describe("SessionWorker", () => {
         .filter((p) => p.session === "implementer-session")
         .every((p) => p.app === "implementer"),
     ).toBe(true);
+    log.close();
+  });
+  it("runs the Codex implementer on the astra-ticket skill and resumes its thread for follow-ups", async () => {
+    const seeded = setup();
+    seeded.log.close();
+    seeded.config.apps.implementer.harness = "codex";
+    const config = seeded.config;
+    let log: EventLog;
+    log = new EventLog(config.dbPath, (app) => selectSessionProfile(log, config, app));
+    const poster = new Poster();
+    process.env.CODEX_FAKE_ARGS_FILE = join(seeded.dir, "codex-args.jsonl");
+    appendImplementer(log, "implementer", "implementer-session");
+    let worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 });
+    await worker.start();
+    await waitFor(() => log.turnStates()[0]?.status === "done" && poster.urls.length === 1);
+    await worker.stop();
+    expect(log.getSession("implementer-session")).toMatchObject({
+      runtime: "codex", profile: "sol", claudeSessionId: "codex-thread-1",
+    });
+    expect(poster.urls[0]).toEqual({
+      app: "implementer", session: "implementer-session", label: "Pull Request",
+      url: "https://github.com/dcouple/example/pull/42",
+    });
+    log.append({
+      deliveryId: "implementer-2", app: "implementer", action: "prompted", agentSessionId: "implementer-session",
+      receivedAt: Date.now(),
+      rawBody: Buffer.from(JSON.stringify({ action: "prompted", agentActivity: { body: "fix the tests" },
+        agentSession: { id: "implementer-session" } })),
+    });
+    worker = new SessionWorker(log, poster as unknown as LinearGateway, config, { pollMs: 10, reconcileMs: 20 });
+    await worker.start();
+    await waitFor(() => log.turnStates()[1]?.status === "done");
+    await worker.stop();
+    const rows = readFileSync(process.env.CODEX_FAKE_ARGS_FILE, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as { args: string[]; cwd: string; env: Record<string, string> });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].args.slice(0, 5)).toEqual(["exec", "--json", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-6-astra"]);
+    expect(rows[0].args).toContain('mcp_servers.linear.bearer_token_env_var="LINEAR_API_KEY"');
+    expect(rows[0].args.at(-1)).toMatch(/^\$astra-ticket ENG-42\n/);
+    expect(rows[0].env).toMatchObject({ LINEAR_API_KEY: "linear-key", CLIPROXY_API_KEY: "api-key-one" });
+    expect(rows[1].args.slice(0, 3)).toEqual(["exec", "resume", "--json"]);
+    expect(rows[1].args.slice(-2)).toEqual(["codex-thread-1", "fix the tests"]);
+    expect(rows[1].cwd).toBe(rows[0].cwd);
+    delete process.env.CODEX_FAKE_ARGS_FILE;
     log.close();
   });
   it("phase3 AC2/AC3-on-error: creates a missing worktree and retries an error result's PR URL", async () => {

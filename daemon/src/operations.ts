@@ -42,7 +42,7 @@ export interface OperationRow {
 export interface SafeRunningTurn {
   app: "planner" | "implementer";
   issueIdentifier: string;
-  runtime: "claude" | "claudex";
+  runtime: "claude" | "claudex" | "codex";
   state: "running";
   startedAt: number;
   elapsedMs: number;

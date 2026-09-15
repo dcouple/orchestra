@@ -282,11 +282,12 @@ describe("daemonctl command boundaries", () => {
   it("config dry-run is deterministic and does not expose unrelated environment values", () => {
     const { dir } = fixture(); const envFile = join(dir, "env"); writeFileSync(envFile, "SECRET_TOKEN=never-print-me\nPLANNER_HARNESS=claude\n");
     const env = { ...process.env, DAEMONCTL_ALLOW_NON_ROOT: "1", DAEMONCTL_ENV_FILE: envFile };
-    const args = ["config", "--planner", "claudex", "--implementer", "claude", "--dry-run"];
+    const args = ["config", "--planner", "claudex", "--implementer", "codex", "--dry-run"];
     const one = execFileSync(daemonctl, args, { env, encoding: "utf8" });
     const two = execFileSync(daemonctl, args, { env, encoding: "utf8" });
     expect(two).toBe(one);
     expect(one).toContain("PLANNER_HARNESS=claudex");
+    expect(one).toContain("IMPLEMENTER_HARNESS=codex");
     expect(one).not.toContain("never-print-me");
     expect(execFileSync("cat", [envFile], { encoding: "utf8" })).toContain("SECRET_TOKEN=never-print-me");
   });

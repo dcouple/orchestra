@@ -20,6 +20,7 @@ import {
   inFlightDispatches,
 } from "./dispatches.js";
 import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
+import { runCodexTurn } from "./codex.js";
 import {
   BROWSER_RELAUNCH_SENTINEL,
   browserAttemptEnv,
@@ -99,9 +100,11 @@ export function selectSessionProfile(
   now = Date.now(),
 ): {
   profile: "fable" | "sol";
-  runtime: "claude" | "claudex";
+  runtime: "claude" | "claudex" | "codex";
   reason: string;
 } {
+  if (config.apps[app].harness === "codex")
+    return { profile: "sol", runtime: "codex", reason: "codex_preferred" };
   if (config.apps[app].harness === "claudex")
     return { profile: "sol", runtime: "claudex", reason: "claudex_preferred" };
   if (!config.fableArgv)
@@ -535,7 +538,9 @@ export class SessionWorker {
     );
     let prompt =
       implementer && !resuming
-        ? `/do ${identifier}`
+        ? runtime === "codex"
+          ? `$astra-ticket ${identifier}\n\n${identifier} is a Linear issue: read it and its comments through the linear MCP tools. This run is unattended, so nobody can answer a question mid-run: take each stated default instead of waiting.`
+          : `/do ${identifier}`
         : this.composePrompt(turn, identifier);
     if ((!implementer || resuming) && this.config.attachmentsEnabled)
       prompt += await this.downloadAttachments(turn.rawBody, worktree.path);
@@ -797,7 +802,9 @@ export class SessionWorker {
       },
     };
     const runtimeArgv =
-      runtime === "claudex"
+      runtime === "codex"
+        ? this.config.codexArgv
+        : runtime === "claudex"
         ? this.config.claudexArgv!
         : durableProfile === "fable"
           ? this.config.fableArgv
@@ -845,7 +852,7 @@ export class SessionWorker {
           ORCHESTRA_BROWSER_REQUEST_FILE: _requestFile,
           ...postHandshakeEnv
         } = common.env;
-        const turnResult = await runTurn({
+        const turnOptions = {
           ...common,
           mcpConfigJson: attempt
             ? mergeMcpConfig(baseMcpConfigJson, attempt)
@@ -860,14 +867,18 @@ export class SessionWorker {
             : {}),
           argv,
           ...(trustedEnv ? { trustedEnv } : {}),
-          onSessionId: (id) => {
+          onSessionId: (id: string) => {
             this.log.updateClaudeSessionId(
               turn.linearSessionId,
               id,
               this.now(),
             );
           },
-        });
+        };
+        const turnResult =
+          runtime === "codex"
+            ? await runCodexTurn({ ...turnOptions, model: this.config.codexModel })
+            : await runTurn(turnOptions);
         if (eventCallbackError !== undefined) throw eventCallbackError;
         return timeout?.aborted && !signal.aborted
           ? {
@@ -1035,15 +1046,13 @@ export class SessionWorker {
       const classified = classifyProviderFailure(result);
       if (classified) {
         const provider =
-          runtime === "claudex"
+          runtime !== "claude" || durableProfile !== "fable"
             ? "codex"
-            : durableProfile === "fable"
-              ? "claude"
-              : "codex";
+            : "claude";
         recordProviderFailure(durableProfile, provider, classified);
       }
       if (result.capacityEvidence.length) {
-        const provider = runtime === "claudex" ? "codex" : "claude";
+        const provider = runtime === "claude" ? "claude" : "codex";
         recordProviderFailure(durableProfile, provider, {
           state: "capacity_failure",
           reason: result.capacityEvidence.join(","),

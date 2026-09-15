@@ -31,7 +31,7 @@ export interface SessionRow {
   worktreePath: string | null;
   branch: string | null;
   claudeSessionId: string | null;
-  runtime: "claude" | "claudex";
+  runtime: "claude" | "claudex" | "codex";
   fallbackCause: string | null;
   profile: "fable" | "sol" | null;
   profileFallback: number | null;
@@ -57,7 +57,7 @@ export interface AppendResult {
   inserted: boolean;
   deliveryId: string;
   assignedProfile?: "fable" | "sol";
-  assignedRuntime?: "claude" | "claudex";
+  assignedRuntime?: "claude" | "claudex" | "codex";
   assignmentReason?: string;
   stop?: { agentSessionId: string; app: AppName };
 }
@@ -323,7 +323,7 @@ export class EventLog {
     path: string,
     private readonly selectProfile: (app: AppName) => {
       profile: "fable" | "sol";
-      runtime: "claude" | "claudex";
+      runtime: "claude" | "claudex" | "codex";
       reason: string;
     } = () => ({
       profile: "fable",
@@ -941,7 +941,7 @@ export class EventLog {
       let assignment:
         | {
             profile: "fable" | "sol";
-            runtime: "claude" | "claudex";
+            runtime: "claude" | "claudex" | "codex";
             reason: string;
           }
         | undefined;
