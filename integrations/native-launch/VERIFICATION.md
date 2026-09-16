@@ -55,3 +55,12 @@ Live TypeScript CLI smoke check: native Claude and Codex TUIs opened in the scra
   separate Orchestra /do verifiers are not part of these workflows.
 - No live child execution or external publication was performed for this
   migration. Earlier live registration checks remain documented above.
+
+## User-level skill load/unload
+
+- 29 tests pass, including seven user-skill tests exercising shared ownership,
+  idempotence, non-destructive collision handling, replaced links, missing source
+  files, harness overrides, and original Codex home selection.
+- CLI `load`, `loaded`, and `unload` completed successfully in an isolated home.
+- Actual user-level skills were not changed during verification. Native discovery
+  after a global load has not been exercised against a live model in this change.

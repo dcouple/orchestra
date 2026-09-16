@@ -105,3 +105,49 @@ Profiles reference complete definitions in the central `agents/` directory;
 model and harness defaults live in those agent files. See
 [profiles and native child roles](profiles/README.md) for configuration,
 installation, overrides, and current native-delegation limits.
+
+## Load and unload user-level skills
+
+Use a profile as a global skill selection without launching its agent identity:
+
+```sh
+orchestra load astra-planner
+orchestra loaded
+orchestra unload astra-planner
+
+# Optional: install the same selection for another harness.
+orchestra load astra-planner --harness claude
+orchestra unload astra-planner --harness claude
+```
+
+`load` selects the profile's top-level skills and defaults to its configured
+harness. It links each complete skill directory into the native user's skills
+folder: normally `~/.codex/skills` or `~/.claude/skills`. It respects
+`ORCHESTRA_NATIVE_CODEX_HOME` before `CODEX_HOME`, and `CLAUDE_CONFIG_DIR` for
+Claude. Source edits are reflected through the links; they are not snapshots.
+Editing through an installed link edits the central source skill.
+
+This installs skills only: not agent instructions, model settings, child roles,
+workspace secrets, or MCP configuration. Use `orchestra run` for the full
+identity. Native model and MCP defaults apply when launching `codex` or `claude`
+directly. Child-only skills are not automatically included in a global load.
+
+Multiple profiles can be loaded together. Shared skill links remain until the
+last owning profile is unloaded. Repeating an unchanged load is a no-op. If you
+change a profile's selected skill list, unload and load it again. `unload NAME`
+removes that named profile from all harnesses; `--harness` limits removal.
+Unloading works even if the source profile or skills have been deleted.
+
+Existing unowned destination entries are never overwritten or adopted, including
+symlinks to the same source. Resolve such a conflict yourself or use the isolated
+`run` command. If a managed link is replaced with a different file, directory, or
+link, unloading stops before removing any of the profile's exclusive skills.
+Unloading does not disable copies of the same skill in other native discovery
+locations, nor does it erase instructions already read into an open conversation.
+Start a fresh native session and inspect its skills after loading/unloading.
+
+Ownership is recorded in `~/.local/state/orchestra/user-skills/state.json`.
+Keep this registry while profiles are loaded. Operations use a lock and roll
+back link changes on ordinary errors. A killed process can leave a stale lock
+or untracked link; inspect those paths before manual recovery. These commands
+never recursively delete source skills or modify native config/auth files.
