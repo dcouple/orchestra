@@ -89,11 +89,11 @@ test('native exec preserves args, cwd, environment and exit status; dispatch run
 });
 test('profile model settings reach both native harnesses and override legacy entrypoints',t=>{
  const f=fixture(t);
- f.put('profiles/planner.yaml','harness: claude\nmodel: {name: claude-fable-5-1, reasoning: high}\nskills: [proof]\n');
+ f.put('agents/planner.yaml','harness: claude\nmodel: {name: claude-fable-5-1, reasoning: high}\nskills: [proof]\n');
  let b=f.build(),r=command(b,'main',{prepare:false});
  assert.equal(r.argv[r.argv.indexOf('--model')+1],'claude-fable-5-1');
  assert.equal(r.argv[r.argv.indexOf('--effort')+1],'high');
- f.put('profiles/planner.yaml','harness: codex\nmodel: {name: gpt-6-astra, reasoning: medium, speed: fast}\nskills: [proof]\n');
+ f.put('agents/planner.yaml','harness: codex\nmodel: {name: gpt-6-astra, reasoning: medium, speed: fast}\nskills: [proof]\n');
  b=f.build();r=command(b,'main',{prepare:false});
  assert.ok(r.argv.includes('model_reasoning_effort="medium"'));
  assert.ok(r.argv.includes('service_tier="fast"'));
@@ -104,21 +104,23 @@ test('profile model settings reach both native harnesses and override legacy ent
 test('invalid model settings fail rather than silently dropping options',t=>{
  const f=fixture(t);
  for(const model of ['{name: test, reasoning: typo}','{name: test, speed: fast}','{name: test, typo: high}']) {
-  f.put('profiles/planner.yaml',`harness: claude\nmodel: ${model}\n`);
+  f.put('agents/planner.yaml',`harness: claude\nmodel: ${model}\n`);
   assert.throws(f.build,/Unsupported|model.speed/);
  }
- f.put('profiles/planner.yaml','harness: codex\nmodel: {name: test, reasoning: high}\nreasoning_effort: medium\n');
+ f.put('agents/planner.yaml','harness: codex\nmodel: {name: test, reasoning: high}\nreasoning_effort: medium\n');
  assert.throws(f.build,/model.reasoning/);
 });
-test('referenced profiles replace model blocks and append instructions',t=>{
+test('profiles select agents and reject behavior overrides',t=>{
  const f=fixture(t);
- f.put('agents/base.yaml','harness: codex\nmodel: {name: first, reasoning: medium, speed: fast}\ninstructions: Base intent.\nskills: [proof]\n');
- f.put('profiles/entry.yaml','agent: base\nmodel: {name: second, reasoning: high}\ninstructions: Extra intent.\n');
+ f.put('agents/base.md','---\nharness: codex\nmodel: {name: first, reasoning: medium, speed: fast}\nskills: [proof]\n---\nBase intent.\n');
+ f.put('profiles/entry.yaml','agent: base\n');
  const b=build(f.root,'entry',f.target),m=JSON.parse(fs.readFileSync(path.join(b,'manifest.json')));
- assert.equal(m.nodes.main.name,'base');assert.equal(m.nodes.main.speed,undefined);
- assert.equal(m.nodes.main.instructions,'Base intent.\n\nExtra intent.');
- f.put('profiles/entry.yaml','agent: missing\nharness: codex\nmodel: test\n');
- assert.throws(()=>build(f.root,'entry',f.target),/ENOENT/);
+ assert.equal(m.nodes.main.name,'base');assert.equal(m.nodes.main.speed,'fast');
+ assert.equal(m.nodes.main.instructions,'Base intent.');
+ for(const extra of ['model: second','instructions: Extra','subagents: {}','harness: claude','skills: []']){
+  f.put('profiles/entry.yaml',`agent: base\n${extra}\n`);assert.throws(()=>build(f.root,'entry',f.target),/Unsupported/);
+ }
+ f.put('profiles/entry.yaml','agent: missing\n');assert.throws(()=>build(f.root,'entry',f.target),/ENOENT/);
 });
 test('native Codex roles retain child model and skill paths and inherit parent connections',t=>{
  const f=fixture(t);
@@ -146,13 +148,13 @@ test('unsupported native delegation cannot silently become a process',t=>{
  f.put('agents/planner.yaml','harness: codex\nmodel: test\nsubagents: {worker: {agent: worker, mode: unknown}}\n');
  assert.throws(f.build,/mode/);
 });
-test('directory agents compose Markdown, append profile instructions, and invalidate bundles',t=>{
+test('directory agents compose Markdown and invalidate bundles',t=>{
  const f=fixture(t);
  f.put('agents/writer/agent.yaml','harness: codex\nmodel: test\ninstructions_files: [../../instructions/shared.md, instructions.md]\n');
  f.put('instructions/shared.md','Shared guidance.');f.put('agents/writer/instructions.md','Role guidance.');
- f.put('profiles/writer.yaml','agent: writer\ninstructions_file: extra.md\n');f.put('profiles/extra.md','Profile guidance.');
+ f.put('profiles/writer.yaml','agent: writer\n');
  const b=build(f.root,'writer',f.target);
- assert.equal(fs.readFileSync(path.join(b,'main/instructions.md'),'utf8'),'Shared guidance.\n\nRole guidance.\n\nProfile guidance.');
+ assert.equal(fs.readFileSync(path.join(b,'main/instructions.md'),'utf8'),'Shared guidance.\n\nRole guidance.');
  f.put('instructions/shared.md','Updated guidance.');assert.notEqual(build(f.root,'writer',f.target),b);verify(b);
 });
 test('instruction files fail on missing files, escapes, and ambiguous sources',t=>{
@@ -184,4 +186,15 @@ test('shipped Astra profiles package all declared workflow roles and their own s
  assert.deepEqual(m.nodes['main/children/cold-reader'].skills,['cold-read']);
  const p=build(f.root,'astra-planner',f.target),pm=JSON.parse(fs.readFileSync(path.join(p,'manifest.json')));
  assert.deepEqual(Object.keys(pm.nodes.main.children),['socrates']);
+});
+
+test('Markdown agents compose shared instructions and reject malformed frontmatter',t=>{
+ const f=fixture(t);
+ f.put('agents/writer.md','---\nharness: codex\nmodel: test\ninstructions_files: [../instructions/shared.md]\n---\n\nRole body.\n');
+ f.put('instructions/shared.md','Shared.');
+ const run=()=>build(f.root,'writer',f.target),b=run();
+ assert.equal(fs.readFileSync(path.join(b,'main/instructions.md'),'utf8'),'Shared.\n\nRole body.');
+ f.put('agents/writer.md','No frontmatter');assert.throws(run,/frontmatter/);
+ f.put('agents/writer.md','---\nharness: codex\nmodel: one\nmodel: two\n---\nBody');assert.throws(run,/unique/);
+ f.put('agents/writer.md','---\nharness: codex\nmodel: test\ninstructions: wrong\n---\nBody');assert.throws(run,/Markdown body/);
 });

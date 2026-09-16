@@ -1,4 +1,1 @@
-agent: implementer
-model:
-  name: gpt-6-astra
-  reasoning: high
+agent: astra-implementer-high

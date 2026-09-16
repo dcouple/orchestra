@@ -22,13 +22,23 @@ function read(file: string) {
   return mapping(doc.toJS({maxAliasCount:100}));
 }
 function agentFile(root: string, agent: string): string {
-  const directory=path.join(root,'agents',agent,'agent.yaml');
-  const legacy=path.join(root,'agents',agent+'.yaml');
-  if (fs.existsSync(directory) && fs.existsSync(legacy)) throw new Error(`Ambiguous agent definition: ${agent}`);
-  return fs.existsSync(directory) ? directory : legacy;
+  const candidates=[path.join(root,'agents',agent+'.md'),path.join(root,'agents',agent,'agent.yaml'),path.join(root,'agents',agent+'.yaml')];
+  const existing=candidates.filter(file=>fs.existsSync(file));
+  if (existing.length>1) throw new Error(`Ambiguous agent definition: ${agent}`);
+  return existing[0] ?? candidates[0]!;
 }
 function definition(root: string, file: string): Record<string,unknown> {
-  const data=read(file);
+  let body: string|undefined;
+  let data: Record<string,unknown>;
+  if (file.endsWith('.md')) {
+    const text=fs.readFileSync(file,'utf8');
+    const match=/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/.exec(text);
+    if (!match) throw new Error(`Agent Markdown requires YAML frontmatter: ${file}`);
+    const doc=parseDocument(match[1]!,{uniqueKeys:true});
+    if (doc.errors.length) throw new Error(`${file}: ${doc.errors.map(e=>e.message).join('; ')}`);
+    data=mapping(doc.toJS({maxAliasCount:100})); body=match[2]!.trim();
+    if (data.instructions!==undefined) throw new Error('Put agent instructions in the Markdown body, not frontmatter');
+  } else data=read(file);
   const sources=['instructions','instructions_file','instructions_files'].filter(key=>data[key]!==undefined);
   if (sources.length>1) throw new Error('Choose one instructions source: inline, instructions_file, or instructions_files');
   const input=data.instructions_file!==undefined ? [data.instructions_file] : data.instructions_files;
@@ -42,6 +52,7 @@ function definition(root: string, file: string): Record<string,unknown> {
       return fs.readFileSync(source,'utf8');
     }).join('\n\n');
   }
+  if (body!==undefined) data.instructions=[data.instructions,body].filter(Boolean).join('\n\n');
   delete data.instructions_file; delete data.instructions_files;
   return data;
 }
@@ -66,7 +77,7 @@ export function resolve(root: string, agent: string, workspace?: string): Record
   function visit(agentName: string, trail: string[], route: string, overrides: Record<string,unknown>={}, inherited=defaults, mode: 'native'|'process'='process') {
     name(agentName); if (trail.includes(agentName)) throw new Error('Child-agent cycle: '+[...trail,agentName].join(' -> '));
     const agentPath=agentFile(root,agentName);
-    const data={...(route==='main' && !fs.existsSync(agentPath) && overrides.harness ? {} : definition(root,agentPath)),...overrides};
+    const data={...definition(root,agentPath),...overrides};
     fields(data,['harness','model','reasoning_effort','instructions','description','skills','connections','subagents']);
     if (data.harness!=='claude' && data.harness!=='codex') throw new Error('harness must be claude or codex');
     const model=typeof data.model==='string' ? {name:data.model,reasoning:data.reasoning_effort} : mapping(data.model);
@@ -110,23 +121,9 @@ export function resolve(root: string, agent: string, workspace?: string): Record
   }
   const profilePath=path.join(root,'profiles',name(agent)+'.yaml');
   if (fs.existsSync(profilePath)) {
-    const profile=definition(root,profilePath);
-    if (profile.agent!==undefined) {
-      fields(profile,['agent','harness','model','instructions','skills','connections','subagents']);
-      const {agent:base,...overrides}=profile;
-      const baseName=name(base);
-      const original=definition(root,agentFile(root,baseName));
-      if (profile.instructions!==undefined) {
-        if (typeof profile.instructions!=='string') throw new Error('instructions must be text');
-        overrides.instructions=[original.instructions,profile.instructions].filter(Boolean).join('\n\n');
-      }
-      // Model blocks replace, never deep merge across models/harnesses.
-      if (overrides.model!==undefined) overrides.reasoning_effort=undefined;
-      visit(baseName,[],'main',overrides);
-    } else {
-      // Existing standalone profiles remain valid during migration.
-      visit(agent,[],'main',profile);
-    }
+    const profile=read(profilePath);
+    fields(profile,['agent']);
+    visit(name(profile.agent),[],'main');
   } else visit(agent,[],'main');
   return nodes;
 }

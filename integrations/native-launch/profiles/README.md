@@ -1,16 +1,16 @@
 # Workflow profiles
 
 Install these profile YAML files into `~/.config/orchestra/profiles/` and the
-sibling `../agents/` directories into `~/.config/orchestra/agents/`. The local
+sibling `../agents/*.md` files into `~/.config/orchestra/agents/`. The local
 development Mac already has these definitions and their selected skills.
 
 | Profile | Agent | Harness/model | Reasoning | Speed |
 | --- | --- | --- | --- | --- |
 | planner | planner | Claude Fable 5.1 | high | Native default |
-| astra-planner | planner | Codex Astra | high | Native default |
+| astra-planner | astra-planner | Codex Astra | high | Native default |
 | implementer | implementer | Codex Astra | medium | fast |
-| codex-issue-creator | planner | Codex Astra | high | Native default |
-| codex-implementer | implementer | Codex Astra | high | Native default |
+| codex-issue-creator | astra-planner | Codex Astra | high | Native default |
+| codex-implementer | astra-implementer-high | Codex Astra | high | Native default |
 
 The last two preserve the earlier entry-point names and model defaults while
 using the complete agent graph.
@@ -31,36 +31,52 @@ native account. Workspace MCP endpoints reuse native authentication.
 
 ```text
 profiles/planner.yaml
-agents/planner/agent.yaml
-agents/planner/instructions.md
-instructions/shared/evidence.md
+profiles/astra-planner.yaml
+agents/planner.md
+agents/astra-planner.md
+agents/socrates.md
+agents/astra-socrates.md
 skills/create-ticket/SKILL.md
 workspaces/keycard.yaml
 ```
 
-A profile references an agent (`agent: planner`) and may override its harness,
-model, skills, connections, or child map. Model blocks replace the whole default
-block, including effort and speed. Other supplied fields also replace the
-corresponding agent field. Profile instructions append to agent instructions.
+Profiles contain only `agent: <name>`. Model, harness, instruction, skill,
+connection, and child-map overrides in profiles are rejected. CLI `--message`
+provides the optional starter message. Use a separate agent definition for a
+behavioral variation; the Astra planner and legacy high-effort implementer are
+explicit examples.
 
-Agent YAML owns configuration; Markdown owns prose. Set
-`instructions_file: instructions.md` relative to the YAML file, or use ordered
-composition:
+Agents use Markdown bodies for prose and YAML frontmatter for configuration:
 
-```yaml
-instructions_files:
-  - ../../instructions/shared/evidence.md
-  - instructions.md
+```markdown
+---
+harness: claude
+model:
+  name: claude-fable-5-1
+  reasoning: high
+skills: [create-ticket, explain-visually]
+subagents:
+  socrates:
+    agent: socrates
+    mode: native
+---
+
+Help the user clarify intent and prepare actionable tickets.
 ```
 
-Create each referenced file before using this example. Missing files fail;
-paths must stay inside the central configuration root. Only one of
-`instructions`, `instructions_file`, or `instructions_files` may be supplied in
-a definition. Legacy inline instructions and `agents/<name>.yaml` remain valid.
-Defining both the legacy file and a directory agent with the same name fails.
-Markdown is composed literally; Jinja variables, conditions, and includes are
-not rendered. Each generated node includes an inspectable `instructions.md`;
-editing source instructions changes the bundle hash.
+The filename is the agent identifier. Every agent is a complete definition.
+Shared instruction files are optional: put an ordered `instructions_files` list
+in frontmatter, with paths relative to the agent Markdown file. Those contents
+are prepended to its body. Missing files fail; paths must stay inside the central
+configuration root. Inline `instructions` in Markdown frontmatter is rejected.
+Markdown is composed literally; Jinja variables and conditions are not rendered.
+Each generated node includes an inspectable `instructions.md`, and source changes
+change the bundle hash.
+
+Legacy `agents/<name>.yaml` and `agents/<name>/agent.yaml` definitions remain
+readable, including their instruction-file fields. Defining the same agent in
+more than one format fails. Profiles no longer support the previous inline-agent
+or override formats; move that configuration into an agent definition instead.
 
 ## Workflow roles
 

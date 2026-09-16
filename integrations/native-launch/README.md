@@ -35,16 +35,14 @@ Use `--build` to generate and print the bundle path, or `--explain` to generate 
 ```text
 ~/.config/orchestra/
   profiles/planner.yaml
-  agents/planner/agent.yaml
-  agents/planner/instructions.md
-  agents/worker/agent.yaml
-  agents/worker/instructions.md
+  agents/planner.md
+  agents/worker.md
   skills/planner-proof/SKILL.md
   skills/worker-proof/SKILL.md
   workspaces/my-project.yaml
 ```
 
-Each agent selects `harness`, a `model` block (`name`, optional `reasoning` and Codex `speed`), `instructions_file` (Markdown), local `skills`, inline `connections`, and a `subagents` map. Profiles reference an agent with optional overrides. Legacy scalar models plus `reasoning_effort` and alias-to-name child maps remain supported. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
+Each agent selects `harness`, a `model` block (`name`, optional `reasoning` and Codex `speed`), a Markdown instruction body, local `skills`, inline `connections`, and a `subagents` map. Profiles contain only an agent reference; behavioral settings live in agent Markdown frontmatter. Legacy scalar models plus `reasoning_effort` and alias-to-name child maps remain supported. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
 
 ```yaml
 connections:
@@ -54,7 +52,7 @@ connections:
     url: https://YOUR-GATEWAY/mcp
 ```
 
-Each child inherits workspace and parent connections and adds its own agent connections. A conflicting connection name fails rather than silently changing its endpoint. Profiles may override agent defaults; child bindings may override description, harness, and model. Remote inheritance and secret bindings are future resolver work; unsupported fields fail explicitly.
+Each child inherits workspace and parent connections and adds its own agent connections. A conflicting connection name fails rather than silently changing its endpoint. Profiles cannot override agent defaults; child bindings in agent definitions may override description, harness, and model. Remote inheritance and secret bindings are future resolver work; unsupported fields fail explicitly.
 
 Skill directories must be real local directories, including supporting files. The prototype copies them verbatim; it does not resolve external repositories, render templates, translate metadata, or rewrite existing workflow dispatch paths.
 
@@ -104,7 +102,7 @@ Launch `planner`, `astra-planner`, or `implementer` with `orchestra run NAME`.
 Profiles reference complete definitions in the central `agents/` directory;
 model and harness defaults live in those agent files. See
 [profiles and native child roles](profiles/README.md) for configuration,
-installation, overrides, and current native-delegation limits.
+installation and current native-delegation limits.
 
 ## Load and unload user-level skills
 

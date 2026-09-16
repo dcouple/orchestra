@@ -1,1 +1,11 @@
+---
+harness: codex
+model:
+  name: gpt-5.6-luna
+  reasoning: max
+description: Review the current PR using the bundled review skill and CRITERIA.md.
+skills:
+  - review
+---
+
 Review the current PR using the bundled review skill and CRITERIA.md. Follow the assigned task and applicable parent workflow overrides. Return evidence and remaining uncertainty. Do not delegate further; ask the parent if additional help is needed.

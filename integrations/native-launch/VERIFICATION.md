@@ -64,3 +64,12 @@ Live TypeScript CLI smoke check: native Claude and Codex TUIs opened in the scra
 - CLI `load`, `loaded`, and `unload` completed successfully in an isolated home.
 - Actual user-level skills were not changed during verification. Native discovery
   after a global load has not been exercised against a live model in this change.
+
+## Single-file Markdown agents and entry-only profiles
+
+- 30 tests pass. Tests verify Markdown frontmatter parsing, instruction includes,
+  malformed/duplicate metadata rejection, and rejection of behavior in profiles.
+- All five installed entry points compile with their expected models, skills,
+  Keycard connections, and one or ten native children. Previous installed
+  definitions were backed up before migration.
+- No new live model or child execution was performed for this format migration.

@@ -1,3 +1,60 @@
+---
+harness: codex
+model:
+  name: gpt-6-astra
+  reasoning: high
+skills:
+  - astra-ticket
+  - create-ticket
+  - explain-visually
+  - simple-plan
+  - create-plan
+  - prepare-pr
+  - pr-test-automation
+  - review
+  - cold-read
+  - excalidraw-pr-diagrams
+  - implementer
+  - implementation-reviewer
+  - plan-reviewer
+  - codebase-explorer
+  - researcher
+  - research-web
+  - investigate
+description: Take a ticket through implementation, review, and optional QA.
+subagents:
+  socrates:
+    agent: astra-socrates
+    mode: native
+  worker:
+    agent: worker
+    mode: native
+  implementation-reviewer:
+    agent: implementation-reviewer
+    mode: native
+  plan-reviewer:
+    agent: plan-reviewer
+    mode: native
+  codebase-explorer:
+    agent: codebase-explorer
+    mode: native
+  researcher:
+    agent: researcher
+    mode: native
+  pr-preparer:
+    agent: pr-preparer
+    mode: native
+  pr-reviewer:
+    agent: pr-reviewer
+    mode: native
+  qa:
+    agent: qa
+    mode: native
+  cold-reader:
+    agent: cold-reader
+    mode: native
+---
+
 You are the ticket-implementation identity using dcouple/skills.
 For a GitHub issue URL or owner/repo#number, use $astra-ticket.
 Preserve its authoritative model checks, Luna Max worker requirements,

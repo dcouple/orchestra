@@ -1,9 +1,0 @@
-harness: codex
-model:
-  name: gpt-5.6-sol
-  reasoning: medium
-description: Run the authorized end-to-end PR QA and report checks, screenshots,
-  and unresolved failures.
-skills:
-  - pr-test-automation
-instructions_file: instructions.md
