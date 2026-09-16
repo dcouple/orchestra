@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseDocument } from 'yaml';
+import {skillFiles} from './skill-layout.js';
 import { canonical, command, execute, files, fileMap, hash, verify, type Agent, type Connection, type Manifest } from './runtime.js';
 export {command, execute};
 function name(value: unknown): string {
@@ -133,8 +134,8 @@ export function build(root: string, agent: string, target: string, workspace?: s
   const nodes=resolve(root,agent,workspace);
   const manifest: Manifest={nodes,directory:target,workspace};
   const sources=new Map<string,{content:Buffer;mode:number}>();
-  for (const node of Object.values(nodes)) for (const skill of node.skills) for (const p of files(path.join(root,'skills',skill))) {
-    sources.set(path.relative(path.join(root,'skills'),p),{content:fs.readFileSync(p),mode:fs.statSync(p).mode & 0o111});
+  for (const [route,node] of Object.entries(nodes)) for (const skill of node.skills) for (const input of skillFiles(path.join(root,'skills',skill),node.harness)) {
+    sources.set(path.join(route,'skills',skill,input.relative),{content:fs.readFileSync(input.source),mode:fs.statSync(input.source).mode & 0o111});
   }
   const runtime=fs.readFileSync(fileURLToPath(new URL('./runtime.js',import.meta.url)));
   const digest=hash(canonical({manifest,compiler:hash(fs.readFileSync(fileURLToPath(import.meta.url))),runtime:hash(runtime),skills:[...sources].sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,hash(v.content),v.mode])}));
@@ -147,8 +148,8 @@ export function build(root: string, agent: string, target: string, workspace?: s
   }
   try {
     write('runtime.mjs',runtime);
+    for (const [key,value] of sources) write(key,value.content,value.mode ? 0o755 : 0o644);
     for (const [route,node] of Object.entries(nodes)) {
-      for (const skill of node.skills) for (const [key,value] of sources) if (key.startsWith(skill+path.sep)) write(path.join(route,'skills',key),value.content,value.mode ? 0o755 : 0o644);
       write(path.join(route,'agent.json'),JSON.stringify(node,null,2));
       write(path.join(route,'instructions.md'),node.instructions ?? '');
       if (node.harness==='claude') {

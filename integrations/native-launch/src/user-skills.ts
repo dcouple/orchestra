@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {resolve} from './compiler.js';
+import {userSkillSource} from './skill-layout.js';
 
 type Harness = 'claude' | 'codex';
 interface Entry { source: string; destination: string }
@@ -50,7 +51,7 @@ export function loadProfile(root: string, profile: string, options: UserSkillOpt
   return withState(options,(state,save)=>{
     fs.mkdirSync(directory,{recursive:true});
     const target=fs.realpathSync(directory);
-    const item: Loaded={profile,harness:selected,root,skills:agent.skills.map(skill=>({source:fs.realpathSync(path.join(root,'skills',skill)),destination:path.join(target,skill)}))};
+    const item: Loaded={profile,harness:selected,root,skills:agent.skills.map(skill=>({source:userSkillSource(fs.realpathSync(path.join(root,'skills',skill)),selected,home),destination:path.join(target,skill)}))};
     const key=selected+':'+profile,previous=state.profiles[key];
     if (previous) {
       if (JSON.stringify(previous)!==JSON.stringify(item)) throw new Error('Profile selection changed; unload the existing profile before loading it again');

@@ -136,3 +136,10 @@ The development Mac records source paths in
 `~/.config/orchestra/codex-profile-provenance.json`.
 Set up the workspace endpoint and native login on each machine independently.
 Keycard connectivity does not itself establish Grain connectivity.
+
+See [configuration files](../CONFIGURATION.md) for the authoring layout. When
+importing native Codex skills, you may rename `agents/openai.yaml` to
+`metadata/codex.yaml`; the compiler generates the required native name. Keep
+only one of these files. The three installed skills with Codex metadata have
+been normalized locally; their original contents and source provenance remain
+recorded in the central configuration root.

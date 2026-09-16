@@ -54,7 +54,7 @@ connections:
 
 Each child inherits workspace and parent connections and adds its own agent connections. A conflicting connection name fails rather than silently changing its endpoint. Profiles cannot override agent defaults; child bindings in agent definitions may override description, harness, and model. Remote inheritance and secret bindings are future resolver work; unsupported fields fail explicitly.
 
-Skill directories must be real local directories, including supporting files. The prototype copies them verbatim; it does not resolve external repositories, render templates, translate metadata, or rewrite existing workflow dispatch paths.
+Skill directories must be real local directories, including supporting files. The launcher preserves their contents and maps `metadata/codex.yaml` to Codex’s native `agents/openai.yaml` filename. It does not resolve external repositories, render templates, translate policy semantics, or rewrite existing workflow dispatch paths. See [configuration layout](CONFIGURATION.md).
 
 ## Keycard login
 
@@ -119,10 +119,13 @@ orchestra unload astra-planner --harness claude
 ```
 
 `load` selects the profile's top-level skills and defaults to its configured
-harness. It links each complete skill directory into the native user's skills
+harness. It links each skill into the native user's skills
 folder: normally `~/.codex/skills` or `~/.claude/skills`. It respects
 `ORCHESTRA_NATIVE_CODEX_HOME` before `CODEX_HOME`, and `CLAUDE_CONFIG_DIR` for
-Claude. Source edits are reflected through the links; they are not snapshots.
+Claude. Source edits are reflected through the links; they are not snapshots. Skills using
+`metadata/codex.yaml` receive a generated native layout linked to individual
+source files. Adding/removing files requires unloading and loading all profiles
+sharing that skill again.
 Editing through an installed link edits the central source skill.
 
 This installs skills only: not agent instructions, model settings, child roles,

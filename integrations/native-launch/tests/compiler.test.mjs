@@ -198,3 +198,14 @@ test('Markdown agents compose shared instructions and reject malformed frontmatt
  f.put('agents/writer.md','---\nharness: codex\nmodel: one\nmodel: two\n---\nBody');assert.throws(run,/unique/);
  f.put('agents/writer.md','---\nharness: codex\nmodel: test\ninstructions: wrong\n---\nBody');assert.throws(run,/Markdown body/);
 });
+test('skill metadata is translated only for Codex while support files remain intact',t=>{
+ const f=fixture(t),metadata='interface:\n  display_name: Proof\npolicy:\n  allow_implicit_invocation: false\n';
+ f.put('skills/proof/metadata/codex.yaml',metadata);
+ const b=f.build();
+ assert.equal(fs.readFileSync(path.join(b,'main/children/worker/skills/proof/agents/openai.yaml'),'utf8'),metadata);
+ assert.equal(fs.existsSync(path.join(b,'main/skills/proof/metadata/codex.yaml')),false);
+ assert.equal(fs.existsSync(path.join(b,'main/skills/proof/agents/openai.yaml')),false);
+ assert.equal(fs.readFileSync(path.join(b,'main/children/worker/skills/proof/helper.txt'),'utf8'),'SUPPORT');
+ f.put('skills/proof/metadata/codex.yaml',metadata.replace('false','true'));assert.notEqual(f.build(),b);verify(b);
+ f.put('skills/proof/agents/openai.yaml',metadata);assert.throws(f.build,/Ambiguous Codex skill metadata/);
+});

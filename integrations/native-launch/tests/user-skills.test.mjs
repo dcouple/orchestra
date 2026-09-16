@@ -58,3 +58,19 @@ test('CLI loads, lists, and unloads in an isolated user home',t=>{
  }
  assert.equal(fs.existsSync(f.skill('one')),false);
 });
+test('global load translates skill metadata, keeps content edits live, and unloads safely',t=>{
+ const f=fixture(t),metadata='policy:\n  allow_implicit_invocation: false\n';
+ f.put('skills/one/metadata/codex.yaml',metadata);
+ loadProfile(f.root,'first',f.options);loadProfile(f.root,'second',f.options);
+ const generated=fs.realpathSync(f.skill('one'));
+ assert.ok(generated.includes('user-skill-layouts'));
+ assert.equal(fs.readFileSync(path.join(f.skill('one'),'agents/openai.yaml'),'utf8'),metadata);
+ assert.equal(fs.existsSync(path.join(f.skill('one'),'metadata/codex.yaml')),false);
+ f.put('skills/one/metadata/codex.yaml',metadata.replace('false','true'));
+ assert.match(fs.readFileSync(path.join(f.skill('one'),'agents/openai.yaml'),'utf8'),/true/);
+ loadProfile(f.root,'first',f.options);
+ loadProfile(f.root,'first',{...f.options,harness:'claude'});
+ assert.equal(fs.existsSync(path.join(f.home,'.claude/skills/one/agents/openai.yaml')),false);
+ unloadProfile('first',f.options);assert.ok(fs.existsSync(f.skill('shared')));assert.equal(fs.existsSync(f.skill('one')),false);
+ assert.ok(fs.existsSync(path.join(f.root,'skills/one/metadata/codex.yaml')));
+});

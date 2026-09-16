@@ -73,3 +73,15 @@ Live TypeScript CLI smoke check: native Claude and Codex TUIs opened in the scra
   Keycard connections, and one or ten native children. Previous installed
   definitions were backed up before migration.
 - No new live model or child execution was performed for this format migration.
+
+## Skill metadata naming
+
+- 32 tests pass, including Codex output mapping, Claude omission, byte-preserved
+  invocation policy, metadata-sensitive bundle hashes, ambiguous-source
+  rejection, and global load/unload with translated native layouts.
+- Migrated create-ticket, explain-visually, and pr-test-automation in the local
+  central configuration to metadata/codex.yaml with backups and SHA-256
+  equality checks. All three pass the skill-creator validator.
+- Planner, Astra planner, and implementer compile against the migrated files;
+  Codex metadata matches source bytes and Claude output omits it. Live model
+  invocation/discovery was not repeated for this filename migration.
