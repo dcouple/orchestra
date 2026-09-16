@@ -101,14 +101,15 @@ export function resolve(root: string, agent: string, workspace?: string): Record
       if (merged[key] && canonical(merged[key])!==canonical(value)) throw new Error(`Conflicting connection ${key}`);
       merged[key]=value;
     }
-    const node: Agent={name:agentName,mode,description:data.description as string|undefined,harness:data.harness,model:model.name,speed:model.speed as Agent['speed'],instructions:data.instructions as string|undefined,reasoning_effort:model.reasoning as string|undefined,skills,connections:merged,children:Object.create(null)};
+    const node: Agent={source_file:agentPath,name:agentName,mode,description:data.description as string|undefined,harness:data.harness,model:model.name,speed:model.speed as Agent['speed'],instructions:data.instructions as string|undefined,reasoning_effort:model.reasoning as string|undefined,skills,connections:merged,children:Object.create(null)};
     nodes[route]=node;
     for (const [alias,child] of Object.entries(mapping(data.subagents ?? {}))) {
       name(alias);
-      const binding=typeof child==='string' ? {agent:child} : mapping(child);
+      if (typeof child==='string') throw new Error(`Child ${alias} requires an explicit agent and mode: native or process`);
+      const binding=mapping(child);
       fields(binding,['agent','description','harness','model','mode']);
       const childName=name(binding.agent);
-      const childMode=binding.mode ?? 'process';
+      const childMode=binding.mode;
       if (childMode!=='native' && childMode!=='process') throw new Error('Child mode must be native or process');
       const {agent:unused,mode:unusedMode,...childOverrides}=binding;
       if (childOverrides.model!==undefined) childOverrides.reasoning_effort=undefined;

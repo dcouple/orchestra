@@ -37,7 +37,8 @@ only its selected top-level skills into the native user skill directory.
 
 Each Markdown filename is the agent identifier. YAML frontmatter defines the
 harness, model/effort, description, skills, connections, and child bindings. The
-Markdown body contains its instructions. Shared instruction files may be
+Markdown body contains its instructions. Every child binding declares `mode: native` or `mode: process`; omitted modes
+and shorthand child names are rejected. Shared instruction files may be
 prepended with `instructions_files`. Actual agents live here whether they are
 used as entry points, children, or both. A reference document such as
 `skills/create-ticket/references/socrates.md` is a reusable rubric, not another
@@ -95,3 +96,14 @@ Workspace YAML supplies named MCP connections. Repository `AGENTS.md`,
 `CLAUDE.md`, and repository references remain repository-owned; the central
 agent definitions do not replace them. Secrets and native OAuth credentials
 remain outside these authoring files.
+
+## Inspection and compatibility names
+
+`orchestra profiles list` displays each entry point's resolved model settings.
+`orchestra inspect PROFILE --workspace WORKSPACE` returns the full resolved
+configuration graph and source paths without generating output. It reports
+configured MCP endpoints, not credentials or a live connection status.
+
+`codex-issue-creator` aliases `astra-planner`. `codex-implementer` aliases the
+explicit `astra-implementer-high` entry point. The `implementer` entry point
+selects Medium Fast. Compatibility names preserve existing commands.

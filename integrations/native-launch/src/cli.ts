@@ -4,6 +4,7 @@ import os from 'node:os';
 import {parseArgs} from 'node:util';
 import {build} from './compiler.js';
 import {run} from './runtime.js';
+import {inspectProfile,listProfiles} from './inspect.js';
 import {loadProfile,unloadProfile,loadedProfiles} from './user-skills.js';
 try {
   const {values,positionals}=parseArgs({allowPositionals:true,strict:true,options:{
@@ -12,7 +13,17 @@ try {
     build:{type:'boolean'},exec:{type:'boolean'},message:{type:'string'},explain:{type:'boolean'},help:{type:'boolean',short:'h'}
   }});
   if (values.help) {
-    console.log('Usage: orchestra run NAME [--workspace NAME] [--directory PATH] [--config-root PATH]\n                       [--message TEXT] [--build | --explain | --exec]\nUser skills: orchestra load NAME [--harness claude|codex] [--config-root PATH]\n             orchestra unload NAME [--harness claude|codex]\n             orchestra loaded\nOpens the native Claude Code or Codex TUI. Requires Node 22.15+ on macOS/Linux.');
+    console.log('Usage: orchestra run NAME [--workspace NAME] [--directory PATH] [--config-root PATH]\n                       [--message TEXT] [--build | --explain | --exec]\nInspect: orchestra profiles list [--config-root PATH]\n         orchestra inspect NAME [--workspace NAME] [--config-root PATH]\nUser skills: orchestra load NAME [--harness claude|codex] [--config-root PATH]\n             orchestra unload NAME [--harness claude|codex]\n             orchestra loaded\nOpens the native Claude Code or Codex TUI. Requires Node 22.15+ on macOS/Linux.');
+  } else if (positionals[0]==='profiles' || positionals[0]==='inspect') {
+    if (positionals.length!==2 || (positionals[0]==='profiles' && positionals[1]!=='list')) throw new Error('Use: orchestra profiles list or orchestra inspect NAME');
+    if (values.harness || values.message!==undefined || values.build || values.exec || values.explain) throw new Error('Inspection does not accept launch options');
+    const root=path.resolve(values['config-root']!);
+    if (positionals[0]==='inspect') console.log(JSON.stringify(inspectProfile(root,positionals[1]!,values.workspace),null,2));
+    else {
+      if (values.workspace) throw new Error('Use inspect NAME --workspace NAME to inspect workspace connections');
+      const profiles=listProfiles(root);
+      console.log(profiles.length ? profiles.map(p=>`${p.profile} -> ${p.agent} | ${p.harness} | ${p.model.name} ${p.model.reasoning ?? 'default'} | ${p.model.speed}`).join('\n') : 'No launch profiles found.');
+    }
   } else if (['load','unload','loaded'].includes(positionals[0] ?? '')) {
     const operation=positionals[0];
     if (positionals.length!==(operation==='loaded' ? 1 : 2)) throw new Error('Use: orchestra load NAME, unload NAME, or loaded');

@@ -12,7 +12,7 @@ function fixture(t) {
  const base=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'orchestra-ts-')));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
  const root=path.join(base,'config'),target=path.join(base,'repo with spaces');fs.mkdirSync(target);
  const put=(p,s)=>{const f=path.join(root,p);fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f,s);};
- put('agents/planner.yaml','harness: claude\nmodel: sonnet\nskills: [proof]\nsubagents: {worker: worker}\n');
+ put('agents/planner.yaml','harness: claude\nmodel: sonnet\nskills: [proof]\nsubagents: {worker: {agent: worker, mode: process}}\n');
  put('agents/worker.yaml','harness: codex\nmodel: gpt-6-astra\nskills: [proof]\n');
  put('skills/proof/SKILL.md','---\nname: proof\ndescription: Test\n---\nPROOF\n');put('skills/proof/helper.txt','SUPPORT');
  put('workspaces/test.yaml','connections:\n  docs:\n    type: mcp\n    auth: none\n    url: https://example.com/mcp\n');
@@ -38,7 +38,7 @@ test('nested checksum support files are protected',t=>{
  fs.writeFileSync(path.join(b,'main/skills/proof/checksums.json'),'changed');assert.throws(()=>verify(b),/integrity/);
 });
 test('cycles and unsupported fields fail before generation',t=>{
- const f=fixture(t);f.put('agents/worker.yaml','harness: codex\nmodel: test\nsubagents: {parent: planner}\n');assert.throws(f.build,/cycle/);
+ const f=fixture(t);f.put('agents/worker.yaml','harness: codex\nmodel: test\nsubagents: {parent: {agent: planner, mode: process}}\n');assert.throws(f.build,/cycle/);
  f.put('agents/worker.yaml','harness: codex\nmodel: test\nmax_calls: 2\n');assert.throws(f.build,/Unsupported/);
  assert.equal(fs.existsSync(path.join(f.target,'.orchestra')),false);
 });
@@ -71,7 +71,7 @@ test('profiles coexist without changing repo instructions',t=>{
  assert.notEqual(build(f.root,'worker',f.target,'test'),b);assert.equal(fs.readFileSync(path.join(f.target,'AGENTS.md'),'utf8'),'ORIGINAL');
 });
 test('child aliases cannot collide with bundle support directories',t=>{
- const f=fixture(t);f.put('agents/planner.yaml','harness: claude\nmodel: test\nskills: [proof]\nsubagents: {skills: worker, dispatch: worker}\n');
+ const f=fixture(t);f.put('agents/planner.yaml','harness: claude\nmodel: test\nskills: [proof]\nsubagents: {skills: {agent: worker, mode: process}, dispatch: {agent: worker, mode: process}}\n');
  const b=f.build();verify(b);assert.ok(fs.existsSync(path.join(b,'main/children/skills/agent.json')));
 });
 test('native exec preserves args, cwd, environment and exit status; dispatch runs standalone',t=>{
@@ -208,4 +208,24 @@ test('skill metadata is translated only for Codex while support files remain int
  assert.equal(fs.readFileSync(path.join(b,'main/children/worker/skills/proof/helper.txt'),'utf8'),'SUPPORT');
  f.put('skills/proof/metadata/codex.yaml',metadata.replace('false','true'));assert.notEqual(f.build(),b);verify(b);
  f.put('skills/proof/agents/openai.yaml',metadata);assert.throws(f.build,/Ambiguous Codex skill metadata/);
+});
+test('child modes are mandatory for both shorthand and mapping definitions',t=>{
+ const f=fixture(t);
+ for(const child of ['worker','{agent: worker}']){
+  f.put('agents/planner.yaml',`harness: claude\nmodel: test\nsubagents: {worker: ${child}}\n`);
+  assert.throws(f.build,/explicit|mode/);
+ }
+});
+test('inspection reports resolved sources and child settings without generating bundles',t=>{
+ const f=fixture(t);f.put('profiles/entry.yaml','agent: planner\n');
+ const run=spawnSync(process.execPath,[cli,'inspect','entry','--config-root',f.root,'--workspace','test'],{encoding:'utf8'});
+ assert.equal(run.status,0,run.stderr);const info=JSON.parse(run.stdout);
+ assert.equal(info.profile_file,path.join(f.root,'profiles/entry.yaml'));
+ assert.equal(info.agents.main.source_file,path.join(f.root,'agents/planner.yaml'));
+ assert.equal(info.agents['main/children/worker'].mode,'process');
+ assert.equal(info.agents.main.connections.docs.url,'https://example.com/mcp');
+ assert.equal(info.agents.main.skills[0].source_file,path.join(f.root,'skills/proof/SKILL.md'));
+ const list=spawnSync(process.execPath,[cli,'profiles','list','--config-root',f.root],{encoding:'utf8'});
+ assert.equal(list.status,0,list.stderr);assert.match(list.stdout,/entry -> planner/);
+ assert.equal(fs.existsSync(path.join(f.target,'.orchestra')),false);
 });

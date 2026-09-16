@@ -42,7 +42,7 @@ Use `--build` to generate and print the bundle path, or `--explain` to generate 
   workspaces/my-project.yaml
 ```
 
-Each agent selects `harness`, a `model` block (`name`, optional `reasoning` and Codex `speed`), a Markdown instruction body, local `skills`, inline `connections`, and a `subagents` map. Profiles contain only an agent reference; behavioral settings live in agent Markdown frontmatter. Legacy scalar models plus `reasoning_effort` and alias-to-name child maps remain supported. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
+Each agent selects `harness`, a `model` block (`name`, optional `reasoning` and Codex `speed`), a Markdown instruction body, local `skills`, inline `connections`, and a `subagents` map. Profiles contain only an agent reference; behavioral settings live in agent Markdown frontmatter. Legacy scalar models plus `reasoning_effort` remain supported. Every child binding requires an explicit `agent` and `mode: native` or `mode: process`. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
 
 ```yaml
 connections:
@@ -152,3 +152,22 @@ Keep this registry while profiles are loaded. Operations use a lock and roll
 back link changes on ordinary errors. A killed process can leave a stale lock
 or untracked link; inspect those paths before manual recovery. These commands
 never recursively delete source skills or modify native config/auth files.
+
+## Inspect before launching
+
+```sh
+orchestra profiles list
+orchestra inspect implementer --workspace keycard
+```
+
+Listing shows each entry point's agent, harness, model, effort, and speed.
+Inspection returns JSON with the resolved child graph, each agent's source file,
+selected skill files, model settings, launch modes, and workspace/agent MCP
+connections. These commands do not generate bundles or start a model. Native
+user/project MCPs inherited by the harness are not enumerated here; use `/mcp`
+in the launched session to see the runtime tool inventory.
+
+`astra-implementer-high` is the explicit High entry point; `codex-implementer`
+remains its compatibility alias. `implementer` is Medium Fast.
+Generated bundles can be referenced by open sessions, so cleanup does not delete
+them automatically. Obsolete local agent files are archived under `backups/`.

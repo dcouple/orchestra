@@ -10,10 +10,13 @@ development Mac already has these definitions and their selected skills.
 | astra-planner | astra-planner | Codex Astra | high | Native default |
 | implementer | implementer | Codex Astra | medium | fast |
 | codex-issue-creator | astra-planner | Codex Astra | high | Native default |
+| astra-implementer-high | astra-implementer-high | Codex Astra | high | Native default |
 | codex-implementer | astra-implementer-high | Codex Astra | high | Native default |
 
-The last two preserve the earlier entry-point names and model defaults while
-using the complete agent graph.
+`codex-issue-creator` and `codex-implementer` preserve earlier command names.
+Prefer `astra-planner` and `astra-implementer-high` when you want those settings.
+`implementer` intentionally remains Medium Fast. Use `orchestra profiles list`
+to see resolved models before launching.
 
 ```sh
 orchestra run planner --workspace keycard --directory /absolute/path/to/repo
@@ -110,9 +113,10 @@ Astra dependencies. Astra performs the final parent review itself.
 
 ## Native generation and limits
 
-Child bindings reference an agent and can override `description`, `harness`,
+Every child binding must explicitly specify `mode: native` or `mode: process`;
+shorthand strings and missing modes fail. Child bindings reference an agent and can override `description`, `harness`,
 and the complete `model` block. `mode: native` generates Claude CLI definitions
-or Codex role TOML registrations. `mode: process` (the legacy default) generates
+or Codex role TOML registrations. `mode: process` generates
 a headless launcher and supports cross-harness children without native resume.
 
 Workspace and parent connections flow into children. Children can add endpoints;

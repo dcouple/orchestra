@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 
 export interface Connection { type: 'mcp'; url: string; auth: 'native' | 'none' }
 export interface Agent {
-  name: string; description?: string; mode?: 'native' | 'process'; harness: 'claude' | 'codex'; model: string;
+  source_file?: string; name: string; description?: string; mode?: 'native' | 'process'; harness: 'claude' | 'codex'; model: string;
   speed?: 'fast' | 'standard'; reasoning_effort?: string; instructions?: string; skills: string[];
   connections: Record<string, Connection>; children: Record<string, string>;
 }

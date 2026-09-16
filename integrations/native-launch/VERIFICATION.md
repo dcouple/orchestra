@@ -85,3 +85,30 @@ Live TypeScript CLI smoke check: native Claude and Codex TUIs opened in the scra
 - Planner, Astra planner, and implementer compile against the migrated files;
   Codex metadata matches source bytes and Claude output omits it. Live model
   invocation/discovery was not repeated for this filename migration.
+
+## Configuration cleanup and live child checks (2026-09-16)
+
+- 34 tests pass. New coverage requires explicit child launch modes and verifies
+  that inspection reports resolved source paths, child models and MCP endpoints
+  without generating bundles.
+- Added `orchestra profiles list` and `orchestra inspect NAME --workspace NAME`.
+  Added the explicit `astra-implementer-high` profile; old Codex entry-point
+  names remain compatibility aliases. Medium Fast remains `implementer`.
+- Archived two obsolete local YAML definitions under central `backups/`.
+  Audited and retained 5 checkout bundles and 29 scratch bundle manifests:
+  existing sessions can still reference those immutable inputs.
+- Live Codex Astra High spawned native Socrates once with fresh context. The
+  child rollout `01a0abfb-68cf-78f3-88df-ed15cfc7d2e3` records Luna Max in both
+  turn contexts. It read the skill/rubric, completed Keycard GitHub get_me,
+  and retained the test marker on the same child's follow-up. The actual tool
+  output reports status success and isError false; account contents omitted.
+- Live Claude Fable 5.1 spawned Socrates `a7bc00ed9af8b9d98`, read the bundled
+  skill/rubric, and resumed that same child with the marker. Its child transcript
+  records claude-fable-5-1. Effective reasoning effort is not exposed there;
+  the generated role requests High, which is not independent runtime proof.
+- Claude's first headless get_me call was blocked by native permissions. A
+  separate test allowed only `mcp__orchestra_keycard__api-githubcopilot__get_me`
+  via a process-local CLI flag: child `aca730b78229012e1` called it successfully,
+  with no permission denials. No saved permission or OAuth settings changed.
+- Tests made no repository edits or external writes. Raw test logs and private
+  native transcripts remain local; no account response data is published here.
