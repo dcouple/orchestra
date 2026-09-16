@@ -21,6 +21,30 @@ function read(file: string) {
   if (doc.errors.length) throw new Error(`${file}: ${doc.errors.map(e=>e.message).join('; ')}`);
   return mapping(doc.toJS({maxAliasCount:100}));
 }
+function agentFile(root: string, agent: string): string {
+  const directory=path.join(root,'agents',agent,'agent.yaml');
+  const legacy=path.join(root,'agents',agent+'.yaml');
+  if (fs.existsSync(directory) && fs.existsSync(legacy)) throw new Error(`Ambiguous agent definition: ${agent}`);
+  return fs.existsSync(directory) ? directory : legacy;
+}
+function definition(root: string, file: string): Record<string,unknown> {
+  const data=read(file);
+  const sources=['instructions','instructions_file','instructions_files'].filter(key=>data[key]!==undefined);
+  if (sources.length>1) throw new Error('Choose one instructions source: inline, instructions_file, or instructions_files');
+  const input=data.instructions_file!==undefined ? [data.instructions_file] : data.instructions_files;
+  if (input!==undefined) {
+    if (!Array.isArray(input) || !input.length || input.some(v=>typeof v!=='string' || !v.endsWith('.md'))) throw new Error('Instruction files must be a nonempty list of Markdown paths');
+    const configRoot=fs.realpathSync(root);
+    data.instructions=input.map(value=>{
+      const source=fs.realpathSync(path.resolve(path.dirname(file),value as string));
+      const relative=path.relative(configRoot,source);
+      if (relative==='..' || relative.startsWith('..'+path.sep) || path.isAbsolute(relative)) throw new Error('Instruction files must stay inside the configuration root');
+      return fs.readFileSync(source,'utf8');
+    }).join('\n\n');
+  }
+  delete data.instructions_file; delete data.instructions_files;
+  return data;
+}
 function connections(value: unknown): Record<string,Connection> {
   const result: Record<string,Connection>=Object.create(null);
   for (const [key,input] of Object.entries(mapping(value))) {
@@ -41,8 +65,8 @@ export function resolve(root: string, agent: string, workspace?: string): Record
   const nodes: Record<string,Agent>=Object.create(null);
   function visit(agentName: string, trail: string[], route: string, overrides: Record<string,unknown>={}, inherited=defaults, mode: 'native'|'process'='process') {
     name(agentName); if (trail.includes(agentName)) throw new Error('Child-agent cycle: '+[...trail,agentName].join(' -> '));
-    const agentPath=path.join(root,'agents',agentName+'.yaml');
-    const data={...(route==='main' && !fs.existsSync(agentPath) && overrides.harness ? {} : read(agentPath)),...overrides};
+    const agentPath=agentFile(root,agentName);
+    const data={...(route==='main' && !fs.existsSync(agentPath) && overrides.harness ? {} : definition(root,agentPath)),...overrides};
     fields(data,['harness','model','reasoning_effort','instructions','description','skills','connections','subagents']);
     if (data.harness!=='claude' && data.harness!=='codex') throw new Error('harness must be claude or codex');
     const model=typeof data.model==='string' ? {name:data.model,reasoning:data.reasoning_effort} : mapping(data.model);
@@ -86,12 +110,12 @@ export function resolve(root: string, agent: string, workspace?: string): Record
   }
   const profilePath=path.join(root,'profiles',name(agent)+'.yaml');
   if (fs.existsSync(profilePath)) {
-    const profile=read(profilePath);
+    const profile=definition(root,profilePath);
     if (profile.agent!==undefined) {
       fields(profile,['agent','harness','model','instructions','skills','connections','subagents']);
       const {agent:base,...overrides}=profile;
       const baseName=name(base);
-      const original=read(path.join(root,'agents',baseName+'.yaml'));
+      const original=definition(root,agentFile(root,baseName));
       if (profile.instructions!==undefined) {
         if (typeof profile.instructions!=='string') throw new Error('instructions must be text');
         overrides.instructions=[original.instructions,profile.instructions].filter(Boolean).join('\n\n');
@@ -129,6 +153,7 @@ export function build(root: string, agent: string, target: string, workspace?: s
     for (const [route,node] of Object.entries(nodes)) {
       for (const skill of node.skills) for (const [key,value] of sources) if (key.startsWith(skill+path.sep)) write(path.join(route,'skills',key),value.content,value.mode ? 0o755 : 0o644);
       write(path.join(route,'agent.json'),JSON.stringify(node,null,2));
+      write(path.join(route,'instructions.md'),node.instructions ?? '');
       if (node.harness==='claude') {
         write(path.join(route,'.claude-plugin/plugin.json'),JSON.stringify({name:'orchestra-'+node.name,version:'0.1.0'}));
         write(path.join(route,'mcp.json'),JSON.stringify({mcpServers:Object.fromEntries(Object.entries(node.connections).map(([k,v])=>['orchestra_'+k,{type:'http',url:v.url}]))},null,2));

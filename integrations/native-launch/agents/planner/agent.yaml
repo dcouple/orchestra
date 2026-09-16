@@ -1,0 +1,13 @@
+harness: claude
+model:
+  name: claude-fable-5-1
+  reasoning: high
+skills:
+  - create-ticket
+  - explain-visually
+description: Discuss intent and create actionable tickets and briefs.
+subagents:
+  socrates:
+    agent: socrates
+    mode: native
+instructions_file: instructions.md

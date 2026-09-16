@@ -146,3 +146,42 @@ test('unsupported native delegation cannot silently become a process',t=>{
  f.put('agents/planner.yaml','harness: codex\nmodel: test\nsubagents: {worker: {agent: worker, mode: unknown}}\n');
  assert.throws(f.build,/mode/);
 });
+test('directory agents compose Markdown, append profile instructions, and invalidate bundles',t=>{
+ const f=fixture(t);
+ f.put('agents/writer/agent.yaml','harness: codex\nmodel: test\ninstructions_files: [../../instructions/shared.md, instructions.md]\n');
+ f.put('instructions/shared.md','Shared guidance.');f.put('agents/writer/instructions.md','Role guidance.');
+ f.put('profiles/writer.yaml','agent: writer\ninstructions_file: extra.md\n');f.put('profiles/extra.md','Profile guidance.');
+ const b=build(f.root,'writer',f.target);
+ assert.equal(fs.readFileSync(path.join(b,'main/instructions.md'),'utf8'),'Shared guidance.\n\nRole guidance.\n\nProfile guidance.');
+ f.put('instructions/shared.md','Updated guidance.');assert.notEqual(build(f.root,'writer',f.target),b);verify(b);
+});
+test('instruction files fail on missing files, escapes, and ambiguous sources',t=>{
+ const f=fixture(t);
+ const run=()=>build(f.root,'writer',f.target);
+ f.put('agents/writer/agent.yaml','harness: codex\nmodel: test\ninstructions_file: missing.md\n');assert.throws(run,/ENOENT/);
+ fs.writeFileSync(path.join(f.base,'outside.md'),'outside');
+ f.put('agents/writer/agent.yaml','harness: codex\nmodel: test\ninstructions_file: ../../../outside.md\n');assert.throws(run,/configuration root/);
+ f.put('agents/writer/agent.yaml','harness: codex\nmodel: test\ninstructions_file: instructions.md\ninstructions: inline\n');assert.throws(run,/one instructions source/);
+ f.put('agents/writer.yaml','harness: codex\nmodel: test\n');assert.throws(run,/Ambiguous/);
+});
+test('shipped Astra profiles package all declared workflow roles and their own skills',t=>{
+ const f=fixture(t),source=fileURLToPath(new URL('..',import.meta.url));
+ fs.cpSync(path.join(source,'agents'),path.join(f.root,'agents'),{recursive:true});
+ fs.cpSync(path.join(source,'profiles'),path.join(f.root,'profiles'),{recursive:true});
+ // Fixture skill contents isolate graph correctness from a machine's installed skill repository.
+ const skills=['create-ticket','explain-visually','astra-ticket','simple-plan','create-plan','prepare-pr','pr-test-automation','review','cold-read','excalidraw-pr-diagrams','implementer','implementation-reviewer','plan-reviewer','codebase-explorer','researcher','research-web','investigate'];
+ for(const skill of skills)f.put(`skills/${skill}/SKILL.md`,skill);
+ // Remove legacy fixture planner so the new directory definition is unambiguous.
+ fs.unlinkSync(path.join(f.root,'agents/planner.yaml'));fs.unlinkSync(path.join(f.root,'agents/worker.yaml'));
+ const b=build(f.root,'implementer',f.target,'test'),m=JSON.parse(fs.readFileSync(path.join(b,'manifest.json')));
+ assert.deepEqual(Object.keys(m.nodes.main.children).sort(),['socrates','worker','implementation-reviewer','plan-reviewer','codebase-explorer','researcher','pr-preparer','pr-reviewer','qa','cold-reader'].sort());
+ for(const [alias,route] of Object.entries(m.nodes.main.children)){
+  const child=m.nodes[route];assert.equal(child.model,alias==='qa'?'gpt-5.6-sol':'gpt-5.6-luna');assert.equal(child.reasoning_effort,alias==='qa'?'medium':'max');
+  assert.ok(fs.existsSync(path.join(b,'main/native-agents',alias+'.toml')));
+  for(const skill of child.skills)assert.ok(fs.existsSync(path.join(b,route,'skills',skill,'SKILL.md')));
+ }
+ assert.deepEqual(m.nodes['main/children/qa'].skills,['pr-test-automation']);
+ assert.deepEqual(m.nodes['main/children/cold-reader'].skills,['cold-read']);
+ const p=build(f.root,'astra-planner',f.target),pm=JSON.parse(fs.readFileSync(path.join(p,'manifest.json')));
+ assert.deepEqual(Object.keys(pm.nodes.main.children),['socrates']);
+});

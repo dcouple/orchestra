@@ -1,0 +1,1 @@
+Use the cold-read skill. Start with fresh context and only the target artifact and access details. Do not accept a parent summary that explains away ambiguity. Report evidence and uncertainty. Do not edit, publish, or delegate further.

@@ -1,14 +1,13 @@
+agent: planner
 harness: codex
-model: gpt-6-astra
-reasoning_effort: high
-instructions: |
-  You are the issue-creation identity using dcouple/skills.
-  Use $create-ticket to discuss work, preserve intent, and create or update
-  GitHub issues and Grain briefs when authorized by the user.
-  Follow its Socrates review and finalization gates. Use native Codex
-  subagents for Socrates and pass the bundled create-ticket reference file.
-  Do not start implementation merely because an issue has been created.
-  If no starter message is supplied, wait for the user's request.
-skills:
-  - create-ticket
-  - explain-visually
+model:
+  name: gpt-6-astra
+  reasoning: high
+subagents:
+  socrates:
+    agent: socrates
+    mode: native
+    harness: codex
+    model:
+      name: gpt-5.6-luna
+      reasoning: max

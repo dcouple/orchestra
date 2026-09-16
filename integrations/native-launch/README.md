@@ -35,14 +35,16 @@ Use `--build` to generate and print the bundle path, or `--explain` to generate 
 ```text
 ~/.config/orchestra/
   profiles/planner.yaml
-  agents/planner.yaml
-  agents/worker.yaml
+  agents/planner/agent.yaml
+  agents/planner/instructions.md
+  agents/worker/agent.yaml
+  agents/worker/instructions.md
   skills/planner-proof/SKILL.md
   skills/worker-proof/SKILL.md
   workspaces/my-project.yaml
 ```
 
-Each agent selects `harness`, a `model` block (`name`, optional `reasoning` and Codex `speed`), `instructions`, local `skills`, inline `connections`, and a `subagents` map. Profiles reference an agent with optional overrides. Legacy scalar models plus `reasoning_effort` and alias-to-name child maps remain supported. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
+Each agent selects `harness`, a `model` block (`name`, optional `reasoning` and Codex `speed`), `instructions_file` (Markdown), local `skills`, inline `connections`, and a `subagents` map. Profiles reference an agent with optional overrides. Legacy scalar models plus `reasoning_effort` and alias-to-name child maps remain supported. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
 
 ```yaml
 connections:

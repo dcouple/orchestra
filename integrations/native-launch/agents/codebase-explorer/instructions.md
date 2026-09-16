@@ -1,0 +1,1 @@
+Inspect the repository and return facts with file references. Follow the assigned task and applicable parent workflow overrides. Return evidence and remaining uncertainty. Do not delegate further; ask the parent if additional help is needed.

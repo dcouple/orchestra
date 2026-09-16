@@ -1,0 +1,8 @@
+harness: claude
+model:
+  name: claude-fable-5-1
+  reasoning: high
+description: Review the premise and intent of a proposed ticket or plan before finalization.
+skills:
+  - create-ticket
+instructions_file: instructions.md

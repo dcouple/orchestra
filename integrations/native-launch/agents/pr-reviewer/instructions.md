@@ -1,0 +1,1 @@
+Review the current PR using the bundled review skill and CRITERIA.md. Follow the assigned task and applicable parent workflow overrides. Return evidence and remaining uncertainty. Do not delegate further; ask the parent if additional help is needed.

@@ -37,3 +37,21 @@ Live TypeScript CLI smoke check: native Claude and Codex TUIs opened in the scra
   child model/effort verification, follow-up/resume, or new MCP call tests.
   Native skill selections are explicit bundled paths in role instructions,
   not isolated skill discovery catalogs. Existing global skills remain visible.
+
+## Markdown instructions and workflow-role audit (2026-09-16)
+
+- 22 tests cover directory definitions, ordered Markdown composition, profile
+  append behavior, missing/out-of-root files, ambiguous sources, and bundle
+  invalidation when instruction text changes.
+- A shipped-profile graph test checks all ten implementation children, their
+  exact Luna Max/Sol Medium choices, packaged skills, and generated role files.
+- All five current/legacy entry points compiled locally with installed skills
+  and Keycard: the two ticket-creator entry points declare Socrates, and both
+  implementer entry points declare all ten roles. Claude planner declares its
+  native Fable Socrates.
+- Audited create-ticket, astra-ticket and installed supporting skill Markdown.
+  Added the previously implicit fresh-context cold-reader role. Frontend/browser
+  and backend verification belong to Astra's pr-test-automation QA role; the
+  separate Orchestra /do verifiers are not part of these workflows.
+- No live child execution or external publication was performed for this
+  migration. Earlier live registration checks remain documented above.
