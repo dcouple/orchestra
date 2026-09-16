@@ -100,7 +100,7 @@ export function codexArgs(options: CodexTurnOptions): string[] {
     ...codexMcpOverrides(options.mcpConfigJson, options.env),
   );
   if (options.resumeSessionId) args.push(options.resumeSessionId);
-  args.push(options.prompt);
+  args.push("--", options.prompt);
   return args;
 }
 
@@ -189,7 +189,15 @@ export async function runCodexTurn(
       if (!name) return;
       if (!started.has(item.id)) {
         started.add(item.id);
-        const { id: _id, type: _type, ...input } = item;
+        // Completed-only events can contain private tool output. Forward only
+        // request fields to the daemon's externally visible progress stream.
+        const input = item.type === "mcp_tool_call"
+          ? { server: item.server, tool: item.tool, arguments: item.arguments }
+          : item.type === "command_execution"
+            ? { command: item.command }
+            : item.type === "file_change"
+              ? { changes: item.changes }
+              : { query: item.query };
         emit({ type: "toolUse", toolUseId: item.id, name, input });
       }
       if (event.type === "item.completed") {
@@ -212,11 +220,16 @@ export async function runCodexTurn(
         typeof raw?.[key] === "number" && (raw[key] as number) >= 0
           ? (raw[key] as number)
           : undefined;
+      const totalInput = count("input_tokens");
+      const cacheRead = count("cached_input_tokens");
+      const cacheWrite = count("cache_write_input_tokens");
       const parsed: TurnUsage = {
-        inputTokens: count("input_tokens"),
+        // Codex includes cached tokens in input_tokens; daemon buckets are exclusive.
+        inputTokens: totalInput === undefined ? undefined
+          : Math.max(0, totalInput - (cacheRead ?? 0) - (cacheWrite ?? 0)),
         outputTokens: count("output_tokens"),
-        cacheCreationTokens: count("cache_write_input_tokens"),
-        cacheReadTokens: count("cached_input_tokens"),
+        cacheCreationTokens: cacheWrite,
+        cacheReadTokens: cacheRead,
         costUsd: undefined,
         model: options.model,
       };

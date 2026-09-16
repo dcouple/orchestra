@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: daemonctl config --planner claude|claudex|codex --implementer claude|claudex|codex [--reason TEXT] [--dry-run]
+usage: daemonctl config --planner claude|claudex --implementer claude|claudex|codex [--reason TEXT] [--dry-run]
        daemonctl restart [--reason TEXT] [--dry-run]
        daemonctl restart --hard [--yes] [--dry-run]
        daemonctl reload [--reason TEXT] [--dry-run]
@@ -43,6 +43,7 @@ die() { echo "$*" >&2; exit 1; }
 usage_error() { echo "$*" >&2; usage >&2; exit 2; }
 require_user() { [[ $(id -un) == "$DAEMON_SERVICE_USER" || ${DAEMONCTL_ALLOW_OTHER_USER:-0} == 1 ]] || die "run as $DAEMON_SERVICE_USER (sudo -u $DAEMON_SERVICE_USER -i daemonctl ...)"; }
 validate_harness() { [[ $1 == claude || $1 == claudex || $1 == codex ]] || usage_error "harness must be claude, claudex, or codex"; }
+validate_planner() { [[ "$1" == claude || "$1" == claudex ]] || usage_error "planner harness must be claude or claudex"; }
 validate_reason() { [[ $1 != *$'\n'* && ${#1} -le 240 ]] || usage_error "reason must be one line of at most 240 characters"; }
 ops_cli() { DB_PATH="$DB_PATH" "$NODE_BIN" "$OPS_CLI" "$@"; }
 fault_after() { [[ ${DAEMONCTL_FAULT_AFTER:-} == "$1" ]] || return 0; echo "fixture crash after $1" >&2; exit 99; }
@@ -187,7 +188,7 @@ command_config() {
     --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason=$2; shift ;;
     --dry-run) dry=1 ;; *) usage_error "unknown config argument: $1" ;; esac; shift
   done
-  validate_harness "$planner"; validate_harness "$implementer"; validate_reason "$reason"
+  validate_planner "$planner"; validate_harness "$implementer"; validate_reason "$reason"
   [[ -f $ENV_FILE ]] || die "environment file not found: $ENV_FILE"
   if (( dry )); then echo "would update harnesses, back up $ENV_FILE, restart launchd daemon, health-check, and roll back on failure"; return; fi
   acquire_maintenance_lock
@@ -358,7 +359,7 @@ command_operation() {
         config)
           [[ $target_ref == *:* ]] || die "cannot retry legacy config operation without harness metadata"
           target=${target_ref#*:}; target_ref=${target_ref%%:*}
-          validate_harness "$target_ref"; validate_harness "$target"
+          validate_planner "$target_ref"; validate_harness "$target"
           [[ -f $ENV_FILE ]] || die "environment file not found: $ENV_FILE"
           ;;
         restart) ;;

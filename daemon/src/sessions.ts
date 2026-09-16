@@ -560,7 +560,9 @@ export class SessionWorker {
       body: implementer
         ? resuming
           ? "resuming implementation session"
-          : "implementation started — running /do"
+          : runtime === "codex"
+            ? "implementation started — running $astra-ticket"
+            : "implementation started — running /do"
         : "session started — reading the ticket",
     });
     const keepalive = setInterval(
@@ -1217,7 +1219,7 @@ export class SessionWorker {
         }),
       );
     } else {
-      const failedRuntime = runtime === "claudex" ? "Claudex" : "Claude";
+      const failedRuntime = runtime === "codex" ? "Codex" : runtime === "claudex" ? "Claudex" : "Claude";
       const runtimeDetail =
         result.spawnError ??
         (result.permissionDenials.length

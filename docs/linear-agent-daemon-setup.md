@@ -285,14 +285,18 @@ so it cannot race a lease cloning the golden. After `daemonctl restart`, a
 `probe=skipped` result is therefore the expected report until the daemon is
 stopped or the capability is disabled.
 
-Each harness setting accepts `claude`, `claudex`, or `codex` and defaults to `claude`. The
-settings apply only when a durable role session is first created. `claude` prefers Fable but
+Both harness settings accept `claude` or `claudex` and default to `claude`;
+`IMPLEMENTER_HARNESS` also accepts `codex`. The settings apply only when a durable
+role session is first created. `claude` prefers Fable but
 retains readiness routing and the one-shot capacity fallback to Claudex/GPT-Sol; `claudex`
 starts GPT-Sol directly without probing Fable; `codex` runs the native Codex CLI on
 `CODEX_MODEL`, where a new implementer item starts with `$astra-ticket <issue>` and later
 prompts resume the same thread. The `codex` harness needs the `astra-ticket` skill and the
-skills it reads (`simple-plan`, `prepare-pr`, `pr-test-automation`, `review`) installed in
-the daemon user's `~/.codex/skills`, and a Codex provider that serves the orchestrator and
+skills it reads (`simple-plan`, `create-ticket`, `prepare-pr`, `pr-test-automation`,
+`review`) installed in the daemon user's skill directories (including the paths
+named by those skills). Use the Linear-aware `astra-ticket` from
+[dcouple/skills#109](https://github.com/dcouple/skills/pull/109), and a Codex provider
+that serves the orchestrator and
 subagent models the skill names. Established prompts, restarts, and implementer fix rounds
 keep their stored harness and resumable ID even after configuration changes. Keep
 `CLAUDEX_BIN` configured for every direct or fallback Sol route; a selected Claudex session

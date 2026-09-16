@@ -279,6 +279,14 @@ describe("daemonctl command boundaries", () => {
     expect(execFileSync("cat", [envFile], { encoding: "utf8" })).toBe("SECRET=keep\n");
   });
 
+  it.each(["ops/daemonctl", "ops/macos/daemonctl"])("%s rejects Codex planner before mutation", (script) => {
+    const result = spawnSync(join(process.cwd(), script), ["config", "--planner", "codex", "--implementer", "codex", "--dry-run"], {
+      env: { ...process.env, DAEMONCTL_ALLOW_NON_ROOT: "1", DAEMONCTL_ALLOW_OTHER_USER: "1", DAEMON_SITE_LIB: join(process.cwd(), "ops/macos/daemon-site-lib.sh"), DAEMON_SITE_ENV: join(process.cwd(), "ops/macos/site.env.example") }, encoding: "utf8",
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("planner harness must be claude or claudex");
+  });
+
   it("config dry-run is deterministic and does not expose unrelated environment values", () => {
     const { dir } = fixture(); const envFile = join(dir, "env"); writeFileSync(envFile, "SECRET_TOKEN=never-print-me\nPLANNER_HARNESS=claude\n");
     const env = { ...process.env, DAEMONCTL_ALLOW_NON_ROOT: "1", DAEMONCTL_ENV_FILE: envFile };

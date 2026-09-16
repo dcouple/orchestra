@@ -19,6 +19,8 @@ function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPrefere
   const raw = env[name];
   if (raw === undefined) return "claude";
   const value = raw.trim();
+  if (name === "PLANNER_HARNESS" && value === "codex")
+    throw new Error("PLANNER_HARNESS must be claude or claudex");
   if (value !== "claude" && value !== "claudex" && value !== "codex")
     throw new Error(`${name} must be claude, claudex, or codex`);
   return value;

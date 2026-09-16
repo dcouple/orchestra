@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { appendFile } from "node:fs/promises";
 
 // Stands in for `codex exec --json`: records its argv and env, then replays the
@@ -5,7 +6,7 @@ import { appendFile } from "node:fs/promises";
 // lifecycle, `turn.completed` / `turn.failed`).
 const args = process.argv.slice(2);
 const mode = process.env.CODEX_FAKE_MODE || "happy";
-const resumed = args[0] === "exec" && args[1] === "resume" ? args[args.length - 2] : undefined;
+const resumed = args[0] === "exec" && args[1] === "resume" ? args[args.length - 3] : undefined;
 if (process.env.CODEX_FAKE_ARGS_FILE)
   await appendFile(process.env.CODEX_FAKE_ARGS_FILE,
     `${JSON.stringify({ args, cwd: process.cwd(), env: process.env, at: Date.now() })}\n`);
@@ -32,3 +33,8 @@ if (mode === "turn-failed") {
 emit({ type: "item.completed", item: { id: "item_3", type: "agent_message",
   text: resumed ? `resumed ${resumed}` : "Opened https://github.com/dcouple/example/pull/42" } });
 emit({ type: "turn.completed", usage: { input_tokens: 40072, cached_input_tokens: 13824, cache_write_input_tokens: 0, output_tokens: 46, reasoning_output_tokens: 0 } });
+
+if (mode === "orphan-stdio") {
+  spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "inherit", "inherit"] }).unref();
+  process.exit(0);
+}

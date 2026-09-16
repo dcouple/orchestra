@@ -109,8 +109,8 @@ spawned session, activating the artifact-host publish branch.
 
 Planner sessions default on. `TARGET_REPO_PATH` and `LINEAR_API_KEY` are required when
 enabled. Optional session settings are `WORKTREES_ROOT` (defaults beside the database),
-`PLANNER_HARNESS` and `IMPLEMENTER_HARNESS` (independent `claude | claudex | codex`
-preferences, both default `claude`),
+`PLANNER_HARNESS` (`claude | claudex`) and `IMPLEMENTER_HARNESS`
+(`claude | claudex | codex`), both defaulting to `claude`,
 `CLAUDE_BIN` (default `claude`, whitespace-split for a command prefix),
 `CODEX_BIN` (default `codex`, whitespace-split) and `CODEX_MODEL` (default
 `gpt-6-astra`) for the `codex` harness,

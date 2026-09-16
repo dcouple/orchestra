@@ -46,7 +46,7 @@ describe("codex runner", () => {
       "--model", "gpt-6-astra",
       "-c", 'mcp_servers.linear.url="https://mcp.linear.app/mcp"',
       "-c", 'mcp_servers.linear.bearer_token_env_var="LINEAR_API_KEY"',
-      "$astra-ticket ENG-42",
+      "--", "$astra-ticket ENG-42",
     ]);
     expect(codexArgs(options({ argv: ["codex"], resumeSessionId: "thread-9" })))
       .toEqual([
@@ -54,8 +54,12 @@ describe("codex runner", () => {
         "--model", "gpt-6-astra",
         "-c", 'mcp_servers.linear.url="https://mcp.linear.app/mcp"',
         "-c", 'mcp_servers.linear.bearer_token_env_var="LINEAR_API_KEY"',
-        "thread-9", "$astra-ticket ENG-42",
+        "thread-9", "--", "$astra-ticket ENG-42",
       ]);
+  });
+  it("keeps option-like follow-up text behind the argument boundary", () => {
+    expect(codexArgs(options({ resumeSessionId: "thread-9", prompt: "--help" })).slice(-3))
+      .toEqual(["thread-9", "--", "--help"]);
   });
   it("translates stdio servers and foreign headers into TOML overrides", () => {
     const json = JSON.stringify({
@@ -85,17 +89,20 @@ describe("codex runner", () => {
     expect(result).toMatchObject({
       ok: true, isError: false, sessionId: "codex-thread-1", sawResult: true, exitCode: 0,
       resultText: "Opened https://github.com/dcouple/example/pull/42",
-      usage: { inputTokens: 40072, cacheReadTokens: 13824, cacheCreationTokens: 0, outputTokens: 46, model: "gpt-6-astra" },
+      usage: { inputTokens: 26248, cacheReadTokens: 13824, cacheCreationTokens: 0, outputTokens: 46, model: "gpt-6-astra" },
       processGroupExited: true,
     });
     expect(ids).toEqual(["codex-thread-1"]);
+    expect(JSON.stringify(events)).not.toContain("private Linear result");
+    const usage = result.usage!;
+    expect(usage.inputTokens! + usage.cacheReadTokens! + usage.cacheCreationTokens! + usage.outputTokens!).toBe(40118);
     expect(events).toEqual([
       { type: "text", text: "Reading the ticket." },
       { type: "toolUse", toolUseId: "item_1", name: "command_execution",
-        input: { command: "/bin/zsh -lc 'git status'", aggregated_output: "", exit_code: null, status: "in_progress" } },
+        input: { command: "/bin/zsh -lc 'git status'" } },
       { type: "toolResult", toolUseId: "item_1", outcome: "success" },
       { type: "toolUse", toolUseId: "item_2", name: "mcp__linear__get_issue",
-        input: { server: "linear", tool: "get_issue", arguments: { id: "private" }, status: "failed", error: { message: "private Linear result" } } },
+        input: { server: "linear", tool: "get_issue", arguments: { id: "private" } } },
       { type: "toolResult", toolUseId: "item_2", outcome: "error" },
       { type: "linearMcpToolResult", toolUseId: "item_2", toolName: "mcp__linear__get_issue", outcome: "error" },
       { type: "text", text: "Opened https://github.com/dcouple/example/pull/42" },
@@ -120,6 +127,13 @@ describe("codex runner", () => {
     expect(result.sessionId).toBeUndefined();
     expect(result.stderrTail).toContain("HTTP 429");
   });
+  it("ends descendants holding stdout after the leader exits", async () => {
+    process.env.CODEX_FAKE_MODE = "orphan-stdio";
+    const result = await runCodexTurn(options());
+    expect(result.ok).toBe(true);
+    expect(result.processGroupTerminationAttempted).toBe(true);
+    expect(result.processGroupExited).toBe(true);
+  }, 10_000);
   it("ends the process group on abort", async () => {
     process.env.CODEX_FAKE_MODE = "hang";
     const controller = new AbortController();

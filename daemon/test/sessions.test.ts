@@ -73,6 +73,8 @@ const oldOtelEnv = Object.fromEntries(
   otelTestKeys.map((key) => [key, process.env[key]]),
 ) as Record<string, string | undefined>;
 afterEach(() => {
+  delete process.env.CODEX_FAKE_ARGS_FILE;
+  delete process.env.CODEX_FAKE_MODE;
   for (const dir of dirs.splice(0))
     rmSync(dir, { recursive: true, force: true });
   if (oldMode === undefined) delete process.env.CLAUDE_FAKE_MODE;
@@ -1651,6 +1653,7 @@ describe("SessionWorker", () => {
       "LC_",
       "ANTHROPIC_",
       "CLAUDE_",
+      "CODEX_",
     ] as const);
     const expectedKeys = Object.freeze([
       "PATH",
@@ -2090,10 +2093,14 @@ describe("SessionWorker", () => {
     expect(log.getSession("implementer-session")).toMatchObject({
       runtime: "codex", profile: "sol", claudeSessionId: "codex-thread-1",
     });
+    expect(poster.posts.some((post) => activityBody(post.content) === "implementation started — running $astra-ticket")).toBe(true);
+    expect(log.aggregateSession("implementer-session").canonicalTokens).toBe(40118);
+    expect(JSON.stringify(poster.posts)).not.toContain("private Linear result");
     expect(poster.urls[0]).toEqual({
       app: "implementer", session: "implementer-session", label: "Pull Request",
       url: "https://github.com/dcouple/example/pull/42",
     });
+    config.apps.implementer.harness = "claude"; // Established sessions retain their runtime.
     log.append({
       deliveryId: "implementer-2", app: "implementer", action: "prompted", agentSessionId: "implementer-session",
       receivedAt: Date.now(),
@@ -2112,10 +2119,30 @@ describe("SessionWorker", () => {
     expect(rows[0].args.at(-1)).toMatch(/^\$astra-ticket ENG-42\n/);
     expect(rows[0].env).toMatchObject({ LINEAR_API_KEY: "linear-key", CLIPROXY_API_KEY: "api-key-one" });
     expect(rows[1].args.slice(0, 3)).toEqual(["exec", "resume", "--json"]);
-    expect(rows[1].args.slice(-2)).toEqual(["codex-thread-1", "fix the tests"]);
+    expect(rows[1].args.slice(-3)).toEqual(["codex-thread-1", "--", "fix the tests"]);
     expect(rows[1].cwd).toBe(rows[0].cwd);
     delete process.env.CODEX_FAKE_ARGS_FILE;
     log.close();
+  });
+  it("names Codex in native implementer failures", async () => {
+    const seeded = setup();
+    seeded.log.close();
+    seeded.config.apps.implementer.harness = "codex";
+    let log: EventLog;
+    log = new EventLog(seeded.config.dbPath, (app) => selectSessionProfile(log, seeded.config, app));
+    const poster = new Poster();
+    process.env.CODEX_FAKE_MODE = "turn-failed";
+    appendImplementer(log, "codex-failed", "codex-failed-session");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, seeded.config, { pollMs: 10, reconcileMs: 20 });
+    await worker.start();
+    try {
+      await waitFor(() => log.turnStates()[0]?.status === "failed");
+      const failure = poster.posts.find((post) => post.content.type === "error" && !post.ephemeral);
+      expect(activityBody(failure?.content)).toContain("Codex capacity failure");
+    } finally {
+      await worker.stop();
+      log.close();
+    }
   });
   it("phase3 AC2/AC3-on-error: creates a missing worktree and retries an error result's PR URL", async () => {
     const { log, config } = setup();

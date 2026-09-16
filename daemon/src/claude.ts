@@ -356,12 +356,14 @@ export async function awaitDetachedExit(
     while (groupAlive() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
   };
   const abort = (): void => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (killTimer || !groupAlive()) return;
     processGroupTerminationAttempted = true;
     killGroup("SIGTERM");
     killTimer = setTimeout(() => killGroup("SIGKILL"), 5_000);
     killTimer.unref();
   };
+  // Descendants can retain stdio after the leader exits, delaying close forever.
+  child.once("exit", abort);
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
   const closed = await new Promise<{
@@ -372,6 +374,7 @@ export async function awaitDetachedExit(
   });
   if (killTimer) clearTimeout(killTimer);
   signal?.removeEventListener("abort", abort);
+  child.removeListener("exit", abort);
   if (groupAlive()) {
     processGroupTerminationAttempted = true;
     killGroup("SIGTERM");
