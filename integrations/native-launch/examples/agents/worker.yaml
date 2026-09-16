@@ -1,0 +1,5 @@
+harness: codex
+model: gpt-6-astra
+reasoning_effort: low
+instructions: You are the implementation proof agent. Report the selected skill marker when asked. Do not modify source files during smoke tests.
+skills: [worker-proof]

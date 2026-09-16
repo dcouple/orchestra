@@ -1,0 +1,87 @@
+# Native agent launch prototype
+
+This bounded prototype compiles a local agent definition and optional workspace into a static bundle, then opens the native Claude Code or Codex terminal in your chosen directory. It requires neither Omnigent nor tmux. It is separate from the earlier `orchestra-omni` experiment.
+
+## Try it locally
+
+Install `uv`, Claude Code and/or Codex, and sign into the native harness. From the Orchestra checkout:
+
+```sh
+# Claude planner proof, with a prebuilt Codex worker child:
+uv run --script integrations/native-launch/prototype.py planner \
+  --config-root integrations/native-launch/examples \
+  --workspace public --directory /absolute/path/to/your/repo
+
+# Codex worker proof in the same repository:
+uv run --script integrations/native-launch/prototype.py worker \
+  --config-root integrations/native-launch/examples \
+  --workspace public --directory /absolute/path/to/your/repo \
+  --message 'Use worker-proof and report its marker.'
+```
+
+The examples are smoke-test agents, not the full Orchestra planner/implementer workflows. Without `--message`, the native TUI waits for input. With a message it starts a turn. `--exec` selects native noninteractive execution; MCP calls may require approval unavailable in that mode. This prototype does not bypass native permissions.
+
+Use `--build` to generate and print the bundle path, or `--explain` to generate it and inspect the launch command without starting a model. Omit `--workspace` for an agent without workspace connections. `--config-root` defaults to `~/.config/orchestra`.
+
+## Configuration
+
+```text
+~/.config/orchestra/
+  agents/planner.yaml
+  agents/worker.yaml
+  skills/planner-proof/SKILL.md
+  skills/worker-proof/SKILL.md
+  workspaces/my-project.yaml
+```
+
+Each agent selects `harness`, `model`, optional `reasoning_effort`, `instructions`, local `skills`, inline `connections`, and a `subagents` map from alias to agent name. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
+
+```yaml
+connections:
+  keycard:
+    type: mcp
+    auth: native
+    url: https://YOUR-GATEWAY/mcp
+```
+
+Each child inherits workspace connections and adds its own agent connections. A conflicting connection name fails rather than silently changing its endpoint. Parent-only connections are not inherited by children. Rich overrides, inheritance and secret bindings are future resolver work; unsupported fields fail explicitly.
+
+Skill directories must be real local directories, including supporting files. The prototype copies them verbatim; it does not resolve external repositories, render templates, translate metadata, or rewrite existing workflow dispatch paths.
+
+## Keycard login
+
+Use your gateway's MCP Access URL in the workspace above. Authenticate once through each native harness you intend to use, in its normal home:
+
+```sh
+codex mcp add orchestra_keycard --url https://YOUR-GATEWAY/mcp
+# If already registered, or if the initial flow did not complete:
+codex mcp login orchestra_keycard
+```
+
+For Claude, the existing PR helper supports registration and native login:
+
+```sh
+orchestra-omni connections add keycard --url https://YOUR-GATEWAY/mcp
+orchestra-omni connections login keycard --harness claude
+```
+
+That helper is only setup tooling; the launch commands above open native TUIs directly. Existing conflicting registrations must be resolved deliberately. Never place OAuth token payloads in YAML or skills. Browser consent can be required for individual upstream services. Immediate saved-login reuse is verified on both harnesses; expiry/refresh is not yet verified.
+
+## Generated files and coexistence
+
+Bundles live under the destination's `.orchestra/generated/<agent>-<workspace>-<hash>/`. Identical inputs reuse a bundle; changes create another. The main agent and all transitive child configurations are generated together. Children launch through bundled `dispatch/<alias>` scripts and retain the destination working directory. There is no separate agent scheduler.
+
+Repository `AGENTS.md`, `.claude`, and `.codex` files are not replaced. Existing global and repository skills remain visible. Add `/.orchestra/generated/` to the destination repository's local Git exclude file before use; automatic exclusion/cleanup is not implemented.
+
+Claude receives a generated plugin and strict MCP configuration. Codex receives a separate mutable home under `~/.cache/orchestra/native-proof/`, with selected skills and references to its normal native configuration/auth files. Codex still inherits existing user-level MCP servers. Native UI changes to linked settings may affect the normal native configuration. This is not a security or tool-isolation boundary.
+
+## Status and next implementation
+
+See [verification evidence](VERIFICATION.md). The next production work is the central resolver, full workflow dependency packaging, native subagent definitions/metadata translation, and approval behavior for unattended children. Native conversation resume associations, OAuth renewal, cleanup, account rotation, tracing and daemon integration are not implemented by this prototype. Do not deploy it as a daemon launcher yet.
+
+Run compiler/runtime tests with a Python environment containing PyYAML:
+
+```sh
+uv run --with PyYAML==6.0.3 python -m unittest discover \
+  -s integrations/native-launch/tests -v
+```

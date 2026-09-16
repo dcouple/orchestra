@@ -1,5 +1,9 @@
 # Omnigent integration
 
+For the new direct native-TUI direction, see the [native launch prototype](../native-launch/README.md).
+It selects an agent and optional workspace without an Omnigent runtime. This
+directory retains the earlier adoption experiment and native MCP setup helper.
+
 Launch native Claude Code or Codex conversations from any project, or load an
 Orchestra planner/implementer bundle through Omnigent. Omnigent is an external
 machine dependency; this directory contains the launcher and agent configuration.

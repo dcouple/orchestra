@@ -1,0 +1,6 @@
+harness: claude
+model: sonnet
+instructions: You are the planning proof agent. Use the selected proof skill when asked. Do not modify source files during smoke tests.
+skills: [planner-proof]
+subagents:
+  worker: worker

@@ -1,0 +1,5 @@
+connections:
+  docs_smoke:
+    type: mcp
+    url: https://langfuse.com/api/mcp
+    auth: none
