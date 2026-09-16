@@ -349,6 +349,57 @@ describe("macOS console operation crash recovery", () => {
     } finally {f.log.close();rmSync(f.dir,{recursive:true,force:true});}
   });
 
+  it("fails a console reload terminally when validation rejects, keeping the gate released and retryable", async () => {
+    const f=await macConsoleFixture("UNUSED_RELOAD_SECRET","daemon.reload");const repo=consoleReloadRepo(f);
+    try {
+      writeFileSync(join(f.dir,"reload-checkout","untracked.txt"),"dirty\n");
+      const result=f.run(repo.env);expect(result.status).toBe(1);
+      expect(f.log.operationById(f.id)).toMatchObject({state:"failed",stage:"reload_validation",
+        errorStage:"reload_validation",mutated:0,targetCommit:null,previousCommit:null});
+      // The retained artifact of the failed reload must not shadow the next
+      // operation regardless of glob order (f.id starts with "console-", so
+      // an id sorting after it exercises the old first-artifact selection
+      // only if the bridge is state-aware; "aaa-" would sort before it).
+      for (const [nextId,offset] of [["aaa-next-restart",0],["zzz-next-restart",1]] as const) {
+        const restartRequest:ConsoleOperationRequest={version:1,kind:"daemon.restart",
+          snapshotRevision:JSON.parse(readFileSync(f.snapshot,"utf8")).revision as string};
+        f.log.scheduleOperation({id:nextId,requestDigest:requestDigest(restartRequest),type:"restart",
+          reason:"after validation failure",actor:"local-console",requestKind:"daemon.restart",
+          requestSummary:JSON.stringify({kind:"daemon.restart"}),requestedAt:1_200+offset});
+        f.log.claimOperation(nextId,requestDigest(restartRequest),1_201+offset);
+        writeFileSync(join(f.spool,"executing",`${nextId}.json`),`${canonicalJson(restartRequest)}\n`,{mode:0o600});
+        const bridged=f.run(repo.env);expect(bridged.status,bridged.stderr).toBe(0);
+        expect(f.log.operationById(nextId)).toMatchObject({state:"succeeded",stage:"accepted"});
+        expect(existsSync(join(f.spool,"executing",`${f.id}.json`))).toBe(true);
+        expect(f.log.operationById(f.id)).toMatchObject({state:"failed",stage:"reload_validation"});
+      }
+      expect(f.log.retryOperation(f.id)).toMatchObject({state:"pending"});
+    } finally {f.log.close();rmSync(f.dir,{recursive:true,force:true});}
+  });
+
+  it("accepts matching bound reload metadata during accepting/rolling_back resume and rejects changes", () => {
+    const log=new EventLog(":memory:");
+    const target="1".repeat(40),previous="2".repeat(40);
+    log.scheduleOperation({id:"reload-resume",requestDigest:"b".repeat(64),type:"update",reason:"reload",
+      actor:"local-console",requestKind:"daemon.reload",requestSummary:JSON.stringify({kind:"daemon.reload"}),requestedAt:1_100});
+    log.claimOperation("reload-resume","b".repeat(64),1_101);
+    expect(log.bindConsoleReload("reload-resume",target,previous)).toMatchObject({targetCommit:target});
+    for (const state of ["accepting","rolling_back"] as const) {
+      log.transitionOperation("reload-resume",state,"provision",{mutated:true});
+      expect(log.bindConsoleReload("reload-resume",target,previous)).toMatchObject({state,targetCommit:target});
+      expect(()=>log.bindConsoleReload("reload-resume","3".repeat(40),previous)).toThrow("reload commit metadata changed");
+    }
+    log.close();
+    const unbound=new EventLog(":memory:");
+    unbound.scheduleOperation({id:"reload-unbound",requestDigest:"c".repeat(64),type:"update",reason:"reload",
+      actor:"local-console",requestKind:"daemon.reload",requestSummary:JSON.stringify({kind:"daemon.reload"}),requestedAt:1_100});
+    unbound.claimOperation("reload-unbound","c".repeat(64),1_101);
+    unbound.transitionOperation("reload-unbound","accepting","provision",{mutated:true});
+    expect(()=>unbound.bindConsoleReload("reload-unbound",target,previous))
+      .toThrow("operation is not an executing console reload");
+    unbound.close();
+  });
+
   it("replays the still-secret executing request after a pre-intent crash without duplicate restart", async () => {
     const f = await macConsoleFixture("PRE_INTENT_SECRET_SENTINEL");
     try {

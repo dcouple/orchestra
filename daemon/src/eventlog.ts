@@ -1478,12 +1478,15 @@ export class EventLog {
     return this.db.transaction(() => {
       const row=this.operationById(id);
       if (!row || row.actor!=="local-console" || row.requestKind!=="daemon.reload"
-        || row.type!=="update" || row.state!=="executing") throw new Error("operation is not an executing console reload");
+        || row.type!=="update") throw new Error("operation is not an executing console reload");
+      // Already-bound matching metadata is accepted in any state so an interrupted
+      // reload resuming from accepting/rolling_back can re-enter the deploy workflow.
       if (row.targetRef!==null || row.targetCommit!==null || row.previousCommit!==null) {
         if (row.targetRef!=="checkout/HEAD" || row.targetCommit!==targetCommit || row.previousCommit!==previousCommit)
           throw new Error("reload commit metadata changed");
         return row;
       }
+      if (row.state!=="executing") throw new Error("operation is not an executing console reload");
       this.db.prepare(`UPDATE operations SET target_ref='checkout/HEAD',target_commit=?,previous_commit=?,updated_at=?
         WHERE id=? AND target_ref IS NULL AND target_commit IS NULL AND previous_commit IS NULL`)
         .run(targetCommit,previousCommit,now,id);

@@ -3,7 +3,7 @@ import { ConsoleServer } from "./console-server.js";
 import { EventLog } from "./eventlog.js";
 import { readSkillInventory } from "./skill-inventory.js";
 import { ConsoleOperationBroker } from "./console-operation-broker.js";
-import { ConsoleLoopBroker } from "./console-loop-broker.js";
+import { ConsoleLoopBroker, ConsoleLoopBrokerError } from "./console-loop-broker.js";
 
 const config = loadConsoleConfig();
 const log = new EventLog(config.dbPath);
@@ -13,7 +13,7 @@ const broker = config.operationSpoolDir && config.configSnapshotPath ? new Conso
 await broker?.reconcile();
 const loopBroker = new ConsoleLoopBroker({ log, draftTtlMs: config.draftTtlMs ?? 300_000,
   capacitySnapshot: async () => {
-    if (!broker) throw new Error("configuration snapshot unavailable");
+    if (!broker) throw new ConsoleLoopBrokerError("writes_unavailable", 503);
     const snapshot=await broker.configuration();
     return { capacity:snapshot.settings.sessionConcurrency, revision:snapshot.revision };
   } });

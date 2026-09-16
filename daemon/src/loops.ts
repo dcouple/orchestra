@@ -49,6 +49,13 @@ export function validateLoopDeclaration(value: unknown, globalCapacity: number, 
     maxConcurrency: bounded(row.maxConcurrency, 1, Math.min(4, globalCapacity), "invalid_concurrency"), budgetUsd: budget,
     timeoutMinutes: bounded(row.timeoutMinutes, 1, 120, "invalid_timeout"), maxRetries: bounded(row.maxRetries, 0, 3, "invalid_retries"), enabled: row.enabled };
 }
+// Enable re-checks only the capacity-sensitive field: the stored declaration was
+// validated when written, and re-running clock-relative checks (the ±365d anchor
+// bound) would make an old loop permanently un-enableable.
+export function validateLoopCapacity(value: LoopDeclaration, globalCapacity: number): LoopDeclaration {
+  bounded(value.maxConcurrency, 1, Math.min(4, globalCapacity), "invalid_concurrency");
+  return value;
+}
 export function canonicalLoopJson(value: LoopDeclaration): string { return JSON.stringify(value); }
 export function loopDigest(value: LoopDeclaration): string { return createHash("sha256").update(canonicalLoopJson(value)).digest("hex"); }
 export function nextLoopDue(startsAt: number, everyMinutes: number, after: number): number {

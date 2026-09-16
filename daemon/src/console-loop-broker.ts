@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import type { EventLog, LoopMutationResult } from "./eventlog.js";
-import { canonicalLoopJson, validateLoopDeclaration, type LoopDeclaration } from "./loops.js";
+import { canonicalLoopJson, validateLoopCapacity, validateLoopDeclaration, type LoopDeclaration } from "./loops.js";
 import { projectConsoleLoopDeclaration, type ConsoleLoopDeclaration } from "./console-projections.js";
 
 export class ConsoleLoopBrokerError extends Error { constructor(readonly code: string, readonly status = 409) { super(code); this.name="ConsoleLoopBrokerError"; } }
@@ -30,7 +30,7 @@ export class ConsoleLoopBroker {
       const snapshot=await this.capacity(); capacityRevision=snapshot.revision;
       declaration=kind === "create" || kind === "update"
         ? validateLoopDeclaration(row.declaration,snapshot.capacity,this.now())
-        : validateLoopDeclaration({ ...strip(current!), enabled:true },snapshot.capacity,this.now());
+        : validateLoopCapacity({ ...strip(current!), enabled:true },snapshot.capacity);
     } else if (kind === "disable") declaration={ ...strip(current!), enabled:false };
     const canonical={version:1,kind,loopId,expectedRevision,...(declaration?{declaration}:{})};
     const digest=createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
@@ -48,7 +48,8 @@ export class ConsoleLoopBroker {
     if(digest!==draft.preview.digest||row.reason!==draft.preview.reason)throw new ConsoleLoopBrokerError("confirmation_mismatch");
     if(draft.capacityRevision){const snapshot=await this.capacity();if(snapshot.revision!==draft.capacityRevision)
       throw new ConsoleLoopBrokerError("loop_capacity_changed");
-      validateLoopDeclaration(draft.declaration,snapshot.capacity,this.now());}
+      if(draft.preview.kind==="enable")validateLoopCapacity(draft.declaration!,snapshot.capacity);
+      else validateLoopDeclaration(draft.declaration,snapshot.capacity,this.now());}
     if(draft.preview.kind==="cleanup.retry"){try{const result=this.options.log.confirmLoopCleanupRetry({draftId,digest,loopId:draft.preview.loopId,expectedRevision:draft.preview.expectedRevision!,reason:draft.preview.reason,now:this.now()});
       await this.options.notify?.();return result;}catch(error){throw new ConsoleLoopBrokerError(error instanceof Error?error.message:"cleanup_retry_failed");}}
     try { const result=this.options.log.mutateLoop({draftId,digest,id:draft.preview.loopId,declaration:draft.declaration!,expectedRevision:draft.preview.expectedRevision,

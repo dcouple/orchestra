@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { EventLog } from "../src/eventlog.js";
 import { parseJsonNoDuplicateKeys, StrictJsonError } from "../src/strict-json.js";
 import { classifyLoopOutcome, nextLoopDue, validateLoopDeclaration, type LoopDeclaration } from "../src/loops.js";
-import { ConsoleLoopBroker } from "../src/console-loop-broker.js";
+import { ConsoleLoopBroker, ConsoleLoopBrokerError } from "../src/console-loop-broker.js";
 import { LoopScheduler } from "../src/loop-scheduler.js";
 
 const now=1_800_000_000_000;
@@ -100,6 +100,31 @@ describe("durable loop scheduling",()=>{
     const fresh=await broker.draft({kind:"create",reason:"fresh capacity",declaration:{...declaration(),maxConcurrency:3}});
     await expect(broker.confirm({draftId:fresh.id,digest:fresh.digest,reason:fresh.reason}))
       .resolves.toMatchObject({loop:{maxConcurrency:3}});
+  });
+  it("re-enables a loop whose stored anchor drifted outside the create window, still enforcing capacity",async()=>{
+    log=new EventLog(":memory:");let clock=now;let capacity=2;const revision="snapshot-a";
+    const broker=new ConsoleLoopBroker({log,draftTtlMs:60_000,now:()=>clock,capacitySnapshot:async()=>({capacity,revision})});
+    const create=await broker.draft({kind:"create",reason:"anchored loop",declaration:{...declaration(),maxConcurrency:2}});
+    const created=await broker.confirm({draftId:create.id,digest:create.digest,reason:create.reason});
+    const disable=await broker.draft({kind:"disable",loopId:created.loop.id,expectedRevision:created.loop.revision,reason:"maintenance"});
+    const disabled=await broker.confirm({draftId:disable.id,digest:disable.digest,reason:disable.reason});
+    clock=now+400*86_400_000;
+    await expect(broker.draft({kind:"create",reason:"stale anchor",declaration:declaration()}))
+      .rejects.toMatchObject({code:"invalid_anchor"});
+    capacity=1;
+    await expect(broker.draft({kind:"enable",loopId:created.loop.id,expectedRevision:disabled.loop.revision,reason:"over capacity"}))
+      .rejects.toMatchObject({code:"invalid_concurrency"});
+    capacity=2;
+    const enable=await broker.draft({kind:"enable",loopId:created.loop.id,expectedRevision:disabled.loop.revision,reason:"back on"});
+    await expect(broker.confirm({draftId:enable.id,digest:enable.digest,reason:enable.reason}))
+      .resolves.toMatchObject({loop:{enabled:true}});
+  });
+  it("propagates a typed writes_unavailable error from the capacity snapshot",async()=>{
+    log=new EventLog(":memory:");
+    const broker=new ConsoleLoopBroker({log,draftTtlMs:60_000,now:()=>now,
+      capacitySnapshot:async()=>{throw new ConsoleLoopBrokerError("writes_unavailable",503);}});
+    await expect(broker.draft({kind:"create",reason:"snapshot unavailable",declaration:declaration()}))
+      .rejects.toMatchObject({code:"writes_unavailable",status:503});
   });
   it("advances the definition revision once when automatic policy exhaustion blocks a loop",async()=>{
     const dir=mkdtempSync(join(tmpdir(),"loop-policy-revision-"));const dbPath=join(dir,"state.sqlite");log=new EventLog(dbPath);

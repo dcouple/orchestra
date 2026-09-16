@@ -534,7 +534,7 @@ command_sim_preflight() {
 command_internal_console_execute() {
   require_user
   [[ $# -eq 0 ]] || usage_error "internal-console-execute accepts no arguments"
-  local spool=$STATE_DIR/console-requests request='' trigger='' id kind digest row changes candidate backup snapshot candidate_path
+  local spool=$STATE_DIR/console-requests request='' trigger='' id kind digest row changes candidate backup snapshot candidate_path candidate_id candidate_state
   for candidate_path in "$spool/rollback"/*.json; do [[ -f $candidate_path && ! -L $candidate_path ]] || continue; trigger=$candidate_path; break; done
   if [[ -n $trigger ]]; then
     id=${trigger##*/}; id=${id%.json}; backup=$STATE_DIR/backups/$id.env
@@ -569,7 +569,21 @@ PY
     remove_console_artifacts "$trigger" "$request" "$changes" "$candidate"
     die "rollback did not pass health acceptance"
   fi
-  for candidate_path in "$spool/executing"/*.json; do [[ -f $candidate_path && ! -L $candidate_path ]] || continue; request=$candidate_path; break; done
+  # Select by operation state, not artifact order: a terminal-but-retryable
+  # operation (failed, unmutated) retains its artifact for a later retry and
+  # must not shadow the next runnable operation's artifact.
+  for candidate_path in "$spool/executing"/*.json; do
+    [[ -f $candidate_path && ! -L $candidate_path ]] || continue
+    candidate_id=${candidate_path##*/}; candidate_id=${candidate_id%.json}
+    [[ $candidate_id =~ ^[A-Za-z0-9-]{1,64}$ ]] || die "invalid console operation id"
+    candidate_state=$(ops_cli get "$candidate_id" | python3 -c 'import json,sys
+row=json.load(sys.stdin)
+print(row["state"] if isinstance(row,dict) else "")')
+    case $candidate_state in
+      executing|accepting|rolling_back) request=$candidate_path; break ;;
+      *) continue ;;
+    esac
+  done
   [[ -n $request ]] || return 0
   id=${request##*/}; id=${id%.json}
   [[ $id =~ ^[A-Za-z0-9-]{1,64}$ ]] || die "invalid console operation id"
@@ -610,10 +624,14 @@ PY
         return 0
       fi
       if ! derive_reload_metadata; then
-        transition "$id" blocked reload_validation - reload_validation - -
+        # Nothing has mutated yet, so fail terminally: a blocked unmutated update
+        # can never be retried or cancelled and would wedge all future mutations.
+        transition "$id" failed reload_validation "reload validation failed; resolve the checkout and retry" reload_validation - -
         die "console reload validation failed"
       fi
-      ops_cli reload-bind "$id" "$RELOAD_TARGET" "$RELOAD_ACCEPTED" >/dev/null
+      ops_cli reload-bind "$id" "$RELOAD_TARGET" "$RELOAD_ACCEPTED" >/dev/null \
+        || { transition "$id" failed reload_bind "reload commit metadata could not be bound; retry" reload_bind - - || true
+             die "console reload bind failed"; }
       if [[ $RELOAD_TARGET == "$RELOAD_ACCEPTED" && $RELOAD_DEPLOYED == "$RELOAD_ACCEPTED" ]]; then
         transition "$id" succeeded accepted "already deployed and accepted" - - -
       else
