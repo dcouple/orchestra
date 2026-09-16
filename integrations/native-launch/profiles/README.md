@@ -19,13 +19,13 @@ previously authenticated gateway. Secrets are not present in these profiles.
 `~/.config/orchestra/codex-profile-provenance.json` records the installed source
 revision and path for every skill.
 
-From the Orchestra checkout:
+After building/installing the TypeScript CLI as described in the parent README (already installed on this Mac):
 
 ```sh
-uv run --script integrations/native-launch/prototype.py codex-issue-creator \
+orchestra agent codex-issue-creator \
   --workspace keycard --directory /absolute/path/to/repo
 
-uv run --script integrations/native-launch/prototype.py codex-implementer \
+orchestra agent codex-implementer \
   --workspace keycard --directory /absolute/path/to/repo \
   --message 'Use $astra-ticket for owner/repo#123'
 ```

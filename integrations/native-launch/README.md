@@ -1,19 +1,26 @@
-# Native agent launch prototype
+# Orchestra native launcher (TypeScript prototype)
 
 This bounded prototype compiles a local agent definition and optional workspace into a static bundle, then opens the native Claude Code or Codex terminal in your chosen directory. It requires neither Omnigent nor tmux. It is separate from the earlier `orchestra-omni` experiment.
 
 ## Try it locally
 
-Install `uv`, Claude Code and/or Codex, and sign into the native harness. From the Orchestra checkout:
+Install Node 22.15+ on macOS/Linux, pnpm 11, and Claude Code and/or Codex. Sign into the native harness. Build from the Orchestra checkout:
+
+```sh
+pnpm --dir integrations/native-launch install --frozen-lockfile
+pnpm --dir integrations/native-launch build
+```
+
+The compiled CLI is `integrations/native-launch/dist/cli.js`. This Mac has an `orchestra` symlink in `~/.local/bin`; elsewhere use `node integrations/native-launch/dist/cli.js` in place of `orchestra`. No Python or uv is required. From the checkout:
 
 ```sh
 # Claude planner proof, with a prebuilt Codex worker child:
-uv run --script integrations/native-launch/prototype.py planner \
+orchestra agent planner \
   --config-root integrations/native-launch/examples \
   --workspace public --directory /absolute/path/to/your/repo
 
 # Codex worker proof in the same repository:
-uv run --script integrations/native-launch/prototype.py worker \
+orchestra agent worker \
   --config-root integrations/native-launch/examples \
   --workspace public --directory /absolute/path/to/your/repo \
   --message 'Use worker-proof and report its marker.'
@@ -79,9 +86,11 @@ Claude receives a generated plugin and strict MCP configuration. Codex receives 
 
 See [verification evidence](VERIFICATION.md). The next production work is the central resolver, full workflow dependency packaging, native subagent definitions/metadata translation, and approval behavior for unattended children. Native conversation resume associations, OAuth renewal, cleanup, account rotation, tracing and daemon integration are not implemented by this prototype. Do not deploy it as a daemon launcher yet.
 
-Run compiler/runtime tests with a Python environment containing PyYAML:
+The compiler and native runtime are separate TypeScript modules, so a future daemon adapter can reuse configuration generation without owning a TUI. Generated child runtimes are standalone Node modules with no YAML dependency. The main process uses Node `execve` to hand the terminal, signals and exit status directly to the native harness. Windows is not supported.
+
+Run the checks:
 
 ```sh
-uv run --with PyYAML==6.0.3 python -m unittest discover \
-  -s integrations/native-launch/tests -v
+pnpm --dir integrations/native-launch typecheck
+pnpm --dir integrations/native-launch test
 ```
