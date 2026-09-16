@@ -39,13 +39,20 @@ export function resolve(root: string, agent: string, workspace?: string): Record
     fields(ws,['connections']); defaults=connections(ws.connections ?? {});
   }
   const nodes: Record<string,Agent>=Object.create(null);
-  function visit(agentName: string, trail: string[], route: string) {
+  function visit(agentName: string, trail: string[], route: string, overrides: Record<string,unknown>={}, inherited=defaults, mode: 'native'|'process'='process') {
     name(agentName); if (trail.includes(agentName)) throw new Error('Child-agent cycle: '+[...trail,agentName].join(' -> '));
-    const data=read(path.join(root,'agents',agentName+'.yaml'));
-    fields(data,['harness','model','reasoning_effort','instructions','skills','connections','subagents']);
+    const agentPath=path.join(root,'agents',agentName+'.yaml');
+    const data={...(route==='main' && !fs.existsSync(agentPath) && overrides.harness ? {} : read(agentPath)),...overrides};
+    fields(data,['harness','model','reasoning_effort','instructions','description','skills','connections','subagents']);
     if (data.harness!=='claude' && data.harness!=='codex') throw new Error('harness must be claude or codex');
-    if (typeof data.model!=='string' || !data.model.trim()) throw new Error('Every agent requires a model');
-    for (const key of ['instructions','reasoning_effort']) if (data[key]!==undefined && typeof data[key]!=='string') throw new Error(`${key} must be text`);
+    const model=typeof data.model==='string' ? {name:data.model,reasoning:data.reasoning_effort} : mapping(data.model);
+    fields(model,['name','reasoning','speed']);
+    if (typeof model.name!=='string' || !model.name.trim()) throw new Error('Every agent requires a model name');
+    if (typeof data.model!=='string' && data.reasoning_effort!==undefined) throw new Error('Use model.reasoning with structured models');
+    const efforts=data.harness==='claude' ? ['low','medium','high','xhigh','max'] : ['minimal','low','medium','high','xhigh','max'];
+    if (model.reasoning!==undefined && !efforts.includes(String(model.reasoning))) throw new Error('Unsupported model reasoning effort');
+    if (model.speed!==undefined && (data.harness!=='codex' || !['fast','standard'].includes(String(model.speed)))) throw new Error('model.speed supports fast or standard for Codex only');
+    for (const key of ['instructions','description','reasoning_effort']) if (data[key]!==undefined && typeof data[key]!=='string') throw new Error(`${key} must be text`);
     const skills=data.skills ?? [];
     if (!Array.isArray(skills) || skills.some(s=>typeof s!=='string') || new Set(skills).size!==skills.length) throw new Error('skills must be a unique list of local directory names');
     for (const skill of skills) {
@@ -53,21 +60,51 @@ export function resolve(root: string, agent: string, workspace?: string): Record
       if (!fs.existsSync(path.join(folder,'SKILL.md'))) throw new Error(`Missing local skill: ${skill}`);
       files(folder);
     }
-    const merged={...defaults};
+    const merged={...inherited};
     for (const [key,value] of Object.entries(connections(data.connections ?? {}))) {
       if (merged[key] && canonical(merged[key])!==canonical(value)) throw new Error(`Conflicting connection ${key}`);
       merged[key]=value;
     }
-    const node: Agent={name:agentName,harness:data.harness,model:data.model,instructions:data.instructions as string|undefined,reasoning_effort:data.reasoning_effort as string|undefined,skills,connections:merged,children:Object.create(null)};
+    const node: Agent={name:agentName,mode,description:data.description as string|undefined,harness:data.harness,model:model.name,speed:model.speed as Agent['speed'],instructions:data.instructions as string|undefined,reasoning_effort:model.reasoning as string|undefined,skills,connections:merged,children:Object.create(null)};
     nodes[route]=node;
     for (const [alias,child] of Object.entries(mapping(data.subagents ?? {}))) {
-      name(alias); name(child);
+      name(alias);
+      const binding=typeof child==='string' ? {agent:child} : mapping(child);
+      fields(binding,['agent','description','harness','model','mode']);
+      const childName=name(binding.agent);
+      const childMode=binding.mode ?? 'process';
+      if (childMode!=='native' && childMode!=='process') throw new Error('Child mode must be native or process');
+      const {agent:unused,mode:unusedMode,...childOverrides}=binding;
+      if (childOverrides.model!==undefined) childOverrides.reasoning_effort=undefined;
       const childRoute=route+'/children/'+alias;
       node.children[alias]=childRoute;
-      visit(child as string,[...trail,agentName],childRoute);
+      visit(childName,[...trail,agentName],childRoute,childOverrides,merged,childMode);
+      const resolved=nodes[childRoute]!;
+      if (childMode==='native' && resolved.harness!==node.harness) throw new Error('Native children must use the parent harness; use mode: process for cross-harness children');
+      if (childMode==='native' && Object.keys(resolved.children).length) throw new Error('Nested native child definitions are not supported yet; use process mode');
     }
   }
-  visit(agent,[],'main'); return nodes;
+  const profilePath=path.join(root,'profiles',name(agent)+'.yaml');
+  if (fs.existsSync(profilePath)) {
+    const profile=read(profilePath);
+    if (profile.agent!==undefined) {
+      fields(profile,['agent','harness','model','instructions','skills','connections','subagents']);
+      const {agent:base,...overrides}=profile;
+      const baseName=name(base);
+      const original=read(path.join(root,'agents',baseName+'.yaml'));
+      if (profile.instructions!==undefined) {
+        if (typeof profile.instructions!=='string') throw new Error('instructions must be text');
+        overrides.instructions=[original.instructions,profile.instructions].filter(Boolean).join('\n\n');
+      }
+      // Model blocks replace, never deep merge across models/harnesses.
+      if (overrides.model!==undefined) overrides.reasoning_effort=undefined;
+      visit(baseName,[],'main',overrides);
+    } else {
+      // Existing standalone profiles remain valid during migration.
+      visit(agent,[],'main',profile);
+    }
+  } else visit(agent,[],'main');
+  return nodes;
 }
 export function build(root: string, agent: string, target: string, workspace?: string): string {
   root=fs.realpathSync(root); target=fs.realpathSync(target);
@@ -97,6 +134,22 @@ export function build(root: string, agent: string, target: string, workspace?: s
         write(path.join(route,'mcp.json'),JSON.stringify({mcpServers:Object.fromEntries(Object.entries(node.connections).map(([k,v])=>['orchestra_'+k,{type:'http',url:v.url}]))},null,2));
       }
       for (const [alias,childRoute] of Object.entries(node.children)) {
+        const child=nodes[childRoute]!;
+        const prompt=[child.instructions ?? '', 'Selected skill files (read these before doing the assigned work; resolve their links relative to each skill directory):', ...child.skills.map(skill=>path.join(bundle,childRoute,'skills',skill,'SKILL.md'))].join('\n');
+        if (child.mode==='native') {
+          if (node.harness==='codex') {
+            const lines=[`name = ${JSON.stringify(alias)}`,`description = ${JSON.stringify(child.description ?? child.name)}`,`model = ${JSON.stringify(child.model)}`,`developer_instructions = ${JSON.stringify(prompt)}`];
+            if (child.reasoning_effort) lines.push(`model_reasoning_effort = ${JSON.stringify(child.reasoning_effort)}`);
+            // Do not inherit the parent's Fast setting into a different model.
+            lines.push(`service_tier = ${JSON.stringify(child.speed==='fast' ? 'fast' : 'default')}`);
+            for (const [key,value] of Object.entries(child.connections)) lines.push(`[mcp_servers.orchestra_${key}]`,`url = ${JSON.stringify(value.url)}`);
+            write(path.join(route,'native-agents',alias+'.toml'),lines.join('\n')+'\n');
+          } else {
+            if (canonical(child.connections)!==canonical(node.connections)) throw new Error('Native Claude children currently inherit parent connections; use process mode for different connections');
+            write(path.join(route,'native-agents',alias+'.json'),JSON.stringify({description:child.description ?? child.name,prompt,model:child.model,effort:child.reasoning_effort},null,2));
+          }
+          continue;
+        }
         write(path.join(route,'dispatch',alias),'#!/usr/bin/env node\nimport('+JSON.stringify(pathToFileURL(path.join(bundle,'runtime.mjs')).href)+').then(m=>m.run('+JSON.stringify(bundle)+','+JSON.stringify(childRoute)+',["--exec",...process.argv.slice(2)])).catch(e=>{console.error("error:",e.message);process.exitCode=1;});\n',0o755);
       }
     }

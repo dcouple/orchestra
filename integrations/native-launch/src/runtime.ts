@@ -6,8 +6,8 @@ import { parseArgs } from 'node:util';
 
 export interface Connection { type: 'mcp'; url: string; auth: 'native' | 'none' }
 export interface Agent {
-  name: string; harness: 'claude' | 'codex'; model: string;
-  reasoning_effort?: string; instructions?: string; skills: string[];
+  name: string; description?: string; mode?: 'native' | 'process'; harness: 'claude' | 'codex'; model: string;
+  speed?: 'fast' | 'standard'; reasoning_effort?: string; instructions?: string; skills: string[];
   connections: Record<string, Connection>; children: Record<string, string>;
 }
 export interface Manifest { directory: string; workspace?: string; nodes: Record<string, Agent> }
@@ -67,12 +67,15 @@ export function command(bundle: string, route: string, options: LaunchOptions = 
   const directory=path.join(bundle,route); const env={...(options.env ?? process.env)};
   let instructions=agent.instructions ?? '';
   if (Object.keys(agent.children).length) {
-    instructions+='\nBundled child launchers (pass --message with the assigned task; do not regenerate config):\n';
-    instructions+=Object.keys(agent.children).map(alias=>`${alias}: ${path.join(directory,'dispatch',alias)}`).join('\n');
+    instructions+='\nBundled children (use native delegation for native roles; process launchers accept --message; do not regenerate config):\n';
+    instructions+=Object.entries(agent.children).map(([alias,childRoute])=>manifest.nodes[childRoute]!.mode==='native' ? `${alias}: native subagent (${manifest.nodes[childRoute]!.description ?? alias}). Use native delegation and follow-up tools.` : `${alias}: ${path.join(directory,'dispatch',alias)}`).join('\n');
   }
   let argv: string[];
   if (agent.harness==='claude') {
     argv=['claude','--model',agent.model,'--plugin-dir',directory,'--mcp-config',path.join(directory,'mcp.json'),'--strict-mcp-config'];
+    const native=Object.fromEntries(Object.entries(agent.children).filter(([,r])=>manifest.nodes[r]!.mode==='native').map(([alias])=>[alias,JSON.parse(fs.readFileSync(path.join(directory,'native-agents',alias+'.json'),'utf8'))]));
+    if (Object.keys(native).length) argv.push('--agents',JSON.stringify(native));
+    if (agent.reasoning_effort) argv.push('--effort',agent.reasoning_effort);
     if (instructions) argv.push('--append-system-prompt',instructions);
     if (options.headless) argv.push('--print','--output-format','json');
   } else {
@@ -80,6 +83,10 @@ export function command(bundle: string, route: string, options: LaunchOptions = 
     argv=['codex',...(options.headless ? ['exec','--skip-git-repo-check','--json'] : []),'--cd',manifest.directory,'--model',agent.model];
     if (instructions) argv.push('-c','developer_instructions='+JSON.stringify(instructions));
     if (agent.reasoning_effort) argv.push('-c','model_reasoning_effort='+JSON.stringify(agent.reasoning_effort));
+    for (const [alias,childRoute] of Object.entries(agent.children)) if (manifest.nodes[childRoute]!.mode==='native') {
+      argv.push('-c',`agents.${alias}.description=${JSON.stringify(manifest.nodes[childRoute]!.description ?? alias)}`,'-c',`agents.${alias}.config_file=${JSON.stringify(path.join(directory,'native-agents',alias+'.toml'))}`);
+    }
+    if (agent.speed) argv.push('-c','service_tier='+JSON.stringify(agent.speed==='fast' ? 'fast' : 'default'));
     for (const [key,value] of Object.entries(agent.connections)) argv.push('-c',`mcp_servers.orchestra_${key}.url=${JSON.stringify(value.url)}`);
   }
   if (options.message!==undefined) argv.push('--',options.message);

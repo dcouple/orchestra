@@ -19,3 +19,21 @@ The native launcher now uses Node 22.15+ on macOS/Linux, TypeScript and pinned Y
 The port has 13 Node tests covering the original contracts plus duplicate YAML keys, symlink rejection, child directory collisions, and real subprocess handoff with literal arguments, cwd, native credential references and exit status. Standalone generated child dispatch runs without importing the CLI package. Both installed Codex workflow profiles compile with the Keycard workspace. Full workflow execution, OAuth renewal and unattended approvals remain unverified.
 
 Live TypeScript CLI smoke check: native Claude and Codex TUIs opened in the scratch repository with the selected models; Codex connected to Keycard and listed 57 tools without a new login. The authenticated GitHub tool-call proof above was performed before the language port.
+
+## Profile/agent split and native roles (2026-09-16)
+
+- Typecheck and 19 tests pass, including whole-model replacement, appended
+  profile instructions, legacy commands, connection inheritance, and generated
+  native child definitions for Claude and Codex.
+- Installed three referencing profiles and eleven agent definitions under the
+  local central configuration root. Previous profile files were backed up.
+- Compiled planner, Astra planner, and implementer with the Keycard workspace.
+- Live Codex 0.154.0 accepted `--strict-config` with generated role registrations
+  and reported `socrates`, `pr-preparer`, and `qa` in its native spawn tool schema.
+- Live Claude Code accepted the generated CLI agent definitions; Fable 5.1
+  reported Socrates in its native Agent tool schema. Result metadata confirmed
+  the Fable model and no subagents spawned.
+- These were read-only registration checks, not end-to-end child execution,
+  child model/effort verification, follow-up/resume, or new MCP call tests.
+  Native skill selections are explicit bundled paths in role instructions,
+  not isolated skill discovery catalogs. Existing global skills remain visible.

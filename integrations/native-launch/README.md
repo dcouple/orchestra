@@ -34,6 +34,7 @@ Use `--build` to generate and print the bundle path, or `--explain` to generate 
 
 ```text
 ~/.config/orchestra/
+  profiles/planner.yaml
   agents/planner.yaml
   agents/worker.yaml
   skills/planner-proof/SKILL.md
@@ -41,7 +42,7 @@ Use `--build` to generate and print the bundle path, or `--explain` to generate 
   workspaces/my-project.yaml
 ```
 
-Each agent selects `harness`, `model`, optional `reasoning_effort`, `instructions`, local `skills`, inline `connections`, and a `subagents` map from alias to agent name. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
+Each agent selects `harness`, a `model` block (`name`, optional `reasoning` and Codex `speed`), `instructions`, local `skills`, inline `connections`, and a `subagents` map. Profiles reference an agent with optional overrides. Legacy scalar models plus `reasoning_effort` and alias-to-name child maps remain supported. See the runnable [examples](examples/agents/planner.yaml). Workspace files currently accept only inline `connections`:
 
 ```yaml
 connections:
@@ -51,7 +52,7 @@ connections:
     url: https://YOUR-GATEWAY/mcp
 ```
 
-Each child inherits workspace connections and adds its own agent connections. A conflicting connection name fails rather than silently changing its endpoint. Parent-only connections are not inherited by children. Rich overrides, inheritance and secret bindings are future resolver work; unsupported fields fail explicitly.
+Each child inherits workspace and parent connections and adds its own agent connections. A conflicting connection name fails rather than silently changing its endpoint. Profiles may override agent defaults; child bindings may override description, harness, and model. Remote inheritance and secret bindings are future resolver work; unsupported fields fail explicitly.
 
 Skill directories must be real local directories, including supporting files. The prototype copies them verbatim; it does not resolve external repositories, render templates, translate metadata, or rewrite existing workflow dispatch paths.
 
@@ -76,7 +77,7 @@ That helper is only setup tooling; the launch commands above open native TUIs di
 
 ## Generated files and coexistence
 
-Bundles live under the destination's `.orchestra/generated/<agent>-<workspace>-<hash>/`. Identical inputs reuse a bundle; changes create another. The main agent and all transitive child configurations are generated together. Children launch through bundled `dispatch/<alias>` scripts and retain the destination working directory. There is no separate agent scheduler.
+Bundles live under the destination's `.orchestra/generated/<agent>-<workspace>-<hash>/`. Identical inputs reuse a bundle; changes create another. The main agent and all transitive child configurations are generated together. Native children use generated Claude CLI definitions or Codex role TOML files. Process children launch through bundled `dispatch/<alias>` scripts. Both retain the destination working directory. There is no separate agent scheduler.
 
 Repository `AGENTS.md`, `.claude`, and `.codex` files are not replaced. Existing global and repository skills remain visible. Add `/.orchestra/generated/` to the destination repository's local Git exclude file before use; automatic exclusion/cleanup is not implemented.
 
@@ -84,7 +85,7 @@ Claude receives a generated plugin and strict MCP configuration. Codex receives 
 
 ## Status and next implementation
 
-See [verification evidence](VERIFICATION.md). The next production work is the central resolver, full workflow dependency packaging, native subagent definitions/metadata translation, and approval behavior for unattended children. Native conversation resume associations, OAuth renewal, cleanup, account rotation, tracing and daemon integration are not implemented by this prototype. Do not deploy it as a daemon launcher yet.
+See [verification evidence](VERIFICATION.md). The next production work is the central resolver, full workflow dependency packaging, broader native subagent metadata translation, and approval behavior for unattended children. Native conversation resume associations, OAuth renewal, cleanup, account rotation, tracing and daemon integration are not implemented by this prototype. Do not deploy it as a daemon launcher yet.
 
 The compiler and native runtime are separate TypeScript modules, so a future daemon adapter can reuse configuration generation without owning a TUI. Generated child runtimes are standalone Node modules with no YAML dependency. The main process uses Node `execve` to hand the terminal, signals and exit status directly to the native harness. Windows is not supported.
 
@@ -94,3 +95,11 @@ Run the checks:
 pnpm --dir integrations/native-launch typecheck
 pnpm --dir integrations/native-launch test
 ```
+
+## Agent-backed workflow profiles
+
+Launch `planner`, `astra-planner`, or `implementer` with `orchestra run NAME`.
+Profiles reference complete definitions in the central `agents/` directory;
+model and harness defaults live in those agent files. See
+[profiles and native child roles](profiles/README.md) for configuration,
+installation, overrides, and current native-delegation limits.

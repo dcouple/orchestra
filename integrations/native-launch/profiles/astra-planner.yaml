@@ -1,0 +1,13 @@
+agent: planner
+harness: codex
+model:
+  name: gpt-6-astra
+  reasoning: high
+subagents:
+  socrates:
+    agent: socrates
+    mode: native
+    harness: codex
+    model:
+      name: gpt-5.6-luna
+      reasoning: max

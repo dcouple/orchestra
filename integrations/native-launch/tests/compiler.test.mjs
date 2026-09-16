@@ -87,3 +87,62 @@ test('native exec preserves args, cwd, environment and exit status; dispatch run
  assert.equal(child.status,7,child.stderr);result=JSON.parse(fs.readFileSync(out));assert.equal(result.cwd,f.target);assert.equal(result.args[0],'exec');assert.deepEqual(result.args.slice(-2),['--',message]);
  assert.ok(result.home.includes('.cache/orchestra/native-proof'));assert.equal(fs.existsSync(path.join(f.target,'NEVER')),false);verify(b);
 });
+test('profile model settings reach both native harnesses and override legacy entrypoints',t=>{
+ const f=fixture(t);
+ f.put('profiles/planner.yaml','harness: claude\nmodel: {name: claude-fable-5-1, reasoning: high}\nskills: [proof]\n');
+ let b=f.build(),r=command(b,'main',{prepare:false});
+ assert.equal(r.argv[r.argv.indexOf('--model')+1],'claude-fable-5-1');
+ assert.equal(r.argv[r.argv.indexOf('--effort')+1],'high');
+ f.put('profiles/planner.yaml','harness: codex\nmodel: {name: gpt-6-astra, reasoning: medium, speed: fast}\nskills: [proof]\n');
+ b=f.build();r=command(b,'main',{prepare:false});
+ assert.ok(r.argv.includes('model_reasoning_effort="medium"'));
+ assert.ok(r.argv.includes('service_tier="fast"'));
+ const result=spawnSync(process.execPath,[cli,'run','planner','--config-root',f.root,'--directory',f.target,'--explain'],{encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr);
+ assert.ok(JSON.parse(result.stdout).argv.includes('service_tier="fast"'));
+});
+test('invalid model settings fail rather than silently dropping options',t=>{
+ const f=fixture(t);
+ for(const model of ['{name: test, reasoning: typo}','{name: test, speed: fast}','{name: test, typo: high}']) {
+  f.put('profiles/planner.yaml',`harness: claude\nmodel: ${model}\n`);
+  assert.throws(f.build,/Unsupported|model.speed/);
+ }
+ f.put('profiles/planner.yaml','harness: codex\nmodel: {name: test, reasoning: high}\nreasoning_effort: medium\n');
+ assert.throws(f.build,/model.reasoning/);
+});
+test('referenced profiles replace model blocks and append instructions',t=>{
+ const f=fixture(t);
+ f.put('agents/base.yaml','harness: codex\nmodel: {name: first, reasoning: medium, speed: fast}\ninstructions: Base intent.\nskills: [proof]\n');
+ f.put('profiles/entry.yaml','agent: base\nmodel: {name: second, reasoning: high}\ninstructions: Extra intent.\n');
+ const b=build(f.root,'entry',f.target),m=JSON.parse(fs.readFileSync(path.join(b,'manifest.json')));
+ assert.equal(m.nodes.main.name,'base');assert.equal(m.nodes.main.speed,undefined);
+ assert.equal(m.nodes.main.instructions,'Base intent.\n\nExtra intent.');
+ f.put('profiles/entry.yaml','agent: missing\nharness: codex\nmodel: test\n');
+ assert.throws(()=>build(f.root,'entry',f.target),/ENOENT/);
+});
+test('native Codex roles retain child model and skill paths and inherit parent connections',t=>{
+ const f=fixture(t);
+ f.put('agents/planner.yaml','harness: codex\nmodel: {name: parent, reasoning: medium, speed: fast}\nsubagents:\n  proof-worker:\n    agent: worker\n    mode: native\n    model: {name: child, reasoning: max}\n    description: Check the proof.\nconnections:\n  extra:\n    type: mcp\n    auth: native\n    url: https://extra.example/mcp\n');
+ const b=f.build(),r=command(b,'main',{prepare:false});
+ const file=path.join(b,'main/native-agents/proof-worker.toml'),s=fs.readFileSync(file,'utf8');
+ assert.ok(r.argv.includes('agents.proof-worker.config_file='+JSON.stringify(file)));
+ assert.match(s,/model = "child"/);assert.match(s,/model_reasoning_effort = "max"/);
+ assert.match(s,/service_tier = "default"/);assert.match(s,/extra.example/);assert.match(s,/example.com/);
+ assert.ok(s.includes(path.join(b,'main/children/proof-worker/skills/proof/SKILL.md')));
+ assert.equal(fs.existsSync(path.join(b,'main/dispatch/proof-worker')),false);
+});
+test('native Claude definitions use configured model effort and child prompt',t=>{
+ const f=fixture(t);
+ f.put('agents/planner.yaml','harness: claude\nmodel: test\nsubagents:\n  worker:\n    agent: worker\n    mode: native\n    harness: claude\n    model: {name: claude-fable-5-1, reasoning: high}\n');
+ const b=f.build(),r=command(b,'main',{prepare:false});
+ const roles=JSON.parse(r.argv[r.argv.indexOf('--agents')+1]);
+ assert.equal(roles.worker.model,'claude-fable-5-1');assert.equal(roles.worker.effort,'high');
+ assert.ok(roles.worker.prompt.includes('/skills/proof/SKILL.md'));
+});
+test('unsupported native delegation cannot silently become a process',t=>{
+ const f=fixture(t);
+ f.put('agents/planner.yaml','harness: claude\nmodel: test\nsubagents: {worker: {agent: worker, mode: native}}\n');
+ assert.throws(f.build,/parent harness/);
+ f.put('agents/planner.yaml','harness: codex\nmodel: test\nsubagents: {worker: {agent: worker, mode: unknown}}\n');
+ assert.throws(f.build,/mode/);
+});
