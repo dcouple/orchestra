@@ -216,6 +216,17 @@ print request artifacts because a pre-mutation request may contain a write-only
 secret. Provisioning and deploy dry-runs validate these artifacts but never
 perform a console operation.
 
+The console config snapshot that gates all console writes is written at
+daemon start and after an accepted configuration apply, and the daemon also
+refreshes it hourly while running — preserving the revision when the env is
+unchanged — so writes stay available across long uptimes. When a
+configuration operation fails its snapshot precheck (`snapshot_changed`),
+nothing has mutated and the draft can never be retried against the
+superseded snapshot — the executor rejects both content drift and a
+superseded snapshot revision — so the secret-bearing request artifact is
+removed immediately. A retry of that operation is rejected without any
+state change; the operation's outcome text tells the operator to redraft.
+
 ## Declarative loops
 
 The Loops page defines local repository-agent work on a UTC epoch-based fixed

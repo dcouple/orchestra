@@ -11,6 +11,10 @@ set -a
 . "$ENV_FILE"
 set +a
 cd "$DAEMON_SERVICE_HOME/linear-agent-daemon"
-/opt/homebrew/opt/node@22/bin/node dist/managed-env-cli.js snapshot "$ENV_FILE" \
-  "$DAEMON_SERVICE_HOME/.local/state/linear-agent-operations/console-config-snapshot.json"
+SNAPSHOT_PATH=$DAEMON_SERVICE_HOME/.local/state/linear-agent-operations/console-config-snapshot.json
+/opt/homebrew/opt/node@22/bin/node dist/managed-env-cli.js snapshot "$ENV_FILE" "$SNAPSHOT_PATH"
+# The daemon refreshes this snapshot periodically while it runs, preserving the
+# revision when the env is unchanged, so console writes survive >24h uptimes.
+export LINEAR_AGENT_MANAGED_ENV_FILE="$ENV_FILE"
+export CONSOLE_CONFIG_SNAPSHOT_PATH="$SNAPSHOT_PATH"
 exec /opt/homebrew/opt/node@22/bin/node dist/index.js

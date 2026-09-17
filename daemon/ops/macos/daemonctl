@@ -642,8 +642,23 @@ PY
       install -d -m 0700 "$STATE_DIR/backups"
       backup=$STATE_DIR/backups/$id.env; candidate=$ENV_FILE.new.$id; changes=$STATE_DIR/backups/$id.changes.json
       snapshot=$STATE_DIR/console-config-snapshot.json
-      "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/managed-env-cli.js" matches "$snapshot" "$ENV_FILE" >/dev/null \
-        || { transition "$id" failed snapshot_changed "configuration changed; redraft required" snapshot - -; die "configuration snapshot changed"; }
+      # Content match alone is insufficient: after an out-of-band env edit the
+      # periodic refresh re-blesses the env under a NEW revision, so a request
+      # reviewed against the superseded revision must also be rejected here.
+      if ! "$NODE_BIN" "$HOME_DIR/linear-agent-daemon/dist/managed-env-cli.js" matches "$snapshot" "$ENV_FILE" >/dev/null \
+        || ! python3 - "$request" "$snapshot" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1])); s=json.load(open(sys.argv[2]))
+raise SystemExit(0 if p.get("snapshotRevision")==s.get("revision") else 1)
+PY
+      then
+        transition "$id" failed snapshot_changed "configuration changed; redraft required" snapshot - -
+        # Nothing mutated and a retry can never succeed (the draft is bound
+        # to the superseded snapshot), so the secret-bearing request must
+        # not be retained. A later retry is rejected without state change.
+        remove_console_artifacts "$request" "$changes" "$candidate"
+        die "configuration snapshot changed"
+      fi
       # A pre-intent crash may leave only derived secret transients. The
       # executing request is still authoritative, so regenerate them safely.
       remove_console_artifacts "$changes" "$candidate"

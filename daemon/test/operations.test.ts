@@ -412,6 +412,34 @@ describe("macOS console operation crash recovery", () => {
     } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
   });
 
+  it("removes the secret-bearing request when the snapshot precheck fails, staying terminal and unblocking", async () => {
+    const f = await macConsoleFixture("PRECHECK_SECRET_SENTINEL");
+    try {
+      writeFileSync(f.envFile, "NTFY_URL='https://ntfy.example.test/topic'\n", { flag: "a" });
+      const result = f.run(); expect(result.status).toBe(1);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "failed", stage: "snapshot_changed", mutated: 0 });
+      expect(existsSync(join(f.spool, "executing", `${f.id}.json`))).toBe(false);
+      expect(filePayloads(f.spool).some(payload => payload.includes(f.secret))).toBe(false);
+      expect(filePayloads(f.state).some(payload => payload.includes(f.secret))).toBe(false);
+      const next = f.log.scheduleOperation({ id: "after-precheck", requestDigest: "a".repeat(64),
+        type: "restart", reason: "gate released" });
+      expect(next.operation.id).toBe("after-precheck");
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it("rejects a request bound to a superseded snapshot revision even when env content matches", async () => {
+    const f = await macConsoleFixture("REVISION_SECRET_SENTINEL");
+    try {
+      // Simulates the periodic refresh re-blessing an out-of-band env state
+      // under a new revision: content matches, but the reviewed revision is gone.
+      await writeConsoleConfigSnapshot(f.envFile, f.snapshot, 2_000);
+      const result = f.run(); expect(result.status).toBe(1);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "failed", stage: "snapshot_changed", mutated: 0 });
+      expect(existsSync(join(f.spool, "executing", `${f.id}.json`))).toBe(false);
+      expect(filePayloads(f.spool).some(payload => payload.includes(f.secret))).toBe(false);
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
   it("accepts a secret change without retaining the sentinel outside the protected env", async () => {
     const f = await macConsoleFixture();
     try {

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { open, rename } from "node:fs/promises";
+import { open, rename, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { EDITABLE_SETTING_KEYS, SECRET_NAMES, type ConsoleSecretName, type EditableSettings,
   ConsoleValidationError, validateEditableChanges } from "./console-operation-schema.js";
@@ -65,12 +65,33 @@ export async function createConsoleConfigSnapshot(envPath: string, now = Date.no
     settings: settingsFromEnv(document.values), secrets, source };
 }
 export async function writeConsoleConfigSnapshot(envPath: string, outputPath: string, now = Date.now()): Promise<ConsoleConfigSnapshot> {
-  const snapshot = await createConsoleConfigSnapshot(envPath, now);
+  return writeSnapshotValue(await createConsoleConfigSnapshot(envPath, now), outputPath);
+}
+// Revision identifies content, generatedAt identifies freshness: a refresh of an
+// unchanged env keeps the revision so in-flight drafts bound to it stay valid,
+// and rotates it only when the env content actually changed.
+export async function refreshConsoleConfigSnapshot(envPath: string, outputPath: string, now = Date.now()): Promise<ConsoleConfigSnapshot> {
+  const fresh = await createConsoleConfigSnapshot(envPath, now);
+  let preservedRevision: string | undefined;
+  try {
+    const handle = await open(resolve(outputPath), constants.O_RDONLY | constants.O_NOFOLLOW);
+    let text: string;
+    try { text = await handle.readFile("utf8"); } finally { await handle.close(); }
+    const existing = JSON.parse(text) as unknown;
+    if (isSnapshot(existing) && existing.source.digest === fresh.source.digest && existing.source.size === fresh.source.size)
+      preservedRevision = existing.revision;
+  } catch { /* missing or unreadable snapshot: write with a fresh revision */ }
+  return writeSnapshotValue(preservedRevision === undefined ? fresh : { ...fresh, revision: preservedRevision }, outputPath);
+}
+async function writeSnapshotValue(snapshot: ConsoleConfigSnapshot, outputPath: string): Promise<ConsoleConfigSnapshot> {
   const target = resolve(outputPath); const parent = dirname(target);
   const temp = resolve(parent, `.console-config-${process.pid}-${randomBytes(8).toString("hex")}.tmp`);
   const handle = await open(temp, "wx", 0o600);
-  try { await handle.writeFile(`${JSON.stringify(snapshot)}\n`, "utf8"); await handle.sync(); } finally { await handle.close(); }
-  await rename(temp, target); return snapshot;
+  try {
+    try { await handle.writeFile(`${JSON.stringify(snapshot)}\n`, "utf8"); await handle.sync(); } finally { await handle.close(); }
+    await rename(temp, target);
+  } catch (error) { await unlink(temp).catch(() => undefined); throw error; }
+  return snapshot;
 }
 function isSnapshot(value: unknown): value is ConsoleConfigSnapshot {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;

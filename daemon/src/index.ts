@@ -18,6 +18,7 @@ import { LinearMcpMonitor } from "./linear-mcp-monitor.js";
 import { detectSimCapability, SimPool, SimReaper, Simctl } from "./sim.js";
 import { DependencyMonitor } from "./dependency-monitor.js";
 import { LoopScheduler } from "./loop-scheduler.js";
+import { ConsoleSnapshotRefresher } from "./console-snapshot-refresher.js";
 
 const config = loadConfig();
 let log: EventLog;
@@ -140,6 +141,12 @@ const providerPoller = config.sessionsEnabled
   ? new ProviderReadinessPoller(log, config)
   : undefined;
 const loopScheduler = sessionWorker ? new LoopScheduler(log,{wake:()=>sessionWorker?.trigger()}) : undefined;
+const snapshotRefresher = config.managedEnvFile && config.consoleConfigSnapshotPath
+  ? new ConsoleSnapshotRefresher({ envPath: config.managedEnvFile, snapshotPath: config.consoleConfigSnapshotPath,
+      onError: error => console.log(JSON.stringify({ event: "console_snapshot_refresh_failed",
+        error: error instanceof Error ? error.message : "unknown" })) })
+  : undefined;
+snapshotRefresher?.start();
 
 if (providerPoller) {
   let initialTimer: NodeJS.Timeout | undefined;
@@ -193,6 +200,7 @@ async function shutdown(signal: string): Promise<void> {
   await linearMcpMonitor?.stop();
   await dependencyMonitor.stop();
   await loopScheduler?.stop();
+  await snapshotRefresher?.stop();
   await server.close();
   await worker.stop();
   await sessionWorker?.stop(policy);

@@ -102,6 +102,8 @@ export interface Config {
   attachmentsEnabled: boolean;
   attachmentHosts: string[];
   ntfyUrl?: string;
+  managedEnvFile?: string;
+  consoleConfigSnapshotPath?: string;
 }
 
 export interface ConsoleConfig {
@@ -372,5 +374,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ...(env.NTFY_URL?.trim() ? { ntfyUrl: env.NTFY_URL.trim() } : {}),
     attachmentsEnabled: enabled(env, "ATTACHMENTS_ENABLED", EDITABLE_RUNTIME_DEFAULTS.attachmentsEnabled),
     attachmentHosts: (env.ATTACHMENT_HOSTS?.trim() || "uploads.linear.app").split(",").map(host => host.trim()).filter(Boolean),
+    ...(env.LINEAR_AGENT_MANAGED_ENV_FILE?.trim() ? { managedEnvFile: resolve(env.LINEAR_AGENT_MANAGED_ENV_FILE.trim()) } : {}),
+    ...(env.CONSOLE_CONFIG_SNAPSHOT_PATH?.trim() ? { consoleConfigSnapshotPath: resolve(env.CONSOLE_CONFIG_SNAPSHOT_PATH.trim()) } : {}),
   };
 }
