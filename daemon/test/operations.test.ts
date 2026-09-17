@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { EventLog } from "../src/eventlog.js";
 import { ConsoleOperationExecutor } from "../src/console-operation-executor.js";
 import { canonicalJson, requestDigest, type ConsoleOperationRequest } from "../src/console-operation-schema.js";
-import { writeConsoleConfigSnapshot } from "../src/console-config-snapshot.js";
+import { refreshConsoleConfigSnapshot, writeConsoleConfigSnapshot } from "../src/console-config-snapshot.js";
 import { appendTurn, executable, fixture, opsFixture, readNumber, treeSnapshot, updateRepo } from "./operations-fixtures.js";
 
 async function macConsoleFixture(secret = "PHASE3_NEW_SECRET_SENTINEL", kind: "config.apply" | "daemon.restart" | "daemon.reload" = "config.apply") {
@@ -424,6 +424,20 @@ describe("macOS console operation crash recovery", () => {
       const next = f.log.scheduleOperation({ id: "after-precheck", requestDigest: "a".repeat(64),
         type: "restart", reason: "gate released" });
       expect(next.operation.id).toBe("after-precheck");
+    } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
+  });
+
+  it("resumes a pre-intent crash across the revision-preserving startup refresh", async () => {
+    const f = await macConsoleFixture("RESTART_RESUME_SECRET_SENTINEL");
+    try {
+      const crashed = f.run({ DAEMONCTL_FAULT_AFTER: "candidate_rendered" }); expect(crashed.status).toBe(99);
+      // run-daemon.sh regenerates the snapshot at startup via `refresh`, which
+      // must keep the revision for unchanged content or this resume would be
+      // rejected by the superseded-revision guard.
+      await refreshConsoleConfigSnapshot(f.envFile, f.snapshot, 2_000);
+      const resumed = f.run(); expect(resumed.status, resumed.stderr).toBe(0);
+      expect(f.log.operationById(f.id)).toMatchObject({ state: "succeeded", stage: "accepted" });
+      expect(readFileSync(f.envFile, "utf8")).toContain(f.secret);
     } finally { f.log.close(); rmSync(f.dir, { recursive: true, force: true }); }
   });
 

@@ -222,8 +222,8 @@ refreshes it hourly while running — preserving the revision when the env is
 unchanged — so writes stay available across long uptimes. When a
 configuration operation fails its snapshot precheck (`snapshot_changed`),
 nothing has mutated and the draft can never be retried against the
-superseded snapshot — the executor rejects both content drift and a
-superseded snapshot revision — so the secret-bearing request artifact is
+superseded snapshot — the `daemonctl` bridge rejects both content drift and
+a superseded snapshot revision — so the secret-bearing request artifact is
 removed immediately. A retry of that operation is rejected without any
 state change; the operation's outcome text tells the operator to redraft.
 
