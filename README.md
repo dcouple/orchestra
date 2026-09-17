@@ -1,3 +1,5 @@
+![Orchestra — a pixel-art robot conductor coordinating specialists at code workstations](docs/assets/orchestra-banner.png)
+
 # orchestra
 
 The canonical home of our agent skill system: Claude Code skills and
@@ -36,6 +38,8 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 | `scripts/sync.sh` | The mirror logic (four `rsync --delete` targets) | - |
 
 ## The rules that keep this sane
+
+![One-way sync: edit canonical skills, agents, and references in Orchestra; review and merge an update PR; consumer repositories receive synced copies](docs/assets/orchestra-sync.png)
 
 1. **One direction.** orchestra → consumer, via PR. Each consumer repo
    carries an `update-skills` script (e.g. `pnpm update-skills` in

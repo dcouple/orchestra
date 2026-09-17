@@ -93,3 +93,7 @@ artifact_host: https://linear-agent.blmapp.com
 - Never run `scripts/sync.sh` pointed at a consumer repo automatically -
   syncs land in consumers via their own `update-skills` PR flow.
 - Don't commit `./tmp/` or `.DS_Store`.
+
+## README artwork
+
+Follow `docs/assets/visual-style.md` for README illustrations: use the shared dcouple pixel-art language and this project's own setting and accent colors. Supply the local banner as the visual reference for new images.
