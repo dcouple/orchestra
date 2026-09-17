@@ -1,9 +1,14 @@
 Cmnd_Alias DAEMON_SERVICES = /bin/launchctl kickstart -k system/@LAUNCHD_PREFIX@.linear-agent-daemon, \
     /bin/launchctl kickstart -k system/@LAUNCHD_PREFIX@.cliproxyapi, \
+    /bin/launchctl kickstart -k system/@LAUNCHD_PREFIX@.orchestra-console, \
+    /bin/launchctl kickstart -k system/@LAUNCHD_PREFIX@.orchestra-console-operation, \
     /bin/launchctl bootstrap system /Library/LaunchDaemons/@LAUNCHD_PREFIX@.linear-agent-daemon.plist, \
     /bin/launchctl bootstrap system /Library/LaunchDaemons/@LAUNCHD_PREFIX@.cliproxyapi.plist, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/@LAUNCHD_PREFIX@.orchestra-console-operation.plist, \
     /bin/launchctl bootout system/@LAUNCHD_PREFIX@.linear-agent-daemon, \
     /bin/launchctl bootout system/@LAUNCHD_PREFIX@.cliproxyapi, \
+    /bin/launchctl bootout system/@LAUNCHD_PREFIX@.orchestra-console-operation, \
     /bin/launchctl print system/@LAUNCHD_PREFIX@.linear-agent-daemon, \
-    /bin/launchctl print system/@LAUNCHD_PREFIX@.cliproxyapi
+    /bin/launchctl print system/@LAUNCHD_PREFIX@.cliproxyapi, \
+    /bin/launchctl print system/@LAUNCHD_PREFIX@.orchestra-console-operation
 @SERVICE_USER@ ALL=(root) NOPASSWD: DAEMON_SERVICES

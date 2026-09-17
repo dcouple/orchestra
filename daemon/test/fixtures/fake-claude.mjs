@@ -87,8 +87,8 @@ if (mode === "stderr-fail") {
   for (let i = 0; i < 256; i++) {
     if (!process.stderr.write(`stderr-line-${i.toString().padStart(3, "0")}-${"x".repeat(512)}\n`)) await once(process.stderr, "drain");
   }
-  process.exit(9);
-}
+  process.exitCode = 9;
+} else {
 emit({ type: "assistant", session_id: session, message: { content: [
   { type: "text", text: "thinking" }, { type: "tool_use", id: "toolu_read_1", name: "Read", input: { description: "ticket" } },
 ] } });
@@ -146,3 +146,4 @@ if (mode === "error-result-exit") process.exit(11);
 if (mode === "touch-file" && process.env.CLAUDE_FAKE_TOUCH_FILE) await writeFile(process.env.CLAUDE_FAKE_TOUCH_FILE, "done");
 if (argsFile) await appendFile(argsFile,
   `${JSON.stringify({ args, cwd: process.cwd(), at: Date.now(), phase: "end" })}\n`);
+}

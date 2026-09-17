@@ -16,6 +16,9 @@ import { OtlpRelay } from "./otel-relay.js";
 import { resolveOtlpTraces } from "./otel.js";
 import { LinearMcpMonitor } from "./linear-mcp-monitor.js";
 import { detectSimCapability, SimPool, SimReaper, Simctl } from "./sim.js";
+import { DependencyMonitor } from "./dependency-monitor.js";
+import { LoopScheduler } from "./loop-scheduler.js";
+import { ConsoleSnapshotRefresher } from "./console-snapshot-refresher.js";
 
 const config = loadConfig();
 let log: EventLog;
@@ -46,8 +49,15 @@ const linearMcpMonitor = config.sessionsEnabled
       token: config.linearApiKey!,
       intervalMs: config.linearMcpMonitorIntervalMs,
       timeoutMs: config.linearMcpMonitorTimeoutMs,
+      staleAfterMs: config.dependencyStateStaleMs,
+      log,
     })
   : undefined;
+if (!linearMcpMonitor) log.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: false,
+  status: "disabled", reasonCode: "disabled", observedAt: Date.now(), staleAfterMs: config.dependencyStateStaleMs });
+const dependencyMonitor = new DependencyMonitor({ config, log, simctl,
+  intervalMs: config.dependencyMonitorIntervalMs, timeoutMs: config.dependencyMonitorTimeoutMs,
+  staleAfterMs: config.dependencyStateStaleMs });
 const upstream = resolveOtlpTraces(process.env);
 const relay = upstream
   ? new OtlpRelay({
@@ -130,6 +140,13 @@ const reconcileWorker = hasLinearApiCreds()
 const providerPoller = config.sessionsEnabled
   ? new ProviderReadinessPoller(log, config)
   : undefined;
+const loopScheduler = sessionWorker ? new LoopScheduler(log,{wake:()=>sessionWorker?.trigger()}) : undefined;
+const snapshotRefresher = config.managedEnvFile && config.consoleConfigSnapshotPath
+  ? new ConsoleSnapshotRefresher({ envPath: config.managedEnvFile, snapshotPath: config.consoleConfigSnapshotPath,
+      onError: error => console.log(JSON.stringify({ event: "console_snapshot_refresh_failed",
+        error: error instanceof Error ? error.message : "unknown" })) })
+  : undefined;
+snapshotRefresher?.start();
 
 if (providerPoller) {
   let initialTimer: NodeJS.Timeout | undefined;
@@ -149,8 +166,11 @@ if (providerPoller) {
 await simReaper?.reconcileOnce();
 worker.start();
 linearMcpMonitor?.start();
+dependencyMonitor.start();
 await sessionWorker?.start();
 cleanupWorker?.start();
+await cleanupWorker?.trigger();
+loopScheduler?.start();
 simReaper?.start();
 reconcileWorker?.start();
 console.log(
@@ -178,10 +198,14 @@ async function shutdown(signal: string): Promise<void> {
   );
   await reconcileWorker?.stop();
   await linearMcpMonitor?.stop();
+  await dependencyMonitor.stop();
+  await loopScheduler?.stop();
+  await snapshotRefresher?.stop();
   await server.close();
   await worker.stop();
   await sessionWorker?.stop(policy);
   await simReaper?.stop();
+  await cleanupWorker?.trigger();
   await cleanupWorker?.stop();
   await relay?.close();
   providerPoller?.stop();

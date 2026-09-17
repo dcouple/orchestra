@@ -48,7 +48,7 @@ function messageOf(error: unknown): string {
 
 export class Simctl {
   constructor(private readonly argv: string[], private readonly env: NodeJS.ProcessEnv & { DEVELOPER_DIR: string }) {}
-  private async run(args: string[], timeout = 120_000): Promise<string> {
+  private async run(args: string[], timeout = 120_000, signal?: AbortSignal): Promise<string> {
     const [command, ...prefix] = this.argv;
     if (!command) throw new Error("simctl command is empty");
     const childEnv: NodeJS.ProcessEnv = {};
@@ -61,20 +61,23 @@ export class Simctl {
     for (const [key, value] of Object.entries(this.env)) if (value !== undefined) childEnv[key] = value;
     try {
       const { stdout } = await execFileAsync(command, [...prefix, ...args], {
-        env: childEnv, timeout, maxBuffer: 10 * 1024 * 1024,
+        env: childEnv, timeout, maxBuffer: 10 * 1024 * 1024, signal,
       });
       return stdout.trim();
-    } catch (error) { throw new Error(messageOf(error)); }
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("simctl probe aborted");
+      throw new Error(messageOf(error));
+    }
   }
-  async listDevices(): Promise<SimDevice[]> {
-    const parsed = JSON.parse(await this.run(["list", "devices", "-j"])) as { devices?: Record<string, Omit<SimDevice, "runtimeId">[]> };
+  async listDevices(signal?: AbortSignal): Promise<SimDevice[]> {
+    const parsed = JSON.parse(await this.run(["list", "devices", "-j"], 120_000, signal)) as { devices?: Record<string, Omit<SimDevice, "runtimeId">[]> };
     return Object.entries(parsed.devices ?? {}).flatMap(([runtimeId, devices]) => devices.map(device => ({ ...device, runtimeId })));
   }
-  async listRuntimes(): Promise<SimRuntime[]> {
-    return (JSON.parse(await this.run(["list", "runtimes", "-j"])) as { runtimes?: SimRuntime[] }).runtimes ?? [];
+  async listRuntimes(signal?: AbortSignal): Promise<SimRuntime[]> {
+    return (JSON.parse(await this.run(["list", "runtimes", "-j"], 120_000, signal)) as { runtimes?: SimRuntime[] }).runtimes ?? [];
   }
-  async listDeviceTypes(): Promise<SimDeviceType[]> {
-    return (JSON.parse(await this.run(["list", "devicetypes", "-j"])) as { devicetypes?: SimDeviceType[] }).devicetypes ?? [];
+  async listDeviceTypes(signal?: AbortSignal): Promise<SimDeviceType[]> {
+    return (JSON.parse(await this.run(["list", "devicetypes", "-j"], 120_000, signal)) as { devicetypes?: SimDeviceType[] }).devicetypes ?? [];
   }
   clone(udid: string, name: string): Promise<string> { return this.run(["clone", udid, name]); }
   async boot(udid: string): Promise<void> { await this.run(["boot", udid]); }
@@ -97,21 +100,26 @@ export function goldenDeviceName(deviceTypeId: string, runtimeId: string): strin
 type SimConfig = Pick<Config, "iosSimEnabled" | "iosSimDeveloperDir" | "iosSimRuntime" | "iosSimDeviceType" |
   "xcodebuildMcpBin" | "iosSimMaxConcurrent" | "artifactsDir">;
 
-export async function detectSimCapability(config: SimConfig, simctl: Simctl): Promise<SimCapabilityResult> {
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("sim capability probe aborted");
+}
+
+export async function detectSimCapability(config: SimConfig, simctl: Simctl, signal?: AbortSignal): Promise<SimCapabilityResult> {
+  throwIfAborted(signal);
   if (!config.iosSimEnabled) return { available: false, kind: "disabled", message: "simulator capability is disabled" };
   try { await access(join(config.iosSimDeveloperDir, "usr/bin/xcodebuild"), constants.X_OK); }
   catch { return { available: false, kind: "xcode_unavailable", message: `Xcode is unavailable: ${config.iosSimDeveloperDir}` }; }
   let runtimes: SimRuntime[];
-  try { runtimes = await simctl.listRuntimes(); }
-  catch (error) { return { available: false, kind: "runtime_unavailable", message: messageOf(error) }; }
+  try { runtimes = await simctl.listRuntimes(signal); }
+  catch (error) { throwIfAborted(signal); return { available: false, kind: "runtime_unavailable", message: messageOf(error) }; }
   const runtime = runtimes.find(value => value.isAvailable !== false && (value.name === config.iosSimRuntime || value.identifier === config.iosSimRuntime));
   if (!runtime) return { available: false, kind: "runtime_unavailable",
     message: `runtime unavailable: ${config.iosSimRuntime}; available: ${runtimes.filter(value => value.isAvailable !== false).map(value => value.name).join(", ")}` };
   try { await access(config.xcodebuildMcpBin, constants.X_OK); }
   catch { return { available: false, kind: "mcp_unavailable", message: `XcodeBuildMCP executable is unavailable: ${config.xcodebuildMcpBin}` }; }
   let types: SimDeviceType[], devices: SimDevice[];
-  try { [types, devices] = await Promise.all([simctl.listDeviceTypes(), simctl.listDevices()]); }
-  catch (error) { return { available: false, kind: "golden_unavailable", message: messageOf(error) }; }
+  try { [types, devices] = await Promise.all([simctl.listDeviceTypes(signal), simctl.listDevices(signal)]); }
+  catch (error) { throwIfAborted(signal); return { available: false, kind: "golden_unavailable", message: messageOf(error) }; }
   const deviceType = types.find(value => value.name === config.iosSimDeviceType || value.identifier === config.iosSimDeviceType);
   if (!deviceType) return { available: false, kind: "golden_unavailable", message: `device type unavailable: ${config.iosSimDeviceType}` };
   const goldenName = goldenDeviceName(deviceType.identifier, runtime.identifier);

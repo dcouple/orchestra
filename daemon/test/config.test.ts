@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { EDITABLE_RUNTIME_DEFAULTS, loadConfig, loadConsoleConfig } from "../src/config.js";
+import { createConsoleConfigSnapshot } from "../src/console-config-snapshot.js";
 
 const base = {
   DAEMON_TEST_MODE: "1",
@@ -9,6 +13,23 @@ const base = {
 };
 
 describe("loadConfig", () => {
+  it("ignores console-only environment while the console loader validates it independently", () => {
+    const invalidConsole = { CONSOLE_PORT: "70000", CONSOLE_BIND_ADDR: "0.0.0.0",
+      CONSOLE_DAEMON_HEALTH_URL: "https://remote.example/healthz", LINEAR_WORKSPACE_BASE_URL: "not a url" };
+    const config = loadConfig({ ...base, ...invalidConsole });
+    for (const field of ["consolePort", "consoleBindAddr", "consoleAssetsDir", "consoleDaemonHealthUrl", "linearWorkspaceBaseUrl"])
+      expect(config).not.toHaveProperty(field);
+    expect(() => loadConsoleConfig({ CONSOLE_PORT: invalidConsole.CONSOLE_PORT })).toThrow("at most 65535");
+    expect(() => loadConsoleConfig({ CONSOLE_BIND_ADDR: invalidConsole.CONSOLE_BIND_ADDR })).toThrow("must be 127.0.0.1");
+    expect(() => loadConsoleConfig({ CONSOLE_DAEMON_HEALTH_URL: invalidConsole.CONSOLE_DAEMON_HEALTH_URL })).toThrow("http://127.0.0.1");
+    expect(() => loadConsoleConfig({ LINEAR_WORKSPACE_BASE_URL: invalidConsole.LINEAR_WORKSPACE_BASE_URL })).toThrow("valid HTTP URL");
+  });
+
+  it("accepts the maximum console TCP port and rejects the next value", () => {
+    expect(loadConsoleConfig({ CONSOLE_PORT: "65535" }).port).toBe(65_535);
+    expect(() => loadConsoleConfig({ CONSOLE_PORT: "65536" })).toThrow("at most 65535");
+  });
+
   it("loads test static tokens and defaults", () => {
     const config = loadConfig(base);
     expect(config.bindAddr).toBe("127.0.0.1");
@@ -31,6 +52,9 @@ describe("loadConfig", () => {
       linearMcpUrl: "https://mcp.linear.app/mcp",
       linearMcpMonitorIntervalMs: 60_000,
       linearMcpMonitorTimeoutMs: 10_000,
+      dependencyMonitorIntervalMs: 60_000,
+      dependencyMonitorTimeoutMs: 10_000,
+      dependencyStateStaleMs: 300_000,
     });
     expect(config.apps.planner.staticToken).toBe("pt");
     expect(config.apps.planner.harness).toBe("claude");
@@ -44,6 +68,19 @@ describe("loadConfig", () => {
       providerStateStaleMs: 300_000, providerInitialProbeTimeoutMs: 5_000 });
     expect(config).toMatchObject({ bashDefaultTimeoutMs: 900_000, bashMaxTimeoutMs: 900_000 });
     expect(config).toMatchObject({doPermissionMode:"bypassPermissions",doMaxTurns:300});
+  });
+  it("keeps every editable snapshot default identical to the runtime defaults", async () => {
+    const path=join(mkdtempSync(join(tmpdir(),"config-defaults-")),"daemon.env");writeFileSync(path,"# defaults\n");
+    const runtime=loadConfig(base);const snapshot=await createConsoleConfigSnapshot(path,1_000);
+    expect(snapshot.settings).toEqual({...EDITABLE_RUNTIME_DEFAULTS,mcpEnvPassthrough:[]});
+    expect(snapshot.settings).toEqual({
+      plannerHarness:runtime.apps.planner.harness,implementerHarness:runtime.apps.implementer.harness,
+      sessionConcurrency:runtime.sessionConcurrency,iosSimMaxConcurrent:runtime.iosSimMaxConcurrent,
+      claudeMaxTurns:runtime.claudeMaxTurns,doMaxTurns:runtime.doMaxTurns,
+      doMaxBudgetUsd:runtime.doMaxBudgetUsd??null,mcpEnvPassthrough:runtime.mcpEnvPassthrough??[],
+      browserEnabled:runtime.browserEnabled,iosSimEnabled:runtime.iosSimEnabled,
+      attachmentsEnabled:runtime.attachmentsEnabled,ntfyUrl:runtime.ntfyUrl??null,
+    });
   });
   it.each([undefined, "", "  ", " , ,"])(
     "treats an empty MCP_ENV_PASSTHROUGH value %s as unset",
@@ -150,6 +187,18 @@ describe("loadConfig", () => {
       LINEAR_MCP_MONITOR_TIMEOUT_MS: "nope",
     })).toThrow("LINEAR_MCP_MONITOR_TIMEOUT_MS");
   });
+  it("loads bounded dependency monitor settings and the console inventory path independently", () => {
+    expect(loadConfig({ ...base, DEPENDENCY_MONITOR_INTERVAL_MS: "2000", DEPENDENCY_MONITOR_TIMEOUT_MS: "1500",
+      DEPENDENCY_STATE_STALE_MS: "9000" }))
+      .toMatchObject({ dependencyMonitorIntervalMs: 2_000, dependencyMonitorTimeoutMs: 1_500, dependencyStateStaleMs: 9_000 });
+    expect(() => loadConfig({ ...base, DEPENDENCY_MONITOR_INTERVAL_MS: "0" })).toThrow("DEPENDENCY_MONITOR_INTERVAL_MS");
+    expect(() => loadConfig({ ...base, DEPENDENCY_MONITOR_TIMEOUT_MS: "0" })).toThrow("DEPENDENCY_MONITOR_TIMEOUT_MS");
+    expect(() => loadConfig({ ...base, DEPENDENCY_MONITOR_TIMEOUT_MS: "60001" })).toThrow("at most 60000");
+    expect(() => loadConfig({ ...base, DEPENDENCY_STATE_STALE_MS: "nope" })).toThrow("DEPENDENCY_STATE_STALE_MS");
+    expect(() => loadConfig({ ...base, DEPENDENCY_STATE_STALE_MS: "86400001" })).toThrow("at most 86400000");
+    expect(loadConsoleConfig({ CONSOLE_SKILL_INVENTORY_PATH: "/tmp/safe-inventory.json" }).skillInventoryPath)
+      .toBe("/tmp/safe-inventory.json");
+  });
   it("forces production do-mode autonomy and parses its budget",()=>{
     expect(()=>loadConfig({...base,DAEMON_TEST_MODE:undefined,WEBHOOK_BASE_URL:"https://agent.example.com",DO_PERMISSION_MODE:"plan"})).toThrow("DO_PERMISSION_MODE");
     expect(loadConfig({...base,DO_PERMISSION_MODE:"plan",DO_MAX_TURNS:"400",DO_MAX_BUDGET_USD:"25.5"}))
@@ -253,5 +302,14 @@ describe("loadConfig", () => {
       IMPLEMENTER_LINEAR_CLIENT_ID: "i-id", IMPLEMENTER_LINEAR_CLIENT_SECRET: "i-secret" };
     delete (env as Partial<typeof base>).DAEMON_TEST_MODE;
     expect(() => loadConfig(env)).toThrow("WEBHOOK_BASE_URL");
+  });
+  it("loads bounded local-trusted console operation settings", () => {
+    expect(loadConsoleConfig({ DB_PATH: "/tmp/state/events.db", CONSOLE_CAPABILITY_MODE: "local-trusted" })).toMatchObject({
+      capabilityMode: "local-trusted", configSnapshotPath: "/tmp/state/console-config-snapshot.json",
+      operationSpoolDir: "/tmp/state/console-operations", draftTtlMs: 300_000, maxBodyBytes: 65_536,
+    });
+    expect(() => loadConsoleConfig({ CONSOLE_CAPABILITY_MODE: "trusted" })).toThrow("read-only or local-trusted");
+    expect(() => loadConsoleConfig({ CONSOLE_DRAFT_TTL_MS: "1800001" })).toThrow("at most 1800000");
+    expect(() => loadConsoleConfig({ CONSOLE_MAX_BODY_BYTES: "1048577" })).toThrow("at most 1048576");
   });
 });

@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { FetchLike, Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { EventLog } from "./eventlog.js";
 
 export type LinearMcpMonitorState = "unknown" | "healthy" | "unhealthy";
 export type LinearMcpErrorCategory =
@@ -17,11 +18,12 @@ export interface LinearMcpProbeInput {
   signal?: AbortSignal;
 }
 
-export type LinearMcpProbe = (input: LinearMcpProbeInput) => Promise<void>;
+export interface LinearMcpProbeResult { toolCount: number; truncated: boolean }
+export type LinearMcpProbe = (input: LinearMcpProbeInput) => Promise<LinearMcpProbeResult>;
 
 interface ProbeClient {
   connect(transport: Transport): Promise<void>;
-  listTools(): Promise<unknown>;
+  listTools(input?: { cursor?: string }): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -36,6 +38,7 @@ export interface LinearMcpProbeDependencies {
     requestInit: RequestInit,
   ) => ProbeTransport;
   timeoutSignal?: (timeoutMs: number) => AbortSignal;
+  fetch?: FetchLike;
 }
 
 export interface NormalizedLinearMcpError {
@@ -62,6 +65,8 @@ export interface LinearMcpMonitorOptions {
   now?: () => number;
   logger?: Logger;
   scheduler?: LinearMcpScheduler;
+  log?: Pick<EventLog, "upsertDependencyObservation">;
+  staleAfterMs?: number;
 }
 
 export interface LinearMcpMonitorSnapshot {
@@ -79,6 +84,45 @@ const defaultScheduler: LinearMcpScheduler = {
   clearInterval: (handle) =>
     clearInterval(handle as ReturnType<typeof setInterval>),
 };
+
+const MAX_LINEAR_MCP_RESPONSE_BYTES = 256 * 1024;
+
+function responseTooLargeError(): Error {
+  return Object.assign(new Error("linear_mcp_response_too_large"), {
+    name: "LinearMcpResponseTooLargeError",
+    code: "LINEAR_MCP_RESPONSE_TOO_LARGE",
+  });
+}
+
+function boundedMcpFetch(baseFetch: FetchLike = fetch): FetchLike {
+  return async (url, init) => {
+    const response = await baseFetch(url, init);
+    const contentLength = response.headers.get("content-length");
+    if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_LINEAR_MCP_RESPONSE_BYTES) {
+      void response.body?.cancel().catch(() => {});
+      throw responseTooLargeError();
+    }
+    if (!response.body) return response;
+    const reader = response.body.getReader(); let received = 0;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const next = await reader.read();
+          if (next.done) { controller.close(); return; }
+          received += next.value.byteLength;
+          if (received > MAX_LINEAR_MCP_RESPONSE_BYTES) {
+            void reader.cancel().catch(() => {});
+            controller.error(responseTooLargeError());
+            return;
+          }
+          controller.enqueue(next.value);
+        } catch (error) { controller.error(error); }
+      },
+      cancel(reason) { return reader.cancel(reason); },
+    });
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  };
+}
 
 function errorRecord(error: unknown): Record<string, unknown> | undefined {
   return error !== null && typeof error === "object"
@@ -102,6 +146,8 @@ export function normalizeLinearMcpError(
   const record = errorRecord(error);
   const name = typeof record?.name === "string" ? record.name : "";
   const code = errorCode(error);
+  if (code === "LINEAR_MCP_RESPONSE_TOO_LARGE")
+    return { category: "protocol", code: "response_too_large" };
   if (code === "LINEAR_MCP_CLEANUP_TIMEOUT")
     return { category: "timeout", code: "cleanup_timeout" };
   if (code === "LINEAR_MCP_CLEANUP_FAILED")
@@ -207,7 +253,7 @@ async function closeProbeResources(
 export async function probeLinearMcp(
   input: LinearMcpProbeInput,
   dependencies: LinearMcpProbeDependencies = {},
-): Promise<void> {
+): Promise<LinearMcpProbeResult> {
   const timeoutSignal = dependencies.timeoutSignal ?? AbortSignal.timeout;
   const timeout = timeoutSignal(input.timeoutMs);
   const signal = input.signal
@@ -223,14 +269,37 @@ export async function probeLinearMcp(
     dependencies.createTransport?.(new URL(input.url), requestInit) ??
     (new StreamableHTTPClientTransport(new URL(input.url), {
       requestInit,
+      fetch: boundedMcpFetch(dependencies.fetch),
     }) as unknown as ProbeTransport);
   const client =
     dependencies.createClient?.() ??
     new Client({ name: "orchestra-linear-mcp-monitor", version: "1.0.0" });
   const aborted = rejectOnAbort(signal);
+  let result: LinearMcpProbeResult | undefined;
   try {
     await Promise.race([client.connect(transport), aborted]);
-    await Promise.race([client.listTools(), aborted]);
+    let cursor: string | undefined;
+    let toolCount = 0;
+    let truncated = false;
+    for (let page = 0; page < 8; page += 1) {
+      const response = await Promise.race([client.listTools(cursor ? { cursor } : undefined), aborted]);
+      if (response === null || typeof response !== "object" || Array.isArray(response))
+        throw protocolError();
+      const record = response as Record<string, unknown>;
+      if (!Array.isArray(record.tools)
+        || (record.nextCursor !== undefined && (typeof record.nextCursor !== "string" || !record.nextCursor
+          || record.nextCursor.length > 1024 || /[\u0000-\u001f\u007f]/.test(record.nextCursor))))
+        throw protocolError();
+      const remaining = 256 - toolCount;
+      toolCount += Math.min(remaining, record.tools.length);
+      cursor = typeof record.nextCursor === "string" ? record.nextCursor : undefined;
+      if (record.tools.length > remaining || (toolCount === 256 && cursor)) {
+        truncated = true; break;
+      }
+      if (!cursor) break;
+      if (page === 7) truncated = true;
+    }
+    result = { toolCount, truncated };
   } finally {
     await closeProbeResources(
       client,
@@ -239,6 +308,13 @@ export async function probeLinearMcp(
       timeoutSignal,
     );
   }
+  return result ?? { toolCount: 0, truncated: false };
+}
+
+function protocolError(): Error {
+  const error = new Error("linear_mcp_list_tools_invalid");
+  error.name = "McpError";
+  return error;
 }
 
 export class LinearMcpMonitor {
@@ -303,7 +379,7 @@ export class LinearMcpMonitor {
     const controller = new AbortController();
     this.activeController = controller;
     try {
-      await this.probe({
+      const result = await this.probe({
         url: this.options.url,
         token: this.options.token,
         timeoutMs: this.options.timeoutMs,
@@ -312,6 +388,11 @@ export class LinearMcpMonitor {
       if (this.stopped) return;
       this.state = "healthy";
       this.consecutiveFailures = 0;
+      this.options.log?.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true,
+        status: "healthy", reasonCode: null, capabilities: result
+          ? { toolCount: result.toolCount, truncated: result.truncated }
+          : { toolCount: 0, truncated: false }, observedAt: this.now(),
+        staleAfterMs: this.options.staleAfterMs ?? this.options.intervalMs * 5 });
       this.logger.log(
         JSON.stringify({
           event: "linear_mcp_probe",
@@ -328,6 +409,9 @@ export class LinearMcpMonitor {
       this.state = "unhealthy";
       this.consecutiveFailures += 1;
       const normalized = normalizeLinearMcpError(error);
+      this.options.log?.upsertDependencyObservation({ kind: "mcp", name: "linear", configured: true,
+        status: "unavailable", reasonCode: normalized.code, observedAt: this.now(),
+        staleAfterMs: this.options.staleAfterMs ?? this.options.intervalMs * 5 });
       if (normalized.code === "cleanup_timeout") this.cleanupBlocked = true;
       this.logger.error(
         JSON.stringify({

@@ -39,6 +39,7 @@ import {
   readCliproxyManagementKey,
 } from "../src/proxy-env.js";
 import { SimPool, Simctl, type SimCapabilityResult } from "../src/sim.js";
+import type { LoopDeclaration } from "../src/loops.js";
 const dirs: string[] = [];
 const oldMode = process.env.CLAUDE_FAKE_MODE;
 const oldArgs = process.env.CLAUDE_FAKE_ARGS_FILE;
@@ -4545,5 +4546,26 @@ describe("SessionWorker", () => {
     );
     expect(starts[1].args).not.toContain("--claudex-runtime");
     log.close();
+  });
+  it("runs loop origin through shared capacity without Linear callbacks or credentials",async()=>{
+    const {dir,log,config}=setup();const poster=new Poster();const base=Date.now();const envFile=join(dir,"loop-env.json");
+    const script=`const fs=require("node:fs");const a=process.argv.slice(1);const s=a.indexOf("--settings");const m=a.indexOf("--mcp-config");fs.writeFileSync(${JSON.stringify(envFile)},JSON.stringify({env:process.env,args:a,settings:JSON.parse(fs.readFileSync(a[s+1])),mcp:JSON.parse(fs.readFileSync(a[m+1]))}));console.log(JSON.stringify({type:"system",subtype:"init",session_id:"loop-session"}));console.log(JSON.stringify({type:"result",subtype:"success",is_error:false,result:"ok",session_id:"loop-session",permission_denials:[],usage:{input_tokens:2,output_tokens:4}}));`;
+    config.fableArgv=[process.execPath,"-e",script,"--"];
+    const declaration:LoopDeclaration={version:1,name:"Local health",description:"",trigger:{kind:"fixed-interval",everyMinutes:15,startsAt:base},
+      task:{kind:"agent",role:"planner",objective:"Inspect local repository health."},harness:{runtime:"claude",profile:"fable"},maxConcurrency:1,budgetUsd:2,timeoutMinutes:5,maxRetries:0,enabled:true};
+    const created=log.mutateLoop({draftId:"draft-loop",digest:"a".repeat(64),id:"loop-local",declaration,expectedRevision:null,reason:"test local loop",kind:"create",now:base});
+    log.admitDueLoops(base);const occurrence=log.loopOccurrences(created.loop.id)[0]!;
+    const worker=new SessionWorker(log,poster as unknown as LinearGateway,config,{pollMs:10,reconcileMs:20});await worker.start();
+    await waitFor(()=>log.loopOccurrence(occurrence.id)?.status==="succeeded");await worker.stop();
+    const child=JSON.parse(readFileSync(envFile,"utf8")) as {env:Record<string,string>;args:string[];settings:Record<string,unknown>;mcp:Record<string,unknown>};
+    expect(child.env.LINEAR_API_KEY).toBeUndefined();expect(child.env.ORCHESTRA_BROWSER_REQUEST_FILE).toBeUndefined();expect(child.env.ORCHESTRA_DISPATCH_OWNER).toBeUndefined();
+    expect(child.args).toContain("--strict-mcp-config");expect(child.settings).toEqual({enableAllProjectMcpServers:false,enabledMcpjsonServers:[],disabledMcpjsonServers:["*"]});expect(child.mcp).toEqual({mcpServers:{}});
+    const persisted=log.loopOccurrence(occurrence.id)!;const turn=log.getTurn(persisted.turnId)!;const invocations=log.invocations(persisted.runId);
+    expect(turn).toMatchObject({originKind:"loop",eventId:null,issueId:null,kind:"loop",status:"done"});
+    expect(invocations).toHaveLength(1);expect(invocations[0]).toMatchObject({turnId:turn.id,linearSessionId:persisted.runId,prompt:null,report:null});expect(invocations[0]!.id).toBeGreaterThan(0);
+    expect(log.consoleRun(persisted.runId)).toMatchObject({issueIdentifier:null,loopName:"Local health",origin:"loop",loopId:"loop-local",occurrenceId:occurrence.id,
+      invocations:[expect.objectContaining({id:invocations[0]!.id})]});
+    expect(log.loopAudit(created.loop.id)).toEqual(expect.arrayContaining([expect.objectContaining({kind:"occurrence.succeeded",reason:"succeeded"})]));
+    expect(poster.posts).toEqual([]);expect(log.count()).toBe(0);expect(log.ackCount()).toBe(0);expect(log.hasBlockingLoopCleanup(created.loop.id)).toBe(true);log.close();
   });
 });

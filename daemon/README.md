@@ -25,6 +25,7 @@ PLAYWRIGHT_CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chr
 BROWSER_E2E_OUTPUT_DIR="../tmp/browser-smoke" pnpm test:browser
 pnpm test:browser-contract
 bash -n ops/provision.sh ops/daemonctl ops/wait-for-daemon-health.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh
+bash -n ops/macos/provision.sh ops/macos/deploy.sh ops/macos/install-console-service.sh ops/macos/daemonctl ops/macos/daemon-site-lib.sh ops/macos/run-daemon.sh ops/macos/run-console.sh
 ```
 
 The Vitest suite is hermetic: it uses loopback HTTP servers and temporary real SQLite
@@ -80,6 +81,35 @@ The listener defaults to `127.0.0.1:8787`. Routes are `POST /webhook/planner`, `
 app prefix are test-only static overrides and are ignored unless `DAEMON_TEST_MODE=1`;
 production uses client credentials. Optional settings are `PORT`, `BIND_ADDR`,
 `REPLAY_WINDOW_MS`, `LINEAR_GRAPHQL_URL`, and `LINEAR_TOKEN_URL`.
+
+## Local read-only console
+
+`pnpm build` compiles both the daemon and the self-contained React/Tailwind console. With
+the daemon database available, start the independent console process with:
+
+```bash
+DB_PATH=./events.db node dist/console-index.js
+```
+
+Open `http://localhost:8790`. The console is fixed to `127.0.0.1` and exposes only `GET`
+projections for health, provider readiness, operations, recent runs, and run detail. It
+does not expose raw webhooks, prompts, reports, child environments, tokens, or arbitrary
+database rows. It rejects non-loopback Host values and cross-origin browser requests.
+`CONSOLE_PORT` defaults to `8790` and must be in the TCP port range `1..65535`;
+`CONSOLE_BIND_ADDR`, if set, must remain `127.0.0.1`.
+`CONSOLE_DAEMON_HEALTH_URL` must be an `http://127.0.0.1` URL and defaults to the daemon's
+`/healthz`; failed and timed-out probes render the daemon offline while the console stays
+available. `LINEAR_WORKSPACE_BASE_URL` is optional and is the only way the console derives
+an issue URL when no exact durable URL exists.
+
+On macOS, provisioning installs a separate `orchestra-console` LaunchDaemon and runner
+under the same service identity. The runner passes only allow-listed settings into the
+console process. Deployment builds local assets, restarts the two services independently,
+and accepts both loopback health endpoints. Production deployment remains a human-only
+operation; follow `ops/macos/README.md` and never run it as part of local verification.
+An operator can preview the validated source, build, restart, and health-acceptance plan
+without acquiring the maintenance lock or changing files/services with
+`ops/macos/deploy.sh --dry-run <source-daemon-dir>`.
 
 Set `ARTIFACT_TOKEN` to enable artifact hosting. An authenticated `POST /a` creates a
 bundle with a server-generated id; authenticated `PUT /a/<id>` atomically replaces an
