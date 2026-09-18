@@ -56,7 +56,7 @@ before Agent Farm in both apply and dry-run order. Only the
 `agent-farm:<profile>` harness requires Agent Farm; `claude`, `claudex`, and
 `codex` harnesses run without it. If the pinned package cannot be installed
 because it is unpublished or the registry/network is unavailable, the summary
-records `agent-farm-cli pending-release: @dcouple/agent-farm@0.1.2 not installable`
+records `agent-farm-cli pending-release: @greenfieldco/agent-farm@0.1.2 not installable`
 and dependent plugin, profiles, provider, workspace, and browser rows as
 `pending-release`. Provisioning finishes with exit 0; rerun it once the package
 is available. Verification failures after a successful install still abort.

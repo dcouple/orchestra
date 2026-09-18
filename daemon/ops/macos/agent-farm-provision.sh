@@ -19,7 +19,7 @@ agent_farm_resolve_plugin_source() {
     | agent node -e '
       const fs = require("node:fs");
       const entries = JSON.parse(fs.readFileSync(0, "utf8"));
-      const item = entries.map(entry => entry.dependencies?.["@dcouple/agent-farm"]).find(Boolean);
+      const item = entries.map(entry => entry.dependencies?.["@greenfieldco/agent-farm"]).find(Boolean);
       if (!item || typeof item.path !== "string" || !item.path) process.exit(1);
       process.stdout.write(item.path);
     ') || return 1
@@ -117,13 +117,13 @@ provision_agent_farm() {
   fi
 
   if (( cli_correct )); then record agent-farm-cli already-correct; else
-    if ! agent /usr/local/bin/pnpm add --global "@dcouple/agent-farm@$AGENT_FARM_VERSION" </dev/null 2>&1; then
-      record agent-farm-cli "pending-release: @dcouple/agent-farm@$AGENT_FARM_VERSION not installable"
+    if ! agent /usr/local/bin/pnpm add --global "@greenfieldco/agent-farm@$AGENT_FARM_VERSION" </dev/null 2>&1; then
+      record agent-farm-cli "pending-release: @greenfieldco/agent-farm@$AGENT_FARM_VERSION not installable"
       local setting
       for setting in plugin profiles provider workspace browser; do
         record "agent-farm-$setting" pending-release
       done
-      echo "Agent Farm provisioning deferred: @dcouple/agent-farm@$AGENT_FARM_VERSION not installable; check the registry release and network, then rerun provision.sh." >&2
+      echo "Agent Farm provisioning deferred: @greenfieldco/agent-farm@$AGENT_FARM_VERSION not installable; check the registry release and network, then rerun provision.sh." >&2
       return 0
     fi
     printf '%s\n' "$AGENT_FARM_VERSION" | agent tee "$AGENT_FARM_VERSION_FILE" >/dev/null
