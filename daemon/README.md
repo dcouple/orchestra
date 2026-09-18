@@ -57,14 +57,28 @@ around health acceptance, and rolls back to the prior accepted commit on failure
 `daemonctl update` remains a compatibility alias. See `ops/runbook.md` for failed/blocked
 recovery, revision reconciliation, and the human-only production smoke procedure.
 
-On Apple Silicon macOS, `ops/macos/provision.sh` also installs Agent Farm for
+On Apple Silicon macOS, run `ops/macos/provision.sh` as the operator WITHOUT
+a sudo prefix (`bash ~/daemon-macos-setup/provision.sh ...`). It calls sudo
+itself; Homebrew refuses to run as root. Running it under sudo makes `node`
+and `cloudflared` read `would-apply` in dry run and aborts a real run at
+`brew install`. The script rejects EUID 0 before inspecting or changing state.
+See [`ops/macos/README.md`](ops/macos/README.md) for the operator setup commands.
+
+After core provisioning and the daemon deploy, the script installs Agent Farm for
 the site-configured service user. `ops/macos/agent-farm-provision.sh` pins CLI
 version `0.1.1` and runs `pnpm add --global @dcouple/agent-farm@0.1.1`, using
 the same service-user installation as Playwright MCP and XcodeBuildMCP. The
 executable is `~/.pnpm/bin/agent-farm`; an existing executable and matching
 `~/.pnpm/agent-farm-version` marker count as converged. That version must be
-published on npm before provisioning. Updating the CLI or bundled plugin
-requires changing the version pin. Generated session bundles remain in place.
+published on npm to install it. Only the `agent-farm:<profile>` harness
+requires Agent Farm; `claude`, `claudex`, and `codex` harnesses run without it.
+If the pinned package cannot be installed (unpublished release or registry/network
+outage), provisioning records `agent-farm-cli pending-release: @dcouple/agent-farm@<ver> not installable`
+and dependent plugin, profiles, provider, workspace, and browser rows as
+`pending-release`, prints a stderr notice, and finishes with exit 0. Rerun
+provisioning once the package is available. Verification failures after a
+successful install still fail hard. Updating the CLI or bundled plugin requires
+changing the version pin. Generated session bundles remain in place.
 
 Provisioning obtains the installed package path from
 `pnpm list --global --depth 0 --json`, including pnpm 11's isolated global
@@ -78,12 +92,11 @@ definitions. It does not mount skills globally or launch a harness.
 
 The provisioner's `--dry-run --site <site.env>` inventories Agent Farm without
 installing it. Its summary records `agent-farm-cli`, `agent-farm-plugin`, and
-`agent-farm-profiles` as `would-apply`, `applied`, or `already-correct`. The
+`agent-farm-profiles` as `would-apply`, `applied`, or `already-correct`, along
+with the provider, workspace, and browser launcher rows. The
 `provision_agent_farm_workspace` hook in `ops/macos/agent-farm-provision.sh`
-records `pending-item-5: workspace placement` and writes nothing until the
-daemon harness work supplies its workspace file and idempotent placement.
-Workspace connections and daemon child-process ownership are defined by that
-work, independently of installation.
+places the managed workspace and browser launcher and verifies both profiles
+against that workspace after installation.
 
 ## Run locally
 

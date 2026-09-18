@@ -117,7 +117,15 @@ provision_agent_farm() {
   fi
 
   if (( cli_correct )); then record agent-farm-cli already-correct; else
-    agent /usr/local/bin/pnpm add --global "@dcouple/agent-farm@$AGENT_FARM_VERSION" </dev/null
+    if ! agent /usr/local/bin/pnpm add --global "@dcouple/agent-farm@$AGENT_FARM_VERSION" </dev/null 2>&1; then
+      record agent-farm-cli "pending-release: @dcouple/agent-farm@$AGENT_FARM_VERSION not installable"
+      local setting
+      for setting in plugin profiles provider workspace browser; do
+        record "agent-farm-$setting" pending-release
+      done
+      echo "Agent Farm provisioning deferred: @dcouple/agent-farm@$AGENT_FARM_VERSION not installable; check the registry release and network, then rerun provision.sh." >&2
+      return 0
+    fi
     printf '%s\n' "$AGENT_FARM_VERSION" | agent tee "$AGENT_FARM_VERSION_FILE" >/dev/null
     agent_farm_cli_correct || fail "Agent Farm CLI did not verify"
     record agent-farm-cli applied

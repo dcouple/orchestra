@@ -22,7 +22,11 @@ Below, `<host>` is your SSH alias for the operator account on the Mac and
 From the repository root, copy the setup bundle and your site config, then
 run the provisioner against the daemon source directory. The allocated TTY
 lets it prompt for the operator's sudo password when no passwordless grant
-is present:
+is present. Run as the operator WITHOUT a sudo prefix
+(`bash ~/daemon-macos-setup/provision.sh ...`): the script calls sudo itself,
+and Homebrew refuses to run as root. Running it under sudo makes `node` and
+`cloudflared` read `would-apply` in dry run and aborts a real run at
+`brew install`. The script rejects EUID 0 before inspecting or changing state:
 
 ```bash
 rsync -a daemon/ops/macos/ <host>:~/daemon-macos-setup/
@@ -46,6 +50,16 @@ commands used by `daemonctl` and `deploy.sh`. It does not grant a
 passwordless operator shell. After verification, remove the temporary broad
 grant as the final privileged setup action. Unattended provisioning runs
 still require that temporary passwordless grant.
+
+Core artifacts, plists, sudoers, services, and the daemon deploy converge
+before Agent Farm in both apply and dry-run order. Only the
+`agent-farm:<profile>` harness requires Agent Farm; `claude`, `claudex`, and
+`codex` harnesses run without it. If the pinned package cannot be installed
+because it is unpublished or the registry/network is unavailable, the summary
+records `agent-farm-cli pending-release: @dcouple/agent-farm@<ver> not installable`
+and dependent plugin, profiles, provider, workspace, and browser rows as
+`pending-release`. Provisioning finishes with exit 0; rerun it once the package
+is available. Verification failures after a successful install still abort.
 
 ## Human handoffs
 
