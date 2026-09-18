@@ -79,6 +79,8 @@ print_summary() {
   for ((i=0; i<${#STATUS_NAMES[@]}; i++)); do printf '%-30s %s\n' "${STATUS_NAMES[$i]}" "${STATUS_VALUES[$i]}"; done
 }
 agent() { sudo -u "$AGENT" env HOME="$AGENT_HOME" USER="$AGENT" PNPM_HOME="$AGENT_HOME/.pnpm" PATH="/usr/local/bin:$AGENT_HOME/.local/bin:$AGENT_HOME/.pnpm/bin:/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin" "$@"; }
+# shellcheck source=agent-farm-provision.sh
+. "$SCRIPT_DIR/agent-farm-provision.sh"
 install_if_changed() {
   local source=$1 destination=$2 mode=$3 owner=$4 group=$5 readback=${3#0}
   if sudo test -f "$destination" && sudo cmp -s "$source" "$destination" \
@@ -169,6 +171,7 @@ dry_inventory() {
   [[ -x /usr/local/bin/cliproxyapi && -f $CLIPROXY_MARKER && $(sudo cat "$CLIPROXY_MARKER") == "$CLIPROXY_VERSION" ]] && record cliproxyapi already-correct || record cliproxyapi would-apply
   sudo test -x "$AGENT_HOME/.local/bin/claude" && record claude-cli already-correct || record claude-cli would-apply
   version_at_least "$(command_version "$AGENT_HOME/.codex-managed/bin/codex")" "$CODEX_MIN_VERSION" && record managed-codex already-correct || record managed-codex would-apply
+  provision_agent_farm
   sudo test -x "$AGENT_HOME/.pnpm/bin/playwright-mcp" && sudo test -f "$AGENT_HOME/.pnpm/playwright-mcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/playwright-mcp-version") == "$PLAYWRIGHT_MCP_VERSION" ]] && record playwright-mcp already-correct || record playwright-mcp would-apply
   developer_dir=${SIM_PROVISION_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
   [[ -x "$developer_dir/usr/bin/xcodebuild" ]] && record simulator-xcode already-correct || record simulator-xcode "pending-human: install Xcode and an iOS runtime"
@@ -301,6 +304,8 @@ sudo rm -f "$AGENT_HOME/.local/bin/codex"
 
 if install_if_changed "$SOURCE_DIR/ops/codex-otel-wrapper.sh" /usr/local/bin/codex 0755 root wheel; then record codex-wrapper applied; else record codex-wrapper already-correct; fi
 
+provision_agent_farm
+
 MCP_VERSION=$(/opt/homebrew/opt/node@22/bin/node -p "require('$SOURCE_DIR/package.json').dependencies['@playwright/mcp']")
 [[ $MCP_VERSION == "$PLAYWRIGHT_MCP_VERSION" ]] || fail "unexpected @playwright/mcp pin: $MCP_VERSION"
 if sudo test -x "$AGENT_HOME/.pnpm/bin/playwright-mcp" && sudo test -f "$AGENT_HOME/.pnpm/playwright-mcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/playwright-mcp-version") == "$MCP_VERSION" ]]; then mcp_changed=0; else
@@ -380,7 +385,7 @@ payload:
       params: {"reasoning.effort": "xhigh"}
 EOF
 # CLIProxyAPI rewrites its own config at startup, replacing the plaintext
-# management secret-key with a bcrypt hash — compare with that line
+# management secret-key with a bcrypt hash. Compare with that line
 # normalized so a healthy self-rewritten config counts as converged.
 proxy_config_converged() {
   sudo test -f "$CLIPROXY_CONFIG" || return 1
