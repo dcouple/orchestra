@@ -7,63 +7,66 @@ import { describe, expect, it } from "vitest";
 
 const ops = resolve("ops/macos");
 const helper = join(ops, "agent-farm-provision.sh");
-const pin = readFileSync(helper, "utf8").match(/^AGENT_FARM_COMMIT=(\w+)$/m)![1];
 const version = readFileSync(helper, "utf8").match(/^AGENT_FARM_VERSION=(.+)$/m)![1];
 
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), "agent-farm-provision-"));
-  const checkout = join(home, ".local/share/agent-farm", pin);
+  const packageRoot = join(home, ".pnpm/global/v11/fixture package/node_modules/@dcouple/agent-farm");
   const root = join(home, ".config/agent-farm");
-  const run = (dry: boolean, commit = pin) => spawnSync("bash", ["-c", `
+  const run = (dry: boolean, addExit = 0) => spawnSync("bash", ["-c", `
     set -euo pipefail
     AGENT_HOME="$1"
     SCRIPT_DIR="$2"
     DRY_RUN="$3"
-    agent() { env HOME="$AGENT_HOME" "$@"; }
+    ADD_EXIT="$4"
+    agent() {
+      if [[ $1 == /usr/local/bin/pnpm ]]; then
+        shift
+        case "$1" in
+          list) cat "$AGENT_HOME/pnpm-list.json"; return ;;
+          add) printf '%s\\n' "$*" >> "$AGENT_HOME/pnpm-add.log"; return "$ADD_EXIT" ;;
+          *) return 99 ;;
+        esac
+      fi
+      env HOME="$AGENT_HOME" "$@"
+    }
     record() { printf '%s %s\\n' "$1" "$2"; }
     fail() { echo "ERROR: $*" >&2; exit 1; }
     . "$SCRIPT_DIR/agent-farm-provision.sh"
-    AGENT_FARM_COMMIT="$4"
     provision_agent_farm
-  `, "bash", home, ops, dry ? "1" : "0", commit], { encoding: "utf8", timeout: 10_000 });
+  `, "bash", home, ops, dry ? "1" : "0", String(addExit)], { encoding: "utf8", timeout: 10_000 });
   const seed = () => {
-    mkdirSync(join(checkout, "dist"), { recursive: true });
-    mkdirSync(join(checkout, "plugins/dcouple/profiles"), { recursive: true });
+    mkdirSync(join(packageRoot, "dist"), { recursive: true });
+    mkdirSync(join(packageRoot, "plugins/dcouple/profiles"), { recursive: true });
     mkdirSync(join(root, "profiles"), { recursive: true });
     mkdirSync(join(root, ".plugins"));
-    mkdirSync(join(home, ".local/bin"), { recursive: true });
+    mkdirSync(join(home, ".pnpm/bin"), { recursive: true });
     const checksums: Record<string, string> = {};
     for (const name of ["planner", "implementer"]) {
       const relative = `profiles/${name}.yaml`, content = `agent: ${name}\n`;
-      writeFileSync(join(checkout, "plugins/dcouple", relative), content);
+      writeFileSync(join(packageRoot, "plugins/dcouple", relative), content);
       writeFileSync(join(root, relative), content);
       checksums[relative] = createHash("sha256").update(content).digest("hex");
     }
-    writeFileSync(join(checkout, "package.json"), JSON.stringify({ version, type: "module" }));
-    // Only the upstream read-only validation/inspection boundary is mocked.
-    // The provisioner runs real git, symlink, file, receipt, and hash checks.
-    writeFileSync(join(checkout, "dist/plugins.js"), `export function validatePlugin() { return ${JSON.stringify({ info: { name: "dcouple", version: "0.1.3" }, checksums })}; }\n`);
-    writeFileSync(join(checkout, "dist/cli.js"), `#!/bin/sh
+    writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ version, type: "module" }));
+    // Upstream package discovery and CLI boundaries are mocked.
+    // The provisioner runs real binary, marker, receipt, and hash checks.
+    writeFileSync(join(packageRoot, "dist/plugins.js"), `export function validatePlugin() { return ${JSON.stringify({ info: { name: "dcouple", version: "0.1.3" }, checksums })}; }\n`);
+    writeFileSync(join(packageRoot, "dist/cli.js"), `#!/bin/sh
       case "$1" in
         --help) exit 0 ;;
         inspect) test -f "$4/profiles/$2.yaml"; exit $? ;;
+        plugin) printf '{"changed":0}\n'; exit 0 ;;
         *) echo 'unexpected mutation' >&2; exit 99 ;;
       esac
     `);
-    chmodSync(join(checkout, "dist/cli.js"), 0o755);
-    symlinkSync(join(checkout, "dist/cli.js"), join(home, ".local/bin/agent-farm"));
+    chmodSync(join(packageRoot, "dist/cli.js"), 0o755);
+    symlinkSync(join(packageRoot, "dist/cli.js"), join(home, ".pnpm/bin/agent-farm"));
     writeFileSync(join(root, ".plugins/dcouple.json"), JSON.stringify({ name: "dcouple", version: "0.1.3", checksums }));
-    const git = (...args: string[]) => {
-      const result = spawnSync("git", ["-C", checkout, ...args], { encoding: "utf8" });
-      expect(result.status, result.stderr).toBe(0);
-      return result.stdout.trim();
-    };
-    git("init"); git("add", ".");
-    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "-c", "commit.gpgsign=false", "commit", "-m", "fixture");
-    git("remote", "add", "origin", "https://github.com/dcouple/agent-farm.git");
-    return git("rev-parse", "HEAD");
+    writeFileSync(join(home, ".pnpm/agent-farm-version"), `${version}\n`);
+    writeFileSync(join(home, "pnpm-list.json"), JSON.stringify([{ dependencies: { "@dcouple/agent-farm": { path: packageRoot, version } } }]));
   };
-  return { home, checkout, root, run, seed };
+  return { home, packageRoot, root, run, seed };
 }
 
 describe("Agent Farm macOS provisioning convergence", () => {
@@ -75,10 +78,10 @@ describe("Agent Farm macOS provisioning convergence", () => {
   });
 
   it("keeps converged files byte-identical on dry run and repeated apply", () => {
-    const f = fixture(), commit = f.seed();
+    const f = fixture(); f.seed();
     const receipt = readFileSync(join(f.root, ".plugins/dcouple.json"));
     for (const dry of [true, false, false]) {
-      const result = f.run(dry, commit);
+      const result = f.run(dry);
       expect(result.status, result.stderr).toBe(0);
       for (const setting of ["cli", "plugin", "profiles"]) expect(result.stdout).toContain(`agent-farm-${setting} already-correct`);
       expect(readFileSync(join(f.root, ".plugins/dcouple.json"))).toEqual(receipt);
@@ -86,9 +89,10 @@ describe("Agent Farm macOS provisioning convergence", () => {
   });
 
   it("detects local profile edits without modifying them during inventory", () => {
-    const f = fixture(), commit = f.seed(), profile = join(f.root, "profiles/planner.yaml");
+    const f = fixture(); f.seed();
+    const profile = join(f.root, "profiles/planner.yaml");
     writeFileSync(profile, "agent: local-planner\n");
-    const result = f.run(true, commit);
+    const result = f.run(true);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("agent-farm-plugin would-apply");
     expect(result.stdout).toContain("agent-farm-profiles would-apply");
@@ -98,19 +102,47 @@ describe("Agent Farm macOS provisioning convergence", () => {
   it("checks installed bytes and refuses symlink destinations even with a matching receipt", () => {
     const f = fixture(); f.seed();
     const profile = join(f.root, "profiles/implementer.yaml");
-    const check = () => spawnSync(process.execPath, [join(ops, "agent-farm-state.mjs"), f.checkout, f.root], { encoding: "utf8" });
+    const check = () => spawnSync(process.execPath, [join(ops, "agent-farm-state.mjs"), f.packageRoot, f.root], { encoding: "utf8" });
     writeFileSync(profile, "agent: local-implementer\n");
     expect(check().stderr).toContain("Installed plugin file differs");
-    unlinkSync(profile); symlinkSync(join(f.checkout, "plugins/dcouple/profiles/implementer.yaml"), profile);
+    unlinkSync(profile); symlinkSync(join(f.packageRoot, "plugins/dcouple/profiles/implementer.yaml"), profile);
     const result = check();
     expect(result.status).toBe(1); expect(result.stderr).toContain("Symlink destination");
   });
 
-  it("refuses a dirty source checkout instead of rebuilding it", () => {
-    const f = fixture(), commit = f.seed();
-    writeFileSync(join(f.checkout, "package.json"), JSON.stringify({ version: "9.9.9", type: "module" }));
-    const result = f.run(false, commit);
-    expect(result.status).toBe(1); expect(result.stderr).toContain("checkout differs from the pin");
-    expect(readFileSync(join(f.checkout, "package.json"), "utf8")).toContain("9.9.9");
+  it("reinstalls a mismatched version marker using the pinned registry spec", () => {
+    const f = fixture(); f.seed();
+    const marker = join(f.home, ".pnpm/agent-farm-version");
+    writeFileSync(marker, "0.0.1\n");
+    const result = f.run(false);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("agent-farm-cli applied");
+    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @dcouple/agent-farm@${version}\n`);
+    expect(readFileSync(marker, "utf8")).toBe(`${version}\n`);
+    const second = f.run(false);
+    expect(second.status, second.stderr).toBe(0);
+    expect(second.stdout).toContain("agent-farm-cli already-correct");
+    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @dcouple/agent-farm@${version}\n`);
+  });
+
+  it("preserves the marker when pnpm installation fails", () => {
+    const f = fixture(); f.seed();
+    const marker = join(f.home, ".pnpm/agent-farm-version");
+    writeFileSync(marker, "0.0.1\n");
+    const result = f.run(false, 7);
+    expect(result.status).toBe(7);
+    expect(readFileSync(marker, "utf8")).toBe("0.0.1\n");
+  });
+
+  it("reports unresolved package placement in dry run and fails apply", () => {
+    const f = fixture(); f.seed();
+    writeFileSync(join(f.home, "pnpm-list.json"), "[]");
+    const inventory = f.run(true);
+    expect(inventory.status, inventory.stderr).toBe(0);
+    expect(inventory.stdout).toContain("agent-farm-cli already-correct");
+    expect(inventory.stdout).toContain("agent-farm-plugin would-apply");
+    const apply = f.run(false);
+    expect(apply.status).toBe(1);
+    expect(apply.stderr).toContain("installed package path did not resolve");
   });
 });
