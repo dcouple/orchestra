@@ -13,7 +13,7 @@ const version = readFileSync(helper, "utf8").match(/^AGENT_FARM_VERSION=(.+)$/m)
 
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), "agent-farm-provision-"));
-  const packageRoot = join(home, ".pnpm/global/v11/fixture package/node_modules/@dcouple/agent-farm");
+  const packageRoot = join(home, ".pnpm/global/v11/fixture package/node_modules/@greenfieldco/agent-farm");
   const root = join(home, ".config/agent-farm");
   const run = (dry: boolean, addExit = 0, withCore = false) => spawnSync("bash", ["-c", `
     set -euo pipefail
@@ -126,7 +126,7 @@ function fixture() {
     symlinkSync(join(packageRoot, "dist/cli.js"), join(home, ".pnpm/bin/agent-farm"));
     writeFileSync(join(root, ".plugins/dcouple.json"), JSON.stringify({ name: "dcouple", version: "0.1.3", checksums }));
     writeFileSync(join(home, ".pnpm/agent-farm-version"), `${version}\n`);
-    writeFileSync(join(home, "pnpm-list.json"), JSON.stringify([{ dependencies: { "@dcouple/agent-farm": { path: packageRoot, version } } }]));
+    writeFileSync(join(home, "pnpm-list.json"), JSON.stringify([{ dependencies: { "@greenfieldco/agent-farm": { path: packageRoot, version } } }]));
   };
   return { home, packageRoot, root, run, seed };
 }
@@ -267,12 +267,12 @@ describe("Agent Farm macOS provisioning convergence", () => {
     const result = f.run(false);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("agent-farm-cli applied");
-    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @dcouple/agent-farm@${version}\n`);
+    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @greenfieldco/agent-farm@${version}\n`);
     expect(readFileSync(marker, "utf8")).toBe(`${version}\n`);
     const second = f.run(false);
     expect(second.status, second.stderr).toBe(0);
     expect(second.stdout).toContain("agent-farm-cli already-correct");
-    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @dcouple/agent-farm@${version}\n`);
+    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @greenfieldco/agent-farm@${version}\n`);
   });
 
   it("preserves the marker when pnpm installation fails", () => {
@@ -281,11 +281,11 @@ describe("Agent Farm macOS provisioning convergence", () => {
     writeFileSync(marker, "0.0.1\n");
     const result = f.run(false, 7);
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain(`agent-farm-cli pending-release: @dcouple/agent-farm@${version} not installable`);
+    expect(result.stdout).toContain(`agent-farm-cli pending-release: @greenfieldco/agent-farm@${version} not installable`);
     for (const setting of ["plugin", "profiles", "provider", "workspace", "browser"])
       expect(result.stdout).toContain(`agent-farm-${setting} pending-release`);
     expect(result.stderr.trim().split("\n")).toHaveLength(1);
-    expect(result.stderr).toContain(`@dcouple/agent-farm@${version} not installable`);
+    expect(result.stderr).toContain(`@greenfieldco/agent-farm@${version} not installable`);
     expect(readFileSync(marker, "utf8")).toBe("0.0.1\n");
     expect(existsSync(join(f.root, "settings.json"))).toBe(false);
     expect(existsSync(join(f.root, "workspaces"))).toBe(false);
@@ -353,7 +353,7 @@ describe("Agent Farm macOS provisioning convergence", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Agent Farm CLI did not verify");
     expect(result.stdout).not.toContain("pending-release");
-    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @dcouple/agent-farm@${version}\n`);
+    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @greenfieldco/agent-farm@${version}\n`);
   });
 
   it("fails hard on plugin integrity after a successful install", () => {
@@ -364,7 +364,7 @@ describe("Agent Farm macOS provisioning convergence", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("plugin receipt and installed contents did not verify");
     expect(result.stdout).not.toContain("pending-release");
-    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @dcouple/agent-farm@${version}\n`);
+    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @greenfieldco/agent-farm@${version}\n`);
   });
 
   it("reports unresolved package placement in dry run and fails apply", () => {
