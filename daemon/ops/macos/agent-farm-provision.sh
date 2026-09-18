@@ -37,6 +37,32 @@ agent_farm_profiles_correct() {
   done
 }
 
+# Match the local proxy root used by ops/claudex and macOS provisioning.
+provision_agent_farm_provider() {
+  local settings=$AGENT_FARM_CONFIG_ROOT/settings.json
+  local content='{
+  "provider": {
+    "name": "cliproxy",
+    "base_url": "http://127.0.0.1:8317",
+    "api_key_env": "CLIPROXY_API_KEY"
+  }
+}'
+  agent test ! -L "$AGENT_FARM_CONFIG_ROOT" && agent test ! -L "$settings" \
+    || fail "Agent Farm provider destination is a symlink"
+  if printf '%s\n' "$content" | agent cmp -s - "$settings"; then
+    record agent-farm-provider already-correct
+  elif (( DRY_RUN )); then
+    record agent-farm-provider would-apply
+  else
+    agent install -d -m 0750 "$AGENT_FARM_CONFIG_ROOT"
+    printf '%s\n' "$content" | agent tee "$settings" >/dev/null
+    agent chmod 0640 "$settings"
+    printf '%s\n' "$content" | agent cmp -s - "$settings" \
+      || fail "Agent Farm provider bytes did not verify"
+    record agent-farm-provider applied
+  fi
+}
+
 # The integration workspace and browser launcher are managed daemon files.
 provision_agent_farm_workspace() {
   local workspace_source=$SCRIPT_DIR/../agent-farm/bloom-mono.yaml
@@ -85,6 +111,7 @@ provision_agent_farm() {
     (( cli_correct )) && record agent-farm-cli already-correct || record agent-farm-cli would-apply
     (( plugin_correct )) && record agent-farm-plugin already-correct || record agent-farm-plugin would-apply
     (( profiles_correct )) && record agent-farm-profiles already-correct || record agent-farm-profiles would-apply
+    provision_agent_farm_provider
     provision_agent_farm_workspace
     return 0
   fi
@@ -107,5 +134,6 @@ provision_agent_farm() {
   # Do not mount them globally or replace their identities with daemon copies.
   agent_farm_profiles_correct || fail "Agent Farm planner and implementer profiles did not verify"
   (( profiles_correct )) && record agent-farm-profiles already-correct || record agent-farm-profiles applied
+  provision_agent_farm_provider
   provision_agent_farm_workspace
 }
