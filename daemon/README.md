@@ -57,6 +57,36 @@ around health acceptance, and rolls back to the prior accepted commit on failure
 `daemonctl update` remains a compatibility alias. See `ops/runbook.md` for failed/blocked
 recovery, revision reconciliation, and the human-only production smoke procedure.
 
+On Apple Silicon macOS, `ops/macos/provision.sh` also installs Agent Farm for
+the site-configured service user. It follows Agent Farm's source-checkout
+installation: HTTPS clone, frozen pnpm install, build, and a
+`~/.local/bin/agent-farm` symlink. `ops/macos/agent-farm-provision.sh` pins CLI
+version `0.1.1` at commit `f36bdef2987aee9b01c7caebe38c6745420e134b` under
+`~/.local/share/agent-farm/<commit>/`. Agent Farm currently has no `--version`
+flag; provisioning reads the package version and git revision, checks the
+checkout is clean, and runs CLI help with stdin closed. Updating the CLI or
+bundled plugin requires changing that pin. Old checkouts and running-session
+bundles remain in place.
+
+Provisioning runs `agent-farm plugin install <checkout>/plugins/dcouple
+--config-root <service-home>/.config/agent-farm` with stdin closed. That explicit
+config root is the service user's reusable library, including the shipped
+`profiles/planner.yaml` and `profiles/implementer.yaml`, agents, and skills.
+The plugin installer preserves modified local files by failing on conflicts.
+Readback checks the receipt, every installed plugin checksum, and both profile
+definitions. It does not mount skills globally or launch a harness. The service
+account needs non-interactive GitHub access before provisioning, just as it does
+for the persistent orchestra checkout; git prompts are disabled.
+
+The provisioner's `--dry-run --site <site.env>` inventories Agent Farm without
+installing it. Its summary records `agent-farm-cli`, `agent-farm-plugin`, and
+`agent-farm-profiles` as `would-apply`, `applied`, or `already-correct`. The
+`provision_agent_farm_workspace` hook in `ops/macos/agent-farm-provision.sh`
+records `pending-item-5: workspace placement` and writes nothing until the
+daemon harness work supplies its workspace file and idempotent placement.
+Workspace connections and daemon child-process ownership are defined by that
+work, independently of installation.
+
 ## Run locally
 
 Build first, then provide both apps' webhook and client credentials:
