@@ -65,9 +65,9 @@ provision_agent_farm_provider() {
 
 # The integration workspace and browser launcher are managed daemon files.
 provision_agent_farm_workspace() {
-  local workspace_source=$SCRIPT_DIR/../agent-farm/bloom-mono.yaml
+  local workspace_source=$SOURCE_DIR/ops/agent-farm/bloom-mono.yaml
   local workspace=$AGENT_FARM_CONFIG_ROOT/workspaces/bloom-mono.yaml
-  local browser_source=$SCRIPT_DIR/../agent-farm-browser.sh
+  local browser_source=$SOURCE_DIR/ops/agent-farm-browser.sh
   local browser=/usr/local/libexec/orchestra-agent-farm-browser
   local workspace_correct=0 browser_correct=0
   agent test ! -L "$AGENT_FARM_CONFIG_ROOT/workspaces" \
