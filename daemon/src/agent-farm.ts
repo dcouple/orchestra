@@ -1,3 +1,4 @@
+import { TurnDiagnostics } from "./turn-diagnostics.js";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -32,6 +33,7 @@ async function printJson(options: AgentFarmTurnOptions, args: string[], env: Nod
   });
   let stdout = "";
   let spawnError = false;
+  const diagnostics = new TurnDiagnostics(options.env, options.trustedEnv, env);
   let tooLarge = false;
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
@@ -40,14 +42,16 @@ async function printJson(options: AgentFarmTurnOptions, args: string[], env: Nod
       try { process.kill(-child.pid!, "SIGTERM"); } catch { /* Already exited. */ }
     } else stdout += chunk;
   });
-  // Drain stderr without exposing potentially sensitive preparation diagnostics.
-  child.stderr.resume();
-  child.once("error", () => { spawnError = true; });
+  child.stderr.on("data", (chunk: Buffer) => diagnostics.appendStderr(chunk));
+  child.once("error", error => { spawnError = true; diagnostics.error(error.message); });
+  const failure = (message: string): Error => new Error(
+    message + (diagnostics.text ? `\n${diagnostics.text}` : ""),
+  );
   const closed = await awaitDetachedExit(child, options.signal);
   options.signal?.throwIfAborted();
   if (spawnError || tooLarge || closed.code !== 0 || closed.signal !== null)
-    throw new Error("Agent Farm preparation failed");
-  try { return JSON.parse(stdout); } catch { throw new Error("Agent Farm printed invalid JSON"); }
+    throw failure("Agent Farm preparation failed");
+  try { return JSON.parse(stdout); } catch { throw failure("Agent Farm printed invalid JSON"); }
 }
 
 function harness(value: unknown): NativeHarness {

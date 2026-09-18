@@ -1,3 +1,4 @@
+import { failedTurnOutput } from "./failed-turn-output.mjs";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -22,6 +23,7 @@ if (process.env.CLAUDE_FAKE_ENV_FILE) {
   await appendFile(process.env.CLAUDE_FAKE_ENV_FILE,
     `${JSON.stringify({ args, env: process.env, ...(mcpConfig ? { mcpConfig } : {}), at: Date.now(), phase: "env" })}\n`);
 }
+failedTurnOutput(mode, "claude");
 const emit = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 if (mode === "provider-fail-pre-id") {
   process.stderr.write("connection refused by provider base URL\n");

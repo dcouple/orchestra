@@ -40,6 +40,20 @@ function options(overrides: Record<string, unknown> = {}) {
 }
 
 describe("codex runner", () => {
+  it.each(['diagnostic-codex-failed', 'diagnostic-codex-error', 'diagnostic-result-zero', 'diagnostic-stderr', 'diagnostic-secret'])("reports sanitized native diagnostics for %s", async mode => {
+    const env = { CODEX_FAKE_MODE: mode, CLIPROXY_API_KEY: "proxy-secret", LINEAR_API_KEY: "linear-secret",
+      GH_TOKEN: "github-secret", ARTIFACT_HOST_TOKEN: "artifact-secret" };
+    const result = await runCodexTurn(options({ env }));
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(mode.endsWith("zero") ? 0 : 1);
+    expect(result.failureDiagnostics).toContain(mode === "diagnostic-stderr"
+      ? "native launch detail from stderr" : mode === "diagnostic-secret" ? "[REDACTED]"
+        : "API Error: 400 Claude Code 2.1.229 does not support this model; version 2.1.251 or newer is required. ...");
+    expect(result.failureDiagnostics).not.toContain("\u001b");
+    for (const secret of [env.CLIPROXY_API_KEY, env.LINEAR_API_KEY, env.GH_TOKEN, env.ARTIFACT_HOST_TOKEN])
+      expect(result.failureDiagnostics).not.toContain(secret);
+    expect(Buffer.byteLength(result.failureDiagnostics!)).toBeLessThanOrEqual(2048);
+  });
   it("builds a bypassed exec command with MCP overrides and secrets by env reference", () => {
     expect(codexArgs(options({ argv: ["codex", "--profile", "x"] }))).toEqual([
       "--profile", "x", "exec", "--json", "--dangerously-bypass-approvals-and-sandbox",

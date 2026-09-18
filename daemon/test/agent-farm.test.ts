@@ -1,3 +1,5 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -27,7 +29,7 @@ function options(profile = "implementer", mode = "happy") {
     // This deliberately is not JSON. Agent Farm must not use per-turn MCP input.
     mcpConfigJson: "must not be parsed or written",
     env: { LINEAR_API_KEY: "linear-secret", CLIPROXY_API_KEY: "proxy-secret", GH_TOKEN: "github-secret",
-      ARTIFACT_TOKEN: "denied", CODEX_HOME: "/daemon/home",
+      ARTIFACT_HOST_TOKEN: "artifact-secret", ARTIFACT_TOKEN: "denied", CODEX_HOME: "/daemon/home",
       ORCHESTRA_BROWSER_FAKE_REPORT: join(cwd, "report.json"),
       ORCHESTRA_BROWSER_FAKE_MODE: mode, ORCHESTRA_BROWSER_FAKE_COLLISION: "daemon" },
   };
@@ -104,6 +106,51 @@ describe("Agent Farm runner", () => {
     finally { controller.abort(); }
     if (mode === "hang") expect(await pending).toMatchObject({ ok: false, processGroupExited: true });
     else await expect(pending).rejects.toThrow();
+  });
+  it.each(["planner", "implementer"])("retains sanitized %s harness errors and stderr", async profile => {
+    for (const mode of ["diagnostic-result", "diagnostic-result-zero", "diagnostic-stderr", "diagnostic-secret"]) {
+      const o = options(profile, mode);
+      const result = await runAgentFarmTurn(o);
+      expect(result.ok).toBe(false);
+      expect(result.exitCode).toBe(mode.endsWith("zero") ? 0 : 1);
+      expect(result.failureDiagnostics).toContain(mode === "diagnostic-stderr"
+        ? "native launch detail from stderr" : mode === "diagnostic-secret" ? "[REDACTED]"
+          : "API Error: 400 Claude Code 2.1.229 does not support this model; version 2.1.251 or newer is required. ...");
+      expect(result.failureDiagnostics).not.toContain("\u001b");
+      for (const secret of [o.env.CLIPROXY_API_KEY, o.env.LINEAR_API_KEY, o.env.GH_TOKEN, o.env.ARTIFACT_HOST_TOKEN])
+        expect(result.failureDiagnostics).not.toContain(secret);
+    }
+  });
+  it.each(["prepare-fail", "prepare-json"])("retains sanitized print-launch stderr for %s", async mode => {
+    const o = options("planner", mode);
+    try {
+      await runAgentFarmTurn(o);
+      expect.fail("preparation must fail");
+    } catch (error) {
+      expect(String(error)).toContain("Agent Farm preparation detail [REDACTED]");
+      expect(String(error)).not.toContain(o.env.LINEAR_API_KEY);
+      expect(String(error)).not.toContain("\u001b");
+    }
+    expect(existsSync(o.env.ORCHESTRA_BROWSER_FAKE_REPORT + ".child")).toBe(false);
+  });
+  it("connects as a healthy MCP server with no tools when a browser attempt is absent", async () => {
+    const client = new Client({ name: "unattached-browser-test", version: "1.0.0" });
+    const transport = new StdioClientTransport({ command: "bash", args: [resolve("ops/agent-farm-browser.sh")],
+      env: { PATH: process.env.PATH!, ORCHESTRA_BROWSER_MCP_BIN: "/must-not-start-playwright" }, stderr: "pipe" });
+    let stderr = "";
+    transport.stderr?.on("data", chunk => { stderr += chunk.toString(); });
+    try {
+      await client.connect(transport);
+      expect(client.getServerVersion()?.name).toBe("orchestra-browser-unattached");
+      expect(await client.listTools()).toEqual({ tools: [] });
+      await client.ping();
+      expect(stderr).toBe("");
+    } finally { await client.close(); }
+  });
+  it("rejects a partially attached browser attempt", () => {
+    expect(() => execFileSync("bash", [resolve("ops/agent-farm-browser.sh")], {
+      env: { PATH: process.env.PATH!, ORCHESTRA_BROWSER_STATE_DIR: "/missing-state" }, stdio: "pipe",
+    })).toThrow(/browser evidence directory is missing/);
   });
   it("launches Playwright with isolated attempt evidence and socket paths", () => {
     const o = options();

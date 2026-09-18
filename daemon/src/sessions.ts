@@ -1,3 +1,4 @@
+import { sanitizeDiagnostic } from "./turn-diagnostics.js";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
@@ -1075,7 +1076,7 @@ export class SessionWorker {
         const provider = nativeRuntime ?? (runtime === "claude" ? "claude" : "codex");
         recordProviderFailure(durableProfile, provider, {
           state: "capacity_failure",
-          reason: result.capacityEvidence.join(","),
+          reason: result.capacityDiagnostics ?? sanitizeDiagnostic(result.capacityEvidence.join(","), common.env),
         });
       }
     }
@@ -1247,9 +1248,13 @@ export class SessionWorker {
             : !result.sawResult
               ? `${failedRuntime} exited without a result`
               : `${failedRuntime} exited with code ${result.exitCode}`);
-      const detail = result.capacityEvidence.length
-        ? `${failedRuntime} capacity failure (${result.capacityEvidence.join(", ")})`
+      const summary = result.capacityEvidence.length
+        ? `${failedRuntime} capacity failure (${result.capacityDiagnostics ?? result.capacityEvidence.join(", ")})`
         : runtimeDetail;
+      const detail = sanitizeDiagnostic(
+        [sanitizeDiagnostic(summary, common.env).slice(0, 512), result.failureDiagnostics]
+          .filter(Boolean).join("\n"), common.env,
+      );
       this.log.finishTurn(
         turn.id,
         "error",
@@ -1275,7 +1280,7 @@ export class SessionWorker {
             finishedAt - (turn.startedAt ?? turn.receivedAt),
           ),
           error: detail,
-          ...(result.stderrTail ? { stderrTail: result.stderrTail } : {}),
+          ...(result.failureDiagnostics ? { failureDiagnostics: result.failureDiagnostics } : {}),
           ...usageLog,
         }),
       );
