@@ -1,3 +1,4 @@
+import { TurnDiagnostics, harnessErrorText, sanitizeDiagnostic } from "./turn-diagnostics.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -107,8 +108,11 @@ export interface RunTurnResult {
   spawnError?: string;
   permissionDenials: unknown[];
   sawResult: boolean;
+  // Internal classification evidence. Publish failureDiagnostics instead.
   stderrTail?: string;
+  failureDiagnostics?: string;
   capacityEvidence: string[];
+  capacityDiagnostics?: string;
   processGroupTerminationAttempted?: boolean;
   processGroupExited?: boolean;
   usage?: TurnUsage;
@@ -435,6 +439,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   let denials: unknown[] = [];
   let spawnError: string | undefined;
   let stderrTail = "";
+  const diagnostics = new TurnDiagnostics(options.env, options.trustedEnv, launch.env);
   const capacityEvidence = new Set<string>();
   let usage: TurnUsage | undefined;
   let modelUsageResult: Record<string, unknown> | undefined;
@@ -472,6 +477,12 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     }
     if (event.type === "assistant") {
       const message = record(event.message);
+      if (event.error !== undefined && event.error !== null) {
+        isError = true;
+        const text = Array.isArray(message?.content)
+          ? message.content.map(block => record(block)?.text).filter(value => typeof value === "string").join("\n") : "";
+        diagnostics.error([harnessErrorText(event.error) ?? "Claude assistant error", text].filter(Boolean).join("\n"));
+      }
       const messageText: string[] = [];
       if (Array.isArray(message?.content))
         for (const raw of message.content) {
@@ -563,7 +574,9 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     }
     if (event.type === "result") {
       sawResult = true;
-      isError = event.is_error === true || event.subtype !== "success";
+      const resultIsError = event.is_error === true || event.subtype !== "success";
+      isError ||= resultIsError;
+      if (resultIsError && typeof event.result === "string") diagnostics.error(event.result);
       if (typeof event.subtype === "string") resultSubtype = event.subtype;
       if (typeof event.result === "string") resultText = event.result;
       // A result event can close the turn carrying usage but no reply text. The text
@@ -605,6 +618,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   });
   child.stderr?.on("data", (chunk) => {
     stderrTail = appendTail(stderrTail, chunk as Buffer);
+    diagnostics.appendStderr(chunk as Buffer);
   });
   child.once("error", (error) => {
     spawnError = error.message;
@@ -622,17 +636,19 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
     return {
       ok,
       ...(latestId ? { sessionId: latestId } : {}),
-      ...(resultText !== undefined ? { resultText } : {}),
+      ...(resultText !== undefined ? { resultText: ok ? resultText : sanitizeDiagnostic(resultText, options.env, options.trustedEnv, launch.env) } : {}),
       ...(resultTextRecovered ? { resultTextRecovered } : {}),
       ...(resultSubtype !== undefined ? { resultSubtype } : {}),
       isError,
       exitCode: closed.code,
       signal: closed.signal,
-      ...(spawnError ? { spawnError } : {}),
+      ...(spawnError ? { spawnError: sanitizeDiagnostic(spawnError, options.env, options.trustedEnv, launch.env) } : {}),
       permissionDenials: denials,
       sawResult,
       ...(stderrTail ? { stderrTail } : {}),
+      ...(!ok && diagnostics.text ? { failureDiagnostics: diagnostics.text } : {}),
       capacityEvidence: [...capacityEvidence],
+      ...(capacityEvidence.size ? { capacityDiagnostics: sanitizeDiagnostic([...capacityEvidence].join(", "), options.env, options.trustedEnv, launch.env) } : {}),
       processGroupTerminationAttempted: closed.processGroupTerminationAttempted,
       processGroupExited: closed.processGroupExited,
       ...(usage ? { usage } : {}),

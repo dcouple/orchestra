@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { failedTurnOutput } from "./failed-turn-output.mjs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +26,11 @@ if (args[0] === "inspect") {
   }
   emit({ agents: { main: { harness } } });
 } else if (args[0] === "run") {
+  if (["prepare-fail", "prepare-json"].includes(process.env.ORCHESTRA_BROWSER_FAKE_MODE)) {
+    process.stderr.write(`\u001b[31mAgent Farm preparation detail ${process.env.LINEAR_API_KEY}\u001b[0m\n`);
+    if (process.env.ORCHESTRA_BROWSER_FAKE_MODE === "prepare-json") process.stdout.write("invalid JSON");
+    process.exit(process.env.ORCHESTRA_BROWSER_FAKE_MODE === "prepare-fail" ? 1 : 0);
+  }
   const cwd = arg("--directory");
   const bundle = join(cwd, ".agent-farm", "generated", profile);
   await mkdir(bundle, { recursive: true });
@@ -48,6 +54,7 @@ if (args[0] === "inspect") {
   emit(launch);
 } else if (args[0] === "native") {
   await appendFile(report + ".child", JSON.stringify({ args, env: process.env, cwd: process.cwd() }) + "\n");
+  failedTurnOutput(process.env.ORCHESTRA_BROWSER_FAKE_MODE || "happy", args.includes("exec") ? "codex" : "claude");
   if (process.env.ORCHESTRA_BROWSER_FAKE_MODE === "hang") {
     setInterval(() => {}, 1000);
     await new Promise(() => {});

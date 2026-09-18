@@ -74,6 +74,7 @@ const oldOtelEnv = Object.fromEntries(
 ) as Record<string, string | undefined>;
 afterEach(() => {
   delete process.env.ORCHESTRA_BROWSER_FAKE_REPORT;
+  delete process.env.ORCHESTRA_BROWSER_FAKE_MODE;
   delete process.env.CODEX_FAKE_ARGS_FILE;
   delete process.env.CODEX_FAKE_MODE;
   for (const dir of dirs.splice(0))
@@ -1125,6 +1126,65 @@ describe("SessionWorker", () => {
     expect(rows).toHaveLength(2);
     expect(rows[1]!.env.ARTIFACT_HOST_TOKEN).toBe("artifact-host-token");
     log.close();
+  });
+  it.each([
+    ["agent-farm:planner", "diagnostic-result"],
+    ["agent-farm:planner", "diagnostic-result-zero"],
+    ["agent-farm:planner", "diagnostic-stderr"],
+    ["agent-farm:planner", "diagnostic-secret"],
+    ["agent-farm:implementer", "diagnostic-secret"],
+    ["agent-farm:planner", "prepare-fail"],
+    ["claude", "diagnostic-secret"],
+    ["codex", "diagnostic-secret"],
+    ["codex", "diagnostic-capacity-secret"],
+  ] as const)("persists and posts sanitized %s diagnostics for %s", async (runtime, mode) => {
+    const seeded = setup();
+    seeded.log.close();
+    const app = runtime === "codex" || runtime === "agent-farm:implementer" ? "implementer" : "planner";
+    seeded.config.apps[app].harness = runtime;
+    seeded.config.browserEnabled = false;
+    seeded.config.artifactToken = "artifact-diagnostic-secret";
+    process.env.ORCHESTRA_BROWSER_FAKE_REPORT = join(seeded.dir, "farm-report.json");
+    process.env.ORCHESTRA_BROWSER_FAKE_MODE = mode;
+    process.env.CLAUDE_FAKE_MODE = mode;
+    process.env.CODEX_FAKE_MODE = mode;
+    const oldGh = process.env.GH_TOKEN;
+    process.env.GH_TOKEN = "github-diagnostic-secret";
+    let log: EventLog;
+    log = new EventLog(seeded.config.dbPath, runtime === "claude" ? undefined
+      : selected => selectSessionProfile(log, seeded.config, selected));
+    const poster = new Poster();
+    const logger = new CapturingLogger();
+    if (app === "planner") append(log, "failure-created", "failure-session", "created");
+    else appendImplementer(log, "failure-created", "failure-session");
+    const worker = new SessionWorker(log, poster as unknown as LinearGateway, seeded.config, { pollMs: 10, logger });
+    try {
+      await worker.start();
+      await waitFor(() => log.turnStates()[0]?.status === "failed");
+      await worker.stop();
+      const expected = mode === "diagnostic-stderr" ? "native launch detail from stderr"
+        : mode === "prepare-fail" ? "Agent Farm preparation detail [REDACTED]"
+          : mode.endsWith("secret") ? "[REDACTED]"
+            : "API Error: 400 Claude Code 2.1.229 does not support this model; version 2.1.251 or newer is required. ...";
+      const body = activityBody(poster.posts.find(post => !post.ephemeral)?.content)!;
+      expect(body).toContain(expected);
+      expect(JSON.stringify(logger.entries())).toContain(expected);
+      const db = new Database(seeded.config.dbPath, { readonly: true });
+      let stored: string;
+      try { stored = JSON.stringify(db.prepare("SELECT body FROM turn_activities WHERE turn_id=1").all()); }
+      finally { db.close(); }
+      expect(stored).toContain(expected);
+      for (const value of [body, stored, JSON.stringify(logger.entries())]) {
+        expect(value).not.toContain("\u001b");
+        for (const secret of ["api-key-one", seeded.config.linearApiKey!, process.env.GH_TOKEN!, seeded.config.artifactToken])
+          expect(value).not.toContain(secret);
+      }
+      expect(Buffer.byteLength(body)).toBeLessThanOrEqual(2100);
+    } finally {
+      await worker.stop(); log.close();
+      if (oldGh === undefined) delete process.env.GH_TOKEN;
+      else process.env.GH_TOKEN = oldGh;
+    }
   });
   it.each(["planner", "implementer"] as const)(
     "keeps the Agent Farm %s profile sticky and resumes through its reported harness",
@@ -3905,7 +3965,7 @@ describe("SessionWorker", () => {
     await worker.stop();
     log.close();
   });
-  it("captures noisy stderr tails in failure logs without exposing them in terminal activity", async () => {
+  it("includes bounded stderr tails in failure logs and terminal activity", async () => {
     const { log, config } = setup();
     const poster = new Poster();
     const logger = new CapturingLogger();
@@ -3926,11 +3986,11 @@ describe("SessionWorker", () => {
       turnId: 1,
       linearSessionId: "session",
       attempts: 1,
-      stderrTail: expect.stringContaining("stderr-line-"),
+      failureDiagnostics: expect.stringContaining("stderr-line-"),
     });
     expect(
       activityBody(poster.posts.find((post) => !post.ephemeral)?.content),
-    ).not.toContain("stderr-line-");
+    ).toContain("stderr-line-");
     await worker.stop();
     log.close();
   });
@@ -4443,12 +4503,12 @@ describe("SessionWorker", () => {
     log.close();
   });
   it.each([
-    ["error-result-exit", "Planner turn failed: Claude exited with code 11"],
-    ["denied", "Planner turn failed: Claude permission was denied"],
+    ["error-result-exit", "Planner turn failed: Claude exited with code 11\nplanner answer"],
+    ["denied", "Planner turn failed: Claude permission was denied\nplanner answer"],
     ["no-result", "Planner turn failed: Claude exited without a result"],
     [
       "non-capacity-api-error",
-      "Planner turn failed: Claude exited with code 1",
+      "Planner turn failed: Claude exited with code 1\nrequest failed",
     ],
   ])(
     "AC7: %s stays on Claude and preserves its terminal classification",

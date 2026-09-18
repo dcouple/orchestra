@@ -1,3 +1,4 @@
+import { failedTurnOutput } from "./failed-turn-output.mjs";
 import { spawn } from "node:child_process";
 import { appendFile } from "node:fs/promises";
 
@@ -10,6 +11,7 @@ const resumed = args[0] === "exec" && args[1] === "resume" ? args[args.length - 
 if (process.env.CODEX_FAKE_ARGS_FILE)
   await appendFile(process.env.CODEX_FAKE_ARGS_FILE,
     `${JSON.stringify({ args, cwd: process.cwd(), env: process.env, at: Date.now() })}\n`);
+failedTurnOutput(mode, "codex");
 const emit = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 if (mode === "spawn-fail") {
   process.stderr.write("codex: HTTP 429 from provider\n");

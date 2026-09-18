@@ -1,3 +1,4 @@
+import { TurnDiagnostics, harnessErrorText, sanitizeDiagnostic } from "./turn-diagnostics.js";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import {
@@ -147,7 +148,9 @@ export async function runCodexTurn(
   let sawResult = false;
   let spawnError: string | undefined;
   let stderrTail = "";
+  const diagnostics = new TurnDiagnostics(options.env, launch?.env);
   const capacityEvidence = new Set<string>();
+  const capacityDiagnostics = new Set<string>();
   let usage: TurnUsage | undefined;
   let eventQueue = Promise.resolve();
   const sessionQueue: Promise<void>[] = [];
@@ -157,9 +160,12 @@ export async function runCodexTurn(
       eventQueue = eventQueue.then(() => options.onEvent!(event));
   };
   const noteFailure = (message: string): void => {
+    diagnostics.error(message);
     stderrTail = appendTail(stderrTail, Buffer.from(`${message}\n`));
-    if (CAPACITY_PATTERN.test(message))
+    if (CAPACITY_PATTERN.test(message)) {
       capacityEvidence.add(message.slice(0, 200));
+      capacityDiagnostics.add(sanitizeDiagnostic(message, options.env, launch?.env));
+    }
   };
   const lines = createInterface({ input: child.stdout });
   lines.on("line", (line) => {
@@ -242,18 +248,13 @@ export async function runCodexTurn(
     }
     if (event.type === "turn.failed" || event.type === "error") {
       isError = true;
-      const error = record(event.error);
-      const message =
-        typeof error?.message === "string"
-          ? error.message
-          : typeof event.message === "string"
-            ? event.message
-            : event.type;
+      const message = harnessErrorText(event.error) ?? harnessErrorText(event.message) ?? String(event.type);
       noteFailure(message);
     }
   });
   child.stderr?.on("data", (chunk) => {
     stderrTail = appendTail(stderrTail, chunk as Buffer);
+    diagnostics.appendStderr(chunk as Buffer);
   });
   child.once("error", (error) => {
     spawnError = error.message;
@@ -276,11 +277,13 @@ export async function runCodexTurn(
     isError,
     exitCode: closed.code,
     signal: closed.signal,
-    ...(spawnError ? { spawnError } : {}),
+    ...(spawnError ? { spawnError: sanitizeDiagnostic(spawnError, options.env, launch?.env) } : {}),
     permissionDenials: [],
     sawResult,
     ...(stderrTail ? { stderrTail } : {}),
+    ...(!ok && diagnostics.text ? { failureDiagnostics: diagnostics.text } : {}),
     capacityEvidence: [...capacityEvidence],
+    ...(capacityDiagnostics.size ? { capacityDiagnostics: sanitizeDiagnostic([...capacityDiagnostics].join(", "), options.env, launch?.env) } : {}),
     processGroupTerminationAttempted: closed.processGroupTerminationAttempted,
     processGroupExited: closed.processGroupExited,
     ...(usage ? { usage } : {}),
