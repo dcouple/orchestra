@@ -40,6 +40,7 @@ function fixture(scriptDir = ops, sourceDir = resolve(".")) {
       local args=() value
       for value in "$@"; do
         case "$value" in
+          /usr/local/bin/agent-farm) value="$AGENT_HOME/root/usr/local/bin/agent-farm" ;;
           /usr/local/libexec) value="$AGENT_HOME/libexec" ;;
           /usr/local/libexec/orchestra-agent-farm-browser) value="$AGENT_HOME/libexec/orchestra-agent-farm-browser" ;;
         esac
@@ -66,6 +67,7 @@ function fixture(scriptDir = ops, sourceDir = resolve(".")) {
       proxy_changed=0
       cloudflared_config_changed=0
       mkdir -p "$RENDER_DIR"
+      sed "s|@SERVICE_HOME@|$AGENT_HOME|g" "$SCRIPT_DIR/agent-farm.sh.template" > "$RENDER_DIR/agent-farm"
       for label in "$PROXY_LABEL" "$DAEMON_LABEL" "$TUNNEL_LABEL"; do
         printf 'fixture plist\\n' > "$RENDER_DIR/$label.plist"
       done
@@ -74,6 +76,10 @@ function fixture(scriptDir = ops, sourceDir = resolve(".")) {
         mkdir -p "$(dirname "$destination")"
         install -m "$3" "$1" "$destination"
         cmp -s "$1" "$destination" || fail "fixture install did not verify"
+      }
+      file_correct() {
+        local destination="$AGENT_HOME/root$2"
+        cmp -s "$1" "$destination" && test -x "$destination"
       }
       cloudflared_config_credential_exists() { return 0; }
       curl() { return 0; }
@@ -356,6 +362,10 @@ describe("Agent Farm macOS provisioning convergence", () => {
     const rows = result.stdout.trim().split("\n");
     const pending = rows.findIndex(row => row.startsWith("agent-farm-cli pending-release:"));
     expect(pending).toBeGreaterThan(-1);
+    const wrapper = join(f.home, "root/usr/local/bin/agent-farm");
+    expect(readFileSync(wrapper, "utf8")).toBe(`#!/bin/sh\nexec "${f.home}/.pnpm/bin/agent-farm" "$@"\n`);
+    expect(statSync(wrapper).mode & 0o777).toBe(0o755);
+    expect(rows.indexOf("agent-farm-wrapper applied")).toBeLessThan(rows.indexOf("daemon-deploy applied"));
     for (const row of ["service-scripts applied", "paths-d applied", "service-fixture.proxy applied",
       "service-fixture.daemon applied", "service-cloudflared applied", "daemon-deploy applied"])
       expect(rows.indexOf(row), row).toBeGreaterThanOrEqual(0);
@@ -384,7 +394,7 @@ describe("Agent Farm macOS provisioning convergence", () => {
       const rows = result.stdout.trim().split("\n");
       const optional = rows.findIndex(row => row.startsWith("agent-farm-cli "));
       expect(optional).toBeGreaterThan(-1);
-      for (const name of ["file-daemonctl", "file-orchestra-sim", "sudoers", "service-daemon", "service-cloudflared", "daemon-deploy"]) {
+      for (const name of ["agent-farm-wrapper", "file-daemonctl", "file-orchestra-sim", "sudoers", "service-daemon", "service-cloudflared", "daemon-deploy"]) {
         const core = rows.findIndex(row => row.startsWith(`${name} `));
         expect(core, name).toBeGreaterThan(-1);
         expect(core, name).toBeLessThan(optional);

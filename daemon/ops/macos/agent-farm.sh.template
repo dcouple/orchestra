@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "@SERVICE_HOME@/.pnpm/bin/agent-farm" "$@"

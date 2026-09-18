@@ -76,6 +76,34 @@ validate_planner() {
   validate_harness "$1"
 }
 validate_reason() { [[ "$1" != *$'\n'* && ${#1} -le 240 ]] || usage_error "reason must be one line of at most 240 characters"; }
+validate_agent_farm() {
+  [[ $1 == agent-farm:* || $2 == agent-farm:* ]] || return 0
+  # systemd EnvironmentFile is data; read only the binary and PATH settings.
+  local -a probe=(python3 - "$ENV_FILE")
+  if [[ ${EUID} -eq 0 && ${DAEMONCTL_ALLOW_NON_ROOT:-0} != 1 ]]; then
+    probe=("$RUNUSER" -u linear-daemon -- "${probe[@]}")
+  fi
+  if ! "${probe[@]}" <<'PY' >/dev/null 2>&1
+import shlex,shutil,subprocess,sys
+env={"HOME":"/var/lib/linear-agent-daemon",
+     "PATH":"/usr/local/bin:/var/lib/linear-agent-daemon/.local/bin:/usr/bin:/bin"}
+binary="agent-farm"
+for line in open(sys.argv[1]):
+    key,sep,value=line.strip().partition("=")
+    if sep and key in ("AGENT_FARM_BIN","PATH"):
+        value=value.strip()
+        if value.startswith(("\"","'")): value=" ".join(shlex.split(value))
+        if key=="AGENT_FARM_BIN": binary=value.strip() or "agent-farm"
+        else: env["PATH"]=value
+resolved=shutil.which(binary,path=env["PATH"])
+if not resolved: raise SystemExit(1)
+raise SystemExit(subprocess.run([resolved,"--help"],env=env,stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode)
+PY
+  then
+    die "cannot select agent-farm:<profile>: AGENT_FARM_BIN (default agent-farm) must be executable under the daemon PATH and pass --help; install Agent Farm or set AGENT_FARM_BIN in $ENV_FILE"
+  fi
+}
 json_field() { python3 -c 'import json,sys; v=json.load(open(sys.argv[1])).get(sys.argv[2]); print("" if v is None else v)' "$1" "$2"; }
 json_count_running() { ops_cli running | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'; }
 
@@ -338,6 +366,7 @@ command_config() {
     --dry-run) dry=1 ;; *) usage_error "unknown config argument: $1" ;; esac; shift; done
   validate_planner "${planner}"; validate_harness "${implementer}"; validate_reason "${reason}"
   [[ -f "${ENV_FILE}" ]] || die "environment file not found: ${ENV_FILE}"
+  validate_agent_farm "${planner}" "${implementer}"
   if (( dry )); then
     printf 'would validate and preserve %s; set PLANNER_HARNESS=%s and IMPLEMENTER_HARNESS=%s; create a timestamped backup; interrupt active turns; restart %s; verify systemd and %s; rollback on failure\n' \
       "${ENV_FILE}" "${planner}" "${implementer}" "${SERVICE}" "${HEALTH_URL}"

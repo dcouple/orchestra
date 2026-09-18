@@ -51,6 +51,27 @@ validate_planner() {
   validate_harness "$1"
 }
 validate_reason() { [[ $1 != *$'\n'* && ${#1} -le 240 ]] || usage_error "reason must be one line of at most 240 characters"; }
+validate_agent_farm() {
+  [[ $1 == agent-farm:* || $2 == agent-farm:* ]] || return 0
+  # Match launchd and run-daemon.sh, including operator overrides in env.
+  if ! /usr/bin/env -i /bin/bash -c '
+    set -euo pipefail
+    export HOME="$2" USER="$3" PATH="/usr/local/bin:$2/.local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+    cd "$2/linear-agent-daemon"
+    set -a
+    . "$1"
+    set +a
+    binary=${AGENT_FARM_BIN:-agent-farm}
+    binary="${binary#"${binary%%[![:space:]]*}"}"
+    binary="${binary%"${binary##*[![:space:]]}"}"
+    binary=${binary:-agent-farm}
+    resolved=$(command -v -- "$binary")
+    [[ -f $resolved && -x $resolved ]]
+    "$binary" --help </dev/null >/dev/null 2>&1
+  ' bash "$ENV_FILE" "$DAEMON_SERVICE_HOME" "$DAEMON_SERVICE_USER" >/dev/null 2>&1; then
+    die "cannot select agent-farm:<profile>: AGENT_FARM_BIN (default agent-farm) must be executable under the daemon PATH and pass --help; rerun provisioning or set AGENT_FARM_BIN in $ENV_FILE"
+  fi
+}
 ops_cli() { DB_PATH="$DB_PATH" "$NODE_BIN" "$OPS_CLI" "$@"; }
 fault_after() { [[ ${DAEMONCTL_FAULT_AFTER:-} == "$1" ]] || return 0; echo "fixture crash after $1" >&2; exit 99; }
 health_accept() {
@@ -196,6 +217,7 @@ command_config() {
   done
   validate_planner "$planner"; validate_harness "$implementer"; validate_reason "$reason"
   [[ -f $ENV_FILE ]] || die "environment file not found: $ENV_FILE"
+  validate_agent_farm "$planner" "$implementer"
   if (( dry )); then echo "would update harnesses, back up $ENV_FILE, restart launchd daemon, health-check, and roll back on failure"; return; fi
   acquire_maintenance_lock
   local id; id=$(new_id); id=$(schedule_inline "$id" config "$reason" "$planner:$implementer" - -)

@@ -116,6 +116,7 @@ describe("macOS site config", () => {
     );
     const files = readdirSync(out).sort();
     expect(files).toEqual([
+      "agent-farm",
       "cloudflared-config.yml",
       "org.example.cliproxyapi.plist",
       "org.example.cloudflared.plist",
