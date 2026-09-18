@@ -1,3 +1,5 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -130,6 +132,25 @@ describe("Agent Farm runner", () => {
       expect(String(error)).not.toContain("\u001b");
     }
     expect(existsSync(o.env.ORCHESTRA_BROWSER_FAKE_REPORT + ".child")).toBe(false);
+  });
+  it("connects as a healthy MCP server with no tools when a browser attempt is absent", async () => {
+    const client = new Client({ name: "unattached-browser-test", version: "1.0.0" });
+    const transport = new StdioClientTransport({ command: "bash", args: [resolve("ops/agent-farm-browser.sh")],
+      env: { PATH: process.env.PATH!, ORCHESTRA_BROWSER_MCP_BIN: "/must-not-start-playwright" }, stderr: "pipe" });
+    let stderr = "";
+    transport.stderr?.on("data", chunk => { stderr += chunk.toString(); });
+    try {
+      await client.connect(transport);
+      expect(client.getServerVersion()?.name).toBe("orchestra-browser-unattached");
+      expect(await client.listTools()).toEqual({ tools: [] });
+      await client.ping();
+      expect(stderr).toBe("");
+    } finally { await client.close(); }
+  });
+  it("rejects a partially attached browser attempt", () => {
+    expect(() => execFileSync("bash", [resolve("ops/agent-farm-browser.sh")], {
+      env: { PATH: process.env.PATH!, ORCHESTRA_BROWSER_STATE_DIR: "/missing-state" }, stdio: "pipe",
+    })).toThrow(/browser evidence directory is missing/);
   });
   it("launches Playwright with isolated attempt evidence and socket paths", () => {
     const o = options();
