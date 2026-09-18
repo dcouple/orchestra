@@ -247,6 +247,18 @@ keep their assigned `agent-farm:<profile>` value when app settings change. The
 profile owns the model, effort, skills, instructions, and child agents. A new
 implementer turn sends the issue identifier to that profile.
 
+macOS provisioning manages `~/.config/agent-farm/settings.json` for the service
+account with a host provider named `cliproxy`, gateway root
+`http://127.0.0.1:8317` (the same local CLIProxyAPI root used by `claudex`), and
+`api_key_env: CLIPROXY_API_KEY`. It compares bytes and records
+`agent-farm-provider` as `already-correct`, `would-apply`, or `applied`; dry runs
+do not write the file. The setting contains only the variable name. The daemon
+reads the current key before each turn and supplies it in the child environment.
+Agent Farm adds `/v1` for the Codex Responses provider and sets Claude's base
+URL and four default model aliases from the profile. Its Claude launch prefix
+resolves the auth-token reference inside the child. This requires an Agent Farm
+release containing PR #22; provider settings stay outside plugins and bundles.
+
 Every turn first calls `agent-farm inspect <profile> --workspace bloom-mono` to
 read `agents.main.harness`, then prepares the launch:
 

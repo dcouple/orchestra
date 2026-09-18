@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -49,7 +49,10 @@ function fixture() {
     fail() { echo "ERROR: $*" >&2; exit 1; }
     . "$SCRIPT_DIR/agent-farm-provision.sh"
     provision_agent_farm
-  `, "bash", home, ops, dry ? "1" : "0", String(addExit)], { encoding: "utf8", timeout: 10_000 });
+  `, "bash", home, ops, dry ? "1" : "0", String(addExit)], {
+    encoding: "utf8", timeout: 10_000,
+    env: { ...process.env, CLIPROXY_API_KEY: "proxy-secret-fixture" },
+  });
   const seed = () => {
     mkdirSync(join(packageRoot, "dist"), { recursive: true });
     mkdirSync(join(packageRoot, "plugins/dcouple/profiles"), { recursive: true });
@@ -100,8 +103,63 @@ describe("Agent Farm macOS provisioning convergence", () => {
   it("reports a fresh installation without creating managed state", () => {
     const f = fixture(), result = f.run(true);
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toBe("agent-farm-cli would-apply\nagent-farm-plugin would-apply\nagent-farm-profiles would-apply\nagent-farm-workspace would-apply\nagent-farm-browser would-apply\n");
+    expect(result.stdout).toBe("agent-farm-cli would-apply\nagent-farm-plugin would-apply\nagent-farm-profiles would-apply\nagent-farm-provider would-apply\nagent-farm-workspace would-apply\nagent-farm-browser would-apply\n");
     expect(spawnSync("ls", ["-A", f.home], { encoding: "utf8" }).stdout).toBe("");
+  });
+
+  it("places provider references without secrets and converges by bytes", () => {
+    const f = fixture(); f.seed();
+    const settings = join(f.root, "settings.json");
+    const inventory = f.run(true);
+    expect(inventory.status, inventory.stderr).toBe(0);
+    expect(inventory.stdout).toContain("agent-farm-provider would-apply");
+    expect(existsSync(settings)).toBe(false);
+    const first = f.run(false);
+    expect(first.status, first.stderr).toBe(0);
+    expect(first.stdout).toContain("agent-farm-provider applied");
+    const bytes = readFileSync(settings, "utf8");
+    expect(JSON.parse(bytes)).toEqual({ provider: {
+      name: "cliproxy", base_url: "http://127.0.0.1:8317", api_key_env: "CLIPROXY_API_KEY",
+    } });
+    expect(bytes).not.toContain("proxy-secret-fixture");
+    expect(statSync(settings).mode & 0o777).toBe(0o640);
+    for (const dry of [true, false]) {
+      const result = f.run(dry);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("agent-farm-provider already-correct");
+      expect(readFileSync(settings, "utf8")).toBe(bytes);
+    }
+    // Equivalent JSON with different formatting still needs byte convergence.
+    const compact = JSON.stringify(JSON.parse(bytes));
+    writeFileSync(settings, compact);
+    const changed = f.run(true);
+    expect(changed.status, changed.stderr).toBe(0);
+    expect(changed.stdout).toContain("agent-farm-provider would-apply");
+    expect(readFileSync(settings, "utf8")).toBe(compact);
+    const repaired = f.run(false);
+    expect(repaired.status, repaired.stderr).toBe(0);
+    expect(repaired.stdout).toContain("agent-farm-provider applied");
+    expect(readFileSync(settings, "utf8")).toBe(bytes);
+  });
+
+  it.each(["settings", "config-root"])("refuses a symlink %s provider destination", destination => {
+    const f = fixture(); f.seed();
+    const target = join(f.home, "unrelated-settings.json");
+    const original = '{"provider":{"name":"unrelated"}}\n';
+    writeFileSync(target, original);
+    if (destination === "settings") symlinkSync(target, join(f.root, "settings.json"));
+    else {
+      const realRoot = join(f.home, "real-config");
+      renameSync(f.root, realRoot);
+      writeFileSync(join(realRoot, "settings.json"), original);
+      symlinkSync(realRoot, f.root);
+    }
+    const result = f.run(false);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("provider destination is a symlink");
+    expect(readFileSync(target, "utf8")).toBe(original);
+    if (destination === "config-root")
+      expect(readFileSync(join(f.root, "settings.json"), "utf8")).toBe(original);
   });
 
   it("keeps converged files byte-identical on dry run and repeated apply", () => {
