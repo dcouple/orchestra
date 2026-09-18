@@ -7,13 +7,15 @@ import { describe, expect, it } from "vitest";
 
 const ops = resolve("ops/macos");
 const helper = join(ops, "agent-farm-provision.sh");
+const provision = readFileSync(join(ops, "provision.sh"), "utf8");
+const coreApply = provision.slice(provision.indexOf("\nroot_files_changed=0\n"));
 const version = readFileSync(helper, "utf8").match(/^AGENT_FARM_VERSION=(.+)$/m)![1];
 
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), "agent-farm-provision-"));
   const packageRoot = join(home, ".pnpm/global/v11/fixture package/node_modules/@dcouple/agent-farm");
   const root = join(home, ".config/agent-farm");
-  const run = (dry: boolean, addExit = 0) => spawnSync("bash", ["-c", `
+  const run = (dry: boolean, addExit = 0, withCore = false) => spawnSync("bash", ["-c", `
     set -euo pipefail
     AGENT_HOME="$1"
     SCRIPT_DIR="$2"
@@ -28,9 +30,12 @@ function fixture() {
           *) return 99 ;;
         esac
       fi
+      if [[ $1 == env && $2 == SOURCE_COMMIT=* ]]; then return 0; fi
+      if [[ $1 == rsync ]]; then printf 'code drift\\n'; return 0; fi
       env HOME="$AGENT_HOME" "$@"
     }
     sudo() {
+      if [[ $1 == /bin/launchctl ]]; then return 0; fi
       local args=() value
       for value in "$@"; do
         case "$value" in
@@ -48,7 +53,34 @@ function fixture() {
     record() { printf '%s %s\\n' "$1" "$2"; }
     fail() { echo "ERROR: $*" >&2; exit 1; }
     . "$SCRIPT_DIR/agent-farm-provision.sh"
-    provision_agent_farm
+    ${withCore ? `
+      SOURCE_DIR="${resolve(".")}"
+      AGENT=fixture
+      OPS_STATE="$AGENT_HOME/state"
+      PATHS_D_INSTALLED=/etc/paths.d/fixture
+      PROXY_LABEL=fixture.proxy
+      DAEMON_LABEL=fixture.daemon
+      TUNNEL_LABEL=fixture.tunnel
+      RENDER_DIR="$AGENT_HOME/render"
+      site_changed=0
+      proxy_changed=0
+      cloudflared_config_changed=0
+      mkdir -p "$RENDER_DIR"
+      for label in "$PROXY_LABEL" "$DAEMON_LABEL" "$TUNNEL_LABEL"; do
+        printf 'fixture plist\\n' > "$RENDER_DIR/$label.plist"
+      done
+      install_if_changed() {
+        local destination="$AGENT_HOME/root$2"
+        mkdir -p "$(dirname "$destination")"
+        install -m "$3" "$1" "$destination"
+        cmp -s "$1" "$destination" || fail "fixture install did not verify"
+      }
+      cloudflared_config_credential_exists() { return 0; }
+      curl() { return 0; }
+      management_key=unused-fixture
+      print_summary() { :; }
+      ${coreApply}
+    ` : "provision_agent_farm"}
   `, "bash", home, ops, dry ? "1" : "0", String(addExit)], {
     encoding: "utf8", timeout: 10_000,
     env: { ...process.env, CLIPROXY_API_KEY: "proxy-secret-fixture" },
@@ -248,8 +280,91 @@ describe("Agent Farm macOS provisioning convergence", () => {
     const marker = join(f.home, ".pnpm/agent-farm-version");
     writeFileSync(marker, "0.0.1\n");
     const result = f.run(false, 7);
-    expect(result.status).toBe(7);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`agent-farm-cli pending-release: @dcouple/agent-farm@${version} not installable`);
+    for (const setting of ["plugin", "profiles", "provider", "workspace", "browser"])
+      expect(result.stdout).toContain(`agent-farm-${setting} pending-release`);
+    expect(result.stderr.trim().split("\n")).toHaveLength(1);
+    expect(result.stderr).toContain(`@dcouple/agent-farm@${version} not installable`);
     expect(readFileSync(marker, "utf8")).toBe("0.0.1\n");
+    expect(existsSync(join(f.root, "settings.json"))).toBe(false);
+    expect(existsSync(join(f.root, "workspaces"))).toBe(false);
+    expect(existsSync(join(f.home, "libexec"))).toBe(false);
+  });
+
+  it("converges core artifacts, services, and deploy before deferring a missing release", () => {
+    const f = fixture();
+    const result = f.run(false, 7, true);
+    expect(result.status, result.stderr).toBe(0);
+    const rows = result.stdout.trim().split("\n");
+    const pending = rows.findIndex(row => row.startsWith("agent-farm-cli pending-release:"));
+    expect(pending).toBeGreaterThan(-1);
+    for (const row of ["service-scripts applied", "paths-d applied", "service-fixture.proxy applied",
+      "service-fixture.daemon applied", "service-cloudflared applied", "daemon-deploy applied"])
+      expect(rows.indexOf(row), row).toBeGreaterThanOrEqual(0);
+    for (const row of rows.filter(row => !row.startsWith("agent-farm-")))
+      expect(rows.indexOf(row), row).toBeLessThan(pending);
+    for (const name of ["daemon-site-lib.sh", "run-daemon.sh", "run-cliproxyapi.sh", "run-cloudflared.sh", "daemonctl", "deploy.sh"])
+      expect(readFileSync(join(f.home, "root/usr/local/sbin", name))).toEqual(readFileSync(join(ops, name)));
+    expect(readFileSync(join(f.home, "root/usr/local/bin/orchestra-sim"))).toEqual(readFileSync(join(ops, "orchestra-sim")));
+    for (const label of ["fixture.proxy", "fixture.daemon", "fixture.tunnel"])
+      expect(readFileSync(join(f.home, "root/Library/LaunchDaemons", `${label}.plist`), "utf8")).toBe("fixture plist\n");
+    expect(existsSync(join(f.home, ".pnpm/agent-farm-version"))).toBe(false);
+    for (const setting of ["plugin", "profiles", "provider", "workspace", "browser"])
+      expect(rows).toContain(`agent-farm-${setting} pending-release`);
+  });
+
+  it.skipIf(process.platform !== "darwin" || process.arch !== "arm64" || !existsSync("/opt/homebrew/bin/brew"))(
+    "inventories core artifacts, services, and deploy before Agent Farm", () => {
+      const dir = mkdtempSync(join(tmpdir(), "agent-farm-inventory-"));
+      const sudo = join(dir, "sudo");
+      writeFileSync(sudo, readFileSync(resolve("test/fixtures/fake-sudo.sh")));
+      chmodSync(sudo, 0o755);
+      const result = spawnSync("bash", [join(ops, "provision.sh"), "--dry-run", "--site", join(ops, "site.env.example")], {
+        encoding: "utf8", timeout: 30_000, env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, SIM_PROVISION_DEVELOPER_DIR: "/nonexistent" },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      const rows = result.stdout.trim().split("\n");
+      const optional = rows.findIndex(row => row.startsWith("agent-farm-cli "));
+      expect(optional).toBeGreaterThan(-1);
+      for (const name of ["file-daemonctl", "file-orchestra-sim", "sudoers", "service-daemon", "service-cloudflared", "daemon-deploy"]) {
+        const core = rows.findIndex(row => row.startsWith(`${name} `));
+        expect(core, name).toBeGreaterThan(-1);
+        expect(core, name).toBeLessThan(optional);
+      }
+    }, 30_000,
+  );
+
+  it("rejects root before reading site config or running Homebrew", () => {
+    // EUID is readonly; exercise the actual early guard with its root branch selected.
+    const guard = provision.slice(0, provision.indexOf("\nusage() {")).replace("EUID == 0", "0 == 0");
+    const result = spawnSync("bash", ["-c", `${guard}\necho unexpected-work`], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("WITHOUT a sudo prefix");
+    expect(result.stderr).toContain("bash ~/daemon-macos-setup/provision.sh");
+    expect(result.stderr).toContain("Homebrew refuses to run as root");
+  });
+
+  it("fails hard when a successful install leaves an unverifiable CLI", () => {
+    const f = fixture(); f.seed();
+    unlinkSync(join(f.home, ".pnpm/bin/agent-farm"));
+    const result = f.run(false);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Agent Farm CLI did not verify");
+    expect(result.stdout).not.toContain("pending-release");
+    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @dcouple/agent-farm@${version}\n`);
+  });
+
+  it("fails hard on plugin integrity after a successful install", () => {
+    const f = fixture(); f.seed();
+    writeFileSync(join(f.home, ".pnpm/agent-farm-version"), "0.0.1\n");
+    writeFileSync(join(f.root, "profiles/planner.yaml"), "agent: local-edit\n");
+    const result = f.run(false);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("plugin receipt and installed contents did not verify");
+    expect(result.stdout).not.toContain("pending-release");
+    expect(readFileSync(join(f.home, "pnpm-add.log"), "utf8")).toBe(`add --global @dcouple/agent-farm@${version}\n`);
   });
 
   it("reports unresolved package placement in dry run and fails apply", () => {

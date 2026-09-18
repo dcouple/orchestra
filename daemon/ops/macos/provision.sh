@@ -2,6 +2,11 @@
 # shellcheck disable=SC2015
 set -euo pipefail
 
+if (( EUID == 0 )); then
+  echo "Run provision.sh as the operator WITHOUT a sudo prefix (bash ~/daemon-macos-setup/provision.sh ...). It calls sudo itself; Homebrew refuses to run as root. Under sudo, node and cloudflared read would-apply in dry run and a real run aborts at brew install." >&2
+  exit 1
+fi
+
 usage() {
   cat <<'EOF'
 Provision the Linear webhook daemon on an Apple Silicon Mac.
@@ -158,7 +163,7 @@ record preflight already-correct
 sudo install -d -o root -g wheel -m 0755 /usr/local/bin /usr/local/sbin /usr/local/share
 
 dry_inventory() {
-  local status source destination
+  local status source destination label service
   id "$AGENT" >/dev/null 2>&1 && record account already-correct || record account would-apply
   for spec in "$AGENT_HOME/worktrees:0750" "$AGENT_HOME/repos:0750" "$AGENT_HOME/artifacts:0750" "$AGENT_HOME/.config:0750" "$CONFIG_DIR:0700" "$AGENT_HOME/.local:0755" "$AGENT_HOME/.local/bin:0750" "$AGENT_HOME/.local/state:0755" "$OPS_STATE:0700" "$AGENT_HOME/.cli-proxy-api:0700" "$AGENT_HOME/Library/Logs:0750"; do
     dir_correct "${spec%:*}" "${spec#*:}" && status=already-correct || status=would-apply
@@ -171,7 +176,6 @@ dry_inventory() {
   [[ -x /usr/local/bin/cliproxyapi && -f $CLIPROXY_MARKER && $(sudo cat "$CLIPROXY_MARKER") == "$CLIPROXY_VERSION" ]] && record cliproxyapi already-correct || record cliproxyapi would-apply
   sudo test -x "$AGENT_HOME/.local/bin/claude" && record claude-cli already-correct || record claude-cli would-apply
   version_at_least "$(command_version "$AGENT_HOME/.codex-managed/bin/codex")" "$CODEX_MIN_VERSION" && record managed-codex already-correct || record managed-codex would-apply
-  provision_agent_farm
   sudo test -x "$AGENT_HOME/.pnpm/bin/playwright-mcp" && sudo test -f "$AGENT_HOME/.pnpm/playwright-mcp-version" && [[ $(sudo cat "$AGENT_HOME/.pnpm/playwright-mcp-version") == "$PLAYWRIGHT_MCP_VERSION" ]] && record playwright-mcp already-correct || record playwright-mcp would-apply
   developer_dir=${SIM_PROVISION_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
   [[ -x "$developer_dir/usr/bin/xcodebuild" ]] && record simulator-xcode already-correct || record simulator-xcode "pending-human: install Xcode and an iOS runtime"
@@ -195,25 +199,30 @@ dry_inventory() {
   sudo test -d "$CHECKOUT/.git" && record source-checkout already-correct || record source-checkout would-apply
   file_correct "$DAEMON_SITE_ENV" "$SITE_INSTALLED" 0644 root wheel && record site-config already-correct || record site-config would-apply
   file_correct "$RENDER_DIR/sudoers" "$SUDOERS_INSTALLED" 0440 root wheel && record sudoers already-correct || record sudoers would-apply
+  for spec in "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755" "$SCRIPT_DIR/orchestra-sim:/usr/local/bin/orchestra-sim:0755" "$SOURCE_DIR/ops/wait-for-daemon-health.sh:/usr/local/sbin/wait-for-daemon-health.sh:0755"; do
+    source=${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
+    file_correct "$source" "$destination" "${spec##*:}" root wheel && status=already-correct || status=would-apply
+    record "file-$(basename "$destination")" "$status"
+  done
   paths_tmp=$(mktemp); printf '/usr/local/sbin\n' > "$paths_tmp"
   file_correct "$paths_tmp" "$PATHS_D_INSTALLED" 0644 root wheel && record paths-d already-correct || record paths-d would-apply
   rm -f "$paths_tmp"
-  for spec in "$RENDER_DIR/$DAEMON_LABEL.plist:/Library/LaunchDaemons/$DAEMON_LABEL.plist:0644" "$RENDER_DIR/$PROXY_LABEL.plist:/Library/LaunchDaemons/$PROXY_LABEL.plist:0644" "$RENDER_DIR/$TUNNEL_LABEL.plist:/Library/LaunchDaemons/$TUNNEL_LABEL.plist:0644" "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755" "$SCRIPT_DIR/orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
-    source=${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
-    if [[ $(basename "$destination") == "$TUNNEL_LABEL.plist" ]] && ! cloudflared_config_credential_exists; then
-      status="pending-human: create tunnel as $AGENT"
-    else
-      file_correct "$source" "$destination" "${spec##*:}" root wheel && status=already-correct || status=would-apply
-    fi
-    record "file-$(basename "$destination")" "$status"
+  for label in "$PROXY_LABEL" "$DAEMON_LABEL"; do
+    file_correct "$RENDER_DIR/$label.plist" "/Library/LaunchDaemons/$label.plist" 0644 root wheel && status=already-correct || status=would-apply
+    record "file-$label.plist" "$status"
+    [[ $label == "$PROXY_LABEL" ]] && service=cliproxyapi || service=daemon
+    sudo /bin/launchctl print "system/$label" >/dev/null 2>&1 && record "service-$service" already-correct || record "service-$service" would-apply
   done
-  sudo /bin/launchctl print "system/$PROXY_LABEL" >/dev/null 2>&1 && record service-cliproxyapi already-correct || record service-cliproxyapi would-apply
-  sudo /bin/launchctl print "system/$DAEMON_LABEL" >/dev/null 2>&1 && record service-daemon already-correct || record service-daemon would-apply
   if cloudflared_config_credential_exists; then
+    file_correct "$RENDER_DIR/$TUNNEL_LABEL.plist" "/Library/LaunchDaemons/$TUNNEL_LABEL.plist" 0644 root wheel && status=already-correct || status=would-apply
+    record "file-$TUNNEL_LABEL.plist" "$status"
     sudo /bin/launchctl print "system/$TUNNEL_LABEL" >/dev/null 2>&1 && record service-cloudflared already-correct || record service-cloudflared would-apply
-  else record service-cloudflared "pending-human: create tunnel as $AGENT"
+  else
+    record "file-$TUNNEL_LABEL.plist" "pending-human: create tunnel as $AGENT"
+    record service-cloudflared "pending-human: create tunnel as $AGENT"
   fi
   sudo test -s "$CONFIG_DIR/env" && record daemon-deploy already-correct || record daemon-deploy pending-human
+  provision_agent_farm
   print_summary
 }
 if (( DRY_RUN )); then echo "DRY RUN: inspecting state; no changes will be made."; dry_inventory; rm -rf "$RENDER_DIR"; exit 0; fi
@@ -303,8 +312,6 @@ done
 sudo rm -f "$AGENT_HOME/.local/bin/codex"
 
 if install_if_changed "$SOURCE_DIR/ops/codex-otel-wrapper.sh" /usr/local/bin/codex 0755 root wheel; then record codex-wrapper applied; else record codex-wrapper already-correct; fi
-
-provision_agent_farm
 
 MCP_VERSION=$(/opt/homebrew/opt/node@22/bin/node -p "require('$SOURCE_DIR/package.json').dependencies['@playwright/mcp']")
 [[ $MCP_VERSION == "$PLAYWRIGHT_MCP_VERSION" ]] || fail "unexpected @playwright/mcp pin: $MCP_VERSION"
@@ -546,6 +553,9 @@ if [[ -n $management_json ]] && python3 -c 'import json,sys; p=json.load(sys.std
 if (( credential_status == 0 )); then
   if agent env CLIPROXY_ENV_FILE="$CLIPROXY_ENV" CLIPROXY_VERSION_MARKER="$CLIPROXY_MARKER" EXPECTED_PROXY_VERSION="$CLIPROXY_VERSION" TARGET_CONFIG="$AGENT_HOME/.codex/config.toml" ORCHESTRA_CODEX_REAL_BIN="$AGENT_HOME/.codex-managed/bin/codex" "$AGENT_HOME/linear-agent-daemon/ops/codex-provider-gate.sh"; then record provider-gate already-correct; else record provider-gate pending-human; fi
 else record provider-gate pending-human; fi
+
+# Optional harness dependencies converge only after the core daemon steps.
+provision_agent_farm
 
 rm -rf "$RENDER_DIR"
 print_summary
