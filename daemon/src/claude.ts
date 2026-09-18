@@ -28,7 +28,14 @@ export type ClaudeEvent =
       outcome: "success" | "error";
     };
 
+export interface PreparedLaunch {
+  argv: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
 export interface RunTurnOptions {
+  preparedLaunch?: PreparedLaunch;
   cwd: string;
   prompt: string;
   resumeSessionId?: string;
@@ -129,10 +136,10 @@ function linearMcpInitStatus(event: Record<string, unknown>): string | undefined
   if (Array.isArray(servers)) {
     const linear = servers
       .map(record)
-      .find((server) => server?.name === "linear");
+      .find((server) => server?.name === "linear" || server?.name === "orchestra_linear");
     rawStatus = linear?.status;
   } else {
-    const linear = record(servers)?.linear;
+    const linear = record(servers)?.linear ?? record(servers)?.orchestra_linear;
     rawStatus = typeof linear === "string" ? linear : record(linear)?.status;
   }
   if (typeof rawStatus !== "string") return undefined;
@@ -389,44 +396,29 @@ export async function awaitDetachedExit(
 }
 
 export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
-  const [bin, ...prefix] = options.argv;
+  let configDir: string | undefined;
+  let launch = options.preparedLaunch;
+  if (!launch) {
+    const [bin, ...prefix] = options.argv;
+    if (!bin) throw new Error("Claude argv is empty");
+    configDir = await mkdtemp(join(tmpdir(), "linear-claude-mcp-"));
+    const configPath = join(configDir, "mcp-config.json");
+    await writeFile(configPath, options.mcpConfigJson, { mode: 0o600 });
+    const settingsPath = join(configDir, "settings.json");
+    await writeFile(settingsPath, JSON.stringify(buildTurnSettings(options.toolHook)), { mode: 0o600 });
+    const args = [...prefix, "-p", options.prompt, "--output-format", "stream-json", "--verbose"];
+    if (options.resumeSessionId) args.push("--resume", options.resumeSessionId);
+    args.push("--settings", settingsPath, "--permission-mode", options.permissionMode,
+      "--max-turns", String(options.maxTurns), "--mcp-config", configPath);
+    if (options.maxBudgetUsd !== undefined) args.push("--max-budget-usd", String(options.maxBudgetUsd));
+    launch = { argv: [bin, ...args], cwd: options.cwd,
+      env: childEnv(options.env, options.trustedEnv, options.mcpEnvPassthrough) };
+  }
+  const [bin, ...args] = launch.argv;
   if (!bin) throw new Error("Claude argv is empty");
-  const configDir = await mkdtemp(join(tmpdir(), "linear-claude-mcp-"));
-  const configPath = join(configDir, "mcp-config.json");
-  await writeFile(configPath, options.mcpConfigJson, { mode: 0o600 });
-  const settingsPath = join(configDir, "settings.json");
-  await writeFile(
-    settingsPath,
-    JSON.stringify(buildTurnSettings(options.toolHook)),
-    { mode: 0o600 },
-  );
-  const args = [
-    ...prefix,
-    "-p",
-    options.prompt,
-    "--output-format",
-    "stream-json",
-    "--verbose",
-  ];
-  if (options.resumeSessionId) args.push("--resume", options.resumeSessionId);
-  args.push("--settings", settingsPath);
-  args.push(
-    "--permission-mode",
-    options.permissionMode,
-    "--max-turns",
-    String(options.maxTurns),
-    "--mcp-config",
-    configPath,
-  );
-  if (options.maxBudgetUsd !== undefined)
-    args.push("--max-budget-usd", String(options.maxBudgetUsd));
   const child = spawn(bin, args, {
-    cwd: options.cwd,
-    env: childEnv(
-      options.env,
-      options.trustedEnv,
-      options.mcpEnvPassthrough,
-    ),
+    cwd: launch.cwd,
+    env: launch.env,
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -539,7 +531,7 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
             outcome,
           });
           const toolName = toolNames.get(block.tool_use_id);
-          if (toolName?.startsWith("mcp__linear__"))
+          if ((toolName?.startsWith("mcp__linear__") || toolName?.startsWith("mcp__orchestra_linear__")))
             emit({
               type: "linearMcpToolResult",
               toolUseId: block.tool_use_id,
@@ -648,6 +640,6 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
       ...(sawLinearMcpInit ? { linearMcpInitialized: true } : {}),
     };
   } finally {
-    await rm(configDir, { recursive: true, force: true });
+    if (configDir) await rm(configDir, { recursive: true, force: true });
   }
 }

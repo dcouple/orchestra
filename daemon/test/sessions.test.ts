@@ -73,6 +73,7 @@ const oldOtelEnv = Object.fromEntries(
   otelTestKeys.map((key) => [key, process.env[key]]),
 ) as Record<string, string | undefined>;
 afterEach(() => {
+  delete process.env.ORCHESTRA_BROWSER_FAKE_REPORT;
   delete process.env.CODEX_FAKE_ARGS_FILE;
   delete process.env.CODEX_FAKE_MODE;
   for (const dir of dirs.splice(0))
@@ -146,6 +147,7 @@ function setup() {
     fableArgv: [process.execPath, resolve("test/fixtures/fake-claude.mjs")],
     codexArgv: [process.execPath, resolve("test/fixtures/fake-codex.mjs")],
     codexModel: "gpt-6-astra",
+    agentFarmBin: resolve("test/fixtures/fake-agent-farm.mjs"),
     claudePermissionMode: "plan",
     claudeMaxTurns: 5,
     bashDefaultTimeoutMs: 900_000,
@@ -1125,6 +1127,39 @@ describe("SessionWorker", () => {
     log.close();
   });
   it.each(["planner", "implementer"] as const)(
+    "keeps the Agent Farm %s profile sticky and resumes through its reported harness",
+    async (app) => {
+      const seeded = setup();
+      seeded.log.close();
+      seeded.config.apps[app].harness = `agent-farm:${app}`;
+      seeded.config.browserEnabled = false;
+      seeded.config.attachmentsEnabled = false;
+      process.env.ORCHESTRA_BROWSER_FAKE_REPORT = join(seeded.dir, "farm-report.json");
+      let log: EventLog;
+      log = new EventLog(seeded.config.dbPath, selected => selectSessionProfile(log, seeded.config, selected));
+      const poster = new Poster();
+      if (app === "planner") append(log, "farm-created", "farm-session", "created");
+      else appendImplementer(log, "farm-created", "farm-session");
+      const worker = new SessionWorker(log, poster as unknown as LinearGateway, seeded.config, { pollMs: 10 });
+      try {
+        await worker.start();
+        await waitFor(() => log.turnStates()[0]?.status === "done");
+        expect(log.getSession("farm-session")).toMatchObject({ runtime: `agent-farm:${app}`, profile: "sol" });
+        seeded.config.apps[app].harness = "claudex";
+        log.append({ deliveryId: "farm-prompted", app, action: "prompted", agentSessionId: "farm-session",
+          receivedAt: Date.now(), rawBody: Buffer.from(JSON.stringify({ action: "prompted",
+            agentActivity: { body: "continue" }, agentSession: { id: "farm-session" } })) });
+        worker.trigger();
+        await waitFor(() => log.turnStates()[1]?.status === "done");
+        const report = JSON.parse(readFileSync(process.env.ORCHESTRA_BROWSER_FAKE_REPORT, "utf8"));
+        expect(report.preparationArgs).toContain(app);
+        expect(report.launch.argv).toContain(app === "planner" ? "farm-session" : "farm-thread");
+        expect(report.launch.argv).not.toContain("--mcp-config");
+        if (app === "implementer") expect(JSON.parse(readFileSync(process.env.ORCHESTRA_BROWSER_FAKE_REPORT + ".child", "utf8").split("\n")[0]!).args.at(-1)).toBe("ENG-42");
+      } finally { await worker.stop(); log.close(); }
+    },
+  );
+  it.each(["planner", "implementer"] as const)(
     "starts a directly preferred Claudex %s session and keeps it sticky after config changes",
     async (app) => {
       const seeded = setup();
@@ -2093,7 +2128,7 @@ describe("SessionWorker", () => {
     expect(log.getSession("implementer-session")).toMatchObject({
       runtime: "codex", profile: "sol", claudeSessionId: "codex-thread-1",
     });
-    expect(poster.posts.some((post) => activityBody(post.content) === "implementation started — running $astra-ticket")).toBe(true);
+    expect(poster.posts.some((post) => activityBody(post.content) === "implementation started - running $astra-ticket")).toBe(true);
     expect(log.aggregateSession("implementer-session").canonicalTokens).toBe(40118);
     expect(JSON.stringify(poster.posts)).not.toContain("private Linear result");
     expect(poster.urls[0]).toEqual({

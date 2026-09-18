@@ -7,6 +7,7 @@ import {
   type ClaudeEvent,
   type RunTurnResult,
   type TurnUsage,
+  type PreparedLaunch,
 } from "./claude.js";
 
 /**
@@ -16,6 +17,7 @@ import {
  * `--dangerously-bypass-approvals-and-sandbox` like the pipeline's dispatches.
  */
 export interface CodexTurnOptions {
+  preparedLaunch?: PreparedLaunch;
   cwd: string;
   prompt: string;
   argv: string[];
@@ -130,11 +132,12 @@ function toolOutcome(item: Record<string, unknown>): "success" | "error" {
 export async function runCodexTurn(
   options: CodexTurnOptions,
 ): Promise<RunTurnResult> {
-  const [bin] = options.argv;
+  const launch = options.preparedLaunch;
+  const [bin] = launch?.argv ?? options.argv;
   if (!bin) throw new Error("Codex argv is empty");
-  const child = spawn(bin, codexArgs(options), {
-    cwd: options.cwd,
-    env: childEnv(options.env, undefined, options.mcpEnvPassthrough),
+  const child = spawn(bin, launch ? launch.argv.slice(1) : codexArgs(options), {
+    cwd: launch?.cwd ?? options.cwd,
+    env: launch?.env ?? childEnv(options.env, undefined, options.mcpEnvPassthrough),
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -203,7 +206,7 @@ export async function runCodexTurn(
       if (event.type === "item.completed") {
         const outcome = toolOutcome(item);
         emit({ type: "toolResult", toolUseId: item.id, outcome });
-        if (item.type === "mcp_tool_call" && item.server === "linear")
+        if (item.type === "mcp_tool_call" && (item.server === "linear" || item.server === "orchestra_linear"))
           emit({
             type: "linearMcpToolResult",
             toolUseId: item.id,

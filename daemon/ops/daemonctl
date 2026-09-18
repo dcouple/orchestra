@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: daemonctl config --planner claude|claudex --implementer claude|claudex|codex [--reason TEXT] [--dry-run]
+usage: daemonctl config --planner claude|claudex|agent-farm:<profile> --implementer claude|claudex|codex|agent-farm:<profile> [--reason TEXT] [--dry-run]
        daemonctl restart [--reason TEXT] [--dry-run]
        daemonctl restart --hard [--yes] [--dry-run]
        daemonctl reload [--reason TEXT] [--dry-run]
@@ -67,8 +67,14 @@ ops_cli() {
 die() { echo "$*" >&2; exit 1; }
 usage_error() { echo "$*" >&2; usage >&2; exit 2; }
 require_root() { [[ "${EUID}" -eq 0 || "${DAEMONCTL_ALLOW_NON_ROOT:-0}" == 1 ]] || die "run as root (use sudo daemonctl ...)"; }
-validate_harness() { [[ "$1" == claude || "$1" == claudex || "$1" == codex ]] || usage_error "harness must be claude, claudex, or codex"; }
-validate_planner() { [[ "$1" == claude || "$1" == claudex ]] || usage_error "planner harness must be claude or claudex"; }
+validate_harness() {
+  [[ $1 == claude || $1 == claudex || $1 == codex || $1 =~ ^agent-farm:[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
+    || usage_error "harness must be claude, claudex, codex, or agent-farm:<profile>"
+}
+validate_planner() {
+  [[ $1 != codex ]] || usage_error "planner harness must be claude, claudex, or agent-farm:<profile>"
+  validate_harness "$1"
+}
 validate_reason() { [[ "$1" != *$'\n'* && ${#1} -le 240 ]] || usage_error "reason must be one line of at most 240 characters"; }
 json_field() { python3 -c 'import json,sys; v=json.load(open(sys.argv[1])).get(sys.argv[2]); print("" if v is None else v)' "$1" "$2"; }
 json_count_running() { ops_cli running | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'; }

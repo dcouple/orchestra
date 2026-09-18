@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 import type { TurnUsage } from "./claude.js";
-import type { AppName } from "./config.js";
+import type { AppName, Runtime } from "./config.js";
 import type { InFlightDispatch } from "./dispatches.js";
 import { ACTIVE_OPERATION_STATES, type OperationRow, type OperationState,
   type SafeOperationStatus, type SafeRunningTurn, type ScheduleOperationInput, validateScheduleOperation } from "./operations.js";
@@ -31,7 +31,7 @@ export interface SessionRow {
   worktreePath: string | null;
   branch: string | null;
   claudeSessionId: string | null;
-  runtime: "claude" | "claudex" | "codex";
+  runtime: Runtime;
   fallbackCause: string | null;
   profile: "fable" | "sol" | null;
   profileFallback: number | null;
@@ -57,7 +57,7 @@ export interface AppendResult {
   inserted: boolean;
   deliveryId: string;
   assignedProfile?: "fable" | "sol";
-  assignedRuntime?: "claude" | "claudex" | "codex";
+  assignedRuntime?: Runtime;
   assignmentReason?: string;
   stop?: { agentSessionId: string; app: AppName };
 }
@@ -323,7 +323,7 @@ export class EventLog {
     path: string,
     private readonly selectProfile: (app: AppName) => {
       profile: "fable" | "sol";
-      runtime: "claude" | "claudex" | "codex";
+      runtime: Runtime;
       reason: string;
     } = () => ({
       profile: "fable",
@@ -941,7 +941,7 @@ export class EventLog {
       let assignment:
         | {
             profile: "fable" | "sol";
-            runtime: "claude" | "claudex" | "codex";
+            runtime: Runtime;
             reason: string;
           }
         | undefined;
@@ -1766,7 +1766,7 @@ export class EventLog {
           const sourceKey = `restart-resume:${row.id}`;
           const prompt =
             reason === "unresolved_tool_call"
-              ? "Continue from the interrupted daemon turn. An external tool call may have been in flight when the daemon restarted: verify its external effects before re-running it — the push, PR, comment, or write may already have landed. Review the current worktree state before proceeding."
+              ? "Continue from the interrupted daemon turn. An external tool call may have been in flight when the daemon restarted: verify its external effects before re-running it - the push, PR, comment, or write may already have landed. Review the current worktree state before proceeding."
               : "Continue from the interrupted daemon turn. Review the current worktree state before proceeding.";
           const resumeTurnId = this.insertRecoveryResume(
             row,
