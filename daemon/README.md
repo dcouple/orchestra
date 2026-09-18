@@ -66,14 +66,14 @@ See [`ops/macos/README.md`](ops/macos/README.md) for the operator setup commands
 
 After core provisioning and the daemon deploy, the script installs Agent Farm for
 the site-configured service user. `ops/macos/agent-farm-provision.sh` pins CLI
-version `0.1.1` and runs `pnpm add --global @dcouple/agent-farm@0.1.1`, using
+version `0.1.2` and runs `pnpm add --global @dcouple/agent-farm@0.1.2`, using
 the same service-user installation as Playwright MCP and XcodeBuildMCP. The
 executable is `~/.pnpm/bin/agent-farm`; an existing executable and matching
 `~/.pnpm/agent-farm-version` marker count as converged. That version must be
 published on npm to install it. Only the `agent-farm:<profile>` harness
 requires Agent Farm; `claude`, `claudex`, and `codex` harnesses run without it.
 If the pinned package cannot be installed (unpublished release or registry/network
-outage), provisioning records `agent-farm-cli pending-release: @dcouple/agent-farm@<ver> not installable`
+outage), provisioning records `agent-farm-cli pending-release: @dcouple/agent-farm@0.1.2 not installable`
 and dependent plugin, profiles, provider, workspace, and browser rows as
 `pending-release`, prints a stderr notice, and finishes with exit 0. Rerun
 provisioning once the package is available. Verification failures after a

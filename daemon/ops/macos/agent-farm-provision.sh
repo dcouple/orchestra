@@ -1,7 +1,7 @@
 #!/bin/bash
 # shellcheck disable=SC2015
 # Sourced by provision.sh. Uses its agent(), record(), and fail() helpers.
-AGENT_FARM_VERSION=0.1.1
+AGENT_FARM_VERSION=0.1.2
 AGENT_FARM_BIN=$AGENT_HOME/.pnpm/bin/agent-farm
 AGENT_FARM_VERSION_FILE=$AGENT_HOME/.pnpm/agent-farm-version
 AGENT_FARM_CONFIG_ROOT=$AGENT_HOME/.config/agent-farm
