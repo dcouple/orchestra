@@ -1,0 +1,4 @@
+{
+  "claude": ["discussion", "create-brief", "investigate", "codex"],
+  "codex": ["code-researcher", "web-researcher", "investigate", "investigator", "plan-reviewer"]
+}

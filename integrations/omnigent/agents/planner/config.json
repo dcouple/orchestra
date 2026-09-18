@@ -1,0 +1,11 @@
+{
+  "spec_version": 1,
+  "name": "orchestra-planner",
+  "description": "Discuss a task, research the repository, and develop a reviewable plan.",
+  "prompt": "You are the planner. Clarify the requested outcome and inspect relevant code before proposing a plan. Use the selected research skills when appropriate. Implement only when the user requests implementation. Repository instructions come from the working directory; this role does not replace them.",
+  "skills": "all",
+  "spawn": false,
+  "connections": [],
+  "os_env": {"type": "caller_process", "cwd": ".", "sandbox": {"type": "none"}},
+  "tools": {}
+}
