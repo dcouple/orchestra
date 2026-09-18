@@ -199,6 +199,9 @@ dry_inventory() {
   sudo test -d "$CHECKOUT/.git" && record source-checkout already-correct || record source-checkout would-apply
   file_correct "$DAEMON_SITE_ENV" "$SITE_INSTALLED" 0644 root wheel && record site-config already-correct || record site-config would-apply
   file_correct "$RENDER_DIR/sudoers" "$SUDOERS_INSTALLED" 0440 root wheel && record sudoers already-correct || record sudoers would-apply
+  sudo test ! -L /usr/local/bin/agent-farm \
+    && file_correct "$RENDER_DIR/agent-farm" /usr/local/bin/agent-farm 0755 root wheel \
+    && record agent-farm-wrapper already-correct || record agent-farm-wrapper would-apply
   for spec in "$SCRIPT_DIR/daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "$SCRIPT_DIR/run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "$SCRIPT_DIR/run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "$SCRIPT_DIR/run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "$SCRIPT_DIR/daemonctl:/usr/local/sbin/daemonctl:0755" "$SCRIPT_DIR/deploy.sh:/usr/local/sbin/deploy.sh:0755" "$SCRIPT_DIR/orchestra-sim:/usr/local/bin/orchestra-sim:0755" "$SOURCE_DIR/ops/wait-for-daemon-health.sh:/usr/local/sbin/wait-for-daemon-health.sh:0755"; do
     source=${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
     file_correct "$source" "$destination" "${spec##*:}" root wheel && status=already-correct || status=would-apply
@@ -471,6 +474,14 @@ if install_if_changed "$RENDER_DIR/sudoers" "$SUDOERS_INSTALLED" 0440 root wheel
 sudo /usr/sbin/visudo -cf "$SUDOERS_INSTALLED" >/dev/null || fail "installed sudoers did not verify"
 
 root_files_changed=0
+sudo test ! -L /usr/local/bin/agent-farm || fail "Agent Farm wrapper destination is a symlink"
+if install_if_changed "$RENDER_DIR/agent-farm" /usr/local/bin/agent-farm 0755 root wheel; then
+  record agent-farm-wrapper applied
+else
+  record agent-farm-wrapper already-correct
+fi
+file_correct "$RENDER_DIR/agent-farm" /usr/local/bin/agent-farm 0755 root wheel \
+  || fail "Agent Farm wrapper bytes, ownership, or mode did not verify"
 for spec in "daemon-site-lib.sh:/usr/local/sbin/daemon-site-lib.sh:0644" "run-daemon.sh:/usr/local/sbin/run-daemon.sh:0755" "run-cliproxyapi.sh:/usr/local/sbin/run-cliproxyapi.sh:0755" "run-cloudflared.sh:/usr/local/sbin/run-cloudflared.sh:0755" "daemonctl:/usr/local/sbin/daemonctl:0755" "deploy.sh:/usr/local/sbin/deploy.sh:0755" "orchestra-sim:/usr/local/bin/orchestra-sim:0755"; do
   source=$SCRIPT_DIR/${spec%%:*}; destination=${spec#*:}; destination=${destination%:*}
   install_if_changed "$source" "$destination" "${spec##*:}" root wheel && root_files_changed=1

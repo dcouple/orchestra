@@ -27,7 +27,7 @@ load_site_env() {
   DAEMON_TUNNEL_NAME=${DAEMON_TUNNEL_NAME:-linear-agent}
   DAEMON_SOURCE_REPO_URL=${DAEMON_SOURCE_REPO_URL:-https://github.com/dcouple/orchestra.git}
   # Values are substituted with sed using | as the delimiter and land in
-  # plists, sudoers, and YAML — keep them to the characters those accept.
+  # plists, sudoers, and YAML - keep them to the characters those accept.
   [[ $DAEMON_SERVICE_USER =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || site_die "site config: invalid DAEMON_SERVICE_USER: $DAEMON_SERVICE_USER" || return
   [[ $DAEMON_SERVICE_HOME =~ ^/[A-Za-z0-9._/-]+$ ]] || site_die "site config: invalid DAEMON_SERVICE_HOME: $DAEMON_SERVICE_HOME" || return
   [[ $DAEMON_PUBLIC_HOSTNAME =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$ ]] || site_die "site config: invalid DAEMON_PUBLIC_HOSTNAME: $DAEMON_PUBLIC_HOSTNAME" || return
@@ -41,7 +41,7 @@ load_site_env() {
     DAEMON_LAUNCHD_PREFIX DAEMON_SOURCE_REPO_URL DAEMON_LABEL PROXY_LABEL TUNNEL_LABEL
 }
 
-# wait_for_network [HOST...] — blocks until one of the hosts resolves, then
+# wait_for_network [HOST...] - blocks until one of the hosts resolves, then
 # returns 0. launchd starts the system domain before DNS works on a cold boot,
 # and a service that starts first sees "no such host" for its startup fetches
 # (the proxy then serves its built-in model catalog until the next periodic
@@ -79,7 +79,7 @@ host_resolves() {
   fi
 }
 
-# render_site_template TEMPLATE > OUTPUT — substitutes the site placeholders.
+# render_site_template TEMPLATE > OUTPUT - substitutes the site placeholders.
 # @TUNNEL_ID@ is deliberately left alone; the provisioner fills it from the
 # tunnel credentials on the host.
 render_site_template() {
@@ -90,9 +90,9 @@ render_site_template() {
       "$1"
 }
 
-# render_site_templates DIR — renders every template the provisioner installs
-# into DIR: <label>.plist for the three services, sudoers, and the cloudflared
-# config (still carrying @TUNNEL_ID@).
+# render_site_templates DIR - renders every template the provisioner installs
+# into DIR: <label>.plist for the three services, sudoers, the cloudflared
+# config (still carrying @TUNNEL_ID@), and the Agent Farm wrapper.
 render_site_templates() {
   local src=${SITE_TEMPLATE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)} out=$1 rendered
   render_site_template "$src/linear-agent-daemon.plist.template" > "$out/$DAEMON_LABEL.plist"
@@ -100,7 +100,8 @@ render_site_templates() {
   render_site_template "$src/cloudflared.plist.template" > "$out/$TUNNEL_LABEL.plist"
   render_site_template "$src/sudoers-services.template" > "$out/sudoers"
   render_site_template "$src/cloudflared-config.yml.template" > "$out/cloudflared-config.yml"
-  for rendered in "$out/$DAEMON_LABEL.plist" "$out/$PROXY_LABEL.plist" "$out/$TUNNEL_LABEL.plist" "$out/sudoers" "$out/cloudflared-config.yml"; do
+  render_site_template "$src/agent-farm.sh.template" > "$out/agent-farm"
+  for rendered in "$out/$DAEMON_LABEL.plist" "$out/$PROXY_LABEL.plist" "$out/$TUNNEL_LABEL.plist" "$out/sudoers" "$out/cloudflared-config.yml" "$out/agent-farm"; do
     ! grep -qE '@(SERVICE_USER|SERVICE_HOME|LAUNCHD_PREFIX|PUBLIC_HOSTNAME)@' "$rendered" || site_die "unrendered placeholder in $rendered" || return
   done
 }

@@ -96,7 +96,7 @@ if [[ -f $HOME_DIR/.cloudflared/config.yml ]]; then
 else
   echo "skip-drift: cloudflared plist pending tunnel config" >&2
 fi
-# The sudoers policy is 0440 root:wheel — unreadable to the service user, so its
+# The sudoers policy is 0440 root:wheel - unreadable to the service user, so its
 # content cannot be compared here; existence/owner/mode drift is still
 # detectable, and content convergence is provision.sh's (root) job.
 check_artifact_metadata_only() {
@@ -115,6 +115,7 @@ check_artifact "$MACOS_DIR/run-cloudflared.sh" /usr/local/sbin/run-cloudflared.s
 check_artifact "$MACOS_DIR/deploy.sh" /usr/local/sbin/deploy.sh root:wheel 0755
 check_artifact "$MACOS_DIR/daemonctl" /usr/local/sbin/daemonctl root:wheel 0755
 check_artifact "$MACOS_DIR/orchestra-sim" /usr/local/bin/orchestra-sim root:wheel 0755
+check_artifact "$RENDER_DIR/agent-farm" /usr/local/bin/agent-farm root:wheel 0755
 xcodebuildmcp_wrapper="$RENDER_DIR/xcodebuildmcp"
 printf '#!/bin/sh\nexec %s/.pnpm/bin/xcodebuildmcp "$@"\n' "$HOME_DIR" > "$xcodebuildmcp_wrapper"
 check_artifact "$xcodebuildmcp_wrapper" /usr/local/bin/xcodebuildmcp root:wheel 0755
@@ -131,7 +132,7 @@ rsync -aO --no-perms --no-owner --no-group --delete \
   "$SOURCE_DIR/" "$CODE_DIR/"
 chmod 0755 "$CODE_DIR/ops/proxy-accounts.sh" "$CODE_DIR/ops/codex-provider-gate.sh"
 # CI=true: pnpm otherwise refuses to purge a stale modules dir without a TTY
-# (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) — deploys are always headless.
+# (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) - deploys are always headless.
 (cd "$CODE_DIR" && CI=true "$PNPM_BIN" install --frozen-lockfile && CI=true "$PNPM_BIN" build && CI=true "$PNPM_BIN" prune --prod)
 
 env_has_key() { grep -Eq "^[[:space:]]*$1=[^[:space:]]+" "$ENV_FILE"; }

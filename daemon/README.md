@@ -69,8 +69,13 @@ the site-configured service user. `ops/macos/agent-farm-provision.sh` pins CLI
 version `0.1.2` and runs `pnpm add --global @greenfieldco/agent-farm@0.1.2`, using
 the same service-user installation as Playwright MCP and XcodeBuildMCP. The
 executable is `~/.pnpm/bin/agent-farm`; an existing executable and matching
-`~/.pnpm/agent-farm-version` marker count as converged. That version must be
-published on npm to install it. Only the `agent-farm:<profile>` harness
+`~/.pnpm/agent-farm-version` marker count as converged. Core provisioning also
+installs a root-owned mode 0755 `/usr/local/bin/agent-farm` wrapper pointing to
+that executable, following the Codex and XcodeBuildMCP wrapper pattern. It
+records `agent-farm-wrapper` as `already-correct`, `would-apply`, or `applied`
+and verifies bytes, ownership, and mode. `deploy.sh` refuses wrapper drift
+with `needs-provision`, including when the optional CLI is not installed yet.
+The pinned version must be published on npm to install it. Only the `agent-farm:<profile>` harness
 requires Agent Farm; `claude`, `claudex`, and `codex` harnesses run without it.
 If the pinned package cannot be installed (unpublished release or registry/network
 outage), provisioning records `agent-farm-cli pending-release: @greenfieldco/agent-farm@0.1.2 not installable`
@@ -254,8 +259,14 @@ AGENT_FARM_BIN=agent-farm
 ```
 
 `AGENT_FARM_BIN` names one executable, including an absolute path with spaces;
-its default is `agent-farm`. On the macOS service account the provisioned binary
-is `~/.pnpm/bin/agent-farm`, which is on the daemon child PATH. Existing sessions
+its default is `agent-farm`. On macOS, `/usr/local/bin/agent-farm` resolves on
+the launchd PATH and forwards to the service account's `~/.pnpm/bin/agent-farm`.
+The pnpm bin directory itself is absent from that PATH. Operator-set
+`AGENT_FARM_BIN` values remain unchanged by provisioning. Before selecting an
+Agent Farm role, `daemonctl config` (including `--dry-run`) checks the configured
+executable under the daemon PATH and requires `--help` to succeed. A missing
+CLI, non-executable file, or broken wrapper refuses the change before any
+backup, operation scheduling, or restart. Existing sessions
 keep their assigned `agent-farm:<profile>` value when app settings change. The
 profile owns the model, effort, skills, instructions, and child agents. A new
 implementer turn sends the issue identifier to that profile.

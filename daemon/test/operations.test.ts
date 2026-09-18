@@ -289,13 +289,17 @@ describe("daemonctl command boundaries", () => {
 
   it.each(["ops/daemonctl", "ops/macos/daemonctl"])("%s accepts independent Agent Farm profiles in dry-run", script => {
     const { dir } = fixture(); const envFile = join(dir, "env");
-    const content = "SECRET_TOKEN=never-print-me\nPLANNER_HARNESS=claude\n";
+    const binary = join(dir, "farm binary"); executable(binary, "#!/bin/sh\n[ \"$1\" = --help ]\n");
+    mkdirSync(join(dir, "linear-agent-daemon"));
+    const site = join(dir, "site.env");
+    writeFileSync(site, `${readFileSync(resolve("ops/macos/site.env.example"), "utf8")}\nDAEMON_SERVICE_HOME=${dir}\n`);
+    const content = `SECRET_TOKEN=never-print-me\nPLANNER_HARNESS=claude\nAGENT_FARM_BIN='  ${binary}  '\n`;
     writeFileSync(envFile, content);
     const result = spawnSync("bash", [resolve(script), "config", "--planner", "agent-farm:planner",
       "--implementer", "agent-farm:implementer", "--dry-run"], {
       env: { ...process.env, DAEMONCTL_ALLOW_NON_ROOT: "1", DAEMONCTL_ALLOW_OTHER_USER: "1",
         DAEMONCTL_ENV_FILE: envFile, DAEMON_SITE_LIB: resolve("ops/macos/daemon-site-lib.sh"),
-        DAEMON_SITE_ENV: resolve("ops/macos/site.env.example") }, encoding: "utf8",
+        DAEMON_SITE_ENV: site }, encoding: "utf8",
     });
     expect(result.status, result.stderr).toBe(0);
     if (script === "ops/daemonctl") {

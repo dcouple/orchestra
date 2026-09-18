@@ -61,6 +61,19 @@ and dependent plugin, profiles, provider, workspace, and browser rows as
 `pending-release`. Provisioning finishes with exit 0; rerun it once the package
 is available. Verification failures after a successful install still abort.
 
+Core provisioning installs `/usr/local/bin/agent-farm` as root:wheel, mode
+0755, before the daemon deploy. The wrapper forwards arguments to
+`$DAEMON_SERVICE_HOME/.pnpm/bin/agent-farm`, which is outside the launchd PATH.
+Its `agent-farm-wrapper` inventory row reports `already-correct`, `would-apply`,
+or `applied`; apply verifies its bytes, ownership, and mode. `deploy.sh`
+reports `needs-provision` for wrapper drift. The wrapper is installed even
+when the optional CLI package is unavailable. Operator-set `AGENT_FARM_BIN`
+values are preserved. `daemonctl config` refuses an Agent Farm role switch
+(including `--dry-run`) unless the configured executable resolves under the
+daemon PATH and passes `--help` as the service user with the daemon environment.
+Rerun provisioning or set an executable `AGENT_FARM_BIN` in the env file before
+retrying. This also catches a wrapper whose underlying CLI is missing.
+
 ## Human handoffs
 
 Write the daemon environment file as the service user
