@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ops = resolve("ops/macos");
@@ -11,7 +11,7 @@ const provision = readFileSync(join(ops, "provision.sh"), "utf8");
 const coreApply = provision.slice(provision.indexOf("\nroot_files_changed=0\n"));
 const version = readFileSync(helper, "utf8").match(/^AGENT_FARM_VERSION=(.+)$/m)![1];
 
-function fixture() {
+function fixture(scriptDir = ops, sourceDir = resolve(".")) {
   const home = mkdtempSync(join(tmpdir(), "agent-farm-provision-"));
   const packageRoot = join(home, ".pnpm/global/v11/fixture package/node_modules/@greenfieldco/agent-farm");
   const root = join(home, ".config/agent-farm");
@@ -21,6 +21,7 @@ function fixture() {
     SCRIPT_DIR="$2"
     DRY_RUN="$3"
     ADD_EXIT="$4"
+    SOURCE_DIR="$5"
     agent() {
       if [[ $1 == /usr/local/bin/pnpm ]]; then
         shift
@@ -54,7 +55,6 @@ function fixture() {
     fail() { echo "ERROR: $*" >&2; exit 1; }
     . "$SCRIPT_DIR/agent-farm-provision.sh"
     ${withCore ? `
-      SOURCE_DIR="${resolve(".")}"
       AGENT=fixture
       OPS_STATE="$AGENT_HOME/state"
       PATHS_D_INSTALLED=/etc/paths.d/fixture
@@ -81,7 +81,7 @@ function fixture() {
       print_summary() { :; }
       ${coreApply}
     ` : "provision_agent_farm"}
-  `, "bash", home, ops, dry ? "1" : "0", String(addExit)], {
+  `, "bash", home, scriptDir, dry ? "1" : "0", String(addExit), sourceDir], {
     encoding: "utf8", timeout: 10_000,
     env: { ...process.env, CLIPROXY_API_KEY: "proxy-secret-fixture" },
   });
@@ -226,6 +226,63 @@ describe("Agent Farm macOS provisioning convergence", () => {
     expect(second.stdout).toContain("agent-farm-browser already-correct");
     expect(readFileSync(unrelated, "utf8")).toBe("connections: {}\n");
   });
+  it("installs and inventories from an operator bundle with a separate daemon source", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agent-farm-operator-"));
+    const bundle = join(dir, "operator setup bundle");
+    const source = join(dir, "bootstrap/daemon");
+    cpSync(ops, bundle, { recursive: true });
+    cpSync(resolve("."), source, {
+      recursive: true,
+      filter: path => !["node_modules", "dist"].includes(basename(path)) && !basename(path).startsWith(".env"),
+    });
+    expect(existsSync(join(bundle, "../agent-farm/bloom-mono.yaml"))).toBe(false);
+    expect(existsSync(join(bundle, "../agent-farm-browser.sh"))).toBe(false);
+    expect(readFileSync(join(bundle, "agent-farm-state.mjs")))
+      .toEqual(readFileSync(join(ops, "agent-farm-state.mjs")));
+
+    const f = fixture(bundle, source); f.seed();
+    const sources = [join(source, "ops/agent-farm/bloom-mono.yaml"), join(source, "ops/agent-farm-browser.sh")];
+    const installed = [join(f.root, "workspaces/bloom-mono.yaml"), join(f.home, "libexec/orchestra-agent-farm-browser")];
+    const inventory = f.run(true);
+    expect(inventory.status, inventory.stderr).toBe(0);
+    for (const name of ["workspace", "browser"]) expect(inventory.stdout).toContain(`agent-farm-${name} would-apply`);
+    for (const path of installed) expect(existsSync(path)).toBe(false);
+
+    const first = f.run(false, 0, true);
+    expect(first.status, first.stderr).toBe(0);
+    expect(first.stdout).toContain("agent-farm-plugin already-correct");
+    for (const name of ["workspace", "browser"]) expect(first.stdout).toContain(`agent-farm-${name} applied`);
+    for (const [index, path] of installed.entries()) expect(readFileSync(path)).toEqual(readFileSync(sources[index]));
+    expect(statSync(installed[0]).mode & 0o777).toBe(0o640);
+    expect(statSync(installed[1]).mode & 0o777).toBe(0o755);
+    expect(readFileSync(join(f.home, "root/usr/local/sbin/wait-for-daemon-health.sh")))
+      .toEqual(readFileSync(join(source, "ops/wait-for-daemon-health.sh")));
+    for (const name of ["daemon-site-lib.sh", "run-daemon.sh", "run-cliproxyapi.sh", "run-cloudflared.sh", "daemonctl", "deploy.sh"])
+      expect(readFileSync(join(f.home, "root/usr/local/sbin", name))).toEqual(readFileSync(join(bundle, name)));
+
+    for (const dry of [true, false]) {
+      const result = f.run(dry);
+      expect(result.status, result.stderr).toBe(0);
+      for (const name of ["workspace", "browser"]) expect(result.stdout).toContain(`agent-farm-${name} already-correct`);
+      for (const [index, path] of installed.entries()) expect(readFileSync(path)).toEqual(readFileSync(sources[index]));
+    }
+    // Inventory and apply must both compare against the operator's source copy.
+    const original = installed.map(path => readFileSync(path));
+    for (const path of sources) {
+      const changed = `${readFileSync(path, "utf8")}\n# operator source revision\n`;
+      writeFileSync(path, changed);
+      expect(readFileSync(path, "utf8")).toBe(changed);
+    }
+    const drift = f.run(true);
+    expect(drift.status, drift.stderr).toBe(0);
+    for (const name of ["workspace", "browser"]) expect(drift.stdout).toContain(`agent-farm-${name} would-apply`);
+    for (const [index, path] of installed.entries()) expect(readFileSync(path)).toEqual(original[index]);
+    const repaired = f.run(false);
+    expect(repaired.status, repaired.stderr).toBe(0);
+    for (const name of ["workspace", "browser"]) expect(repaired.stdout).toContain(`agent-farm-${name} applied`);
+    for (const [index, path] of installed.entries()) expect(readFileSync(path)).toEqual(readFileSync(sources[index]));
+  });
+
   it("refuses a symlink workspace without changing its target", () => {
     const f = fixture(); f.seed();
     mkdirSync(join(f.root, "workspaces"));
