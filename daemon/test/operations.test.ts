@@ -284,7 +284,26 @@ describe("daemonctl command boundaries", () => {
       env: { ...process.env, DAEMONCTL_ALLOW_NON_ROOT: "1", DAEMONCTL_ALLOW_OTHER_USER: "1", DAEMON_SITE_LIB: join(process.cwd(), "ops/macos/daemon-site-lib.sh"), DAEMON_SITE_ENV: join(process.cwd(), "ops/macos/site.env.example") }, encoding: "utf8",
     });
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain("planner harness must be claude or claudex");
+    expect(result.stderr).toContain("planner harness must be claude, claudex, or agent-farm:<profile>");
+  });
+
+  it.each(["ops/daemonctl", "ops/macos/daemonctl"])("%s accepts independent Agent Farm profiles in dry-run", script => {
+    const { dir } = fixture(); const envFile = join(dir, "env");
+    const content = "SECRET_TOKEN=never-print-me\nPLANNER_HARNESS=claude\n";
+    writeFileSync(envFile, content);
+    const result = spawnSync("bash", [resolve(script), "config", "--planner", "agent-farm:planner",
+      "--implementer", "agent-farm:implementer", "--dry-run"], {
+      env: { ...process.env, DAEMONCTL_ALLOW_NON_ROOT: "1", DAEMONCTL_ALLOW_OTHER_USER: "1",
+        DAEMONCTL_ENV_FILE: envFile, DAEMON_SITE_LIB: resolve("ops/macos/daemon-site-lib.sh"),
+        DAEMON_SITE_ENV: resolve("ops/macos/site.env.example") }, encoding: "utf8",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    if (script === "ops/daemonctl") {
+      expect(result.stdout).toContain("PLANNER_HARNESS=agent-farm:planner");
+      expect(result.stdout).toContain("IMPLEMENTER_HARNESS=agent-farm:implementer");
+    } else expect(result.stdout).toContain("would update harnesses");
+    expect(result.stdout).not.toContain("never-print-me");
+    expect(readFileSync(envFile, "utf8")).toBe(content);
   });
 
   it("config dry-run is deterministic and does not expose unrelated environment values", () => {

@@ -13,7 +13,7 @@ import {
   unlink,
 } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import type { AppName, Config } from "./config.js";
+import type { AppName, Config, Runtime } from "./config.js";
 import {
   completedDispatchesAwaitingIngest,
   DISPATCH_OWNER_PATTERN,
@@ -21,6 +21,7 @@ import {
 } from "./dispatches.js";
 import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
 import { runCodexTurn } from "./codex.js";
+import { AGENT_FARM_WORKSPACE, runAgentFarmTurn } from "./agent-farm.js";
 import {
   BROWSER_RELAUNCH_SENTINEL,
   browserAttemptEnv,
@@ -100,9 +101,12 @@ export function selectSessionProfile(
   now = Date.now(),
 ): {
   profile: "fable" | "sol";
-  runtime: "claude" | "claudex" | "codex";
+  runtime: Runtime;
   reason: string;
 } {
+  const preference = config.apps[app].harness;
+  if (preference.startsWith("agent-farm:"))
+    return { profile: "sol", runtime: preference, reason: "agent_farm_preferred" };
   if (config.apps[app].harness === "codex")
     return { profile: "sol", runtime: "codex", reason: "codex_preferred" };
   if (config.apps[app].harness === "claudex")
@@ -532,13 +536,17 @@ export class SessionWorker {
     );
     const implementer = session.mode === "implementer";
     const runtime = session.runtime;
+    const agentFarm = runtime.startsWith("agent-farm:");
+    let nativeRuntime: "claude" | "codex" | undefined;
     const resuming = turn.kind === "prompted" && !!session.claudeSessionId;
     const cliproxyApiKey = await readCliproxyApiKey(
       this.config.cliproxyEnvFile,
     );
     let prompt =
       implementer && !resuming
-        ? runtime === "codex"
+        ? agentFarm
+          ? identifier
+          : runtime === "codex"
           ? `$astra-ticket ${identifier}\n\n${identifier} is a Linear issue: read it and its comments through the linear MCP tools. This run is unattended, so nobody can answer a question mid-run: take each stated default instead of waiting.`
           : `/do ${identifier}`
         : this.composePrompt(turn, identifier);
@@ -560,10 +568,12 @@ export class SessionWorker {
       body: implementer
         ? resuming
           ? "resuming implementation session"
-          : runtime === "codex"
-            ? "implementation started — running $astra-ticket"
-            : "implementation started — running /do"
-        : "session started — reading the ticket",
+          : agentFarm
+            ? "implementation started - loading Agent Farm profile"
+            : runtime === "codex"
+            ? "implementation started - running $astra-ticket"
+            : "implementation started - running /do"
+        : "session started - reading the ticket",
     });
     const keepalive = setInterval(
       () => {
@@ -578,7 +588,7 @@ export class SessionWorker {
       Math.max(10, Math.min(this.config.keepaliveMs, 60_000)),
     );
     keepalive.unref();
-    const linearMcpConfigJson = JSON.stringify({
+    const linearMcpConfigJson = agentFarm ? "" : JSON.stringify({
       mcpServers: {
         linear: {
           type: "http",
@@ -594,7 +604,7 @@ export class SessionWorker {
         turn.linearSessionId, this.options.sim.baseUrl);
       simulatorEnv = simTurnEnv(contextPath,
         this.options.sim.capability.available ? this.config.iosSimDeveloperDir : undefined);
-      if (this.options.sim.capability.available)
+      if (this.options.sim.capability.available && !agentFarm)
         baseMcpConfigJson = mergeSimMcpConfig(linearMcpConfigJson, simMcpServer(this.config));
       this.logger.log(jsonLog({ event: "sim_attached", turnId: turn.id,
         available: this.options.sim.capability.available,
@@ -693,7 +703,7 @@ export class SessionWorker {
       ...(this.config.mcpEnvPassthrough
         ? { mcpEnvPassthrough: this.config.mcpEnvPassthrough }
         : {}),
-            mcpConfigJson: baseMcpConfigJson,
+      mcpConfigJson: baseMcpConfigJson,
       toolHook: {
         dbPath: this.config.dbPath,
         turnId: turn.id,
@@ -804,7 +814,9 @@ export class SessionWorker {
       },
     };
     const runtimeArgv =
-      runtime === "codex"
+      agentFarm
+        ? [this.config.agentFarmBin]
+        : runtime === "codex"
         ? this.config.codexArgv
         : runtime === "claudex"
         ? this.config.claudexArgv!
@@ -856,11 +868,13 @@ export class SessionWorker {
         } = common.env;
         const turnOptions = {
           ...common,
-          mcpConfigJson: attempt
+          mcpConfigJson: attempt && !agentFarm
             ? mergeMcpConfig(baseMcpConfigJson, attempt)
             : baseMcpConfigJson,
           env: attempt
-            ? { ...postHandshakeEnv, ...browserAttemptEnv(attempt) }
+            ? { ...postHandshakeEnv, ...browserAttemptEnv(attempt),
+                ...(agentFarm ? { ORCHESTRA_BROWSER_MCP_BIN: this.config.playwrightMcpBin,
+                  ORCHESTRA_BROWSER_CHROME_BIN: this.config.playwrightChromeBin } : {}) }
             : common.env,
           signal: runSignal,
           prompt: runPrompt,
@@ -878,7 +892,11 @@ export class SessionWorker {
           },
         };
         const turnResult =
-          runtime === "codex"
+          agentFarm
+            ? await runAgentFarmTurn({ ...turnOptions, agentFarmBin: this.config.agentFarmBin,
+                profile: runtime.slice("agent-farm:".length), workspace: AGENT_FARM_WORKSPACE,
+                onHarness: (harness) => { nativeRuntime = harness; } })
+            : runtime === "codex"
             ? await runCodexTurn({ ...turnOptions, model: this.config.codexModel })
             : await runTurn(turnOptions);
         if (eventCallbackError !== undefined) throw eventCallbackError;
@@ -1048,13 +1066,13 @@ export class SessionWorker {
       const classified = classifyProviderFailure(result);
       if (classified) {
         const provider =
-          runtime !== "claude" || durableProfile !== "fable"
+          nativeRuntime ?? (runtime !== "claude" || durableProfile !== "fable"
             ? "codex"
-            : "claude";
+            : "claude");
         recordProviderFailure(durableProfile, provider, classified);
       }
       if (result.capacityEvidence.length) {
-        const provider = runtime === "claude" ? "claude" : "codex";
+        const provider = nativeRuntime ?? (runtime === "claude" ? "claude" : "codex");
         recordProviderFailure(durableProfile, provider, {
           state: "capacity_failure",
           reason: result.capacityEvidence.join(","),
@@ -1180,7 +1198,7 @@ export class SessionWorker {
       // the work was done and billed, and the output was lost. Say so in the thread
       // rather than posting a bland placeholder that reads as a completed answer.
       const responseBody = result.resultText?.trim()
-        || `Turn completed without reply text — the run produced no response body, so its output was lost. This is a daemon defect, not a result. turn=${turn.id} model=${result.usage?.model ?? "unknown"} subtype=${result.resultSubtype ?? "unknown"} outputTokens=${result.usage?.outputTokens ?? 0}`;
+        || `Turn completed without reply text \u2014 the run produced no response body, so its output was lost. This is a daemon defect, not a result. turn=${turn.id} model=${result.usage?.model ?? "unknown"} subtype=${result.resultSubtype ?? "unknown"} outputTokens=${result.usage?.outputTokens ?? 0}`;
       if (!result.resultText?.trim())
         this.logger.error(
           jsonLog({
@@ -1219,7 +1237,7 @@ export class SessionWorker {
         }),
       );
     } else {
-      const failedRuntime = runtime === "codex" ? "Codex" : runtime === "claudex" ? "Claudex" : "Claude";
+      const failedRuntime = agentFarm ? `Agent Farm (${nativeRuntime ?? "unprepared"})` : runtime === "codex" ? "Codex" : runtime === "claudex" ? "Claudex" : "Claude";
       const runtimeDetail =
         result.spawnError ??
         (result.permissionDenials.length

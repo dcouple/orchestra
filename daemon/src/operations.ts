@@ -1,3 +1,5 @@
+import type { Runtime } from "./config.js";
+
 export const OPERATION_TYPES = ["restart", "config", "update"] as const;
 export type OperationType = typeof OPERATION_TYPES[number];
 
@@ -42,7 +44,7 @@ export interface OperationRow {
 export interface SafeRunningTurn {
   app: "planner" | "implementer";
   issueIdentifier: string;
-  runtime: "claude" | "claudex" | "codex";
+  runtime: Runtime;
   state: "running";
   startedAt: number;
   elapsedMs: number;

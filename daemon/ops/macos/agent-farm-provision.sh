@@ -37,12 +37,41 @@ agent_farm_profiles_correct() {
   done
 }
 
-# ITEM 5 WORKSPACE PLACEMENT HOOK: add its managed workspace installation and
-# readback here, using DRY_RUN to inspect only and preserving unrelated files.
-# Until item 5 supplies that file, this hook records the dependency and writes
-# nothing. It runs in both inventory and apply paths.
+# The integration workspace and browser launcher are managed daemon files.
 provision_agent_farm_workspace() {
-  record agent-farm-workspace "pending-item-5: workspace placement"
+  local workspace_source=$SCRIPT_DIR/../agent-farm/bloom-mono.yaml
+  local workspace=$AGENT_FARM_CONFIG_ROOT/workspaces/bloom-mono.yaml
+  local browser_source=$SCRIPT_DIR/../agent-farm-browser.sh
+  local browser=/usr/local/libexec/orchestra-agent-farm-browser
+  local workspace_correct=0 browser_correct=0
+  agent test ! -L "$AGENT_FARM_CONFIG_ROOT/workspaces" \
+    && agent test ! -L "$workspace" || fail "Agent Farm workspace destination is a symlink"
+  sudo test ! -L "$browser" || fail "Agent Farm browser destination is a symlink"
+  agent test -f "$workspace" && agent cmp -s "$workspace_source" "$workspace" && workspace_correct=1
+  sudo test -x "$browser" && sudo cmp -s "$browser_source" "$browser" && browser_correct=1
+  if (( DRY_RUN )); then
+    (( workspace_correct )) && record agent-farm-workspace already-correct || record agent-farm-workspace would-apply
+    (( browser_correct )) && record agent-farm-browser already-correct || record agent-farm-browser would-apply
+    return 0
+  fi
+  if (( browser_correct )); then record agent-farm-browser already-correct; else
+    sudo install -d -m 0755 /usr/local/libexec
+    sudo install -o root -g wheel -m 0755 "$browser_source" "$browser"
+    sudo test -x "$browser" && sudo cmp -s "$browser_source" "$browser" \
+      || fail "Agent Farm browser launcher did not verify"
+    record agent-farm-browser applied
+  fi
+  if (( workspace_correct )); then record agent-farm-workspace already-correct; else
+    agent install -d -m 0750 "$AGENT_FARM_CONFIG_ROOT/workspaces"
+    agent install -m 0640 "$workspace_source" "$workspace"
+    agent cmp -s "$workspace_source" "$workspace" || fail "Agent Farm workspace bytes did not verify"
+    record agent-farm-workspace applied
+  fi
+  local profile
+  for profile in planner implementer; do
+    agent "$AGENT_FARM_BIN" inspect "$profile" --workspace bloom-mono --config-root "$AGENT_FARM_CONFIG_ROOT" \
+      </dev/null >/dev/null || fail "Agent Farm $profile workspace did not verify"
+  done
 }
 
 provision_agent_farm() {

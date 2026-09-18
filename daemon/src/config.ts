@@ -2,7 +2,7 @@ import { dirname } from "node:path";
 import { isReservedChildEnvKey } from "./claude.js";
 
 export type AppName = "planner" | "implementer";
-export type HarnessPreference = "claude" | "claudex" | "codex";
+export type HarnessPreference = "claude" | "claudex" | "codex" | `agent-farm:${string}`;
 export type Runtime = HarnessPreference;
 
 export interface AppConfig {
@@ -20,10 +20,11 @@ function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPrefere
   if (raw === undefined) return "claude";
   const value = raw.trim();
   if (name === "PLANNER_HARNESS" && value === "codex")
-    throw new Error("PLANNER_HARNESS must be claude or claudex");
-  if (value !== "claude" && value !== "claudex" && value !== "codex")
-    throw new Error(`${name} must be claude, claudex, or codex`);
-  return value;
+    throw new Error("PLANNER_HARNESS must be claude, claudex, or agent-farm:<profile>");
+  if (value !== "claude" && value !== "claudex" && value !== "codex"
+    && !/^agent-farm:[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value))
+    throw new Error(`${name} must be claude, claudex, codex, or agent-farm:<profile>`);
+  return value as HarnessPreference;
 }
 
 export interface Config {
@@ -70,6 +71,7 @@ export interface Config {
   fableArgv?: string[];
   codexArgv: string[];
   codexModel: string;
+  agentFarmBin: string;
   cliproxyEnvFile: string;
   cliproxyUrl: string;
   providerProbeIntervalMs: number;
@@ -267,6 +269,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ...(fableBin ? { fableArgv: fableBin.split(/\s+/) } : {}),
     codexArgv,
     codexModel,
+    agentFarmBin: env.AGENT_FARM_BIN?.trim() || "agent-farm",
     cliproxyEnvFile: env.CLIPROXY_ENV_FILE?.trim() || "/etc/linear-agent-daemon/cliproxyapi.env",
     cliproxyUrl: (env.CLIPROXY_URL?.trim() || "http://127.0.0.1:8317").replace(/\/+$/, ""),
     providerProbeIntervalMs,

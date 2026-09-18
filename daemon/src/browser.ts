@@ -88,6 +88,7 @@ export function browserAttemptEnv(attempt: BrowserAttempt): NodeJS.ProcessEnv {
     ORCHESTRA_BROWSER_RUN_ID: attempt.runId,
     ORCHESTRA_BROWSER_ATTEMPT_ID: attempt.attemptId,
     ORCHESTRA_BROWSER_STATE_DIR: attempt.stateDir,
+    ORCHESTRA_BROWSER_SOCKET_ALIAS: attempt.socketAlias,
     ORCHESTRA_BROWSER_EVIDENCE_DIR: attempt.evidenceDir,
   };
 }

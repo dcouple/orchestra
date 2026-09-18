@@ -1,0 +1,25 @@
+connections:
+  linear:
+    type: mcp
+    url: https://mcp.linear.app/mcp
+    auth: bearer_env
+    env_var: LINEAR_API_KEY
+  xcodebuildmcp:
+    type: mcp
+    command: /usr/local/bin/xcodebuildmcp
+    args: [mcp]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      XCODEBUILDMCP_ENABLED_WORKFLOWS: session-management,simulator,ui-automation
+    env_vars: [ORCHESTRA_SIM_CONTEXT]
+  playwright:
+    type: mcp
+    command: /usr/local/libexec/orchestra-agent-farm-browser
+    env_vars:
+      - ORCHESTRA_BROWSER_RUN_ID
+      - ORCHESTRA_BROWSER_ATTEMPT_ID
+      - ORCHESTRA_BROWSER_STATE_DIR
+      - ORCHESTRA_BROWSER_EVIDENCE_DIR
+      - ORCHESTRA_BROWSER_SOCKET_ALIAS
+      - ORCHESTRA_BROWSER_MCP_BIN
+      - ORCHESTRA_BROWSER_CHROME_BIN

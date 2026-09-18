@@ -229,3 +229,109 @@ and never put secrets in issues if you use one.
 
 See `ops/runbook.md` for host provisioning, OAuth registration, credentials, hardening,
 deployment, smoke tests, and recovery.
+
+## Agent Farm profile harness
+
+Set each app independently:
+
+```dotenv
+PLANNER_HARNESS=agent-farm:planner
+IMPLEMENTER_HARNESS=agent-farm:implementer
+AGENT_FARM_BIN=agent-farm
+```
+
+`AGENT_FARM_BIN` names one executable, including an absolute path with spaces;
+its default is `agent-farm`. On the macOS service account the provisioned binary
+is `~/.pnpm/bin/agent-farm`, which is on the daemon child PATH. Existing sessions
+keep their assigned `agent-farm:<profile>` value when app settings change. The
+profile owns the model, effort, skills, instructions, and child agents. A new
+implementer turn sends the issue identifier to that profile.
+
+Every turn first calls `agent-farm inspect <profile> --workspace bloom-mono` to
+read `agents.main.harness`, then prepares the launch:
+
+```text
+agent-farm run <profile> --directory <worktree> --workspace bloom-mono --print-launch --message=<prompt> -- <native flags>
+```
+
+Claude flags are `-p --output-format stream-json --verbose`, optional
+`--resume <session>`, `--settings <hooks-and-MCP-approval-settings.json>`,
+`--permission-mode`, `--max-turns`, and optional `--max-budget-usd`. Codex flags
+are `exec --json`, or `exec resume --json <thread>`. Agent Farm places them
+before the message and supplies its profile's model and execution settings.
+The daemon checks `nodes.main.harness` in the printed bundle's `manifest.json`
+against the inspected harness, then selects the existing Claude or Codex stream
+parser. It uses the prepared model for Codex usage reporting.
+
+The daemon spawns the complete printed `argv` unchanged, including any wrapper
+and prefix arguments, with the printed `cwd`. The environment is the existing
+filtered daemon child environment followed by Agent Farm's printed `env`
+overrides, so printed values win on collisions. Printed overrides are not
+filtered a second time; `CODEX_HOME` and `AGENT_FARM_NATIVE_CODEX_HOME` survive.
+`LINEAR_API_KEY`, `CLIPROXY_API_KEY`, and `GH_TOKEN` are supplied only through the
+child environment. Preparation output is never logged. The daemon owns piped
+stdout/stderr, detached process groups, abort, streaming progress, and capacity
+classification, including during launch preparation. No daemon per-turn MCP
+JSON is constructed or written for this harness. Claude turn settings still
+carry tool hooks. Agent Farm's generated MCP bundle retains strict MCP mode.
+
+The integration workspace is named `bloom-mono`. This exact YAML belongs in
+`~/.config/agent-farm/workspaces/bloom-mono.yaml` for the daemon service account;
+its tracked template is `ops/agent-farm/bloom-mono.yaml`. The target repository's
+workspace guidance lives in bloomapi/bloom-mono and must be maintained there.
+The daemon passes `--workspace bloom-mono` explicitly because strict MCP mode
+does not inherit globally installed connections.
+
+```yaml
+connections:
+  linear:
+    type: mcp
+    url: https://mcp.linear.app/mcp
+    auth: bearer_env
+    env_var: LINEAR_API_KEY
+  xcodebuildmcp:
+    type: mcp
+    command: /usr/local/bin/xcodebuildmcp
+    args: [mcp]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      XCODEBUILDMCP_ENABLED_WORKFLOWS: session-management,simulator,ui-automation
+    env_vars: [ORCHESTRA_SIM_CONTEXT]
+  playwright:
+    type: mcp
+    command: /usr/local/libexec/orchestra-agent-farm-browser
+    env_vars:
+      - ORCHESTRA_BROWSER_RUN_ID
+      - ORCHESTRA_BROWSER_ATTEMPT_ID
+      - ORCHESTRA_BROWSER_STATE_DIR
+      - ORCHESTRA_BROWSER_EVIDENCE_DIR
+      - ORCHESTRA_BROWSER_SOCKET_ALIAS
+      - ORCHESTRA_BROWSER_MCP_BIN
+      - ORCHESTRA_BROWSER_CHROME_BIN
+```
+
+The macOS provisioner installs this managed workspace with mode 0640 and checks
+its bytes and both profiles with `inspect --workspace bloom-mono`. It installs
+`ops/agent-farm-browser.sh` as `/usr/local/libexec/orchestra-agent-farm-browser`
+with mode 0755 and reads it back. Dry run inspects only; unrelated workspace
+files are preserved and symlink destinations are rejected. This completes the
+workspace placement hook introduced in orchestra PR #207.
+
+The browser launcher receives attempt state, evidence directory, and socket
+alias through `ORCHESTRA_BROWSER_*`. The daemon also supplies its configured
+Playwright and Chrome binaries through that namespace. It exports the socket
+alias as `TMPDIR`, `TEMP`, `TMP`, and `PWTEST_SOCKETS_DIR`, then execs
+playwright-mcp with the existing isolated, headless, file-output flags. Before
+browser attachment the launcher exits because no attempt is present; the
+existing browser request and relaunch handshake attaches it when required.
+Simulator configuration is static, with the same `mcp` argument and enabled
+workflows as the existing runner; its per-turn context remains an env reference.
+Agent Farm registers these connections as `orchestra_linear`,
+`orchestra_xcodebuildmcp`, and `orchestra_playwright`. Both parsers recognize the
+Linear registration when reporting tool results and Claude initialization.
+
+Install an Agent Farm release containing agent-farm PRs #17 and #18 before
+selecting this harness. Ignore `.agent-farm/generated/` in bloom-mono. Actual
+provider targeting and stable Codex resume across plugin updates remain plan
+items 7 and 8. Fable readiness and its fallback routing continue to apply to
+the existing harnesses.

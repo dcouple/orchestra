@@ -32,13 +32,13 @@ describe("references/linear-agent-sessions.md matches the daemon", () => {
   });
 
   it("quotes the empty-reply defect prefix exactly", () => {
-    const prefix = "Turn completed without reply text — ";
-    expect(sessions).toContain(prefix);
+    const prefix = "Turn completed without reply text \u2014 ";
+    expect(sessions).toContain(prefix.replace("\u2014", "\\u2014"));
     expect(contract).toContain(`\`${prefix}\``);
   });
 
   it("describes the pickup ack as ephemeral, matching linear.ts", () => {
-    expect(linear).toMatch(/picked up — starting work" \}, true, deadlineAt\)/);
+    expect(linear).toMatch(/picked up \u2014 starting work" \}, true, deadlineAt\)/);
     expect(contract).toMatch(/the pickup ack[\s\S]{0,200}posted ephemeral/);
   });
 

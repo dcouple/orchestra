@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -30,6 +30,21 @@ function fixture() {
       fi
       env HOME="$AGENT_HOME" "$@"
     }
+    sudo() {
+      local args=() value
+      for value in "$@"; do
+        case "$value" in
+          /usr/local/libexec) value="$AGENT_HOME/libexec" ;;
+          /usr/local/libexec/orchestra-agent-farm-browser) value="$AGENT_HOME/libexec/orchestra-agent-farm-browser" ;;
+        esac
+        args+=("$value")
+      done
+      if [[ $1 == install ]]; then
+        # Root ownership belongs to the real provisioner; the fixture stays local.
+        if [[ \${args[1]} == -o ]]; then args=(install "\${args[@]:5}"); fi
+      fi
+      "\${args[@]}"
+    }
     record() { printf '%s %s\\n' "$1" "$2"; }
     fail() { echo "ERROR: $*" >&2; exit 1; }
     . "$SCRIPT_DIR/agent-farm-provision.sh"
@@ -55,7 +70,19 @@ function fixture() {
     writeFileSync(join(packageRoot, "dist/cli.js"), `#!/bin/sh
       case "$1" in
         --help) exit 0 ;;
-        inspect) test -f "$4/profiles/$2.yaml"; exit $? ;;
+        inspect)
+          profile=$2; shift 2
+          workspace=
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              --workspace) workspace=$2; shift 2 ;;
+              --config-root) root=$2; shift 2 ;;
+              *) exit 99 ;;
+            esac
+          done
+          test -f "$root/profiles/$profile.yaml" || exit 1
+          [ -z "$workspace" ] || test -f "$root/workspaces/$workspace.yaml"
+          exit $? ;;
         plugin) printf '{"changed":0}\n'; exit 0 ;;
         *) echo 'unexpected mutation' >&2; exit 99 ;;
       esac
@@ -73,7 +100,7 @@ describe("Agent Farm macOS provisioning convergence", () => {
   it("reports a fresh installation without creating managed state", () => {
     const f = fixture(), result = f.run(true);
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toBe("agent-farm-cli would-apply\nagent-farm-plugin would-apply\nagent-farm-profiles would-apply\nagent-farm-workspace pending-item-5: workspace placement\n");
+    expect(result.stdout).toBe("agent-farm-cli would-apply\nagent-farm-plugin would-apply\nagent-farm-profiles would-apply\nagent-farm-workspace would-apply\nagent-farm-browser would-apply\n");
     expect(spawnSync("ls", ["-A", f.home], { encoding: "utf8" }).stdout).toBe("");
   });
 
@@ -86,6 +113,39 @@ describe("Agent Farm macOS provisioning convergence", () => {
       for (const setting of ["cli", "plugin", "profiles"]) expect(result.stdout).toContain(`agent-farm-${setting} already-correct`);
       expect(readFileSync(join(f.root, ".plugins/dcouple.json"))).toEqual(receipt);
     }
+  });
+
+  it("places the workspace and launcher, preserving unrelated workspaces", () => {
+    const f = fixture(); f.seed();
+    mkdirSync(join(f.root, "workspaces"));
+    const unrelated = join(f.root, "workspaces/unrelated.yaml");
+    writeFileSync(unrelated, "connections: {}\n");
+    const first = f.run(false);
+    expect(first.status, first.stderr).toBe(0);
+    expect(first.stdout).toContain("agent-farm-workspace applied");
+    expect(first.stdout).toContain("agent-farm-browser applied");
+    expect(readFileSync(join(f.root, "workspaces/bloom-mono.yaml")))
+      .toEqual(readFileSync(resolve("ops/agent-farm/bloom-mono.yaml")));
+    expect(readFileSync(join(f.home, "libexec/orchestra-agent-farm-browser")))
+      .toEqual(readFileSync(resolve("ops/agent-farm-browser.sh")));
+    expect(statSync(join(f.root, "workspaces/bloom-mono.yaml")).mode & 0o777).toBe(0o640);
+    expect(statSync(join(f.home, "libexec/orchestra-agent-farm-browser")).mode & 0o777).toBe(0o755);
+    const second = f.run(false);
+    expect(second.status, second.stderr).toBe(0);
+    expect(second.stdout).toContain("agent-farm-workspace already-correct");
+    expect(second.stdout).toContain("agent-farm-browser already-correct");
+    expect(readFileSync(unrelated, "utf8")).toBe("connections: {}\n");
+  });
+  it("refuses a symlink workspace without changing its target", () => {
+    const f = fixture(); f.seed();
+    mkdirSync(join(f.root, "workspaces"));
+    const target = join(f.home, "unrelated.yaml");
+    writeFileSync(target, "connections: {}\n");
+    symlinkSync(target, join(f.root, "workspaces/bloom-mono.yaml"));
+    const result = f.run(false);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("workspace destination is a symlink");
+    expect(readFileSync(target, "utf8")).toBe("connections: {}\n");
   });
 
   it("detects local profile edits without modifying them during inventory", () => {
