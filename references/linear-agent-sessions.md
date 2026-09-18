@@ -16,9 +16,9 @@ below stand for those names.
   that anything is running**.
 - **Resume / steer**: reply in the session's thread (`save_comment` with
   `parentId` = the thread's root comment id). The reply text is delivered to
-  the resumed Claude session verbatim - for an implementer session it lands
-  inside the running `/do` Overseer, so write it as an instruction to that
-  agent, not as a note to a human.
+  the resumed harness session verbatim - for an implementer session it lands
+  inside the running `/do` or `$astra-ticket` orchestrator, so write it as an
+  instruction to that agent, not as a note to a human.
 - **A fresh session on an already-delegated issue**: re-setting the same
   `delegate` is a no-op. Clear it (`delegate: null`), read back, set it again;
   or @-mention the agent in a new top-level comment. Prefer resuming the
@@ -31,9 +31,9 @@ below stand for those names.
 - A **planner** session is a resumable discussion in the issue's worktree; it
   publishes a brief only when told to (`/create-brief`), and publishing
   creates a **new** issue carrying the brief metadata - it does not rewrite
-  the discussion issue. An **implementer** session runs `/do <identifier>`
-  once, unattended, to an opened PR; every later reply resumes that same
-  `/do` session.
+  the discussion issue. An **implementer** session runs `/do <identifier>` on
+  Claude/Claudex or `$astra-ticket <identifier>` on native Codex, once,
+  unattended, to an opened PR; every later reply resumes that same session.
 
 ## What a session looks like in the issue's comments
 
@@ -54,7 +54,7 @@ that matters; other top-level comments - a human's note, an orchestrator's
 own - are roots too, and none of them is a session.
 
 Only two activity kinds are durable: the agent's **response** (its reply, a
-question, the `/do` final report) and its **error**. Thoughts, tool actions,
+question, the implementation final report) and its **error**. Thoughts, tool actions,
 the pickup ack, turn-start banners, keepalives and worktree-cleanup notes are
 posted ephemeral and are not readable through the MCP - a session that has
 been running for an hour can look identical to one that is queued and has not
@@ -66,12 +66,12 @@ Daemon strings that do appear as replies, exact:
 |---|---|
 | `Planner turn failed: <detail>` / `Implementer turn failed: <detail>` | The turn ended in error. `<detail>` classifies it (table below). |
 | `Stopped at your request. Send a follow-up message to continue.` | A human pressed Stop; nothing is running; a reply resumes. |
-| `Turn completed without reply text - ` (match this prefix; the rest names the turn, model, `subtype=` and token count) | The run finished but its output was lost - a daemon defect. Treat as failed; escalate to the daemon operator. `subtype=` is the one place a budget or turn ceiling is named. |
+| `Turn completed without reply text — ` (match this prefix; the rest names the turn, model, `subtype=` and token count) | The run finished but its output was lost - a daemon defect. Treat as failed; escalate to the daemon operator. `subtype=` is the one place a budget or turn ceiling is named. |
 | A reply containing `was interrupted` (three restart-recovery notices) | Nothing is running. The notice says what revives it: "prompt again" → a reply resumes; "Assign … again" → clear and re-set the delegate; "hard restart" → a human reviews the worktree state first. All three are spend decisions. |
-| Anything else from the agent | Its response: the planner's analysis or question, or the implementer's `/do` report. |
+| Anything else from the agent | Its response: the planner's analysis or question, or the implementer's final report. |
 
 An opened PR is attached to the **session** as an external URL labelled
-`Pull Request`, extracted by the daemon from the `/do` report text - a
+`Pull Request`, extracted by the daemon from the final report text - a
 report with no PR link yields no external URL either; the daemon does not
 attach it to the issue.
 
@@ -99,7 +99,7 @@ Per issue, take the newest session thread and its last message:
 | root only, no agent reply yet, younger than the stale horizon | busy (queued or running) | yes |
 | a human reply, younger than the stale horizon | busy (a turn is queued or running) | yes |
 | an agent response that asks something or reports a gate | waiting on a human | no |
-| an agent response that is a completed report (planner analysis, `/do` report) | idle | no |
+| an agent response that is a completed report (planner analysis, implementation report) | idle | no |
 | an agent progress note - neither a question nor a completed report ("standing by on the researcher", "Phase 1 is now implementing") - younger than the stale horizon | busy (the run continues; only its durable output is visible) | yes |
 | the same progress note **older** than the stale horizon | stalled - nothing survives a daemon restart past the horizon; treat as stale | no; report it |
 | `… turn failed: …` | failed | no |
@@ -136,7 +136,8 @@ silence in the thread is not evidence of death inside the horizon.
   sessions active within roughly the last six hours. If a reply produced nothing past the stale
   horizon, that is the first hypothesis.
 - **An implementer resume spends again**: the resumed child gets a fresh
-  `DO_MAX_TURNS` / `DO_MAX_BUDGET_USD` allowance.
+  `DO_MAX_TURNS` / `DO_MAX_BUDGET_USD` allowance on Claude/Claudex. Native
+  Codex has no daemon turn or budget cap.
 - **Any daemon operation in flight (restart, config, update) pauses all turn
   claims** while webhooks keep queueing. A workspace where nothing starts for
   a while may be an operator mid-deploy, not a fault.

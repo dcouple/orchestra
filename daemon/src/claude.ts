@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -184,7 +184,7 @@ export function isReservedChildEnvKey(
   return undefined;
 }
 
-function childEnv(
+export function childEnv(
   extra: NodeJS.ProcessEnv | undefined,
   trusted: Record<string, string> | undefined,
   passthrough: readonly string[] | undefined,
@@ -213,6 +213,7 @@ function childEnv(
       key.startsWith("LC_") ||
       key.startsWith("ANTHROPIC_") ||
       key.startsWith("CLAUDE_") ||
+      key.startsWith("CODEX_") ||
       key === "CLIPROXY_API_KEY" ||
       key === "FABLE_MODELS_ENV_FILE" ||
       key === "BASH_DEFAULT_TIMEOUT_MS" ||
@@ -313,9 +314,78 @@ function collectCapacityEvidence(
     evidence.add("assistant:rate_limit");
 }
 
-function appendTail(current: string, chunk: Buffer): string {
+export function appendTail(current: string, chunk: Buffer): string {
   const next = current + chunk.toString("utf8");
   return next.length > 8192 ? next.slice(next.length - 8192) : next;
+}
+
+export interface DetachedExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  processGroupTerminationAttempted: boolean;
+  processGroupExited: boolean;
+}
+
+/**
+ * Wait for a detached harness child to close, ending its whole process group on
+ * abort and after close. The stream process may exit before stdio MCP/browser
+ * descendants, so the group is ended before callers remove attempt-scoped state.
+ */
+export async function awaitDetachedExit(
+  child: ChildProcess,
+  signal?: AbortSignal,
+): Promise<DetachedExit> {
+  let killTimer: NodeJS.Timeout | undefined;
+  let processGroupTerminationAttempted = false;
+  const killGroup = (sig: NodeJS.Signals): void => {
+    if (!child.pid) return;
+    try {
+      process.kill(-child.pid, sig);
+    } catch {
+      try {
+        child.kill(sig);
+      } catch {}
+    }
+  };
+  const groupAlive = (): boolean => {
+    if (!child.pid) return false;
+    try { process.kill(-child.pid, 0); return true; } catch { return false; }
+  };
+  const awaitGroupExit = async (deadlineMs: number): Promise<void> => {
+    const deadline = Date.now() + deadlineMs;
+    while (groupAlive() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+  };
+  const abort = (): void => {
+    if (killTimer || !groupAlive()) return;
+    processGroupTerminationAttempted = true;
+    killGroup("SIGTERM");
+    killTimer = setTimeout(() => killGroup("SIGKILL"), 5_000);
+    killTimer.unref();
+  };
+  // Descendants can retain stdio after the leader exits, delaying close forever.
+  child.once("exit", abort);
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  const closed = await new Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }>((resolve) => {
+    child.once("close", (code, sig) => resolve({ code, signal: sig }));
+  });
+  if (killTimer) clearTimeout(killTimer);
+  signal?.removeEventListener("abort", abort);
+  child.removeListener("exit", abort);
+  if (groupAlive()) {
+    processGroupTerminationAttempted = true;
+    killGroup("SIGTERM");
+    await awaitGroupExit(1_000);
+  }
+  if (groupAlive()) {
+    processGroupTerminationAttempted = true;
+    killGroup("SIGKILL");
+    await awaitGroupExit(1_000);
+  }
+  return { ...closed, processGroupTerminationAttempted, processGroupExited: !groupAlive() };
 }
 
 export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
@@ -547,56 +617,8 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
   child.once("error", (error) => {
     spawnError = error.message;
   });
-  let killTimer: NodeJS.Timeout | undefined;
-  let processGroupTerminationAttempted = false;
-  const killGroup = (signal: NodeJS.Signals): void => {
-    if (!child.pid) return;
-    try {
-      process.kill(-child.pid, signal);
-    } catch {
-      try {
-        child.kill(signal);
-      } catch {}
-    }
-  };
-  const groupAlive = (): boolean => {
-    if (!child.pid) return false;
-    try { process.kill(-child.pid, 0); return true; } catch { return false; }
-  };
-  const awaitGroupExit = async (deadlineMs: number): Promise<void> => {
-    const deadline = Date.now() + deadlineMs;
-    while (groupAlive() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
-  };
-  const abort = (): void => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    processGroupTerminationAttempted = true;
-    killGroup("SIGTERM");
-    killTimer = setTimeout(() => killGroup("SIGKILL"), 5_000);
-    killTimer.unref();
-  };
-  options.signal?.addEventListener("abort", abort, { once: true });
-  if (options.signal?.aborted) abort();
   try {
-    const closed = await new Promise<{
-      code: number | null;
-      signal: NodeJS.Signals | null;
-    }>((resolve) => {
-      child.once("close", (code, signal) => resolve({ code, signal }));
-    });
-    if (killTimer) clearTimeout(killTimer);
-    options.signal?.removeEventListener("abort", abort);
-    // The stream process may exit before stdio MCP/browser descendants. End and
-    // await the detached group before callers remove attempt-scoped state.
-    if (groupAlive()) {
-      processGroupTerminationAttempted = true;
-      killGroup("SIGTERM");
-      await awaitGroupExit(1_000);
-    }
-    if (groupAlive()) {
-      processGroupTerminationAttempted = true;
-      killGroup("SIGKILL");
-      await awaitGroupExit(1_000);
-    }
+    const closed = await awaitDetachedExit(child, options.signal);
     await Promise.allSettled(sessionQueue);
     await eventQueue;
     const ok =
@@ -619,15 +641,13 @@ export async function runTurn(options: RunTurnOptions): Promise<RunTurnResult> {
       sawResult,
       ...(stderrTail ? { stderrTail } : {}),
       capacityEvidence: [...capacityEvidence],
-      processGroupTerminationAttempted,
-      processGroupExited: !groupAlive(),
+      processGroupTerminationAttempted: closed.processGroupTerminationAttempted,
+      processGroupExited: closed.processGroupExited,
       ...(usage ? { usage } : {}),
       ...(modelUsageResult ? { modelUsage: modelUsageResult } : {}),
       ...(sawLinearMcpInit ? { linearMcpInitialized: true } : {}),
     };
   } finally {
-    if (killTimer) clearTimeout(killTimer);
-    options.signal?.removeEventListener("abort", abort);
     await rm(configDir, { recursive: true, force: true });
   }
 }

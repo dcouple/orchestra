@@ -97,6 +97,14 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...base, PLANNER_HARNESS: "sol" })).toThrow("PLANNER_HARNESS");
     expect(() => loadConfig({ ...base, IMPLEMENTER_HARNESS: "fable" })).toThrow("IMPLEMENTER_HARNESS");
   });
+  it("accepts the native Codex harness with its launcher and model defaults", () => {
+    const config = loadConfig({ ...base, IMPLEMENTER_HARNESS: "codex" });
+    expect(config.apps.implementer.harness).toBe("codex");
+    expect(() => loadConfig({ ...base, PLANNER_HARNESS: "codex" })).toThrow("PLANNER_HARNESS must be claude or claudex");
+    expect(config).toMatchObject({ codexArgv: ["codex"], codexModel: "gpt-6-astra" });
+    expect(loadConfig({ ...base, CODEX_BIN: "/opt/codex/bin/codex --profile daemon", CODEX_MODEL: "gpt-5.6-sol" }))
+      .toMatchObject({ codexArgv: ["/opt/codex/bin/codex", "--profile", "daemon"], codexModel: "gpt-5.6-sol" });
+  });
   it.each([
     ["PLANNER_HARNESS", ""],
     ["PLANNER_HARNESS", "   "],

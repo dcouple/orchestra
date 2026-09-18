@@ -2,7 +2,8 @@ import { dirname } from "node:path";
 import { isReservedChildEnvKey } from "./claude.js";
 
 export type AppName = "planner" | "implementer";
-export type HarnessPreference = "claude" | "claudex";
+export type HarnessPreference = "claude" | "claudex" | "codex";
+export type Runtime = HarnessPreference;
 
 export interface AppConfig {
   name: AppName;
@@ -18,7 +19,10 @@ function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPrefere
   const raw = env[name];
   if (raw === undefined) return "claude";
   const value = raw.trim();
-  if (value !== "claude" && value !== "claudex") throw new Error(`${name} must be claude or claudex`);
+  if (name === "PLANNER_HARNESS" && value === "codex")
+    throw new Error("PLANNER_HARNESS must be claude or claudex");
+  if (value !== "claude" && value !== "claudex" && value !== "codex")
+    throw new Error(`${name} must be claude, claudex, or codex`);
   return value;
 }
 
@@ -64,6 +68,8 @@ export interface Config {
   claudexArgv?: string[];
   claudexEnv?: Record<string, string>;
   fableArgv?: string[];
+  codexArgv: string[];
+  codexModel: string;
   cliproxyEnvFile: string;
   cliproxyUrl: string;
   providerProbeIntervalMs: number;
@@ -184,6 +190,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const claudexEnv = stringMap(env, "CLAUDEX_ENV");
   if (claudexEnv && !claudexArgv) throw new Error("CLAUDEX_ENV requires CLAUDEX_BIN");
   const fableBin = env.FABLE_BIN?.trim();
+  const codexArgv = (env.CODEX_BIN?.trim() || "codex").split(/\s+/);
+  const codexModel = env.CODEX_MODEL?.trim() || "gpt-6-astra";
   const iosSimEnabled = enabled(env, "IOS_SIM_ENABLED", false);
   const iosSimRuntime = env.IOS_SIM_RUNTIME?.trim();
   const iosSimDeviceType = env.IOS_SIM_DEVICE_TYPE?.trim();
@@ -257,6 +265,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ...(claudexArgv ? { claudexArgv } : {}),
     ...(claudexEnv ? { claudexEnv } : {}),
     ...(fableBin ? { fableArgv: fableBin.split(/\s+/) } : {}),
+    codexArgv,
+    codexModel,
     cliproxyEnvFile: env.CLIPROXY_ENV_FILE?.trim() || "/etc/linear-agent-daemon/cliproxyapi.env",
     cliproxyUrl: (env.CLIPROXY_URL?.trim() || "http://127.0.0.1:8317").replace(/\/+$/, ""),
     providerProbeIntervalMs,

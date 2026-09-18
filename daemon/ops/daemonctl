@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: daemonctl config --planner claude|claudex --implementer claude|claudex [--reason TEXT] [--dry-run]
+usage: daemonctl config --planner claude|claudex --implementer claude|claudex|codex [--reason TEXT] [--dry-run]
        daemonctl restart [--reason TEXT] [--dry-run]
        daemonctl restart --hard [--yes] [--dry-run]
        daemonctl reload [--reason TEXT] [--dry-run]
@@ -67,7 +67,8 @@ ops_cli() {
 die() { echo "$*" >&2; exit 1; }
 usage_error() { echo "$*" >&2; usage >&2; exit 2; }
 require_root() { [[ "${EUID}" -eq 0 || "${DAEMONCTL_ALLOW_NON_ROOT:-0}" == 1 ]] || die "run as root (use sudo daemonctl ...)"; }
-validate_harness() { [[ "$1" == claude || "$1" == claudex ]] || usage_error "harness must be claude or claudex"; }
+validate_harness() { [[ "$1" == claude || "$1" == claudex || "$1" == codex ]] || usage_error "harness must be claude, claudex, or codex"; }
+validate_planner() { [[ "$1" == claude || "$1" == claudex ]] || usage_error "planner harness must be claude or claudex"; }
 validate_reason() { [[ "$1" != *$'\n'* && ${#1} -le 240 ]] || usage_error "reason must be one line of at most 240 characters"; }
 json_field() { python3 -c 'import json,sys; v=json.load(open(sys.argv[1])).get(sys.argv[2]); print("" if v is None else v)' "$1" "$2"; }
 json_count_running() { ops_cli running | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'; }
@@ -329,7 +330,7 @@ command_config() {
     --implementer) [[ $# -ge 2 ]] || usage_error "--implementer needs a value"; implementer="$2"; shift ;;
     --reason) [[ $# -ge 2 ]] || usage_error "--reason needs a value"; reason="$2"; shift ;;
     --dry-run) dry=1 ;; *) usage_error "unknown config argument: $1" ;; esac; shift; done
-  validate_harness "${planner}"; validate_harness "${implementer}"; validate_reason "${reason}"
+  validate_planner "${planner}"; validate_harness "${implementer}"; validate_reason "${reason}"
   [[ -f "${ENV_FILE}" ]] || die "environment file not found: ${ENV_FILE}"
   if (( dry )); then
     printf 'would validate and preserve %s; set PLANNER_HARNESS=%s and IMPLEMENTER_HARNESS=%s; create a timestamped backup; interrupt active turns; restart %s; verify systemd and %s; rollback on failure\n' \
@@ -550,7 +551,7 @@ execute_request() {
     config)
       local env_file planner implementer backup replacement
       env_file="$(json_field "${file}" env_file)"; planner="$(json_field "${file}" planner)"; implementer="$(json_field "${file}" implementer)"
-      validate_harness "${planner}"; validate_harness "${implementer}"
+      validate_planner "${planner}"; validate_harness "${implementer}"
       install -d -m 0700 "${STATE_DIR}/backups"
       backup="${STATE_DIR}/backups/${id}.env.$(date -u +%Y%m%dT%H%M%SZ)"; replacement="${env_file}.new.${id}"
       local backup_pointer="${STATE_DIR}/backups/${id}.path"
