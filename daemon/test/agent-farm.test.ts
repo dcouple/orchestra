@@ -22,7 +22,7 @@ function options(profile = "implementer", mode = "happy") {
   const cwd = mkdtempSync(join(tmpdir(), "farm-runner-"));
   dirs.push(cwd);
   return {
-    cwd, profile, workspace: "bloom-mono", prompt: "--help\nENG-42 🌱 résumé",
+    cwd, profile, prompt: "--help\nENG-42 🌱 résumé",
     agentFarmBin: resolve("test/fixtures/fake-agent-farm.mjs"), argv: ["unused"],
     permissionMode: "bypassPermissions", maxTurns: 123, maxBudgetUsd: 4.5,
     toolHook: { dbPath: join(cwd, "events.db"), turnId: 42 },
@@ -37,7 +37,7 @@ function options(profile = "implementer", mode = "happy") {
 function json(path: string) { return JSON.parse(readFileSync(path, "utf8")); }
 
 describe("Agent Farm runner", () => {
-  it.each(["planner", "implementer"])("spawns the printed %s argv and cwd verbatim, merging all printed env", async profile => {
+  it.each(["planner", "implementer", "greenfield/planner", "greenfield/implementer"])("spawns the printed %s argv and cwd verbatim, merging all printed env", async profile => {
     const o = options(profile);
     const events: ClaudeEvent[] = [];
     const ids: string[] = [];
@@ -56,14 +56,14 @@ describe("Agent Farm runner", () => {
       AGENT_FARM_NATIVE_CODEX_HOME: "/native/home", PRINTED_ONLY: "kept",
       ORCHESTRA_BROWSER_FAKE_COLLISION: "printed" });
     expect(child.env.ARTIFACT_TOKEN).toBeUndefined();
-    expect(report.preparationArgs.slice(0, 8)).toEqual(["run", profile, "--directory", o.cwd,
-      "--workspace", "bloom-mono", "--print-launch", "--message=" + o.prompt]);
+    expect(report.preparationArgs.slice(0, 6)).toEqual(["run", profile, "--directory", o.cwd,
+      "--print-launch", "--message=" + o.prompt]);
     expect(writes.mock.calls.some(([path]) => /mcp.*\.json$/.test(String(path)))).toBe(false);
     const files = readdirSync(o.cwd, { recursive: true }).map(String);
     expect(files.some(file => /mcp.*\.json$/.test(file))).toBe(false);
     expect(JSON.stringify(report.launch)).not.toMatch(/linear-secret|proxy-secret|github-secret/);
     expect(events.some(event => event.type === "linearMcpToolResult")).toBe(true);
-    if (profile === "planner") {
+    if (profile.endsWith("planner")) {
       expect(result.linearMcpInitialized).toBe(true);
       expect(ids).toEqual(["farm-session"]);
       expect(child.args).toContain("stream-json");
@@ -82,7 +82,7 @@ describe("Agent Farm runner", () => {
     const o = options(profile);
     await runAgentFarmTurn({ ...o, resumeSessionId: "previous-thread" });
     const args = json(o.env.ORCHESTRA_BROWSER_FAKE_REPORT + ".child").args;
-    if (profile === "planner") expect(args.slice(args.indexOf("--resume"), args.indexOf("--resume") + 2))
+    if (profile.endsWith("planner")) expect(args.slice(args.indexOf("--resume"), args.indexOf("--resume") + 2))
       .toEqual(["--resume", "previous-thread"]);
     else expect(args.slice(2, -2)).toEqual(["exec", "resume", "--json", "previous-thread"]);
   });

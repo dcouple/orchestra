@@ -66,7 +66,7 @@ See [`ops/macos/README.md`](ops/macos/README.md) for the operator setup commands
 
 After core provisioning and the daemon deploy, the script installs Agent Farm for
 the site-configured service user. `ops/macos/agent-farm-provision.sh` pins CLI
-version `0.1.2` and runs `pnpm add --global @greenfieldco/agent-farm@0.1.2`, using
+version `0.2.0` and runs `pnpm add --global @greenfieldco/agent-farm@0.2.0`, using
 the same service-user installation as Playwright MCP and XcodeBuildMCP. The
 executable is `~/.pnpm/bin/agent-farm`; an existing executable and matching
 `~/.pnpm/agent-farm-version` marker count as converged. Core provisioning also
@@ -78,7 +78,7 @@ with `needs-provision`, including when the optional CLI is not installed yet.
 The pinned version must be published on npm to install it. Only the `agent-farm:<profile>` harness
 requires Agent Farm; `claude`, `claudex`, and `codex` harnesses run without it.
 If the pinned package cannot be installed (unpublished release or registry/network
-outage), provisioning records `agent-farm-cli pending-release: @greenfieldco/agent-farm@0.1.2 not installable`
+outage), provisioning records `agent-farm-cli pending-release: @greenfieldco/agent-farm@0.2.0 not installable`
 and dependent plugin, profiles, provider, workspace, and browser rows as
 `pending-release`, prints a stderr notice, and finishes with exit 0. Rerun
 provisioning once the package is available. Verification failures after a
@@ -87,10 +87,14 @@ changing the version pin. Generated session bundles remain in place.
 
 Provisioning obtains the installed package path from
 `pnpm list --global --depth 0 --json`, including pnpm 11's isolated global
-package directory, and runs `agent-farm plugin install <package>/plugins/dcouple
+package directory, and runs `agent-farm plugin install <package>/plugins/greenfield
 --config-root <service-home>/.config/agent-farm` with stdin closed. That explicit
 config root is the service user's reusable library, including the shipped
-`profiles/planner.yaml` and `profiles/implementer.yaml`, agents, and skills.
+`plugins/greenfield/profiles/planner.yaml` and `plugins/greenfield/profiles/implementer.yaml`, agents, and skills.
+Profiles use qualified names (`greenfield/planner`, `greenfield/implementer`).
+The Greenfield plugin installs alongside existing plugins and local profiles.
+Legacy flat dcouple files remain available for existing bare-profile sessions;
+Greenfield selection does not resolve through those files.
 The plugin installer preserves modified local files by failing on conflicts.
 Readback checks the receipt, every installed plugin checksum, and both profile
 definitions. It does not mount skills globally or launch a harness.
@@ -253,8 +257,8 @@ deployment, smoke tests, and recovery.
 Set each app independently:
 
 ```dotenv
-PLANNER_HARNESS=agent-farm:planner
-IMPLEMENTER_HARNESS=agent-farm:implementer
+PLANNER_HARNESS=agent-farm:greenfield/planner
+IMPLEMENTER_HARNESS=agent-farm:greenfield/implementer
 AGENT_FARM_BIN=agent-farm
 ```
 
@@ -283,11 +287,11 @@ URL and four default model aliases from the profile. Its Claude launch prefix
 resolves the auth-token reference inside the child. This requires an Agent Farm
 release containing PR #22; provider settings stay outside plugins and bundles.
 
-Every turn first calls `agent-farm inspect <profile> --workspace bloom-mono` to
+Every turn first calls `agent-farm inspect <profile> --directory <worktree>` to
 read `agents.main.harness`, then prepares the launch:
 
 ```text
-agent-farm run <profile> --directory <worktree> --workspace bloom-mono --print-launch --message=<prompt> -- <native flags>
+agent-farm run <profile> --directory <worktree> --print-launch --message=<prompt> -- <native flags>
 ```
 
 Claude flags are `-p --output-format stream-json --verbose`, optional
@@ -311,12 +315,14 @@ classification, including during launch preparation. No daemon per-turn MCP
 JSON is constructed or written for this harness. Claude turn settings still
 carry tool hooks. Agent Farm's generated MCP bundle retains strict MCP mode.
 
-The integration workspace is named `bloom-mono`. This exact YAML belongs in
-`~/.config/agent-farm/workspaces/bloom-mono.yaml` for the daemon service account;
-its tracked template is `ops/agent-farm/bloom-mono.yaml`. The target repository's
-workspace guidance lives in bloomapi/bloom-mono and must be maintained there.
-The daemon passes `--workspace bloom-mono` explicitly because strict MCP mode
-does not inherit globally installed connections.
+Provisioning installs the personal fallback workspace at
+`~/.config/agent-farm/workspace.yaml` for the daemon service account, from
+`ops/agent-farm/bloom-mono.yaml`. Both inspection and launch use the turn's
+worktree directory. Agent Farm discovers a repository `.agent-farm/workspace.yaml`
+first; it requires explicit trust from the service account and can be augmented
+by `~/.config/agent-farm/overlays/<workspace-name>.yaml`. Without a repository
+workspace, it uses the personal fallback. Strict MCP mode does not inherit
+globally installed connections.
 
 ```yaml
 connections:
@@ -366,8 +372,7 @@ Agent Farm registers these connections as `orchestra_linear`,
 `orchestra_xcodebuildmcp`, and `orchestra_playwright`. Both parsers recognize the
 Linear registration when reporting tool results and Claude initialization.
 
-Install an Agent Farm release containing agent-farm PRs #17 and #18 before
-selecting this harness. Ignore `.agent-farm/generated/` in bloom-mono. Actual
+Install Agent Farm `0.2.0` before selecting this harness. Ignore `.agent-farm/generated/` in bloom-mono. Actual
 provider targeting and stable Codex resume across plugin updates remain plan
 items 7 and 8. Fable readiness and its fallback routing continue to apply to
 the existing harnesses.

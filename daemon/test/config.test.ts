@@ -103,9 +103,13 @@ describe("loadConfig", () => {
     expect(config.apps.planner.harness).toBe("agent-farm:planner");
     expect(config.apps.implementer.harness).toBe("agent-farm:astra-implementer-high");
     expect(config.agentFarmBin).toBe("agent-farm");
+    const qualified = loadConfig({ ...base, PLANNER_HARNESS: "agent-farm:greenfield/planner",
+      IMPLEMENTER_HARNESS: "agent-farm:greenfield/implementer" });
+    expect(qualified.apps.planner.harness).toBe("agent-farm:greenfield/planner");
+    expect(qualified.apps.implementer.harness).toBe("agent-farm:greenfield/implementer");
     expect(loadConfig({ ...base, AGENT_FARM_BIN: "/path with spaces/agent-farm" }).agentFarmBin)
       .toBe("/path with spaces/agent-farm");
-    for (const value of ["agent-farm:", "agent-farm:../planner", "agent-farm:planner --exec"])
+    for (const value of ["agent-farm:", "agent-farm:../planner", "agent-farm:planner --exec", "agent-farm:greenfield/../planner", "agent-farm:greenfield/", "agent-farm:a/b/c"])
       expect(() => loadConfig({ ...base, PLANNER_HARNESS: value })).toThrow("PLANNER_HARNESS");
   });
   it("accepts the native Codex harness with its launcher and model defaults", () => {

@@ -8,16 +8,18 @@ import {pathToFileURL} from 'node:url';
 const [packageRoot, root] = process.argv.slice(2);
 try {
   const {validatePlugin} = await import(pathToFileURL(path.join(packageRoot, 'dist/plugins.js')));
-  const {info, checksums} = validatePlugin(path.join(packageRoot, 'plugins/dcouple'));
-  const receipt = JSON.parse(fs.readFileSync(path.join(root, '.plugins/dcouple.json'), 'utf8'));
+  const source = path.join(packageRoot, 'plugins/greenfield');
+  const {info, checksums} = validatePlugin(source);
+  checksums['plugin.yaml'] = createHash('sha256').update(fs.readFileSync(path.join(source, 'plugin.yaml'))).digest('hex');
+  const receipt = JSON.parse(fs.readFileSync(path.join(root, '.plugins/greenfield.json'), 'utf8'));
   const sorted = value => JSON.stringify(Object.entries(value).sort());
-  if (receipt.name !== info.name || receipt.version !== info.version || sorted(receipt.checksums) !== sorted(checksums)) {
+  if (receipt.layout !== 2 || receipt.name !== info.name || receipt.version !== info.version || sorted(receipt.checksums) !== sorted(checksums)) {
     throw new Error('Plugin receipt differs from installed package');
   }
   if (fs.existsSync(path.join(root, '.plugins/install.lock'))) throw new Error('Plugin install lock exists');
   for (const [relative, expected] of Object.entries(checksums)) {
     let cursor = root;
-    for (const part of relative.split(path.sep)) {
+    for (const part of path.join('plugins/greenfield', relative).split(path.sep)) {
       cursor = path.join(cursor, part);
       if (fs.lstatSync(cursor).isSymbolicLink()) throw new Error(`Symlink destination: ${cursor}`);
     }

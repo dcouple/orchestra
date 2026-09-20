@@ -93,36 +93,41 @@ function fixture(scriptDir = ops, sourceDir = resolve(".")) {
   });
   const seed = () => {
     mkdirSync(join(packageRoot, "dist"), { recursive: true });
-    mkdirSync(join(packageRoot, "plugins/dcouple/profiles"), { recursive: true });
-    mkdirSync(join(root, "profiles"), { recursive: true });
+    mkdirSync(join(packageRoot, "plugins/greenfield/profiles"), { recursive: true });
+    mkdirSync(join(root, "plugins/greenfield/profiles"), { recursive: true });
     mkdirSync(join(root, ".plugins"));
     mkdirSync(join(home, ".pnpm/bin"), { recursive: true });
     const checksums: Record<string, string> = {};
     for (const name of ["planner", "implementer"]) {
       const relative = `profiles/${name}.yaml`, content = `agent: ${name}\n`;
-      writeFileSync(join(packageRoot, "plugins/dcouple", relative), content);
-      writeFileSync(join(root, relative), content);
+      writeFileSync(join(packageRoot, "plugins/greenfield", relative), content);
+      writeFileSync(join(root, "plugins/greenfield", relative), content);
       checksums[relative] = createHash("sha256").update(content).digest("hex");
     }
+    const manifest = "name: greenfield\nversion: 0.1.3\ncli_major: 0\n";
+    writeFileSync(join(packageRoot, "plugins/greenfield/plugin.yaml"), manifest);
+    writeFileSync(join(root, "plugins/greenfield/plugin.yaml"), manifest);
+    const receiptChecksums = { ...checksums, "plugin.yaml": createHash("sha256").update(manifest).digest("hex") };
     writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ version, type: "module" }));
     // Upstream package discovery and CLI boundaries are mocked.
     // The provisioner runs real binary, marker, receipt, and hash checks.
-    writeFileSync(join(packageRoot, "dist/plugins.js"), `export function validatePlugin() { return ${JSON.stringify({ info: { name: "dcouple", version: "0.1.3" }, checksums })}; }\n`);
+    writeFileSync(join(packageRoot, "dist/plugins.js"), `export function validatePlugin() { return ${JSON.stringify({ info: { name: "greenfield", version: "0.1.3" }, checksums })}; }\n`);
     writeFileSync(join(packageRoot, "dist/cli.js"), `#!/bin/sh
       case "$1" in
         --help) exit 0 ;;
         inspect)
           profile=$2; shift 2
-          workspace=
+          directory=
           while [ "$#" -gt 0 ]; do
             case "$1" in
-              --workspace) workspace=$2; shift 2 ;;
+              --directory) directory=$2; shift 2 ;;
+              --no-workspace) shift ;;
               --config-root) root=$2; shift 2 ;;
               *) exit 99 ;;
             esac
           done
-          test -f "$root/profiles/$profile.yaml" || exit 1
-          [ -z "$workspace" ] || test -f "$root/workspaces/$workspace.yaml"
+          test -f "$root/plugins/greenfield/profiles/\${profile#greenfield/}.yaml" || exit 1
+          [ -z "$directory" ] || test -f "$root/workspace.yaml"
           exit $? ;;
         plugin) printf '{"changed":0}\n'; exit 0 ;;
         *) echo 'unexpected mutation' >&2; exit 99 ;;
@@ -130,7 +135,7 @@ function fixture(scriptDir = ops, sourceDir = resolve(".")) {
     `);
     chmodSync(join(packageRoot, "dist/cli.js"), 0o755);
     symlinkSync(join(packageRoot, "dist/cli.js"), join(home, ".pnpm/bin/agent-farm"));
-    writeFileSync(join(root, ".plugins/dcouple.json"), JSON.stringify({ name: "dcouple", version: "0.1.3", checksums }));
+    writeFileSync(join(root, ".plugins/greenfield.json"), JSON.stringify({ name: "greenfield", version: "0.1.3", layout: 2, checksums: receiptChecksums }));
     writeFileSync(join(home, ".pnpm/agent-farm-version"), `${version}\n`);
     writeFileSync(join(home, "pnpm-list.json"), JSON.stringify([{ dependencies: { "@greenfieldco/agent-farm": { path: packageRoot, version } } }]));
   };
@@ -202,12 +207,12 @@ describe("Agent Farm macOS provisioning convergence", () => {
 
   it("keeps converged files byte-identical on dry run and repeated apply", () => {
     const f = fixture(); f.seed();
-    const receipt = readFileSync(join(f.root, ".plugins/dcouple.json"));
+    const receipt = readFileSync(join(f.root, ".plugins/greenfield.json"));
     for (const dry of [true, false, false]) {
       const result = f.run(dry);
       expect(result.status, result.stderr).toBe(0);
       for (const setting of ["cli", "plugin", "profiles"]) expect(result.stdout).toContain(`agent-farm-${setting} already-correct`);
-      expect(readFileSync(join(f.root, ".plugins/dcouple.json"))).toEqual(receipt);
+      expect(readFileSync(join(f.root, ".plugins/greenfield.json"))).toEqual(receipt);
     }
   });
 
@@ -220,11 +225,11 @@ describe("Agent Farm macOS provisioning convergence", () => {
     expect(first.status, first.stderr).toBe(0);
     expect(first.stdout).toContain("agent-farm-workspace applied");
     expect(first.stdout).toContain("agent-farm-browser applied");
-    expect(readFileSync(join(f.root, "workspaces/bloom-mono.yaml")))
+    expect(readFileSync(join(f.root, "workspace.yaml")))
       .toEqual(readFileSync(resolve("ops/agent-farm/bloom-mono.yaml")));
     expect(readFileSync(join(f.home, "libexec/orchestra-agent-farm-browser")))
       .toEqual(readFileSync(resolve("ops/agent-farm-browser.sh")));
-    expect(statSync(join(f.root, "workspaces/bloom-mono.yaml")).mode & 0o777).toBe(0o640);
+    expect(statSync(join(f.root, "workspace.yaml")).mode & 0o777).toBe(0o640);
     expect(statSync(join(f.home, "libexec/orchestra-agent-farm-browser")).mode & 0o777).toBe(0o755);
     const second = f.run(false);
     expect(second.status, second.stderr).toBe(0);
@@ -248,7 +253,7 @@ describe("Agent Farm macOS provisioning convergence", () => {
 
     const f = fixture(bundle, source); f.seed();
     const sources = [join(source, "ops/agent-farm/bloom-mono.yaml"), join(source, "ops/agent-farm-browser.sh")];
-    const installed = [join(f.root, "workspaces/bloom-mono.yaml"), join(f.home, "libexec/orchestra-agent-farm-browser")];
+    const installed = [join(f.root, "workspace.yaml"), join(f.home, "libexec/orchestra-agent-farm-browser")];
     const inventory = f.run(true);
     expect(inventory.status, inventory.stderr).toBe(0);
     for (const name of ["workspace", "browser"]) expect(inventory.stdout).toContain(`agent-farm-${name} would-apply`);
@@ -294,16 +299,30 @@ describe("Agent Farm macOS provisioning convergence", () => {
     mkdirSync(join(f.root, "workspaces"));
     const target = join(f.home, "unrelated.yaml");
     writeFileSync(target, "connections: {}\n");
-    symlinkSync(target, join(f.root, "workspaces/bloom-mono.yaml"));
+    symlinkSync(target, join(f.root, "workspace.yaml"));
     const result = f.run(false);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("workspace destination is a symlink");
     expect(readFileSync(target, "utf8")).toBe("connections: {}\n");
   });
 
+  it("preserves legacy profiles and receipts when provisioning Greenfield", () => {
+    const f = fixture(); f.seed();
+    mkdirSync(join(f.root, "profiles"));
+    const profile = join(f.root, "profiles/planner.yaml");
+    const receipt = join(f.root, ".plugins/dcouple.json");
+    writeFileSync(profile, "agent: legacy-planner\n");
+    writeFileSync(receipt, JSON.stringify({ name: "dcouple", checksums: {} }));
+    const before = [readFileSync(profile), readFileSync(receipt)];
+    const result = f.run(false);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(profile)).toEqual(before[0]);
+    expect(readFileSync(receipt)).toEqual(before[1]);
+  });
+
   it("detects local profile edits without modifying them during inventory", () => {
     const f = fixture(); f.seed();
-    const profile = join(f.root, "profiles/planner.yaml");
+    const profile = join(f.root, "plugins/greenfield/profiles/planner.yaml");
     writeFileSync(profile, "agent: local-planner\n");
     const result = f.run(true);
     expect(result.status, result.stderr).toBe(0);
@@ -314,11 +333,11 @@ describe("Agent Farm macOS provisioning convergence", () => {
 
   it("checks installed bytes and refuses symlink destinations even with a matching receipt", () => {
     const f = fixture(); f.seed();
-    const profile = join(f.root, "profiles/implementer.yaml");
+    const profile = join(f.root, "plugins/greenfield/profiles/implementer.yaml");
     const check = () => spawnSync(process.execPath, [join(ops, "agent-farm-state.mjs"), f.packageRoot, f.root], { encoding: "utf8" });
     writeFileSync(profile, "agent: local-implementer\n");
     expect(check().stderr).toContain("Installed plugin file differs");
-    unlinkSync(profile); symlinkSync(join(f.packageRoot, "plugins/dcouple/profiles/implementer.yaml"), profile);
+    unlinkSync(profile); symlinkSync(join(f.packageRoot, "plugins/greenfield/profiles/implementer.yaml"), profile);
     const result = check();
     expect(result.status).toBe(1); expect(result.stderr).toContain("Symlink destination");
   });
@@ -426,7 +445,7 @@ describe("Agent Farm macOS provisioning convergence", () => {
   it("fails hard on plugin integrity after a successful install", () => {
     const f = fixture(); f.seed();
     writeFileSync(join(f.home, ".pnpm/agent-farm-version"), "0.0.1\n");
-    writeFileSync(join(f.root, "profiles/planner.yaml"), "agent: local-edit\n");
+    writeFileSync(join(f.root, "plugins/greenfield/profiles/planner.yaml"), "agent: local-edit\n");
     const result = f.run(false);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("plugin receipt and installed contents did not verify");
