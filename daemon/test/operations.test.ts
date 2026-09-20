@@ -295,16 +295,16 @@ describe("daemonctl command boundaries", () => {
     writeFileSync(site, `${readFileSync(resolve("ops/macos/site.env.example"), "utf8")}\nDAEMON_SERVICE_HOME=${dir}\n`);
     const content = `SECRET_TOKEN=never-print-me\nPLANNER_HARNESS=claude\nAGENT_FARM_BIN='  ${binary}  '\n`;
     writeFileSync(envFile, content);
-    const result = spawnSync("bash", [resolve(script), "config", "--planner", "agent-farm:planner",
-      "--implementer", "agent-farm:implementer", "--dry-run"], {
+    const result = spawnSync("bash", [resolve(script), "config", "--planner", "agent-farm:greenfield/planner",
+      "--implementer", "agent-farm:greenfield/implementer", "--dry-run"], {
       env: { ...process.env, DAEMONCTL_ALLOW_NON_ROOT: "1", DAEMONCTL_ALLOW_OTHER_USER: "1",
         DAEMONCTL_ENV_FILE: envFile, DAEMON_SITE_LIB: resolve("ops/macos/daemon-site-lib.sh"),
         DAEMON_SITE_ENV: site }, encoding: "utf8",
     });
     expect(result.status, result.stderr).toBe(0);
     if (script === "ops/daemonctl") {
-      expect(result.stdout).toContain("PLANNER_HARNESS=agent-farm:planner");
-      expect(result.stdout).toContain("IMPLEMENTER_HARNESS=agent-farm:implementer");
+      expect(result.stdout).toContain("PLANNER_HARNESS=agent-farm:greenfield/planner");
+      expect(result.stdout).toContain("IMPLEMENTER_HARNESS=agent-farm:greenfield/implementer");
     } else expect(result.stdout).toContain("would update harnesses");
     expect(result.stdout).not.toContain("never-print-me");
     expect(readFileSync(envFile, "utf8")).toBe(content);

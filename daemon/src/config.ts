@@ -22,7 +22,7 @@ function harnessPreference(env: NodeJS.ProcessEnv, name: string): HarnessPrefere
   if (name === "PLANNER_HARNESS" && value === "codex")
     throw new Error("PLANNER_HARNESS must be claude, claudex, or agent-farm:<profile>");
   if (value !== "claude" && value !== "claudex" && value !== "codex"
-    && !/^agent-farm:[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value))
+    && !/^agent-farm:[A-Za-z0-9][A-Za-z0-9_-]*(\/[A-Za-z0-9][A-Za-z0-9_-]*)?$/.test(value))
     throw new Error(`${name} must be claude, claudex, codex, or agent-farm:<profile>`);
   return value as HarnessPreference;
 }

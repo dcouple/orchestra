@@ -68,7 +68,7 @@ die() { echo "$*" >&2; exit 1; }
 usage_error() { echo "$*" >&2; usage >&2; exit 2; }
 require_root() { [[ "${EUID}" -eq 0 || "${DAEMONCTL_ALLOW_NON_ROOT:-0}" == 1 ]] || die "run as root (use sudo daemonctl ...)"; }
 validate_harness() {
-  [[ $1 == claude || $1 == claudex || $1 == codex || $1 =~ ^agent-farm:[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
+  [[ $1 == claude || $1 == claudex || $1 == codex || $1 =~ ^agent-farm:[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)?$ ]] \
     || usage_error "harness must be claude, claudex, codex, or agent-farm:<profile>"
 }
 validate_planner() {

@@ -1,7 +1,7 @@
 #!/bin/bash
 # shellcheck disable=SC2015
 # Sourced by provision.sh. Uses its agent(), record(), and fail() helpers.
-AGENT_FARM_VERSION=0.1.2
+AGENT_FARM_VERSION=0.2.0
 AGENT_FARM_BIN=$AGENT_HOME/.pnpm/bin/agent-farm
 AGENT_FARM_VERSION_FILE=$AGENT_HOME/.pnpm/agent-farm-version
 AGENT_FARM_CONFIG_ROOT=$AGENT_HOME/.config/agent-farm
@@ -24,7 +24,7 @@ agent_farm_resolve_plugin_source() {
       process.stdout.write(item.path);
     ') || return 1
   AGENT_FARM_PACKAGE_ROOT=$package_root
-  AGENT_FARM_PLUGIN_SOURCE=$AGENT_FARM_PACKAGE_ROOT/plugins/dcouple
+  AGENT_FARM_PLUGIN_SOURCE=$AGENT_FARM_PACKAGE_ROOT/plugins/greenfield
 }
 agent_farm_plugin_correct() {
   agent node "$SCRIPT_DIR/agent-farm-state.mjs" "$AGENT_FARM_PACKAGE_ROOT" "$AGENT_FARM_CONFIG_ROOT" </dev/null >/dev/null 2>&1
@@ -32,8 +32,8 @@ agent_farm_plugin_correct() {
 agent_farm_profiles_correct() {
   local profile
   for profile in planner implementer; do
-    agent cmp -s "$AGENT_FARM_PLUGIN_SOURCE/profiles/$profile.yaml" "$AGENT_FARM_CONFIG_ROOT/profiles/$profile.yaml" \
-      && agent "$AGENT_FARM_BIN" inspect "$profile" --config-root "$AGENT_FARM_CONFIG_ROOT" </dev/null >/dev/null 2>&1 || return 1
+    agent cmp -s "$AGENT_FARM_PLUGIN_SOURCE/profiles/$profile.yaml" "$AGENT_FARM_CONFIG_ROOT/plugins/greenfield/profiles/$profile.yaml" \
+      && agent "$AGENT_FARM_BIN" inspect "greenfield/$profile" --no-workspace --config-root "$AGENT_FARM_CONFIG_ROOT" </dev/null >/dev/null 2>&1 || return 1
   done
 }
 
@@ -66,11 +66,11 @@ provision_agent_farm_provider() {
 # The integration workspace and browser launcher are managed daemon files.
 provision_agent_farm_workspace() {
   local workspace_source=$SOURCE_DIR/ops/agent-farm/bloom-mono.yaml
-  local workspace=$AGENT_FARM_CONFIG_ROOT/workspaces/bloom-mono.yaml
+  local workspace=$AGENT_FARM_CONFIG_ROOT/workspace.yaml
   local browser_source=$SOURCE_DIR/ops/agent-farm-browser.sh
   local browser=/usr/local/libexec/orchestra-agent-farm-browser
   local workspace_correct=0 browser_correct=0
-  agent test ! -L "$AGENT_FARM_CONFIG_ROOT/workspaces" \
+  agent test ! -L "$AGENT_FARM_CONFIG_ROOT" \
     && agent test ! -L "$workspace" || fail "Agent Farm workspace destination is a symlink"
   sudo test ! -L "$browser" || fail "Agent Farm browser destination is a symlink"
   agent test -f "$workspace" && agent cmp -s "$workspace_source" "$workspace" && workspace_correct=1
@@ -88,14 +88,14 @@ provision_agent_farm_workspace() {
     record agent-farm-browser applied
   fi
   if (( workspace_correct )); then record agent-farm-workspace already-correct; else
-    agent install -d -m 0750 "$AGENT_FARM_CONFIG_ROOT/workspaces"
+    agent install -d -m 0750 "$AGENT_FARM_CONFIG_ROOT"
     agent install -m 0640 "$workspace_source" "$workspace"
     agent cmp -s "$workspace_source" "$workspace" || fail "Agent Farm workspace bytes did not verify"
     record agent-farm-workspace applied
   fi
   local profile
   for profile in planner implementer; do
-    agent "$AGENT_FARM_BIN" inspect "$profile" --workspace bloom-mono --config-root "$AGENT_FARM_CONFIG_ROOT" \
+    agent "$AGENT_FARM_BIN" inspect "greenfield/$profile" --directory "$AGENT_HOME" --config-root "$AGENT_FARM_CONFIG_ROOT" \
       </dev/null >/dev/null || fail "Agent Farm $profile workspace did not verify"
   done
 }

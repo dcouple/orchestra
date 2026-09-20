@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { failedTurnOutput } from "./failed-turn-output.mjs";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const profile = args[1];
-const harness = profile === "planner" ? "claude" : "codex";
+const harness = profile?.endsWith("planner") ? "claude" : "codex";
 const emit = value => {
   const bytes = Buffer.from(JSON.stringify(value) + "\n");
   const split = bytes.indexOf(Buffer.from("🌱"));
@@ -18,6 +18,8 @@ const emit = value => {
 };
 const arg = name => args[args.indexOf(name) + 1];
 const report = process.env.ORCHESTRA_BROWSER_FAKE_REPORT;
+if (args.includes("--workspace")) throw new Error("Obsolete workspace option");
+if (args[0] === "inspect" && await realpath(arg("--directory")) !== process.cwd()) throw new Error("Inspect must use the turn directory");
 if (args[0] === "inspect") {
   if (process.env.ORCHESTRA_BROWSER_FAKE_MODE === "prepare-hang") {
     await writeFile(report + ".ready", String(process.pid));

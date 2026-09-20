@@ -9,13 +9,11 @@ import {
 } from "./claude.js";
 import { runCodexTurn } from "./codex.js";
 
-export const AGENT_FARM_WORKSPACE = "bloom-mono";
 type NativeHarness = "claude" | "codex";
 
 interface AgentFarmTurnOptions extends RunTurnOptions {
   agentFarmBin: string;
   profile: string;
-  workspace?: string;
   onHarness?: (harness: NativeHarness) => void;
 }
 
@@ -62,8 +60,7 @@ function harness(value: unknown): NativeHarness {
 
 export async function runAgentFarmTurn(options: AgentFarmTurnOptions): Promise<RunTurnResult> {
   const env = childEnv(options.env, options.trustedEnv, options.mcpEnvPassthrough);
-  const workspace = options.workspace ? ["--workspace", options.workspace] : [];
-  const info = record(await printJson(options, ["inspect", options.profile, ...workspace], env));
+  const info = record(await printJson(options, ["inspect", options.profile, "--directory", options.cwd], env));
   const main = record(record(info?.agents)?.main);
   const nativeHarness = harness(main?.harness);
   options.onHarness?.(nativeHarness);
@@ -90,7 +87,7 @@ export async function runAgentFarmTurn(options: AgentFarmTurnOptions): Promise<R
       if (options.resumeSessionId) flags.push(options.resumeSessionId);
     }
     const printed = record(await printJson(options, ["run", options.profile,
-      "--directory", options.cwd, ...workspace, "--print-launch",
+      "--directory", options.cwd, "--print-launch",
       "--message=" + options.prompt, "--", ...flags], env));
     const overrides = record(printed?.env);
     if (!Array.isArray(printed?.argv) || !printed.argv.length

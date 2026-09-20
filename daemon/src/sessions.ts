@@ -22,7 +22,7 @@ import {
 } from "./dispatches.js";
 import { runTurn, type ClaudeEvent, type RunTurnResult } from "./claude.js";
 import { runCodexTurn } from "./codex.js";
-import { AGENT_FARM_WORKSPACE, runAgentFarmTurn } from "./agent-farm.js";
+import { runAgentFarmTurn } from "./agent-farm.js";
 import {
   BROWSER_RELAUNCH_SENTINEL,
   browserAttemptEnv,
@@ -895,7 +895,7 @@ export class SessionWorker {
         const turnResult =
           agentFarm
             ? await runAgentFarmTurn({ ...turnOptions, agentFarmBin: this.config.agentFarmBin,
-                profile: runtime.slice("agent-farm:".length), workspace: AGENT_FARM_WORKSPACE,
+                profile: runtime.slice("agent-farm:".length),
                 onHarness: (harness) => { nativeRuntime = harness; } })
             : runtime === "codex"
             ? await runCodexTurn({ ...turnOptions, model: this.config.codexModel })
