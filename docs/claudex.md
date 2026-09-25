@@ -6,9 +6,11 @@ OpenAI's GPT-5.6 Sol as the model**, through a local
 against a ChatGPT Plus/Pro subscription. It's the escape hatch for running
 orchestra when Anthropic model usage is exhausted.
 
-**Full setup guide (macOS / Linux / WSL):** [`claudex-setup.html`](claudex-setup.html)
-- open it in a browser; it covers install, proxy config, startup service,
-OAuth, the alias, and troubleshooting.
+**Setup:** install and log in to CLIProxyAPI per its README, then define
+the alias with the environment the daemon's wrapper sets:
+[`daemon/ops/claudex`](../daemon/ops/claudex) is the reference (proxy
+URL, API key, the four `ANTHROPIC_DEFAULT_*_MODEL` remaps, and
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS`).
 
 ## The switch
 
@@ -21,7 +23,7 @@ Which command starts the session is the whole switch:
 ## Why orchestra needs no configuration for this
 
 - Every Claude-side step (plan-reviewer, code-reviewer, socrates,
-  frontend-implementer, the /do orchestrator itself) runs as an **in-session
+  frontend-verifier, the /do orchestrator itself) runs as an **in-session
   subagent** via the Agent tool and inherits the session's model and auth. No
   skill shells out to a `claude` CLI.
 - The Codex lanes (`codex exec` in the codex skill) use their own CLI and
@@ -34,13 +36,13 @@ Which command starts the session is the whole switch:
 ## Reasoning-effort tiers
 
 The proxy forks `gpt-5.6-sol` into effort-pinned client names
-(`oauth-model-alias` + per-model `payload.override` rules - see the HTML
-guide), and the alias maps each Claude model alias onto a tier:
+(`oauth-model-alias` + per-model `payload.override` rules in the proxy
+config), and the alias maps each Claude model alias onto a tier:
 
 | Claude Code asks for | Routed to | Effort | Used by |
 | --- | --- | --- | --- |
 | the `--model` (main loop) | `gpt-5.6-sol` | high | the orchestrator session itself |
-| `opus` (frontmatter pins) | `gpt-5.6-sol-medium` | medium | code-reviewer, plan-reviewer, frontend-implementer |
+| `opus` (frontmatter pins) | `gpt-5.6-sol-medium` | medium | code-reviewer, plan-reviewer |
 | `fable` (frontmatter pins) | `gpt-5.6-sol-xhigh` | xhigh | socrates - the Socratic gate gets the strongest tier |
 | `sonnet` (frontmatter pins) | `gpt-5.6-sol-low` | low | code-researcher, web-researcher, frontend-verifier |
 | `haiku` (background chores) | `gpt-5.6-sol-low` | low | session titles, other harness trivia |
@@ -76,8 +78,9 @@ From this repo's root (or any consumer repo):
 claudex -p "Dispatch two subagents in parallel via the Agent tool: 'socrates' and 'code-researcher', each with the prompt: 'Reply with exactly: OK'. Report both replies."
 ```
 
-Both replies coming back proves the chain end-to-end: the opus pin resolved
-to `gpt-5.6-sol-medium` and the sonnet pin to `gpt-5.6-sol-low`, dispatched
+Both replies coming back proves the chain end-to-end: the fable pin
+(socrates) resolved to `gpt-5.6-sol-xhigh` and the sonnet pin
+(code-researcher) to `gpt-5.6-sol-low`, dispatched
 through the proxy, and answered. A failure means the
 `ANTHROPIC_DEFAULT_*_MODEL` remaps are missing from the alias or the model
 forks are missing from the proxy config.

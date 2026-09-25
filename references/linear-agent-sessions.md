@@ -1,10 +1,9 @@
 # Linear agent sessions - shared contract
 
-Used by `/linear-work-orchestrator`. What the Linear agent daemon's sessions
+What the Linear agent daemon's sessions
 look like from inside Linear, what each action on them costs, and how to read
-their state through the Linear MCP alone. Agent display names come from the
-consumer repo's `AGENTS.md` (`linear_agents:` under `Work-item tracking`) or
-are derived from the workspace's app users; `<planner>` and `<implementer>`
+their state through the Linear MCP alone. Agent display names are the workspace's
+app users for the daemon's two OAuth apps; `<planner>` and `<implementer>`
 below stand for those names.
 
 ## How work starts and resumes
@@ -107,8 +106,7 @@ Per issue, take the newest session thread and its last message:
 | a `was interrupted` restart-recovery notice | interrupted - revive per the notice, with a human's yes | no |
 | root or human reply **older** than the stale horizon with no agent reply | stale - the daemon may have restarted or the reply was dropped | no; report it - unless an older thread on the same issue is itself busy, in which case that one holds the slot |
 
-Stale horizons come from `AGENTS.md` (`linear_agents.stale_hours`), else
-implementer 6 hours, planner 2 hours; measure from the last message's
+Stale horizons are implementer 6 hours, planner 2 hours; measure from the last message's
 timestamp. The daemon emits a keepalive only when it has been silent for its
 `KEEPALIVE_MS` (default 15 minutes), and that keepalive is ephemeral - so
 silence in the thread is not evidence of death inside the horizon.

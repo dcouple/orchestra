@@ -6,9 +6,9 @@ harness: Fable makes the judgment calls and dispatches sub-agents; Codex
 
 The whole system at a glance:
 
-![Orchestra workflow map](docs/workflow-map.png)
+![Orchestra workflow map](workflow-map.png)
 
-_Source: [docs/workflow-map.excalidraw](docs/workflow-map.excalidraw)_
+_Source: [workflow-map.excalidraw](workflow-map.excalidraw)_
 
 The flow separates *clarity*, *capture*, and *execution*:
 
@@ -125,17 +125,17 @@ its alignment pause.
 - **`claude/skills/<name>/references/`** - document formats produced by
   exactly one skill (implementation-plan, wrap-up-report, postmortem).
 
-The five workflow skills above, plus two infrastructure skills the others
-invoke - `codex` (dispatches Codex roles) and `excalidraw-pr-diagrams` (the
-PR visual-overview standard `/do`'s PR step uses) - are the whole surface. Web research is the
+Beside the five workflow skills above, `claude/skills/` holds
+`/investigate` (evidence-driven debugging), `cold-read` (a zero-context
+walkthrough of an artifact), `postmortem-loop` and `sentry-loop` (on-demand
+sweeps), and two infrastructure skills the others invoke: `codex`
+(dispatches Codex roles) and `excalidraw-pr-diagrams` (the PR
+visual-overview standard `/do`'s PR step uses). Web research is the
 `web-researcher` sub-agent, review lives inside `/do` (plan review before
 implement, code review + QA after the PR opens), and all commit/PR prep
 lives in `/do`'s PR step.
 
 ## Keeping in sync
 
-See [README.md](README.md): skills are edited only in this repo and mirrored
-one-way into each consumer repo by that repo's `update-skills` script
-(`pnpm update-skills` in bloomapi/bloom-mono), which wraps `scripts/sync.sh`.
-The old per-machine rsync to `~/.claude`, `~/.codex`, and `~/.references` is
-retired.
+Skills are edited only in this repo and reach consumer repos through each
+consumer's `update-skills` PR. See [README.md](../README.md).

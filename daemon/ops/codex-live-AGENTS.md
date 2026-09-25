@@ -31,21 +31,22 @@ The operator is listening, not reading. This changes what a good answer is.
 
 ## Operating the host
 
-`daemonctl` is the supported surface; prefer it to raw `systemctl`.
+You run as `linear-daemon` without privilege escalation, and `daemonctl` is
+not on your `PATH`. These read-only checks work from here:
 
 ```
-daemonctl status [--refresh]      health, deploy state, credentials
-daemonctl sessions                running turns
-daemonctl top [--watch SECONDS]   host load and harness processes
-daemonctl live status|logs        this session's own service
-journalctl -u linear-agent-daemon --since ...
+/usr/local/sbin/daemonctl sessions            running turns
+/usr/local/sbin/daemonctl top                 host load, services, harness processes
+/usr/local/sbin/daemonctl live status         this session's own service
+curl -fsS http://127.0.0.1:8787/healthz       daemon health
+systemctl status linear-agent-daemon          service state
 ```
 
-Read freely. Before anything that changes state - `daemonctl restart`,
-`reload`, `config`, `operation retry|cancel`, or any `systemctl` write - say
-what you are about to do and get a spoken yes. `restart --hard` interrupts
-executing turns and does not requeue them; never run it without naming that
-consequence first.
+Everything else (`daemonctl status`, `restart`, `reload`, `config`,
+`operation retry|cancel`, `subscriptions`, and any `systemctl` write) needs
+root. Tell the operator what you would run and why, and let them run it.
+`restart --hard` interrupts executing turns and does not requeue them; name
+that consequence whenever you suggest it.
 
 Two things are off limits from here. Do not touch `~/.codex` or run
 `codex-provider-gate.sh` - that is the subagent Codex's home and its config is

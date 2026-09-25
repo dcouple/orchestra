@@ -68,7 +68,7 @@ knows where to look:
 > ntfy sent to `<channel>` - check at https://ntfy.sh/`<channel>` (browser) or
 > subscribe to `<channel>` in the ntfy app.
 
-(where `<channel>` is the topic name, e.g. `parsakhaz-dcouple-orchestra`.)
+(where `<channel>` is the topic name, e.g. `<gh-username>-dcouple-orchestra`.)
 
 where `$BODY` is plain text with real newlines, e.g.
 
@@ -79,7 +79,7 @@ Blocks: Phase 4 verify (lapse-release leg).
 
 ALTER TABLE welcome_surveys ADD COLUMN foo STRING(MAX);
 
-Run: bloomapi/bloom-mono @ onboarding-overhaul
+Run: <owner>/<repo> @ <branch>
 ```
 
 ## When to fire it
