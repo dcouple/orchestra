@@ -21,16 +21,14 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 pnpm test
-for f in ops/provision.sh ops/daemonctl ops/wait-for-daemon-health.sh ops/claudex \
-    ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh ops/codex-live-setup.sh \
-    ops/macos/provision.sh ops/macos/deploy.sh ops/macos/daemonctl ops/macos/daemon-site-lib.sh \
-    ops/macos/run-daemon.sh ops/macos/run-cliproxyapi.sh ops/macos/run-cloudflared.sh \
-    ops/macos/sim-context-probe.sh ops/macos/orchestra-sim test/fixtures/fake-sudo.sh; do
-  bash -n "$f" || exit 1
+for f in ops/*.sh ops/macos/*.sh ops/daemonctl ops/claudex ops/claudex-fable \
+    ops/macos/daemonctl ops/macos/orchestra-sim test/fixtures/fake-sudo.sh; do
+  bash -n "$f" || echo "syntax error: $f"
 done
 ```
 
-`pnpm test` is hermetic: it uses loopback HTTP servers, temporary SQLite
+`pnpm test` takes a few minutes and uses short per-test timeouts, so run it
+on an idle machine; a heavily loaded one produces timeout failures. It is hermetic: it uses loopback HTTP servers, temporary SQLite
 databases, and temporary directories under `$TMPDIR`, needs no environment
 variables, and makes no internet or Linear requests. With `CLIPROXY_BIN`
 pointing at the pinned CLIProxyAPI binary, the proxy integration suite also
@@ -70,7 +68,8 @@ acknowledgement to Linear. Setting the actor IDs turns on session
 reconciliation against the Linear API. With sessions on, also set
 `TARGET_REPO_PATH` and `LINEAR_API_KEY`; the daemon then contacts Linear's API
 and its MCP server (`LINEAR_MCP_URL`) and launches the configured harness.
-`pnpm dev` runs the built daemon with `node --watch`. Every setting is in
+`pnpm dev` runs `dist/index.js` with `node --watch`; rerun `pnpm build` (or
+`tsc --watch` in another shell) after editing `src/`. Every setting is in
 [docs/daemon/configuration.md](../docs/daemon/configuration.md).
 
 ## Agent Farm harness

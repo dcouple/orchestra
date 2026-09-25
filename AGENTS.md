@@ -20,10 +20,18 @@ consumer-specific names, paths, or IDs.
 ```bash
 scripts/sync.sh <path-to-consumer-repo>   # mirror the skills into a consumer checkout
 scripts/sync-user.sh                      # mirror into user-level ~/.claude, ~/.codex, ~/.references
-scripts/check-dispatch-survival.sh        # Codex dispatches survive the parent shell exiting
+scripts/check-dispatch-survival.sh        # Codex dispatches survive the parent shell exiting; run after editing the codex skill
 ```
 
-Daemon checks (Node 22, pnpm 11) are in [daemon/README.md](daemon/README.md#local-checks).
+CI (`.github/workflows/docs.yml`) checks relative links and anchors, and
+that every `.references/`, `.claude/`, and `.codex/` path named in
+`claude/`, `codex/`, `references/`, and `templates/` exists. Run the link
+check locally with
+`docker run --rm -v "$PWD":/input -w /input lycheeverse/lychee --offline --include-fragments './**/*.md'`.
+
+Daemon checks are in [daemon/README.md](daemon/README.md#local-checks). They
+need Node 22 and pnpm 11; under another Node major, `better-sqlite3` fails
+to build, so put a Node 22 install first on `PATH`.
 
 ## Rules
 
@@ -49,6 +57,9 @@ Daemon checks (Node 22, pnpm 11) are in [daemon/README.md](daemon/README.md#loca
   them, and daemon code never goes in a synced directory.
 - `templates/` is scaffolding copied once into new consumer repos, never
   synced.
+- Removing or renaming a top-level skill or agent: add the old name to the
+  `REMOVED_*` lists in `scripts/sync.sh` (and, for agents,
+  `scripts/sync-user.sh`) so syncs purge the stale copy.
 - Skill, agent, and reference bodies state what exists. Rejected designs,
   removed modes, editor-facing warnings, and tuning rationale go in PR
   descriptions and commit messages. Sole exception: a one-line live footgun
@@ -82,7 +93,8 @@ tracker: github
 github_repo: dcouple/orchestra
 ```
 
-> Publish per `.references/publish-work-item.md`.
+> Publish per `.references/publish-work-item.md`. No `artifact_host` is
+> configured, so issues carry the markdown rendition of the brief.
 
 ## Boundaries
 

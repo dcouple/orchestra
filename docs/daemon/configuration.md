@@ -15,6 +15,8 @@ account's home.
 
 ### Listener and Linear apps
 
+"Required" is `yes` when the daemon refuses to start without it, `macOS deploy` when `deploy.sh` refuses to deploy a sessions-enabled env file without it, and `macOS` when the default is a Linux path that macOS must override.
+
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
 | `WEBHOOK_BASE_URL` | yes (unless `DAEMON_TEST_MODE=1`) | none | Public HTTPS origin, for example `https://<daemon-host>`. Used for artifact URLs. |
@@ -61,8 +63,8 @@ expiry in SQLite.
 | `PROVIDER_INITIAL_PROBE_TIMEOUT_MS` | no | `5000` | Startup wait for the first probe. |
 | `CLAUDE_PERMISSION_MODE` | no | `bypassPermissions` | Planner permission mode. |
 | `CLAUDE_MAX_TURNS` | no | `100` | Planner turn cap. |
-| `DO_PERMISSION_MODE` | no | `bypassPermissions` | Implementer permission mode; outside test mode only `bypassPermissions` is accepted. |
-| `DO_MAX_TURNS` | no | `300` | Implementer turn cap. |
+| `DO_PERMISSION_MODE` | macOS deploy | `bypassPermissions` | Implementer permission mode; outside test mode only `bypassPermissions` is accepted. |
+| `DO_MAX_TURNS` | macOS deploy | `300` | Implementer turn cap. |
 | `DO_MAX_BUDGET_USD` | no | none | Positive implementer budget cap. |
 | `BASH_DEFAULT_TIMEOUT_MS`, `BASH_MAX_TIMEOUT_MS` | no | `900000` each | Bash tool timeouts passed to every Claude-family turn; max must be at least the default. |
 | `SESSION_CONCURRENCY` | no | `5` | Concurrent sessions. |

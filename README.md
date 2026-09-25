@@ -6,7 +6,8 @@ The canonical home of our agent skill system: Claude Code skills and
 sub-agents, Codex role skills, and the shared references they point to.
 Skills are edited **only here** and synced one-way into each repo that uses
 them ("consumer repos"). Never edit the synced copies in a consumer repo;
-the next sync overwrites them.
+the next sync overwrites them. (In this repo the dot-paths are symlinks to
+the canonical directories, not copies; see below.)
 
 The system at a glance ([how the workflow runs and how models are routed](docs/workflow.md)):
 
@@ -29,9 +30,13 @@ run. Working on it means editing files under `claude/`, `codex/`, and
 `references/`, then syncing them into a consumer repo:
 
 ```bash
-scripts/sync.sh /path/to/consumer-repo   # mirror the skills into a consumer checkout
-scripts/sync-user.sh                     # optional: install them for every repo on this machine
+scripts/sync.sh <path-to-consumer-repo>  # mirror the skills into a consumer's git checkout
+scripts/sync-user.sh                    # optional: install them for every repo on this machine
 ```
+
+Every pull request runs `.github/workflows/docs.yml`: an offline link and
+anchor check, and a check that every `.references/`, `.claude/`, and
+`.codex/` path the skills name exists.
 
 The only runnable code is `daemon/`, an orchestra-only Linear agent webhook
 service (Node 22). Its checks and local run are in
@@ -49,7 +54,7 @@ service (Node 22). Its checks and local run are in
 | `templates/` | Per-project scaffolding (`AGENTS.md`, `CLAUDE.md`) to copy into a new consumer repo and fill in | not synced - copied once by hand |
 | `daemon/` | Orchestra-only Linear agent webhook service (macOS/launchd behind a Cloudflare Tunnel); each deployment's identity comes from a site config kept in the consumer repo | not synced |
 | `machines/` | Orchestra-only, versioned physical-machine setup and operations artifacts | not synced |
-| `docs/` | The workflow, claudex, and daemon depth docs | not synced |
+| `docs/` | [The workflow](docs/workflow.md), [claudex](docs/claudex.md) (running Claude Code on GPT-5.6 through a local proxy), and [daemon](docs/daemon/) depth docs | not synced |
 | `scripts/` | `sync.sh` (consumer mirror), `sync-user.sh` (user-level install), `check-dispatch-survival.sh` (checks that Codex dispatches survive the parent shell exiting) | - |
 
 ## The rules that keep this sane
@@ -58,9 +63,9 @@ service (Node 22). Its checks and local run are in
 
 1. **One direction.** orchestra → consumer, via PR. Each consumer repo
    carries an `update-skills` script that fetches this repo's `main`, runs
-   `scripts/sync.sh` against a temp worktree, and opens (or force-updates)
-   the consumer's `chore/orchestra-sync` PR. Run it after pushing a skill
-   change here.
+   `scripts/sync.sh` from it against a temp worktree of the consumer, and
+   opens (or force-updates) the consumer's `chore/orchestra-sync` PR. A
+   maintainer runs it in each consumer after a skill change merges here.
 2. **Repo-agnostic skills.** Nothing in the synced directories may name a
    specific codebase, database ID, or machine path. All paths are
    consumer-repo-relative (`.references/…`, `.claude/agents/…`).
@@ -72,8 +77,9 @@ service (Node 22). Its checks and local run are in
 4. **Idempotent, entry-by-entry mirror.** `sync.sh` mirrors each top-level
    entry orchestra ships with `rsync --delete`, so those entries are exact
    copies; entries that exist only in the consumer (a repo-local skill) are
-   left alone. Entries orchestra has removed are purged by name. Running it
-   twice produces zero diff.
+   left alone. Entries orchestra has removed are purged by name through the
+   `REMOVED_*` lists in `scripts/sync.sh`. Running it twice produces zero
+   diff.
 5. **Postmortems** are posted as comments on the run's work item and PR,
    never as separate tracker issues (local-only when no tracker exists);
    proposed system changes are applied here in orchestra.
@@ -82,8 +88,8 @@ service (Node 22). Its checks and local run are in
 
 1. Copy `templates/AGENTS.md` and `templates/CLAUDE.md` into the repo root and
    fill in the sections (including `Work-item tracking`).
-2. Add an `update-skills` script to the repo that clones this repo, runs
-   `scripts/sync.sh` in a temp worktree, and opens the sync PR.
+2. Add the `update-skills` script described in rule 1 (it needs `git`,
+   `rsync`, and an authenticated `gh`).
 3. Run it and merge the first sync PR.
 
 `scripts/sync.sh` mutates the target working tree and prints the diff;
@@ -102,8 +108,9 @@ authenticate via OAuth on first use).
 
 ## User-level install (optional)
 
-`scripts/sync-user.sh` rsyncs `claude/ → ~/.claude`, `codex/ → ~/.codex`,
-and `references/ → ~/.references`, then rewrites the installed copies'
+`scripts/sync-user.sh` rsyncs `claude/skills` and `claude/agents` into
+`~/.claude`, `codex/skills` into `~/.codex`, and `references/` into
+`~/.references`, then rewrites the installed copies'
 `.references/` paths to `~/.references/` (the repo itself is never
 touched). There is no blanket `--delete`: user-level dirs are a union space
 shared with personal skills. Retired orchestra agents are purged by exact

@@ -73,9 +73,10 @@ nothing when that commit is already deployed and accepted. It then deploys
   wrapper differs from the new commit; rerun the provisioner;
 - rsyncs the source, runs `pnpm install --frozen-lockfile`, `pnpm build`, and
   `pnpm prune --prod`;
-- exits 3 (`pending-human`) if the env file lacks `TARGET_REPO_PATH`,
-  `LINEAR_API_KEY`, `DO_PERMISSION_MODE`, or `DO_MAX_TURNS`, or CLIProxyAPI
-  does not serve `gpt-5.6-sol`;
+- exits 3 (`pending-human`) if the env file is empty or, unless it sets
+  `SESSIONS_ENABLED=0`, lacks `TARGET_REPO_PATH`, `LINEAR_API_KEY`,
+  `DO_PERMISSION_MODE`, or `DO_MAX_TURNS`, or CLIProxyAPI does not serve
+  `gpt-5.6-sol`;
 - restarts the daemon, writes `deployed-commit`, waits for health, then
   writes `accepted-commit`.
 

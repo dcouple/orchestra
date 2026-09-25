@@ -22,7 +22,7 @@ jobs:
         # Every .references/, .claude/, and .codex/ path a skill, agent, reference,
         # or template names must exist. Known gaps list their tracking issue.
         run: |
-          known_missing='.claude/skills/hillclimb/SKILL.md' # greenfield-inc/orchestra#218
+          known_missing='.claude/skills/hillclimb/SKILL.md' # tracked in issue #218
           missing=$(grep -rhoE '\.(references|claude/(skills|agents)|codex/skills)/[A-Za-z0-9_./-]+' \
               claude codex references templates | sed 's/[.]$//' | sort -u |
             while read -r p; do
