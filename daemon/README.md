@@ -144,7 +144,7 @@ existing bundle. Both accept a JSON manifest whose file contents are base64 enco
 }
 ```
 
-Every request requires `ARTIFACT_TOKEN`: writes as `Authorization: Bearer <ARTIFACT_TOKEN>`,
+Every bundle request requires `ARTIFACT_TOKEN`: writes as `Authorization: Bearer <ARTIFACT_TOKEN>`,
 reads either that way or as the basic-auth password a browser prompts for. `GET /a/<id>/` is
 a self-contained viewer; `GET /a/<id>/index.json` returns the live version's
 file paths as a no-cache JSON array, and `GET /a/<id>/<path>` serves raw files. The name
