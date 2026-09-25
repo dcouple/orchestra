@@ -226,7 +226,7 @@ describe("Agent Farm macOS provisioning convergence", () => {
     expect(first.stdout).toContain("agent-farm-workspace applied");
     expect(first.stdout).toContain("agent-farm-browser applied");
     expect(readFileSync(join(f.root, "workspace.yaml")))
-      .toEqual(readFileSync(resolve("ops/agent-farm/bloom-mono.yaml")));
+      .toEqual(readFileSync(resolve("ops/agent-farm/workspace.yaml")));
     expect(readFileSync(join(f.home, "libexec/orchestra-agent-farm-browser")))
       .toEqual(readFileSync(resolve("ops/agent-farm-browser.sh")));
     expect(statSync(join(f.root, "workspace.yaml")).mode & 0o777).toBe(0o640);
@@ -246,13 +246,13 @@ describe("Agent Farm macOS provisioning convergence", () => {
       recursive: true,
       filter: path => !["node_modules", "dist"].includes(basename(path)) && !basename(path).startsWith(".env"),
     });
-    expect(existsSync(join(bundle, "../agent-farm/bloom-mono.yaml"))).toBe(false);
+    expect(existsSync(join(bundle, "../agent-farm/workspace.yaml"))).toBe(false);
     expect(existsSync(join(bundle, "../agent-farm-browser.sh"))).toBe(false);
     expect(readFileSync(join(bundle, "agent-farm-state.mjs")))
       .toEqual(readFileSync(join(ops, "agent-farm-state.mjs")));
 
     const f = fixture(bundle, source); f.seed();
-    const sources = [join(source, "ops/agent-farm/bloom-mono.yaml"), join(source, "ops/agent-farm-browser.sh")];
+    const sources = [join(source, "ops/agent-farm/workspace.yaml"), join(source, "ops/agent-farm-browser.sh")];
     const installed = [join(f.root, "workspace.yaml"), join(f.home, "libexec/orchestra-agent-farm-browser")];
     const inventory = f.run(true);
     expect(inventory.status, inventory.stderr).toBe(0);

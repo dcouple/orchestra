@@ -5,18 +5,19 @@ usage() {
   cat <<'USAGE'
 Provision Cloud Logging/Monitoring for the Mac Mini heartbeat.
 
-Usage: setup-monitoring.sh [--dry-run] [EMAIL]
+Usage: setup-monitoring.sh [--dry-run] EMAIL
 
   --dry-run  Describe existing resources and report what would be created;
              perform no GCP, SSH, or file mutations.
   --help     Show this help.
 
-EMAIL defaults to tyler@bloomapi.com. MINI_HOST selects the SSH host (mini).
+EMAIL receives the heartbeat-absent alert. GCP_PROJECT selects the project
+(default: the gcloud configured project). MINI_HOST selects the SSH host (mini).
 USAGE
 }
 
 DRY_RUN=0
-EMAIL=tyler@bloomapi.com
+EMAIL=
 email_seen=0
 while (( $# > 0 )); do
   case $1 in
@@ -32,10 +33,10 @@ while (( $# > 0 )); do
   shift
 done
 
+[[ -n $EMAIL ]] || { printf 'EMAIL is required\n' >&2; usage >&2; exit 2; }
+
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-PROJECT=bloom-agents
 SA_NAME=mac-mini-heartbeat
-SA_EMAIL="$SA_NAME@$PROJECT.iam.gserviceaccount.com"
 METRIC=mac_mini_heartbeat
 CHANNEL_DISPLAY='Mac Mini heartbeat email'
 POLICY_DISPLAY='Mac Mini heartbeat absent'
@@ -43,6 +44,9 @@ MINI_HOST=${MINI_HOST:-mini}
 
 command -v gcloud >/dev/null || { printf 'gcloud is required\n' >&2; exit 1; }
 command -v scp >/dev/null || { printf 'scp is required\n' >&2; exit 1; }
+PROJECT=${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}
+[[ -n $PROJECT ]] || { printf 'set GCP_PROJECT or a gcloud default project\n' >&2; exit 1; }
+SA_EMAIL="$SA_NAME@$PROJECT.iam.gserviceaccount.com"
 [[ $EMAIL =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || { printf 'invalid email address\n' >&2; exit 1; }
 gcloud projects describe "$PROJECT" --format='value(projectId)' >/dev/null
 if (( DRY_RUN )); then printf 'DRY RUN: inspecting state; no changes will be made.\n'; fi
@@ -126,7 +130,7 @@ else
   fi
 fi
 
-log_filter='logName="projects/bloom-agents/logs/mac-mini-heartbeat"'
+log_filter="logName=\"projects/$PROJECT/logs/mac-mini-heartbeat\""
 if gcloud logging metrics describe "$METRIC" --project="$PROJECT" >/dev/null 2>&1; then
   printf 'log-metric: already-exists\n'
 else

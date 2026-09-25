@@ -1786,7 +1786,7 @@ export class EventLog {
           reason === "hard_restart"
             ? "The run was interrupted by an explicit hard restart and was not resumed. Please review the current state before continuing."
             : row.app === "implementer"
-                ? "The implementation run was interrupted before a resumable Claude session was saved. Assign bloom-implementer again to retry."
+                ? "The implementation run was interrupted before a resumable Claude session was saved. Assign the implementer agent again to retry."
                 : "The planner session was interrupted before a resumable Claude session was saved. Please prompt again to continue.";
         this.db
           .prepare(
