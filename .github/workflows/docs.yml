@@ -19,13 +19,4 @@ jobs:
           args: --offline --include-fragments --no-progress --exclude-path node_modules './**/*.md'
           fail: true
       - name: Skill path references
-        # Every .references/, .claude/, and .codex/ path a skill, agent, reference,
-        # or template names must exist. Known gaps list their tracking issue.
-        run: |
-          known_missing='.claude/skills/hillclimb/SKILL.md' # tracked in issue #218
-          missing=$(grep -rhoE '\.(references|claude/(skills|agents)|codex/skills)/[A-Za-z0-9_./-]+' \
-              claude codex references templates | sed 's/[.]$//' | sort -u |
-            while read -r p; do
-              [ -e "${p#.}" ] || [ "$p" = "$known_missing" ] || echo "$p"
-            done)
-          [ -z "$missing" ] || { echo "Missing paths:"; echo "$missing"; exit 1; }
+        run: scripts/check-skill-paths.sh

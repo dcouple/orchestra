@@ -25,8 +25,8 @@ _Source: [docs/software-factory-story.excalidraw](docs/software-factory-story.ex
 
 ## Quickstart
 
-The skill system is Markdown, HTML templates, and bash: nothing to build or
-run. Working on it means editing files under `claude/`, `codex/`, and
+The skill system itself is Markdown, HTML templates, and bash, with nothing
+to build. Working on it means editing files under `claude/`, `codex/`, and
 `references/`, then syncing them into a consumer repo:
 
 ```bash
@@ -55,7 +55,7 @@ service (Node 22). Its checks and local run are in
 | `daemon/` | Orchestra-only Linear agent webhook service (macOS/launchd behind a Cloudflare Tunnel); each deployment's identity comes from a site config kept in the consumer repo | not synced |
 | `machines/` | Orchestra-only, versioned physical-machine setup and operations artifacts | not synced |
 | `docs/` | [The workflow](docs/workflow.md), [claudex](docs/claudex.md) (running Claude Code on GPT-5.6 through a local proxy), and [daemon](docs/daemon/) depth docs | not synced |
-| `scripts/` | `sync.sh` (consumer mirror), `sync-user.sh` (user-level install), `check-dispatch-survival.sh` (checks that Codex dispatches survive the parent shell exiting) | - |
+| `scripts/` | `sync.sh` (consumer mirror), `sync-user.sh` (user-level install), `check-dispatch-survival.sh` (checks that Codex dispatches survive the parent shell exiting), `check-skill-paths.sh` (the CI check for skill path references) | - |
 
 ## The rules that keep this sane
 

@@ -21,13 +21,17 @@ consumer-specific names, paths, or IDs.
 scripts/sync.sh <path-to-consumer-repo>   # mirror the skills into a consumer checkout
 scripts/sync-user.sh                      # mirror into user-level ~/.claude, ~/.codex, ~/.references
 scripts/check-dispatch-survival.sh        # Codex dispatches survive the parent shell exiting; run after editing the codex skill
+scripts/check-skill-paths.sh              # every .references/, .claude/, .codex/ path the skills name exists
 ```
 
-CI (`.github/workflows/docs.yml`) checks relative links and anchors, and
-that every `.references/`, `.claude/`, and `.codex/` path named in
-`claude/`, `codex/`, `references/`, and `templates/` exists. Run the link
-check locally with
-`docker run --rm -v "$PWD":/input -w /input lycheeverse/lychee --offline --include-fragments './**/*.md'`.
+CI (`.github/workflows/docs.yml`) runs `scripts/check-skill-paths.sh` and an
+offline link and anchor check. Run the link check locally from the repo root
+(the directory must be mountable by Docker; a mount that shows no files
+reports a false pass):
+
+```bash
+docker run --rm -v "$PWD":/input -w /input lycheeverse/lychee --offline --include-fragments --no-progress --exclude-path node_modules './**/*.md'
+```
 
 Daemon checks are in [daemon/README.md](daemon/README.md#local-checks). They
 need Node 22 and pnpm 11; under another Node major, `better-sqlite3` fails
@@ -98,8 +102,9 @@ github_repo: dcouple/orchestra
 
 ## Boundaries
 
-- Never run `scripts/sync.sh` pointed at a consumer repo automatically;
-  syncs land in consumers via their own `update-skills` PR flow.
+- Never run `scripts/sync.sh` against a consumer repo unless a human asks;
+  syncs land in consumers via their own `update-skills` PR flow. A scratch
+  git repo is fine for testing it.
 - Never provision, deploy, or restart a daemon deployment; RUNBOOK.md is
   for the operator. Deployment hosts, aliases, and hostnames live in the
   consumer repo's daemon docs, never in this repo.
