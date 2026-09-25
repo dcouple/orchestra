@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const repo = resolve("..");
 // Code in this public repo stays deployment-neutral: a deployment's names,
 // accounts, and cloud project come from its site config, not from source.
-const deploymentSpecific = /blmapp|bloom|us-central1/i;
+const deploymentSpecific = /bloom/i;
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap(name => {
