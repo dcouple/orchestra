@@ -3441,8 +3441,7 @@ describe("SessionWorker", () => {
     await worker.stop();
     server.close();
     log.close();
-    expect(received[0].title).toContain("bloom-planner replied");
-    expect(received[0].title).toContain("ENG-42");
+    expect(received[0].title).toBe("planner replied: ENG-42");
     expect(received[0].priority).toBe("default");
     expect(received[0].body).toBe("planner answer");
   });

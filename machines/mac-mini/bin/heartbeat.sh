@@ -3,7 +3,6 @@ set -euo pipefail
 
 TAILSCALE=/opt/homebrew/bin/tailscale
 KEY_FILE=/usr/local/etc/dcouple/heartbeat-sa.json
-PROJECT=bloom-agents
 LOG_ID=mac-mini-heartbeat
 
 "$TAILSCALE" status >/dev/null 2>&1 || exit 0
@@ -18,6 +17,7 @@ b64url() {
 }
 
 client_email=$(plutil -extract client_email raw -o - "$KEY_FILE")
+project=$(plutil -extract project_id raw -o - "$KEY_FILE")
 private_key=$(plutil -extract private_key raw -o - "$KEY_FILE")
 printf '%s' "$private_key" >"$work_dir/key.pem"
 chmod 0600 "$work_dir/key.pem"
@@ -39,7 +39,7 @@ access_token=$(plutil -extract access_token raw -o - "$work_dir/token.json")
 host=$(scutil --get LocalHostName 2>/dev/null || hostname)
 [[ $host =~ ^[A-Za-z0-9._-]+$ ]] || { printf 'unsafe host name for heartbeat payload\n' >&2; exit 1; }
 printf '{"logName":"projects/%s/logs/%s","resource":{"type":"global"},"entries":[{"severity":"INFO","jsonPayload":{"host":"%s","tailscale":"ok"}}]}' \
-  "$PROJECT" "$LOG_ID" "$host" >"$work_dir/entry.json"
+  "$project" "$LOG_ID" "$host" >"$work_dir/entry.json"
 
 chmod 0600 "$work_dir/entry.json"
 printf 'header = "Authorization: Bearer %s"\n' "$access_token" |

@@ -251,16 +251,6 @@ Refuse politely if `status` isn't `ready` or verification criteria are
 missing. Never create a branch - if on the default branch, or on a branch
 whose open PR this run must not amend, stop and ask the user to set one up.
 
-Classify the item's goal as you load it: an item whose outcome is one named
-metric reaching a target - latency, bundle size, suite time, lint count -
-    runs Step 2 as the loop in the available `hillclimb` skill, each
-cycle's change dispatched to the Codex `implementer`, its accepted-win
-commits riding this run's PR under Step 4, and its attempt log kept in
-`./tmp/<id>/`. Record the metric, its baseline, and its target in the
-plan's Goal & invariants; the action tiers govern, so the loop never idles
-for the human, and a climb that stops short of target carries its
-trajectory into the wrap-up.
-
 **Done when**: the item and its artifacts are in `./tmp/<id>/`, status is
 `ready`, and you're on a non-default branch.
 
@@ -330,14 +320,6 @@ revise it when the required agreement is recorded. Keep `Rationale not
 established` separate from `[assumption]`, and give every assumption a
 validation path or owner. Never silently redefine the current intent or force
 an obsolete origin.
-
-When the plan leaves more than one defensible shape for a non-trivial
-artifact - a module boundary, a schema, a tricky algorithm - settle it with
-the `arena` skill before the review loop runs. Its destination is the plan
-section that describes the shape, never a shipping file: the implementer
-still writes the code. Candidates go under `./tmp/<id>/refs/arena/`, the
-winner and its grafts into the plan's Key decisions, and the action tiers
-govern rather than a wait for the user.
 
 Before dispatching reviewers, run one **cold-read pass** over
 the finished plan yourself - reread it as a stranger hunting blunders,

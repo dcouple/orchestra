@@ -1307,7 +1307,7 @@ export class SessionWorker {
         text(payload.promptContext) ??
         text(session?.promptContext) ??
         bodyFrom(payload.agentActivity);
-      return `You are bloom-planner, a planning/discussion agent on Linear issue ${identifier}. Discuss, research, and converge; when the user asks for a plan/spec, use this repo's existing skills (/create-brief). Read the ticket via the Linear MCP tools if context is missing.\n\n${context ?? "Read the Linear ticket and begin the planning discussion."}`;
+      return `You are the planning/discussion agent on Linear issue ${identifier}. Discuss, research, and converge; when the user asks for a plan/spec, use this repo's existing skills (/create-brief). Read the ticket via the Linear MCP tools if context is missing.\n\n${context ?? "Read the Linear ticket and begin the planning discussion."}`;
     }
     const activity =
       bodyFrom(payload.agentActivity) ?? bodyFrom(session?.agentActivity);
@@ -1990,11 +1990,9 @@ export class SessionWorker {
     const url = this.config.ntfyUrl;
     if (!url) return;
     const session = this.log.getSession(activity.linearSessionId);
-    const app =
-      activity.app === "implementer" ? "bloom-implementer" : "bloom-planner";
     const issue =
       session?.issueIdentifier ?? session?.issueId ?? "unknown issue";
-    const title = `${app} ${activity.kind === "error" ? "error" : "replied"}: ${issue}`;
+    const title = `${activity.app} ${activity.kind === "error" ? "error" : "replied"}: ${issue}`;
     const body =
       activity.body.length > 500
         ? `${activity.body.slice(0, 500)}…`
