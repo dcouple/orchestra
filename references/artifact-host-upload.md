@@ -80,12 +80,13 @@ Remove the manifest file after the request. Retry a failed upload once; if
 the retry also fails, surface the failure rather than silently continuing.
 The calling skill defines whether that failure blocks its larger workflow.
 
-Reads need no authentication:
+Reads take the same token: send `Authorization: Bearer $ARTIFACT_HOST_TOKEN`,
+or enter it as the password when a browser asks (any username).
 
 - `<artifact_bundle_url>` is the self-contained viewer.
 - `<artifact_bundle_url>index.json` is a no-cache JSON array of file paths in
   the live version.
 - `<artifact_bundle_url><path>` returns a raw file.
 
-Nothing enumerates bundles above their unguessable viewer URLs. Treat the
-stable URL as the only read capability and reuse it for later replacements.
+Nothing enumerates bundles above their viewer URLs. Reuse the stable URL for
+later replacements.

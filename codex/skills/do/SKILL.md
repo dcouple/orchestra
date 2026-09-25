@@ -79,8 +79,8 @@ morning. These rules make that safe:
   what you need, and wait.
 
 **Notify** per `.references/notify.md` - **one-way**: inform the human,
-don't wait for a phone reply. Target comes from repo config (default a per-operator
-`ntfy.sh/<gh-username>-dcouple-orchestra`; silent no-op if unreachable), and
+don't wait for a phone reply. Target comes from repo config (default: this machine's
+generated topic; silent no-op if unreachable), and
 after each send you tell the user in chat where it went. Messages are plain
 text - the app doesn't render Markdown - titled `[item] stage - why` so
 concurrent runs stay legible. Fire at: a red gate (deferred or blocking), a
@@ -144,7 +144,8 @@ document content before the tracker fetch; the lean tracker stub fetched
 during this load does not count as pre-existing local content.
 If that metadata, or a local-only item's metadata, carries
 `artifact_bundle:`, fetch `<artifact_bundle>index.json` and then GET every
-listed raw file from the bundle into `./tmp/<id>/`.
+listed raw file from the bundle into `./tmp/<id>/`, sending
+`Authorization: Bearer $ARTIFACT_HOST_TOKEN` on each request.
 Existing local files win for document content and bundle files normally fill
 content gaps only. The exception is a tracker-loaded lean stub: when no
 genuinely pre-existing local `brief.html` document content was present before

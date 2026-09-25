@@ -42,6 +42,9 @@ function auth(token = "artifact-secret"): Record<string, string> {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
+function reader(token = "artifact-secret"): { headers: Record<string, string> } {
+  return { headers: { Authorization: `Bearer ${token}` } };
+}
 async function freePort(): Promise<number> {
   const server = createNetServer();
   await new Promise<void>((resolveListen, reject) => {
@@ -69,7 +72,7 @@ async function expectJsonError(response: Response, status: number, error: string
 
 async function rawGet(port: number, path: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const request = httpRequest({ host: "127.0.0.1", port, path, method: "GET" }, response => {
+    const request = httpRequest({ host: "127.0.0.1", port, path, method: "GET", headers: reader().headers }, response => {
       const chunks: Buffer[] = [];
       response.on("data", chunk => chunks.push(chunk));
       response.on("end", () => resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString() }));
@@ -117,21 +120,42 @@ describe("artifact viewer", () => {
 });
 
 describe("artifact HTTP integration", () => {
+  it("requires the artifact token to read a bundle, as a bearer or basic-auth password", async () => {
+    const { log, server } = setup(); const address = await server.listen();
+    const base = `http://127.0.0.1:${address.port}`;
+    const created = await fetch(`${base}/a`, { method: "POST", headers: auth(),
+      body: manifest([{ path: "brief.html", content: "<h1>Brief</h1>" }]) });
+    const id = /\/a\/([^/]+)\/$/.exec(((await created.json()) as { url: string }).url)![1]!;
+    for (const path of [`/a/${id}/`, `/a/${id}/index.json`, `/a/${id}/brief.html`, `/a/${id}`]) {
+      const anonymous = await fetch(`${base}${path}`, { redirect: "manual" });
+      expect(anonymous.status, path).toBe(401);
+      expect(anonymous.headers.get("www-authenticate"), path).toBe('Basic realm="artifacts", charset="UTF-8"');
+      expect((await fetch(`${base}${path}`, { headers: { Authorization: "Bearer wrong" }, redirect: "manual" })).status, path).toBe(401);
+    }
+    const unknown = await fetch(`${base}/a/AAAAAAAAAAAAAAAAAAAAAA/`);
+    expect(unknown.status).toBe(401);
+    const bearer = await fetch(`${base}/a/${id}/brief.html`, { headers: { Authorization: "Bearer artifact-secret" } });
+    expect(bearer.status).toBe(200); expect(await bearer.text()).toBe("<h1>Brief</h1>");
+    const basic = await fetch(`${base}/a/${id}/`, { headers: { Authorization: `Basic ${Buffer.from("anyone:artifact-secret").toString("base64")}` } });
+    expect(basic.status).toBe(200);
+    await server.close(); log.close();
+  });
+
   it("AC1: lists a known bundle without exposing a bundle enumeration route", async () => {
     const { log, server } = setup(); const address = await server.listen();
     const created = await fetch(`http://127.0.0.1:${address.port}/a`, { method: "POST", headers: auth(),
       body: manifest([{ path: "refs/z.md", content: "z" }, { path: "item.md", content: "item" },
         { path: "refs/a.md", content: "a" }]) });
     const id = /\/a\/([^/]+)\/$/.exec(((await created.json()) as { url: string }).url)![1]!;
-    const index = await fetch(`http://127.0.0.1:${address.port}/a/${id}/index.json`);
+    const index = await fetch(`http://127.0.0.1:${address.port}/a/${id}/index.json`, reader());
     expect(index.status).toBe(200);
     expect(index.headers.get("content-type")).toBe("application/json; charset=utf-8");
     await expect(index.json()).resolves.toEqual(["item.md", "refs/a.md", "refs/z.md"]);
-    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/AAAAAAAAAAAAAAAAAAAAAA/index.json`), 404, "not_found");
+    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/AAAAAAAAAAAAAAAAAAAAAA/index.json`, reader()), 404, "not_found");
     const malformed = await rawGet(address.port, "/a/%ZZ/index.json");
     expect(malformed.status).toBe(404); expect(JSON.parse(malformed.body)).toEqual({ error: "not_found" });
     await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a`), 404, "not_found");
-    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/`), 404, "not_found");
+    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/`, reader()), 404, "not_found");
     await server.close(); log.close();
   });
 
@@ -143,7 +167,7 @@ describe("artifact HTTP integration", () => {
     const replaced = await fetch(`http://127.0.0.1:${address.port}/a/${id}`, { method: "PUT", headers: auth(),
       body: manifest([{ path: "item.md", content: "new" }, { path: "plan.md", content: "plan" }]) });
     expect(replaced.status).toBe(200);
-    const index = await fetch(`http://127.0.0.1:${address.port}/a/${id}/index.json`);
+    const index = await fetch(`http://127.0.0.1:${address.port}/a/${id}/index.json`, reader());
     expect(index.headers.get("cache-control")).toBe("no-cache");
     await expect(index.json()).resolves.toEqual(["item.md", "plan.md"]);
     await server.close(); log.close();
@@ -169,12 +193,12 @@ describe("artifact HTTP integration", () => {
         body: manifest(files) });
       expect(created.status).toBe(201);
       const bundleUrl = ((await created.json()) as { url: string }).url;
-      const index = await fetch(`${bundleUrl}index.json`);
+      const index = await fetch(`${bundleUrl}index.json`, reader("test-token"));
       expect(index.status).toBe(200);
       const paths = await index.json() as string[];
       expect(paths).toEqual(files.map(file => file.path).sort());
       for (const path of paths) {
-        const response = await fetch(`${bundleUrl}${path}`);
+        const response = await fetch(`${bundleUrl}${path}`, reader("test-token"));
         expect(response.status).toBe(200);
         expect(Buffer.from(await response.arrayBuffer())).toEqual(files.find(file => file.path === path)!.content);
       }
@@ -196,16 +220,16 @@ describe("artifact HTTP integration", () => {
     const id = /\/a\/([^/]+)\/$/.exec(url)?.[1];
     expect(id).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(readFileSync(join(artifactsDir, id!, "current"), "utf8")).toMatch(/^v-/);
-    expect((await fetch(`http://127.0.0.1:${address.port}/a/${id}/plan.md`)).status).toBe(200);
-    const viewer = await fetch(`http://127.0.0.1:${address.port}/a/${id}/`);
+    expect((await fetch(`http://127.0.0.1:${address.port}/a/${id}/plan.md`, reader())).status).toBe(200);
+    const viewer = await fetch(`http://127.0.0.1:${address.port}/a/${id}/`, reader());
     const html = await viewer.text();
     expect(viewer.status).toBe(200); expect(html).toContain("brief.html");
     expectExecutableScriptsToParse(html);
     expect(html).toContain('setAttribute("sandbox", "allow-scripts allow-popups")');
     expect(html.indexOf("brief.html")).toBeLessThan(html.indexOf("plan.md"));
     await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a`), 404, "not_found");
-    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/`), 404, "not_found");
-    const redirect = await fetch(`http://127.0.0.1:${address.port}/a/${id}`, { redirect: "manual" });
+    await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/`, reader()), 404, "not_found");
+    const redirect = await fetch(`http://127.0.0.1:${address.port}/a/${id}`, { ...reader(), redirect: "manual" });
     expect(redirect.status).toBe(301); expect(redirect.headers.get("location")).toBe(`/a/${id}/`);
     expect(logger.log).toHaveBeenCalledWith(JSON.stringify({ event: "artifact_write", method: "POST",
       bundleId: id, fileCount: 3, outcome: "success", status: 201 }));
@@ -242,7 +266,7 @@ describe("artifact HTTP integration", () => {
     const malformed = manifest([{ path: "../secret.txt", content: "bad" }]);
     await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/${id}`, { method: "PUT", headers: auth(), body: malformed }), 400, "invalid_manifest");
     await expectJsonError(await fetch(`http://127.0.0.1:${address.port}/a/${id}`, { method: "PUT", headers: auth(), body: "{" }), 400, "invalid_manifest");
-    expect(await (await fetch(`http://127.0.0.1:${address.port}/a/${id}/item.md`)).text()).toBe("original");
+    expect(await (await fetch(`http://127.0.0.1:${address.port}/a/${id}/item.md`, reader())).text()).toBe("original");
     await server.close(); log.close();
   });
 
@@ -257,7 +281,7 @@ describe("artifact HTTP integration", () => {
     const expected = { "refs/page.html": "text/html; charset=utf-8", "item.md": "text/markdown; charset=utf-8",
       "refs/image.png": "image/png", "refs/image.svg": "image/svg+xml" };
     for (const [path, type] of Object.entries(expected)) {
-      const response = await fetch(`http://127.0.0.1:${address.port}/a/${id}/${path}`);
+      const response = await fetch(`http://127.0.0.1:${address.port}/a/${id}/${path}`, reader());
       expect(response.status).toBe(200); expect(response.headers.get("content-type")).toBe(type);
       expect(response.headers.get("cache-control")).toBe("no-cache");
     }
@@ -274,13 +298,13 @@ describe("artifact HTTP integration", () => {
     const reads: Array<Promise<string>> = [];
     const replacing = fetch(`http://127.0.0.1:${address.port}/a/${id}`, { method: "PUT", headers: auth(),
       body: manifest([{ path: "item.md", content: newContent }]) });
-    for (let index = 0; index < 20; index++) reads.push(fetch(`http://127.0.0.1:${address.port}/a/${id}/item.md`).then(response => {
+    for (let index = 0; index < 20; index++) reads.push(fetch(`http://127.0.0.1:${address.port}/a/${id}/item.md`, reader()).then(response => {
       expect(response.status).toBe(200); return response.text();
     }));
     const replaced = await replacing; expect(replaced.status).toBe(200);
     expect(((await replaced.json()) as { url: string }).url).toBe(url);
     for (const content of await Promise.all(reads)) expect([oldContent, newContent]).toContain(content);
-    const latest = await fetch(`http://127.0.0.1:${address.port}/a/${id}/item.md`);
+    const latest = await fetch(`http://127.0.0.1:${address.port}/a/${id}/item.md`, reader());
     expect(await latest.text()).toBe(newContent); expect(latest.headers.get("cache-control")).toBe("no-cache");
     await server.close(); log.close();
   });

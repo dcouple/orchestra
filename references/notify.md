@@ -19,15 +19,14 @@ section (fall back to `CLAUDE.md`/`README`):
 notify: https://ntfy.sh/<your-topic>
 ```
 
-If none is set, default to `https://ntfy.sh/<gh-username>-dcouple-orchestra` -
-resolve `<gh-username>` from `gh api user --jq .login`. The per-operator prefix
-keeps operators who share an org from cross-notifying each other (a shared
-`dcouple-orchestra` topic delivers everyone's gates to everyone). `ntfy.sh`
-needs no account and has a mobile app (subscribe to the topic there). The topic
-is a
-low-sensitivity channel name, **but a public topic is readable by anyone who
-knows it** - so a project that wants its gate messages private sets its own
-topic in `AGENTS.md`, and **no message ever carries a secret, token, or PHI**
+If none is set, use this account's own topic: a random name generated once and
+kept in `${XDG_CONFIG_HOME:-$HOME/.config}/orchestra/ntfy-topic` (the snippet
+below creates it). Each account on each machine gets its own topic, so
+operators never cross-notify each other. Runs started by a daemon use the
+service account's topic, so a repo whose runs are watched from a phone sets
+`notify:` above. `ntfy.sh` needs no account and has a mobile app
+(subscribe to the topic there). A public topic is readable by anyone who
+knows it, so **no message ever carries a secret, token, or PHI**
 (only what a shoulder-surfer could already see: item id, stage, and the shape
 of the change).
 
@@ -55,7 +54,12 @@ fails the run. Use `--data-binary` so newlines survive (`--data`/`-d` strips
 them):
 
 ```bash
-NOTIFY="${NOTIFY:-https://ntfy.sh/$(gh api user --jq .login)-dcouple-orchestra}"
+if [ -z "${NOTIFY:-}" ]; then
+  TOPIC_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/orchestra/ntfy-topic"
+  [ -s "$TOPIC_FILE" ] || { mkdir -p "$(dirname "$TOPIC_FILE")" &&
+    printf 'orchestra-%s\n' "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" > "$TOPIC_FILE"; }
+  NOTIFY="https://ntfy.sh/$(cat "$TOPIC_FILE")"
+fi
 printf '%s' "$BODY" | curl -fsS -m 10 \
   -H "Title: [$ID] $STAGE - $WHAT" \
   -H "Priority: urgent" -H "Tags: warning" \
@@ -68,7 +72,7 @@ knows where to look:
 > ntfy sent to `<channel>` - check at https://ntfy.sh/`<channel>` (browser) or
 > subscribe to `<channel>` in the ntfy app.
 
-(where `<channel>` is the topic name, e.g. `parsakhaz-dcouple-orchestra`.)
+(where `<channel>` is the topic name.)
 
 where `$BODY` is plain text with real newlines, e.g.
 
