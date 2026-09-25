@@ -62,8 +62,8 @@ github_repo: <owner>/<repo>   # where gh issue create targets; omit to use the c
 # artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
 ```
 
-When `artifact_host` is set, export `ARTIFACT_HOST_TOKEN` with its upload
-bearer token; the shared publish procedure uploads the bundle and attaches
+When `artifact_host` is set, export `ARTIFACT_HOST_TOKEN` with its bearer
+token (it also unlocks the viewer: enter it as the password in the browser); the shared publish procedure uploads the bundle and attaches
 the viewer URL.
 
 > Publish per `.references/publish-work-item.md` (it owns both branches:

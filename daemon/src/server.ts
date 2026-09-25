@@ -218,6 +218,10 @@ export class WebhookServer {
       return;
     }
     if (pathname === "/a" || pathname === "/a/") { this.earlyJson(request, response, 404, { error: "not_found" }); return; }
+    if (!this.authorized(request, { basic: true })) {
+      this.earlyJson(request, response, 401, { error: "unauthorized" }, { "WWW-Authenticate": 'Basic realm="artifacts", charset="UTF-8"' });
+      return;
+    }
 
     const redirectMatch = /^\/a\/([^/]+)$/.exec(pathname);
     if (redirectMatch) {
@@ -262,10 +266,13 @@ export class WebhookServer {
     }
   }
 
-  private authorized(request: IncomingMessage): boolean {
+  // Writers send the artifact token as a bearer token. Readers may also send
+  // it as the basic-auth password, which is what a browser prompt produces.
+  private authorized(request: IncomingMessage, { basic = false } = {}): boolean {
     const expected = this.options.config.artifactToken;
     const authorization = Array.isArray(request.headers.authorization) ? request.headers.authorization[0] : request.headers.authorization;
-    const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7)
+      : basic && authorization?.startsWith("Basic ") ? basicPassword(authorization.slice(6)) : "";
     if (!expected) return false;
     const expectedHash = createHash("sha256").update(expected).digest();
     const suppliedHash = createHash("sha256").update(supplied).digest();
@@ -371,4 +378,10 @@ function validBase64(value: string): boolean {
   if (value === "") return true;
   if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return false;
   return Buffer.from(value, "base64").toString("base64") === value;
+}
+
+function basicPassword(encoded: string): string {
+  const decoded = Buffer.from(encoded, "base64").toString("utf8");
+  const colon = decoded.indexOf(":");
+  return colon === -1 ? "" : decoded.slice(colon + 1);
 }
