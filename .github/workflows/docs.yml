@@ -1,0 +1,31 @@
+name: docs
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Relative links and anchors
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --include-fragments --no-progress --exclude-path node_modules './**/*.md'
+          fail: true
+      - name: Skill path references
+        # Every .references/, .claude/, and .codex/ path a skill, agent, reference,
+        # or template names must exist. Known gaps list their tracking issue.
+        run: |
+          known_missing='.claude/skills/hillclimb/SKILL.md' # greenfield-inc/orchestra#218
+          missing=$(grep -rhoE '\.(references|claude/(skills|agents)|codex/skills)/[A-Za-z0-9_./-]+' \
+              claude codex references templates | sed 's/[.]$//' | sort -u |
+            while read -r p; do
+              [ -e "${p#.}" ] || [ "$p" = "$known_missing" ] || echo "$p"
+            done)
+          [ -z "$missing" ] || { echo "Missing paths:"; echo "$missing"; exit 1; }
