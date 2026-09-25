@@ -524,7 +524,7 @@ cliproxy_has_default_model() {
 }
 # Rerunning the provisioner (not systemctl restart) is what records the
 # deployed and accepted commits that daemonctl reload builds on.
-RERUN="rerun ${BASH_SOURCE[0]} so the deploy is recorded for daemonctl reload"
+RERUN="rerun ${SOURCE_DIR}/ops/provision.sh so the deploy is recorded for daemonctl reload"
 env_ready_for_restart() {
   if [[ ! -s /etc/linear-agent-daemon/env ]]; then
     echo "service enabled but not started: populate /etc/linear-agent-daemon/env, then ${RERUN}" >&2
@@ -557,7 +557,7 @@ if [[ -z "${SOURCE_COMMIT}" ]] && git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-p
   SOURCE_COMMIT="$(git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse HEAD)"
 fi
 if [[ -z "${SOURCE_COMMIT}" ]]; then
-  echo "warning: ${SOURCE_DIR} is not in a git checkout, so no deployed or accepted commit is recorded and daemonctl reload stays unavailable; provision from a clone of the repository" >&2
+  echo "warning: ${SOURCE_DIR} is not in a git checkout, so no deployed or accepted commit is recorded and daemonctl reload stays unavailable; provision from ${SOURCE_CHECKOUT}/daemon" >&2
 fi
 if [[ -n "${SOURCE_COMMIT}" ]]; then
   [[ "${SOURCE_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "invalid SOURCE_COMMIT" >&2; exit 1; }
