@@ -1,0 +1,4 @@
+{
+  "claude": ["do", "investigate", "codex", "prepare-pull-request", "postmortem"],
+  "codex": ["do", "implementer", "investigate", "investigator", "code-researcher", "web-researcher", "backend-verifier", "frontend-verifier", "plan-reviewer", "code-reviewer", "refactor-simple", "refactor-deep"]
+}
