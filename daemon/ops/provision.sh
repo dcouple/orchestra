@@ -522,9 +522,12 @@ cliproxy_has_default_model() {
   done
   return 1
 }
+# Rerunning the provisioner (not systemctl restart) is what records the
+# deployed and accepted commits that daemonctl reload builds on.
+RERUN="rerun ${SOURCE_DIR}/ops/provision.sh so the deploy is recorded for daemonctl reload"
 env_ready_for_restart() {
   if [[ ! -s /etc/linear-agent-daemon/env ]]; then
-    echo "service enabled but not started: populate /etc/linear-agent-daemon/env, then systemctl restart linear-agent-daemon" >&2
+    echo "service enabled but not started: populate /etc/linear-agent-daemon/env, then ${RERUN}" >&2
     return 1
   fi
   if env_sessions_enabled; then
@@ -533,11 +536,11 @@ env_ready_for_restart() {
       if ! env_has_key "$key"; then missing+=("$key"); fi
     done
     if (( ${#missing[@]} )); then
-      echo "service enabled but not restarted: SESSIONS_ENABLED=1 requires ${missing[*]} in /etc/linear-agent-daemon/env" >&2
+      echo "service enabled but not restarted: SESSIONS_ENABLED=1 requires ${missing[*]} in /etc/linear-agent-daemon/env; add them, then ${RERUN}" >&2
       return 1
     fi
     if ! systemctl is-active --quiet cliproxyapi || ! cliproxy_has_default_model; then
-      echo "service enabled but not started: authenticate CLIProxyAPI as linear-daemon and verify gpt-5.6-sol, then systemctl restart linear-agent-daemon" >&2
+      echo "service enabled but not started: authenticate CLIProxyAPI as linear-daemon and verify gpt-5.6-sol, then ${RERUN}" >&2
       return 1
     fi
   fi
@@ -552,6 +555,9 @@ write_commit_marker() {
 SOURCE_COMMIT="${SOURCE_COMMIT:-}"
 if [[ -z "${SOURCE_COMMIT}" ]] && git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   SOURCE_COMMIT="$(git -C "$(cd "${SOURCE_DIR}/.." && pwd)" rev-parse HEAD)"
+fi
+if [[ -z "${SOURCE_COMMIT}" ]]; then
+  echo "warning: ${SOURCE_DIR} is not in a git checkout, so no deployed or accepted commit is recorded and daemonctl reload stays unavailable; provision from ${SOURCE_CHECKOUT}/daemon" >&2
 fi
 if [[ -n "${SOURCE_COMMIT}" ]]; then
   [[ "${SOURCE_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "invalid SOURCE_COMMIT" >&2; exit 1; }

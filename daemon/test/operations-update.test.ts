@@ -117,6 +117,7 @@ describe("operator-managed checkout reload boundary", () => {
       const result = f.run(["reload"], repo.env);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toMatch(/marker missing|malformed accepted commit marker/);
+      if (marker === "absent") expect(result.stderr).toMatch(/run \S+\/daemon\/ops\/provision\.sh .*record the first deploy/);
       expect(readdirSync(f.requests)).toHaveLength(0);
       expect(existsSync(f.provisionLog)).toBe(false);
     }
