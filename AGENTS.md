@@ -1,7 +1,5 @@
 # AGENTS.md
 
-## What this project is
-
 orchestra is the canonical home of the dcouple skill system: Claude Code
 skills, sub-agent definitions, Codex role skills, and the shared
 `references/` documents, synced one-way into consumer repos. The one thing
@@ -9,66 +7,83 @@ an agent must not break: everything under the synced directories
 (`claude/`, `codex/`, `references/`) must stay repo-agnostic - no
 consumer-specific names, paths, or IDs.
 
+## Where to look
+
+- [README.md](README.md): what this is, the layout, the sync model.
+- [docs/workflow.md](docs/workflow.md): the workflow and model routing.
+- [daemon/README.md](daemon/README.md): the daemon package, its checks, a local run.
+- [RUNBOOK.md](RUNBOOK.md): operating a daemon deployment.
+- [docs/daemon/](docs/daemon/): daemon configuration, macOS provisioning, deep procedures, MCP secrets.
+
 ## Commands
 
-The skill system is Markdown, HTML templates, and bash. The orchestra-only
-Linear webhook daemon is a Node 22 / pnpm 11 TypeScript package.
-
 ```bash
-# sync into a consumer repo checkout:
-scripts/sync.sh <path-to-consumer-repo>
-# mirror into user-level ~/.claude and ~/.codex dirs:
-scripts/sync-user.sh
-
-# daemon checks (run from daemon/):
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm build
-pnpm test
-bash -n ops/provision.sh ops/daemonctl ops/wait-for-daemon-health.sh ops/claudex ops/claudex-fable ops/proxy-accounts.sh ops/codex-provider-gate.sh ops/codex-live-setup.sh
-bash -n ops/macos/provision.sh ops/macos/deploy.sh ops/macos/daemonctl ops/macos/daemon-site-lib.sh ops/macos/run-daemon.sh ops/macos/run-cliproxyapi.sh ops/macos/run-cloudflared.sh ops/macos/sim-context-probe.sh ops/macos/orchestra-sim test/fixtures/fake-sudo.sh
+scripts/sync.sh <path-to-consumer-repo>   # mirror the skills into a consumer checkout
+scripts/sync-user.sh                      # mirror into user-level ~/.claude, ~/.codex, ~/.references
+scripts/check-dispatch-survival.sh        # Codex dispatches survive the parent shell exiting; run after editing the codex skill
+scripts/check-skill-paths.sh              # every .references/, .claude/, .codex/ path the skills name exists
 ```
 
-## Live daemon diagnostics
+CI (`.github/workflows/docs.yml`) runs `scripts/check-skill-paths.sh` and an
+offline link and anchor check. Run the link check locally from the repo root
+(the directory must be mountable by Docker; a mount that shows no files
+reports a false pass):
 
-Use a key-only SSH alias to the daemon's service account, for example
-`ssh <service-alias> '/usr/local/sbin/daemonctl status'`, or the root
-`Makefile` targets with `DAEMON_SSH_HOST=<service-alias>`. The alias, host,
-and hostname for a given deployment are documented in that consumer repo's
-daemon docs alongside its site config - never in this repo.
+```bash
+docker run --rm -v "$PWD":/input -w /input lycheeverse/lychee --offline --include-fragments --no-progress --exclude-path node_modules './**/*.md'
+```
 
-## Architecture
+Daemon checks are in [daemon/README.md](daemon/README.md#local-checks). They
+need Node 22 and pnpm 11; under another Node major, `better-sqlite3` fails
+to build, so put a Node 22 install first on `PATH`.
 
-See the Layout table in `README.md`. Canonical sources live in
-`claude/skills/`, `claude/agents/`, `codex/skills/`, and `references/`;
-`scripts/sync.sh` mirrors them into consumers' dot-directories.
+## Rules
 
-`daemon/` is an orchestra-only service package. Neither sync script includes
-it, and daemon code must never be placed in a synced directory.
-`machines/` is likewise orchestra-only and never synced into consumer repos.
-
-This repo is also a consumer of itself: `.claude/skills`, `.claude/agents`,
-`.codex/skills`, and `.references` are **symlinks** to those canonical
-directories, so the skills are usable when working on orchestra and are
-always current. Unlike in consumer repos, editing under the dot-paths here
-edits the canonical copy - that is intended.
+- **Verify after every mutation.** After a merge, push, PR creation, file
+  move, or any state change, read the actual result back.
+- **Don't solve discoverable problems.** If an agent can query it at runtime
+  (MCP, the environment, the repo), don't hardcode it. Describe roles,
+  boundaries, and rules, not configuration.
+- **Less is more.** Every line earns its place; remove a line that doesn't
+  change behavior.
+- **No feedback loops.** A step that mutates code after review invalidates
+  downstream work. Refactoring and cold-read are manual skills, never inline.
+- **Never use em dashes.** Use commas, periods, colons, or parentheses.
 
 ## Conventions
 
 - Skills and references are repo-agnostic; all paths inside them are
-  consumer-repo-relative (`.references/…`, `.claude/agents/…`) - which
-  resolve here too, via the symlinks.
+  consumer-repo-relative (`.references/…`, `.claude/agents/…`). They resolve
+  here too, because `.claude/skills`, `.claude/agents`, `.codex/skills`, and
+  `.references` are symlinks to the canonical directories. Editing under
+  the dot-paths edits the canonical copy.
+- `daemon/` and `machines/` are orchestra-only: no sync script includes
+  them, and daemon code never goes in a synced directory.
 - `templates/` is scaffolding copied once into new consumer repos, never
   synced.
+- Removing or renaming a top-level skill or agent: add the old name to the
+  `REMOVED_*` lists in `scripts/sync.sh` (and, for agents,
+  `scripts/sync-user.sh`) so syncs purge the stale copy.
 - Skill, agent, and reference bodies state what exists. Rejected designs,
-  removed modes, editor-facing warnings, and tuning/benchmark rationale go
-  in PR descriptions and commit messages - not the body. Sole exception: a
-  one-line live footgun the invoking agent will hit this session.
-- Shell in skill bodies never deletes through a shell variable - no
-  `rm "$dir/$name".*`, no `rm -rf "$DIR"/`. Claude Code's critical-path
+  removed modes, editor-facing warnings, and tuning rationale go in PR
+  descriptions and commit messages. Sole exception: a one-line live footgun
+  the invoking agent will hit this session.
+- Shell in skill bodies never deletes through a shell variable (no
+  `rm "$dir/$name".*`, no `rm -rf "$DIR"/`). Claude Code's critical-path
   check prompts on that form even under `--dangerously-skip-permissions`,
   which halts unattended runs. Write the resolved path as a literal, or
   don't delete.
+- README illustrations follow [docs/assets/visual-style.md](docs/assets/visual-style.md).
+
+## Docs
+
+- A change that alters a command, path, env var, port, script, workflow, or
+  deploy step updates every doc that states it, in the same PR. A doc you
+  can no longer make true gets deleted, not left behind.
+- Each topic has one home (README for humans, AGENTS.md for agent rules,
+  RUNBOOK.md for operations, docs/ for depth). Link to it; never restate it.
+- A skill, agent, or reference may only point at skills, agents, and
+  references that ship from `claude/`, `codex/`, or `references/` on main.
 
 ## Work-item tracking
 
@@ -80,20 +95,17 @@ sub-reports, plan.md, wrapup.md) locally under `./tmp/<id>/`.
 ```yaml
 tracker: github
 github_repo: dcouple/orchestra
-artifact_host: https://linear-agent.blmapp.com
 ```
 
-> Publish a lean GitHub issue body containing the brief's full metadata YAML, an Intent
-> summary, and an `Artifact bundle: <url>` link. The bundle is the complete
-> artifact transport. Post no marker comments; marker comments remain only for
-> legacy items published before this configured contract.
+> Publish per `.references/publish-work-item.md`. No `artifact_host` is
+> configured, so issues carry the markdown rendition of the brief.
 
 ## Boundaries
 
-- Never run `scripts/sync.sh` pointed at a consumer repo automatically -
-  syncs land in consumers via their own `update-skills` PR flow.
+- Never run `scripts/sync.sh` against a consumer repo unless a human asks;
+  syncs land in consumers via their own `update-skills` PR flow. A scratch
+  git repo is fine for testing it.
+- Never provision, deploy, or restart a daemon deployment; RUNBOOK.md is
+  for the operator. Deployment hosts, aliases, and hostnames live in the
+  consumer repo's daemon docs, never in this repo.
 - Don't commit `./tmp/` or `.DS_Store`.
-
-## README artwork
-
-Follow `docs/assets/visual-style.md` for README illustrations: use the shared dcouple pixel-art language and this project's own setting and accent colors. Supply the local banner as the visual reference for new images.

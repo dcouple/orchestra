@@ -2,8 +2,8 @@
 
 > Copy this file to a codebase's root as `AGENTS.md` and fill in each section.
 > This is the **universal** instruction file: every coding agent (Claude,
-> Codex, or any other harness) reads it. Keep anything harness-specific out -
-> `CLAUDE.md` points here and adds the Claude-only parts. Delete this header
+> Codex, or any other harness) reads it. `CLAUDE.md` is a one-line
+> `@AGENTS.md` import. Delete this header
 > block after copying.
 
 ## What this project is
@@ -76,12 +76,6 @@ Example - publish to Linear (replace or delete):
 tracker: linear
 linear_team: <team key or team ID>
 # artifact_host: https://<daemon-host>   # optional stable viewer for work-item bundles
-# linear_agents:                         # only with a Linear agent daemon; read by /linear-work-orchestrator
-#   planner: <planning agent app user display name>
-#   implementer: <implementing agent app user display name>
-#   session_concurrency: <the daemon's SESSION_CONCURRENCY, kept in sync by hand>
-#   portfolio_label: <label marking issues the orchestrator manages>
-#   stale_hours: { implementer: 6, planner: 2 }   # optional
 ```
 
 > Publish each work item to that team per
@@ -89,9 +83,7 @@ linear_team: <team key or team ID>
 > `.references/tracker-lifecycle.md`. `/do` discovers team workflow
 > statuses at runtime. Linear specifics: with `artifact_host`, the bundle
 > rides as an attachment card (export `ARTIFACT_HOST_TOKEN`); without one,
-> document any required artifact attachment steps here. With
-> `linear_agents`, `/linear-work-orchestrator` steers the daemon's agents
-> per `.references/linear-agent-sessions.md`.
+> document any required artifact attachment steps here.
 
 Configure one tracker example, not both.
 
@@ -108,6 +100,14 @@ notify: https://ntfy.sh/<your-topic>   # subscribe to it in the ntfy mobile app
 
 A public topic is readable by anyone who knows it - set your own here for
 privacy, and never put a secret, token, or PHI in a message body.
+
+## Docs
+
+- A change that alters a command, path, env var, port, script, workflow, or
+  deploy step updates every doc that states it, in the same PR. A doc you
+  can no longer make true gets deleted, not left behind.
+- Each topic has one home (README for humans, AGENTS.md for agent rules,
+  RUNBOOK.md for operations, docs/ for depth). Link to it; never restate it.
 
 ## Boundaries
 

@@ -114,7 +114,7 @@ printf 'DAEMON_HOST=%s\n' "${DAEMON_HOST}" > "${operation_env_tmp}"
 mv "${operation_env_tmp}" "${OPERATION_ENV_FILE}"
 if [[ ! -f /etc/linear-agent-daemon/env ]]; then
   install -o linear-daemon -g linear-daemon -m 0600 /dev/null /etc/linear-agent-daemon/env
-  echo "created /etc/linear-agent-daemon/env; populate it before starting the service (see README.md Environment; optional ARTIFACT_TOKEN enables artifact hosting)" >&2
+  echo "created /etc/linear-agent-daemon/env; populate it before starting the service (see docs/daemon/configuration.md; optional ARTIFACT_TOKEN enables artifact hosting)" >&2
 fi
 
 if [[ ! -x /var/lib/linear-agent-daemon/.local/bin/claude ]]; then

@@ -149,7 +149,7 @@ if ! sudo -n true 2>/dev/null; then
   if [[ -t 0 ]]; then
     sudo -v || fail "sudo authentication failed"
   else
-    fail "passwordless sudo is required temporarily; see README.md"
+    fail "passwordless sudo is required temporarily; see docs/daemon/macos.md"
   fi
 fi
 [[ $(uname -s) == Darwin ]] || fail "provision.sh must run on macOS"

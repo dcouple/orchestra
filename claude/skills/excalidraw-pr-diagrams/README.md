@@ -33,8 +33,6 @@ uv sync
 uv run playwright install chromium
 ```
 
-For Codex installs, use `.codex/skills/excalidraw-pr-diagrams/references`.
-
 ## Usage
 
 Ask your coding agent to create a diagram:

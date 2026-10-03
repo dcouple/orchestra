@@ -12,7 +12,7 @@ and enable **Allow full disk access for remote users**.
 Verify:
 
 ```bash
-ssh mini 'ls ~/Documents'
+ssh <mini-alias> 'ls ~/Documents'
 ```
 
 The command must exit successfully without a TCC denial.
@@ -28,8 +28,8 @@ password** off.
 Verify, substituting the Mini's LAN or Tailscale address:
 
 ```bash
-ssh mini 'pgrep -x ARDAgent'
-ssh mini 'dscl . -read /Users/$(id -un) naprivs'
+ssh <mini-alias> 'pgrep -x ARDAgent'
+ssh <mini-alias> 'dscl . -read /Users/$(id -un) naprivs'
 nc -z <mini-address> 5900
 ```
 
@@ -48,5 +48,5 @@ Mini.
 Verify on the Mini:
 
 ```bash
-ssh mini '/opt/homebrew/bin/tailscale status'
+ssh <mini-alias> '/opt/homebrew/bin/tailscale status'
 ```

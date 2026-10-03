@@ -8,8 +8,6 @@ Other documents stay lightweight and point here: `qa-verification.md`
 § React runtime hooks tells the QA drive how to *consume* the runtime
 layer; this file is how a repo *gets* the harness. Set it up only when
 the user asks or approves the offer - it's a repo capability decision.
-First working implementation: bloomapi/bloom-mono PR #484 (copy the
-shape, not the specifics).
 
 ## The layers - one system, different run-points
 

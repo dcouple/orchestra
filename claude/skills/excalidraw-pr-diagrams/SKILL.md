@@ -590,8 +590,6 @@ You cannot judge a diagram from JSON alone. After generating or editing the Exca
 cd .claude/skills/excalidraw-pr-diagrams/references && uv run python render_excalidraw.py <path-to-file.excalidraw>
 ```
 
-For Codex installs, use the matching `.codex/skills/excalidraw-pr-diagrams/references` directory.
-
 This outputs a PNG next to the `.excalidraw` file. Then use the available image viewer on the PNG to actually inspect it, such as the Read tool, `view_image`, or a browser screenshot.
 
 ### The Loop
@@ -655,8 +653,6 @@ cd .claude/skills/excalidraw-pr-diagrams/references
 uv sync
 uv run playwright install chromium
 ```
-
-For Codex installs, use `.codex/skills/excalidraw-pr-diagrams/references`.
 
 ---
 

@@ -1,7 +1,7 @@
 # Codex project config for orchestra.
 # Linear MCP via the mcp-remote stdio bridge (handles the OAuth flow;
 # works on Codex versions without native streamable-HTTP support).
-# pnpm, not npx: Node here is installed via pnpm only (same style as bloom-mono).
+# pnpm, not npx: Node here is installed via pnpm only.
 [mcp_servers.linear]
 command = "pnpm"
 args = ["dlx", "mcp-remote@latest", "https://mcp.linear.app/mcp"]

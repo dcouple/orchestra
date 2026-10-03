@@ -9,6 +9,12 @@ The contract in one line: **the consumer repo owns the tool list, the
 deployment owns the secrets, the daemon lets them meet** - and the daemon's
 deny-list has the final word.
 
+Project `.mcp.json` servers load in `claude` and `claudex` harness turns. The
+`codex` harness does not read `.mcp.json`; it receives the daemon's own
+servers as `-c mcp_servers.*` overrides. `agent-farm:<profile>` turns use
+the connections declared in the Agent Farm workspace in strict MCP mode
+([daemon/README.md](../../daemon/README.md#agent-farm-harness)).
+
 ## 1. The model
 
 ```
@@ -86,10 +92,6 @@ Rules:
 6. Keep `linear` out, or leave it header-less for local dev - either way the
    daemon's injected entry wins.
 
-Land this PR in the consumer repo **before** the daemon build that honours
-`.mcp.json` is deployed there; otherwise whatever the file contains today loads
-in every turn from the first deploy.
-
 ## 3. Secrets and tokens: mint, store, deliver
 
 ### 3.1 Mint - least privilege, per service, revocable
@@ -151,9 +153,9 @@ MCP_ENV_PASSTHROUGH=POSTHOG_API_KEY,SENTRY_TOKEN,NOTION_TOKEN
   ticket, e.g. `gcloud secrets versions access latest --secret DAEMON_MCP_POSTHOG --project <project>`
   in an interactive session as the service account. Never `echo` a value into
   a shell history that is not the service account's.
-- Restart with the repo's wrappers (`daemonctl restart` on the host; for a
-  host restart on macOS use the `mini-restart`-style wrapper,
-  never plain `reboot`).
+- Restart the daemon with `daemonctl restart`
+  ([RUNBOOK.md](../../RUNBOOK.md#restart)); restart the host only with its
+  documented wrapper.
 
 ## 4. What the daemon refuses (reserved names)
 
@@ -200,8 +202,9 @@ tool inventory - and that `linear` tools still succeed.
 ## 6. Record it - the credential inventory
 
 Every token gets a row in the deployment's credential inventory (the
-orchestra runbook's table for daemon-level credentials; the consumer repo's
-daemon docs for project MCP tokens):
+[daemon credential inventory](operations.md#credential-inventory) for
+daemon-level credentials; the consumer repo's daemon docs for project MCP
+tokens):
 
 | Credential | Secret-manager name | Env var | Scope | Owner | Rotation / revocation |
 |---|---|---|---|---|---|
