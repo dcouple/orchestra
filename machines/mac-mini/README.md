@@ -2,8 +2,8 @@
 
 This directory is the versioned source of truth for the always-on Mac Mini.
 It installs the command-line Tailscale system daemon, tmux, SSH hardening,
-power/session settings, Remote Management (ARD), and a tunnel-gated Cloud
-Logging heartbeat. It is orchestra-only and is not copied by either sync script.
+power/session settings, Remote Management (ARD), a tunnel-gated Cloud
+Logging heartbeat, and headless Pane at boot (no login needed). It is orchestra-only and is not copied by either sync script.
 
 ## Safety rules
 
@@ -18,6 +18,9 @@ Logging heartbeat. It is orchestra-only and is not copied by either sync script.
   deliberately instead. Automatic downloads are not changed.
 - Restart with `bin/mini-restart` (clean `shutdown -r` plus a return wait)
   and update with `bin/mini-update`; both refuse to run while FileVault is on.
+- Never run the Pane GUI app while the headless Pane LaunchDaemon runs: both
+  would use `~/.pane`. Keep Pane's "Start Pane when you log in" off and use
+  the [handoff](#pane-gui-handoff) below.
 - `pmset autorestart 1` is set, so cutting and restoring power (a smart plug
   on the Mini's cord) boots it without a button press. Treat that as the
   last resort after SSH is unreachable, not as a routine restart.
@@ -102,7 +105,17 @@ ssh <mini-alias> 'command -v tmux'
 ssh <mini-alias> 'pgrep -x ARDAgent'
 ssh <mini-alias> 'dscl . -read /Users/$(id -un) naprivs'
 nc -z <mini-address> 5900
+ssh <mini-alias> 'sudo launchctl print system/com.dcouple.pane-headless | grep "state ="'
+runpane workspace <mini-machine> exec -- hostname
 ```
+
+The Pane check must print `state = running`, and the last command (run from
+the MacBook) must print the Mini's hostname. Pane can't reach the login
+Keychain at boot because nobody has logged in. Agent credentials come from
+owner-only files instead (see
+[docs/click-list.md](docs/click-list.md#store-agent-credentials-in-owner-only-files)).
+After changing them, restart the daemon:
+`ssh -t <mini-alias> 'sudo launchctl kickstart -k system/com.dcouple.pane-headless'`.
 
 The apply script manages a root-owned `/etc/zshenv` block that exposes
 `/opt/homebrew/bin` to interactive and non-interactive zsh sessions for all
@@ -119,13 +132,31 @@ machines/mac-mini/bin/mini-update
 
 Both allocate a TTY for `sudo` and verify FileVault is off before acting.
 
+### Pane GUI handoff
+
+Pane runs as a LaunchDaemon (`com.dcouple.pane-headless`) as the operator,
+with `~/.pane`. Its log is `~/Library/Logs/pane-headless.log`. To use the
+Pane GUI app through Screen Sharing, stop the daemon first, and start it
+again after quitting the app:
+
+```bash
+ssh -t <mini-alias> 'sudo launchctl bootout system/com.dcouple.pane-headless'
+# open Pane in the GUI session, work, then quit it (Cmd-Q)
+ssh -t <mini-alias> 'sudo launchctl bootstrap system /Library/LaunchDaemons/com.dcouple.pane-headless.plist'
+```
+
+`apply.sh` refuses to start the daemon while the GUI app runs
+(`pane-headless pending-human`).
+
 After a restart, run the daemon's simulator probe before any GUI login; see
 [Simulator capability](../../docs/daemon/macos.md#simulator-capability).
 
 ## Layout
 
 - `apply.sh` - idempotent Mini configuration.
-- `bin/` - MacBook restart/update wrappers and the installed heartbeat.
-- `launchd/` - system heartbeat LaunchDaemon.
+- `bin/` - MacBook restart/update wrappers, the installed heartbeat, and the
+  headless Pane launcher.
+- `launchd/` - system heartbeat and headless Pane LaunchDaemons (the Pane
+  plist is rendered with the operator's name and home).
 - `gcp/` - idempotent Cloud Logging/Monitoring provisioning.
 - `docs/click-list.md` - GUI handoffs and their read-back checks.
