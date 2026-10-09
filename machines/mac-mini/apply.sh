@@ -67,8 +67,56 @@ remote_desktop_ready() {
   pgrep -x ARDAgent >/dev/null 2>&1 && /usr/bin/nc -z localhost 5900 >/dev/null 2>&1
 }
 
+PANE_APP=/Applications/Pane.app/Contents/MacOS/Pane
+PANE_LAUNCHER=/usr/local/libexec/dcouple/pane-headless.sh
+PANE_PLIST=/Library/LaunchDaemons/com.dcouple.pane-headless.plist
+PANE_CREDENTIALS=$HOME/.config/pane-headless/env
+
+render_pane_plist() {
+  sed -e "s|@OPERATOR_HOME@|$HOME|g" -e "s|@OPERATOR@|$(id -un)|g" \
+    "$SCRIPT_DIR/launchd/com.dcouple.pane-headless.plist" >"$1"
+}
+
+pane_config_is() {
+  [[ $(plutil -extract "$1" raw -o - "$HOME/.pane/config.json" 2>/dev/null || true) == "$2" ]]
+}
+
+pane_gui_running() {
+  pgrep -fx "$PANE_APP" >/dev/null 2>&1
+}
+
+pane_headless_running() {
+  sudo launchctl print system/com.dcouple.pane-headless 2>/dev/null | grep -q 'state = running'
+}
+
+pane_headless_installed() {
+  local rendered=$1
+  sudo test -f "$PANE_LAUNCHER" &&
+    sudo cmp -s "$SCRIPT_DIR/bin/pane-headless.sh" "$PANE_LAUNCHER" &&
+    [[ $(sudo stat -f %Su:%Sg:%Lp "$PANE_LAUNCHER") == root:wheel:755 ]] &&
+    sudo test -f "$PANE_PLIST" &&
+    sudo cmp -s "$rendered" "$PANE_PLIST" &&
+    [[ $(sudo stat -f %Su:%Sg:%Lp "$PANE_PLIST") == root:wheel:644 ]]
+}
+
+# Prints the agent credentials that are not yet stored in owner-only files.
+pane_credentials_missing() {
+  local missing=''
+  grep -Eq '^CLAUDE_CODE_OAUTH_TOKEN=.' "$PANE_CREDENTIALS" 2>/dev/null || missing+=' claude-token'
+  grep -q 'oauth_token:' "$HOME/.config/gh/hosts.yml" 2>/dev/null || missing+=' gh-file-token'
+  if ! grep -Eq '^cli_auth_credentials_store *= *"file"' "$HOME/.codex/config.toml" 2>/dev/null ||
+     [[ ! -f $HOME/.codex/auth.json ]]; then
+    missing+=' codex-file-store'
+  fi
+  printf '%s' "${missing# }"
+}
+
+pane_credentials_mode_correct() {
+  [[ $(stat -f %Su:%Lp "$PANE_CREDENTIALS") == "$(id -un):600" ]]
+}
+
 dry_run_inventory() {
-  local package setting key value power_correct
+  local package setting key value power_correct pane_plist
   printf 'DRY RUN: inspecting state; no changes will be made.\n'
 
   if xcode-select -p >/dev/null 2>&1; then record command-line-tools already-correct; else record command-line-tools would-apply; fi
@@ -158,6 +206,27 @@ dry_run_inventory() {
   else
     record heartbeat would-apply
   fi
+
+  if pane_config_is autoStartOnBoot false; then record pane-gui-login-item-off already-correct; else record pane-gui-login-item-off pending-human; fi
+  if pane_config_is workspaces.enabled true; then record pane-workspaces-on already-correct; else record pane-workspaces-on pending-human; fi
+  if [[ -n $(pane_credentials_missing) ]]; then
+    record pane-agent-credentials pending-human
+  elif pane_credentials_mode_correct; then
+    record pane-agent-credentials already-correct
+  else
+    record pane-agent-credentials would-apply
+  fi
+
+  pane_plist=$(mktemp)
+  render_pane_plist "$pane_plist"
+  if [[ ! -x $PANE_APP ]] || pane_gui_running; then
+    record pane-headless pending-human
+  elif pane_headless_installed "$pane_plist" && pane_headless_running; then
+    record pane-headless already-correct
+  else
+    record pane-headless would-apply
+  fi
+  rm -f "$pane_plist"
 
   print_summary
 }
@@ -364,6 +433,66 @@ else
   fi
   sudo launchctl print system/com.dcouple.heartbeat >/dev/null 2>&1 || fail "heartbeat LaunchDaemon did not verify"
   if (( heartbeat_changed )); then record heartbeat applied; else record heartbeat already-correct; fi
+fi
+
+# Headless Pane at boot. The GUI app and the daemon must never share ~/.pane,
+# so the GUI login item stays off and the daemon is not started under a GUI.
+if pane_config_is autoStartOnBoot false; then
+  record pane-gui-login-item-off already-correct
+else
+  printf '\nHUMAN STEP: in the Pane GUI, turn off Settings -> "Start Pane when you log in".\n'
+  record pane-gui-login-item-off pending-human
+fi
+if pane_config_is workspaces.enabled true; then
+  record pane-workspaces-on already-correct
+else
+  printf '\nHUMAN STEP: turn on Pane workspaces (see docs/click-list.md).\n'
+  record pane-workspaces-on pending-human
+fi
+
+missing_credentials=$(pane_credentials_missing)
+if [[ -n $missing_credentials ]]; then
+  printf '\nHUMAN STEP: store agent credentials in owner-only files (docs/click-list.md); missing: %s\n' "$missing_credentials"
+  record pane-agent-credentials pending-human
+elif pane_credentials_mode_correct; then
+  record pane-agent-credentials already-correct
+else
+  chmod 0600 "$PANE_CREDENTIALS"
+  pane_credentials_mode_correct || fail "$PANE_CREDENTIALS is not owner-only 0600"
+  record pane-agent-credentials applied
+fi
+
+if [[ ! -x $PANE_APP ]]; then
+  printf '\nHUMAN STEP: install Pane in /Applications, then re-run apply.sh.\n'
+  record pane-headless pending-human
+elif pane_gui_running; then
+  printf '\nHUMAN STEP: quit the Pane GUI app on the Mini, then re-run apply.sh.\n'
+  record pane-headless pending-human
+else
+  pane_plist=$(mktemp)
+  trap 'rm -f "$pane_plist"' EXIT
+  render_pane_plist "$pane_plist"
+  sudo mkdir -p /usr/local/libexec/dcouple
+  touch "$HOME/Library/Logs/pane-headless.log"
+  pane_changed=0
+  if install_if_changed "$SCRIPT_DIR/bin/pane-headless.sh" "$PANE_LAUNCHER" 0755 root; then pane_changed=1; fi
+  if install_if_changed "$pane_plist" "$PANE_PLIST" 0644 root; then pane_changed=1; fi
+  pane_headless_installed "$pane_plist" || fail "headless Pane launcher or plist did not verify"
+  rm -f "$pane_plist"
+  trap - EXIT
+  if ! sudo launchctl print system/com.dcouple.pane-headless >/dev/null 2>&1; then
+    sudo launchctl bootstrap system "$PANE_PLIST"
+    pane_changed=1
+  elif (( pane_changed )) || ! pane_headless_running; then
+    sudo launchctl kickstart -k system/com.dcouple.pane-headless
+    pane_changed=1
+  fi
+  for _ in 1 2 3 4 5 6; do
+    pane_headless_running && break
+    sleep 5
+  done
+  pane_headless_running || fail "headless Pane is not running; see ~/Library/Logs/pane-headless.log"
+  if (( pane_changed )); then record pane-headless applied; else record pane-headless already-correct; fi
 fi
 
 print_summary
